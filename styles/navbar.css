@@ -1,0 +1,52 @@
+* {
+    margin: 0;
+    padding: 0;
+    font-family: 'Poppins', sans-serif;
+    box-sizing: border-box;
+}
+
+.sidebar {
+    background-color: #DDEBF3;
+    max-width: 250px;
+    margin-left: 10px;
+    margin-top: 30px;
+    border-radius: 8px;
+    height: 95%;
+}
+
+.sidebar ul {
+    list-style-type: none;
+    padding: 0;
+}
+
+.sidebar ul a {
+    text-decoration: none;
+}
+
+.sidebar li,
+.admin-profile {
+    display: flex;
+    align-items: center;
+    padding: 10px;
+    color: #000000;
+    gap: 8px;
+}
+
+.sidebar li span {
+    opacity: .7;
+}
+
+.sidebar li:hover {
+    background-color: #A4C8E1;
+    cursor: pointer;
+    border-radius: 8px;
+}
+
+.active {
+    font-weight: bold;
+    border-left: 1px solid #000000;
+}
+
+.active li span {
+    opacity: 1;
+}

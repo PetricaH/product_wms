@@ -1,2 +1,17 @@
+.btn {
+  background-color: rgb(0, 26, 255);
+  text-align: white;
+}
 
+.summar {
+  display: flex;
+  flex: 1;
+}
+
+.summar-card {
+  background: #DDEBF3;
+  border-radius: 8px;
+  padding: 10px;
+  margin: 13px;
+}
 /*# sourceMappingURL=index.css.map */

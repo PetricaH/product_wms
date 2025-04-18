@@ -1,35 +1,21 @@
-<?php 
-require_once './bootstrap.php';
-error_reporting(E_ALL);
-ini_set('display_errors', 1);
-?>
-<require_once '/config.php'; ?>
-<link rel="stylesheet" href="<?= getAsset('global', 'styles', 'universal', true) ?>">
-    
 <?php
-    // Determine current page for page-specific assets
-    $uri = $_SERVER['REQUEST_URI'];
-    $currentPage = 'index';
-    
-    if (strpos($uri, 'inventory') !== false) {
-        $currentPage = 'items';
-    } elseif (strpos($uri, 'users') !== false) {
-        $currentPage = 'users';
-    }
-    // Add more conditions as needed
-    
-    // Load page-specific CSS if exists
-    echo loadPageAsset($currentPage, 'styles');
+// included in <head> of every page
+require_once __DIR__ . '/helpers.php';
 ?>
-
+<meta charset="UTF-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet" />
+<title>Admin Dashboard</title>
 
-<?php
-$currentPage = basename($_SERVER['PHP_SELF']);
-$activeClass = 'active';
-
-function getActiveClass($page) {
-    global $currentPage, $activeClass;
-    return ($currentPage == $page) ? $activeClass : '';
-}
-?>
+<?php if (in_prod()): ?>
+  <link rel="stylesheet" href="<?= asset('styles/global.min.css') ?>">
+  <link rel="stylesheet" href="<?= asset('styles/index.min.css') ?>">
+  <script src="<?= asset('scripts/universal.min.js') ?>" defer></script>
+  <script src="<?= asset('scripts/index.min.js') ?>" defer></script>
+<?php else: ?>
+  <link rel="stylesheet" href="/styles/global.css">
+  <link rel="stylesheet" href="/styles/index.css">
+  <script src="/scripts/universal.js" defer></script>
+  <script src="/scripts/index.js" defer></script>
+<?php endif; ?>

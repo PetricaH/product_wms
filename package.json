@@ -1,10 +1,13 @@
 {
   "name": "product_wms",
   "version": "1.0.0",
-  "description": "��#\u0000 \u0000p\u0000r\u0000o\u0000d\u0000u\u0000c\u0000t\u0000_\u0000w\u0000m\u0000s\u0000\r\u0000 \u0000",
+  "description": "Warehouse management system admin dashboard",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "cross-env NODE_ENV=development gulp dev",
+    "build": "cross-env NODE_ENV=production gulp build",
+    "build:css": "sass src/scss:public/css --style=compressed",
+    "watch:css": "sass --watch src/scss:public/css --style=expanded"
   },
   "repository": {
     "type": "git",
@@ -20,6 +23,7 @@
   "homepage": "https://github.com/PetricaH/product_wms#readme",
   "devDependencies": {
     "browser-sync": "^3.0.4",
+    "cross-env": "^7.0.3",
     "del": "^6.1.1",
     "gulp": "^5.0.0",
     "gulp-clean-css": "^4.3.0",

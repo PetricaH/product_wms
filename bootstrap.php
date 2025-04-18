@@ -1,6 +1,18 @@
 <?php 
+if (!defined('BASE_PATH')) {
+    define('BASE_PATH', __DIR__);
+}
 
-define('BASE_PATH', __DIR__);
+define('BASE_URL', 'http://localhost:3003/');
+
+// Function to generate correct navigation URLs
+function getNavUrl($path) {
+    // Remove any leading slash from the path
+    $path = ltrim($path, '/');
+    
+    // Combine BASE_URL with path, ensuring no double slashes
+    return rtrim(BASE_URL, '/') . '/' . $path;
+}
 
 //Get asset URL based on current environment
 function getAsset($file, $type, $isUniversal = false) {

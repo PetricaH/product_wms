@@ -1,0 +1,26 @@
+$color_1: #DDEBF3;
+$font-family_1: 'Poppins', sans-serif;
+$background-color_1: #DDEBF3;
+$background-color_2: #A4C8E1;
+$border-radius: 8px;
+$padd-general: 10px;
+$margin-general: 13px;
+$actionable-item-color: rgb(0, 26, 255); 
+$actionable-item-text: white;
+
+.btn {
+    background-color: $actionable-item-color;
+    text-align: $actionable-item-text;
+}
+
+.summar {
+    display: flex;
+    flex: 1;
+}
+
+.summar-card {
+    background: $color_1;
+    border-radius: $border-radius;
+    padding: $padd-general;
+    margin: $margin-general;
+} 

@@ -54,7 +54,7 @@ function universalStyles() {
   return gulp.src(paths.styles.universal)
     .pipe(gulpIf(!isProd, sourcemaps.init()))
     .pipe(sass().on('error', sass.logError))
-    .pipe(concat('universal.css'))
+    .pipe(concat('global.css'))
     .pipe(gulpIf(!isProd, sourcemaps.write('.')))
     .pipe(gulpIf(!isProd, gulp.dest(paths.styles.devDest)))
     .pipe(gulpIf(isProd, cleanCSS()))

@@ -4,7 +4,7 @@ error_reporting(E_ALL);
 ini_set('display_errors', 1);
 ?>
 <require_once '/config.php'; ?>
-<link rel="stylesheet" href="<?= getAsset('global', 'styles', true) ?>">
+<link rel="stylesheet" href="<?= getAsset('global', 'styles', 'universal', true) ?>">
     
 <?php
     // Determine current page for page-specific assets

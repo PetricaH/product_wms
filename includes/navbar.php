@@ -1,8 +1,8 @@
-<require_once 'header.php'; ?>
+<?php require_once 'header.php'; ?>
 <div class="sidebar">
     <div class="logo-container">
         <img src="assets/logo.png" alt="Logo" class="logo">
-        <h1 class="logo-text">Wartung WMS</h1>
+        <h1 class="logo-text">YOUR WMS</h1>
     </div>
     <ul class="nav-items">
         <a href="index.php" class="<?php echo getActiveClass('index.php'); ?>">
@@ -29,7 +29,7 @@
                 Transactions
             </li>
         </a>
-        <a href="items.php" class="<?php echo getActiveClass('items.php'); ?>">
+        <a href="/views/inventory/items.php" class="<?php echo getActiveClass('items.php'); ?>">
             <li>
                 <span class="material-symbols-outlined">category</span>
                 Items
@@ -42,6 +42,7 @@
             </li>
         </a>
     </ul>
+
     <div class="admin-profile-container">
         <div class="admin-profile">
             <span class="material-symbols-outlined">person</span>Admin<span class="material-symbols-outlined">

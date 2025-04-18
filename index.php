@@ -8,4 +8,4 @@
         <div class="venituri-totale sumar-card"></div>
     </div>
 </div>
-<require_once 'footer.php'; ?>
+<?php require_once 'footer.php'; ?>

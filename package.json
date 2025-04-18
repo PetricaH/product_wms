@@ -1,0 +1,36 @@
+{
+  "name": "product_wms",
+  "version": "1.0.0",
+  "description": "��#\u0000 \u0000p\u0000r\u0000o\u0000d\u0000u\u0000c\u0000t\u0000_\u0000w\u0000m\u0000s\u0000\r\u0000 \u0000",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/PetricaH/product_wms.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/PetricaH/product_wms/issues"
+  },
+  "homepage": "https://github.com/PetricaH/product_wms#readme",
+  "devDependencies": {
+    "browser-sync": "^3.0.4",
+    "del": "^6.1.1",
+    "gulp": "^5.0.0",
+    "gulp-clean-css": "^4.3.0",
+    "gulp-concat": "^2.6.1",
+    "gulp-if": "^3.0.0",
+    "gulp-rename": "^2.0.0",
+    "gulp-rev": "^11.0.0",
+    "gulp-rev-replace": "^0.4.4",
+    "gulp-sass": "^6.0.1",
+    "gulp-sourcemaps": "^3.0.0",
+    "gulp-uglify": "^3.0.2",
+    "sass": "^1.86.3"
+  }
+}

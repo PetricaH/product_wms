@@ -1,0 +1,64 @@
+$color_1: #000000;
+$font-family_1: 'Poppins', sans-serif;
+$background-color_1: #DDEBF3;
+$background-color_2: #A4C8E1;
+
+* {
+	margin: 0;
+	padding: 0;
+	font-family: $font-family_1;
+	box-sizing: border-box;
+}
+.sidebar {
+	display: grid;
+	grid-template-columns: 1fr;
+	grid-template-rows: 0.4fr 2.2fr 0.4fr;
+	gap: 0px 0px;
+	grid-template-areas: "." "." ".";
+	background-color: $background-color_1;
+	max-width: 250px;
+	margin-left: 10px;
+	margin-top: 30px;
+	border-radius: 8px;
+	height: 95%;
+	border-radius: 20px;
+	padding: 13px;
+	ul {
+		list-style-type: none;
+		padding: 0;
+		a {
+			text-decoration: none;
+		}
+	}
+	li {
+		display: flex;
+		align-items: center;
+		padding: 10px;
+		color: $color_1;
+		gap: 8px;
+		span {
+			opacity: .7;
+		}
+		&:hover {
+			background-color: $background-color_2;
+			cursor: pointer;
+			border-radius: 8px;
+		}
+	}
+}
+.admin-profile {
+	display: flex;
+	align-items: center;
+	padding: 10px;
+	color: $color_1;
+	gap: 8px;
+}
+.active {
+	font-weight: bold;
+	border-left: 1px solAid #000000;
+	li {
+		span {
+			opacity: 1;
+		}
+	}
+}

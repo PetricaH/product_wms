@@ -11,11 +11,19 @@ require_once __DIR__ . '/includes/helpers.php';
 $db      = $config['connection_factory']();
 require_once __DIR__ . '/models/Product.php';
 require_once __DIR__ . '/models/User.php';
+require_once __DIR__ . '/models/Location.php';
 
 $product     = new Product($db);
 $users       = new Users($db);
+$location   = new Location($db);
+
 $totalProducts = $product->countAll();
 $totalUsers    = $users->countAllUsers();
+
+$warehouseOccupationPercent = $location->calculateOccupationPercentage();
+$totalLocations = $location->countTotalLocations();
+$occupiedLocations = $location->countOccupiedLocations();
+
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -70,9 +78,27 @@ $totalUsers    = $users->countAllUsers();
                 <p class="count">0</p>
             </div>
         </div>
-        <div class="warehouse-space-card">
-            <h3>Spatiu in Depozit</h3>
-            <span></span>
+        <div class="summar-card warehouse-occupation">
+            <div class="card-content-top">
+                <span class="material-symbols-outlined summar-card-icon">warehouse</span>
+                <h3>Ocupare Depozit</h3>
+                    <div class="progress-circle-container">
+                        <div class="progress-circle"
+                            role="progressbar"
+                            aria-valuenow="<?= $warehouseOccupationPercent ?>"
+                            aria-valuemin="0"
+                            aria-valuemax="100"
+                            style="--progress-percent: <?= $warehouseOccupationPercent ?>%"
+                        >
+                            <div class="progress-circle-inner">
+                                <span class="percentage-text"><? $warehouseOccupationPercent ?>%</span>
+                            </div>
+                        </div>
+                    </div>
+            </div>
+            <div class="card-details">
+                <?= number_format($occupiedLocations) ?> / <?= number_format($totalLocations) ?> Locatii Ocupate
+            </div>
         </div>
     </main>
 

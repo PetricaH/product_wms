@@ -15,31 +15,63 @@ class Product {
         // first step is to create an sql query to select all products
         $query = 'SELECT * FROM ' . $this->table;
 
-        // prepare the query so it prevents sql injection
-        $stmt = $this->conn->prepare($query);
+        try {
+            // prepare the query so it prevents sql injection
+            $stmt = $this->conn->prepare($query);
 
-        // after the query is prepared, execute it
-        $stmt->execute();
+            // after the query is prepared, execute it
+            $stmt->execute();
 
-        // return the result
-        return $stmt;
+            // return the result
+            return $stmt;
+        } catch (PDOException $e) {
+            error_log("Error fetching all products: " . $e->getMessage());
+
+            return false;
+        }
     }
 
     public function countAll() {
-        // fist stem is to create an sql to query to count all produccts
+
         $query = 'SELECT COUNT(*) as total FROM ' . $this->table;
 
-        // preparte query statement
-        $stmt = $this->conn->prepare($query);
+        try {
+            // preparte query statement
+            $stmt = $this->conn->prepare($query);
 
-        // execute query
-        $stmt->execute();
+            // execute query
+            $stmt->execute();
 
-        // fetch the result 
-        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+            // fetch the result 
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
-        // return the count
-        return $row['total'] ?? 0;
+            // return the count
+            return isset($row['total']) ? (int)$row['total'] : 0;
+        } catch (PDOException $e) {
+            error_log("Error counting products: " . $e->getMessage());
+            return 0;
+        }
+    }
+
+    // calculates the sum of quantities for all products
+    public function getTotalQuantity(): int {
+        $query = 'SELECT SUM(quantity) as total_stock FROM ' . $this->table;
+
+        try {
+            $stmt = $this->conn->prepare($query);
+
+            // execute the query
+            $stmt->execute();
+
+            // fetch the result
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            // return the total quantity
+            return isset($row['total_stock']) ? (int)$row['total_stock'] : 0;
+        } catch (PDOException $e) {
+            error_log("Error summing total product quantity: " . $e->getMessage());
+            return 0;
+        }
     }
 }
 

@@ -1,86 +1,110 @@
 <?php
 // includes/navbar.php
 
-// Make sure helpers (asset(), in_prod()) are loaded
-require_once __DIR__ . '/helpers.php';
+// Ensure helpers are loaded (assuming asset() function exists)
+// require_once __DIR__ . '/helpers.php'; // Already required in index.php usually
 
 /**
  * Return the URL for a given page.
- * (Adjust this if your app lives in a sub‑folder.)
+ * Adjust base path if your app lives in a sub-folder.
  */
 function getNavUrl(string $page): string {
-    return $page;
+    // If pages are directly in root or handled by routing, this is fine.
+    // If they are in subdirectories, adjust path accordingly.
+    // Example for items page: return '/views/inventory/' . $page;
+    return '/' . ltrim($page, '/'); // Ensure leading slash
 }
 
 /**
- * Return 'active' if the current script matches $page.
+ * Return the BEM active class modifier if the current script matches $page.
  */
 function getActiveClass(string $page): string {
-    return basename($_SERVER['SCRIPT_NAME']) === $page
-        ? 'active'
+    // Compare the base filename of the current script with the target page filename
+    $currentPage = basename($_SERVER['SCRIPT_NAME']);
+    $targetPage = basename($page);
+    // Add specific check for index.php potentially being just '/'
+    // This might need refinement depending on your routing/server setup
+    // if (($currentPage === 'index.php' || $currentPage === '') && ($targetPage === 'index.php' || $targetPage === '')) {
+    //     return 'sidebar__link--active';
+    // }
+    return $currentPage === $targetPage
+        ? 'sidebar__link--active' // Use the BEM modifier class
         : '';
 }
 ?>
-<nav class="sidebar">
-  <div class="logo-container">
-    <img src="<?= asset('assets/logo.png') ?>" alt="Logo" class="logo">
-    <h1 class="logo-text">YOUR WMS</h1>
-  </div>
+<aside class="sidebar">
+    <div class="sidebar__logo">
+        <?php if (function_exists('asset')): ?>
+            <img src="<?= asset('assets/logo.png') ?>" alt="WMS Logo">
+        <?php else: ?>
+            <img src="/assets/logo.png" alt="WMS Logo" style="max-width: 80%; height: auto;">
+            <?php endif; ?>
+        </div>
 
-  <ul class="nav-items">
-    <li>
-      <a href="<?= getNavUrl('index.php') ?>"
-         class="<?= getActiveClass('index.php') ?>">
-        <span class="material-symbols-outlined">dashboard</span>
-        Dashboard
-      </a>
-    </li>
-    <li>
-      <a href="<?= getNavUrl('users.php') ?>"
-         class="<?= getActiveClass('users.php') ?>">
-        <span class="material-symbols-outlined">group</span>
-        Users
-      </a>
-    </li>
-    <li>
-      <a href="<?= getNavUrl('batches.php') ?>"
-         class="<?= getActiveClass('batches.php') ?>">
-        <span class="material-symbols-outlined">inventory</span>
-        Batches
-      </a>
-    </li>
-    <li>
-      <a href="<?= getNavUrl('transactions.php') ?>"
-         class="<?= getActiveClass('transactions.php') ?>">
-        <span class="material-symbols-outlined">receipt</span>
-        Transactions
-      </a>
-    </li>
-    <li>
-      <a href="<?= getNavUrl('views/inventory/items.php') ?>"
-         class="<?= getActiveClass('items.php') ?>">
-        <span class="material-symbols-outlined">category</span>
-        Items
-      </a>
-    </li>
-    <li>
-      <a href="<?= getNavUrl('activities.php') ?>"
-         class="<?= getActiveClass('activities.php') ?>">
-        <span class="material-symbols-outlined">history</span>
-        Activities
-      </a>
-    </li>
-  </ul>
+    <ul class="sidebar__nav">
+        <li class="sidebar__item">
+            <a href="<?= getNavUrl('index.php') ?>"
+               class="sidebar__link <?= getActiveClass('index.php') ?>">
+                <span class="material-symbols-outlined">dashboard</span>
+                <span>Dashboard</span>
+            </a>
+        </li>
+        <li class="sidebar__item">
+            <a href="<?= getNavUrl('users.php') ?>"
+               class="sidebar__link <?= getActiveClass('users.php') ?>">
+                <span class="material-symbols-outlined">group</span>
+                <span>Users</span>
+            </a>
+        </li>
+        <li class="sidebar__item">
+            <a href="<?= getNavUrl('batches.php') ?>"
+               class="sidebar__link <?= getActiveClass('batches.php') ?>">
+                <span class="material-symbols-outlined">inventory</span>
+                <span>Batches</span>
+            </a>
+        </li>
+        <li class="sidebar__item">
+            <a href="<?= getNavUrl('transactions.php') ?>"
+               class="sidebar__link <?= getActiveClass('transactions.php') ?>">
+                <span class="material-symbols-outlined">receipt_long</span> <span>Transactions</span>
+            </a>
+        </li>
+        <li class="sidebar__item">
+            <a href="<?= getNavUrl('views/inventory/items.php') ?>"
+               class="sidebar__link <?= getActiveClass('items.php') ?>">
+                <span class="material-symbols-outlined">category</span>
+                <span>Items</span>
+            </a>
+        </li>
+        <li class="sidebar__item">
+            <a href="<?= getNavUrl('activities.php') ?>"
+               class="sidebar__link <?= getActiveClass('activities.php') ?>">
+                <span class="material-symbols-outlined">history</span>
+                <span>Activities</span>
+            </a>
+        </li>
+        <li class="sidebar__item">
+             <a href="<?= getNavUrl('locations.php') ?>"
+                class="sidebar__link <?= getActiveClass('locations.php') ?>">
+                 <span class="material-symbols-outlined">pin_drop</span>
+                 <span>Locations</span>
+             </a>
+        </li>
+         <li class="sidebar__item">
+             <a href="<?= getNavUrl('orders.php') ?>"
+                class="sidebar__link <?= getActiveClass('orders.php') ?>">
+                 <span class="material-symbols-outlined">shopping_cart</span>
+                 <span>Orders</span>
+             </a>
+        </li>
+    </ul>
 
-  <div class="admin-profile-container">
-    <div class="admin-profile">
-      <span class="material-symbols-outlined">person</span>
-      Admin
-      <span class="material-symbols-outlined">arrow_drop_down</span>
+    <div class="sidebar__profile">
+        <span class="material-symbols-outlined">account_circle</span>
+        <div class="profile-info">
+            <span class="profile-name">Admin User</span> <span class="profile-role">Administrator</span> </div>
+        <a href="/logout.php" title="Logout" class="logout-link">
+             <span class="material-symbols-outlined logout-icon">logout</span>
+        </a>
     </div>
-    <div class="logout-option">
-      <span class="material-symbols-outlined">logout</span>
-      Logout
-    </div>
-  </div>
-</nav>
+</aside>

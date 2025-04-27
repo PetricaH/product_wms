@@ -1,151 +1,166 @@
-$color_1: #DDEBF3;
-$font-family_1: 'Poppins', sans-serif;
-$background-color_1: #DDEBF3;
-$background-color_2: #A4C8E1;
-$border-radius: 8px;
-$padd-general: 10px;
-$margin-general: 13px;
-$actionable-item-color: rgb(0, 26, 255); 
-$actionable-item-text: white;
-$progress-circle-size: 80px;
-$progress-circle-thickness: 8px;
+/* --- SCSS Variables --- */
+// Define variables here or import from a central file (_variables.scss)
+// Ensure these match or complement variables in universal/main.scss
+
+// Color Palette (Aligned with Sidebar where applicable)
+$primary-color: #0d6efd;
+$secondary-color: #6c757d;
+$success-color: #198754;
+$warning-color: #ffc107;
+$danger-color: #dc3545;
+$info-color: #0dcaf0;
+
+// Use sidebar colors for consistency
+$card-background-color: #DDEBF3; // Match sidebar background
+$card-hover-background-color: #A4C8E1; // Match sidebar hover
+$text-color-primary: #212529; // Dark text for main values
+$text-color-secondary: #495057; // Slightly darker grey for details/headings
+$icon-color-default: #00385E; // Dark blue for icons, derived from sidebar palette
+$border-color: darken($card-background-color, 8%); // Border derived from card background
+
+// Icon Colors (Mapped to card types - used for the icon itself now)
+$icon-color-products: rgb(0, 151, 197);
+$icon-color-users: rgb(0, 56, 94);
+$icon-color-occupation: rgb(6, 94, 134);
+$icon-color-items: rgb(199, 133, 0); // Orange/Gold
+$icon-color-revenue: rgb(8, 99, 0);
+$icon-color-shipped: rgb(116, 0, 0);
+$icon-color-orders: rgb(90, 122, 0);
+
+// Layout & Spacing
+$border-radius: 8px; // Match sidebar item rounding
+$card-padding: 1.25rem; // 20px
+$grid-gap: 1.5rem; // 24px
+$base-margin: 1rem; // 16px
+$base-shadow: 0 5px 15px rgba(0, 0, 0, 0.07); // Slightly softer shadow
+
+// Progress Circle
+$progress-circle-size: 65px; // Adjusted size
+$progress-circle-thickness: 6px;
 $progress-circle-background-color: #e9ecef;
-$progress-circle-progress-color: #0d6efd;
-$progress-circle-text-color: #212529;
-$card-details-color: #6c757d; // Grey for details text
-$card-heading-color: #6c757d; // Grey for heading
-$card-icon-color: #DDEBF3; // Use existing light color for icon text
-$card-padding: 15px; // Use existing padding value
+$progress-circle-progress-color: $primary-color;
+$progress-circle-text-color: $text-color-primary;
 
-.app {
-    display: flex;
+
+/* --- Main Content Area Styles (Specific to Dashboard Page) --- */
+.main-content {
+    flex-grow: 1; // Allow main content to take remaining space from sidebar
+    padding: $grid-gap; // Add padding around the main content area
+    overflow-y: auto; // Allow scrolling if content overflows
 }
 
-.btn {
-    background-color: $actionable-item-color;
-    text-align: $actionable-item-text;
-}
+.main-header {
+    margin-bottom: $grid-gap;
+    padding-bottom: $base-margin;
+    border-bottom: 1px solid $border-color;
 
-.sumar {
-    display: grid; 
-    grid-template-columns: 1fr; 
-    grid-template-rows: 1fr; 
-    gap: 0px 0px; 
-    grid-template-areas: 
-        ". . . . . ."
-        ". . . . . ."; 
-    margin-top: 30px;
-}
-
-@media (max-width: 1711px) {
-    .sumar {
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        grid-template-rows: repeat(2, 1fr);
-        gap: 20px;
-        margin: 30px 15px;
-    }
-    
-    .summar-card {
-        margin-left: 0;
+    h1 {
+        font-size: 1.75rem; // Larger heading
+        font-weight: 600;
+        color: darken($text-color-secondary, 20%); // Darker heading
     }
 }
 
-.summar-card {
-    display: grid; 
-    grid-template-columns: .5fr 1.5fr; 
-    grid-template-rows: 1.2fr 1fr;
-    gap: 0px 10px; 
-    grid-template-areas: 
-      "summar-card-icon summar-card-text"
-      "summar-card-icon summar-card-number"; 
-    background: $color_1;
+/* --- Summary Grid Layout --- */
+.summary-grid {
+    display: grid;
+    gap: $grid-gap;
+    // Mobile: 1 column
+    grid-template-columns: 1fr;
+}
+
+/* --- Summary Card Base Styles --- */
+.summary-card {
+    background-color: $card-background-color;
     border-radius: $border-radius;
-    padding: 15px;
-    margin-left: 15px;
-}
-
-.summar-card-icon { 
-    grid-area: summar-card-icon;
-    display: flex;
-    align-items: center;
-    justify-self: center;
-    padding: 10px 15px;
-    border-radius: 8px;
-}
-
-.summar-card-icon {
-    color: #DDEBF3;
-}
-
-.sumar .summar-card:nth-child(1) .summar-card-icon{
-    background-color: rgb(0, 151, 197);
-}
-
-.sumar .summar-card:nth-child(2) .summar-card-icon{
-    background-color: rgb(0, 56, 94);
-}
-
-.sumar .summar-card:nth-child(3) .summar-card-icon{
-    background-color: rgb(8, 99, 0);
-}
-
-.sumar .summar-card:nth-child(4) .summar-card-icon{
-    background-color: rgb(116, 0, 0);
-}
-
-.sumar .summar-card:nth-child(5) .summar-card-icon{
-    background-color: rgb(90, 122, 0);
-}
-
-.sumar .summar-card:nth-child(6) .summar-card-icon{
-    background-color: rgb(134, 0, 116);
-}
-
-.summar-card h3 { 
-    grid-area: summar-card-text; 
-}
-
-.summar-card .count {
-    grid-area: summar-card-number;
-}
-
-.summar-card.warehouse-occupation {
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    grid-template-areas: none;
-    grid-template-columns: none;
-    grid-template-rows: none;
     padding: $card-padding;
-    background: $background-color_1;
+    box-shadow: $base-shadow;
+    border: 1px solid $border-color;
+    display: flex; // Use flexbox for internal layout
+    flex-direction: column; // Stack content vertically by default
+    justify-content: space-between; // Push details to bottom
+    gap: $base-margin * 0.75; // Gap between elements inside card
+    transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out, background-color 0.2s ease;
+    min-height: 160px; // Ensure minimum height
 
-    .card-content-top {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        width: 100%;
+    &:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
+        background-color: $card-hover-background-color; // Use hover color on card hover
     }
+}
 
-    .summar-card-icon {
-        margin-bottom: 10px;
-        align-self: center;
+// Container for the top part (Icon + Title)
+.summary-card__header {
+    display: flex;
+    align-items: center; // Align icon and title vertically
+    gap: $base-margin * 0.75; // Space between icon and title
+}
+
+// Icon Styling (No background circle)
+.summary-card__icon { // Target the icon span directly
+    font-size: 2.25rem; // Icon size
+    line-height: 1; // Prevent extra space around icon font
+    color: $icon-color-default; // Default icon color
+    flex-shrink: 0; // Prevent icon from shrinking
+    // Add specific colors based on card type
+    .summary-card--products & { color: $icon-color-products; }
+    .summary-card--users & { color: $icon-color-users; }
+    .summary-card--occupation & { color: $icon-color-occupation; }
+    .summary-card--items & { color: $icon-color-items; }
+    .summary-card--revenue & { color: $icon-color-revenue; }
+    .summary-card--shipped & { color: $icon-color-shipped; }
+    .summary-card--orders & { color: $icon-color-orders; }
+}
+
+.summary-card__title {
+    font-size: 0.9rem;
+    font-weight: 600; // Slightly bolder title
+    color: $text-color-secondary;
+    margin: 0;
+    line-height: 1.3;
+}
+
+// Container for the main value/data (Number or Progress Circle)
+.summary-card__data {
+    margin-top: auto; // Push data section down towards details
+    margin-bottom: $base-margin * 0.5; // Space above details
+    text-align: left; // Align text data left
+}
+
+.summary-card__value {
+    font-size: 2rem; // Larger value text
+    font-weight: 700; // Bold value
+    color: $text-color-primary;
+    margin: 0;
+    line-height: 1.1;
+    display: block; // Ensure it takes its own line
+}
+
+// Details text at the bottom
+.summary-card__details {
+    font-size: 0.8rem;
+    color: lighten($text-color-secondary, 10%); // Lighter details text
+    margin: 0;
+    padding-top: $base-margin * 0.5; // Space above details
+    border-top: 1px solid lighten($border-color, 5%); // Lighter separator
+    text-align: left;
+}
+
+
+/* --- Warehouse Occupation Card Specific Styles (Progress Circle) --- */
+.summary-card--occupation {
+    .summary-card__data { // Center the progress circle container
+       display: flex;
+       justify-content: center; // Center horizontally
+       align-items: center;
+       margin-top: $base-margin * 0.5; // Adjust spacing
     }
-
-    h3 {
-        text-align: center;
-        color: $card-heading-color;
-        font-size: .9rem;
-        font-weight: 500;
-        margin-bottom: 10px;
-    }
-
     .progress-circle-container {
         width: $progress-circle-size;
         height: $progress-circle-size;
         position: relative;
-        margin-bottom: 10px;
+        cursor: help; // Indicate hoverable for tooltip (title attribute)
     }
 
     .progress-circle {
@@ -160,14 +175,15 @@ $card-padding: 15px; // Use existing padding value
         display: flex;
         align-items: center;
         justify-content: center;
-        transition: background_image .4s ease-out;
+        transition: background-image 0.4s ease-out;
     }
 
     .progress-circle-inner {
         position: absolute;
         width: calc(#{$progress-circle-size} - (2 * #{$progress-circle-thickness}));
         height: calc(#{$progress-circle-size} - (2 * #{$progress-circle-thickness}));
-        background-color: $background-color_1;
+        // Use card background for the hole, slightly lightened for contrast
+        background-color: lighten($card-background-color, 2%);
         border-radius: 50%;
         display: flex;
         align-items: center;
@@ -175,6 +191,85 @@ $card-padding: 15px; // Use existing padding value
         top: 50%;
         left: 50%;
         transform: translate(-50%, -50%);
-        
+        box-shadow: inset 0 0 5px rgba(0,0,0,0.05); // Subtle inner shadow
+    }
+
+    .percentage-text {
+        font-size: 1rem; // Adjust size
+        font-weight: 600;
+        color: $progress-circle-text-color;
+    }
+
+    // Hide the default value field if progress circle is shown
+    .summary-card__value {
+        display: none;
     }
 }
+
+/* --- Responsive Adjustments for the Grid --- */
+
+// Small devices (tablets, landscape phones)
+@media (min-width: 576px) {
+    .summary-grid {
+        // 2 columns for small devices
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+// Medium devices (tablets)
+@media (min-width: 768px) {
+    .summary-grid {
+        // Maybe 3 columns for medium devices
+        grid-template-columns: repeat(3, 1fr);
+    }
+     .main-header h1 {
+        font-size: 2rem;
+    }
+}
+
+// Large devices (desktops)
+@media (min-width: 992px) {
+    .summary-grid {
+        // 3 or 4 columns for large devices
+        grid-template-columns: repeat(3, 1fr); // Stick to 3? Or 4?
+    }
+}
+
+// Extra large devices (large desktops)
+@media (min-width: 1200px) {
+    .summary-grid {
+        // Increase to 4 columns on very wide screens
+        grid-template-columns: repeat(4, 1fr);
+    }
+    // Potentially adjust padding/gaps for larger screens
+    .main-content {
+        padding: $grid-gap * 1.5;
+    }
+}
+
+// XXL devices (even larger desktops)
+@media (min-width: 1400px) {
+     .summary-grid {
+        // Maybe keep 4 or go to 5 if needed
+        grid-template-columns: repeat(4, 1fr);
+     }
+}
+
+/* --- Optional: Styles for other sections (Charts, Tables) --- */
+// (Keep existing styles or adapt them similarly)
+.dashboard-section {
+    margin-top: $grid-gap * 1.5;
+    background-color: lighten($card-background-color, 2%); // Slightly lighter background for sections
+    padding: $card-padding * 1.2;
+    border-radius: $border-radius;
+    box-shadow: $base-shadow;
+    border: 1px solid $border-color;
+
+    h2 {
+        font-size: 1.25rem;
+        font-weight: 600;
+        margin-bottom: $base-margin;
+        color: darken($text-color-secondary, 10%);
+    }
+}
+

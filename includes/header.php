@@ -9,8 +9,8 @@ require_once __DIR__ . '/helpers.php';
 <title>Admin Dashboard</title>
 
 <?php if (in_prod()): ?>
-  <link rel="stylesheet" href="<?= asset('styles/global.min.css') ?>">
-  <link rel="stylesheet" href="<?= asset('styles/index.min.css') ?>">
+  <link rel="stylesheet" href="<?= asset('/styles/global.min.css') ?>">
+  <link rel="stylesheet" href="<?= asset('/styles/index.min.css') ?>">
   <script src="<?= asset('scripts/universal.min.js') ?>" defer></script>
   <script src="<?= asset('scripts/index.min.js') ?>" defer></script>
 <?php else: ?>

@@ -22,12 +22,14 @@ require_once __DIR__ . '/models/Product.php';
 require_once __DIR__ . '/models/User.php';
 require_once __DIR__ . '/models/Location.php';
 require_once __DIR__ . '/models/Inventory.php';
+require_once __DIR__ . '/models/Order.php';
 
 // Instantiate Models
 $product       = new Product($db);
 $users         = new Users($db);
 $location      = new Location($db);
 $inventory     = new Inventory($db);
+$orders        = new Order($db);
 
 // --- Get Data for Dashboard Cards ---
 $totalProducts = $product->countAll(); // Counts distinct product SKUs
@@ -36,11 +38,12 @@ $warehouseOccupationPercent = $location->calculateOccupationPercentage();
 $totalLocations = $location->countTotalLocations();
 $occupiedLocations = $location->countOccupiedLocations();
 $totalItemsInStock = $inventory->getTotalItemCount();
+$activeOrders = $orders->countActiveOrders();
+
 
 // Placeholder data (replace with actual logic when available)
 $totalIncasari = 0;
 $totalIesiri = 0;
-$comenziActive = 0;
 
 ?>
 <!DOCTYPE html>
@@ -152,7 +155,7 @@ $comenziActive = 0;
                 </div>
                 <div class="summary-card__content">
                     <h3 class="summary-card__title">Comenzi Active</h3>
-                    <p class="summary-card__value"><?= number_format($comenziActive) ?></p>
+                    <p class="summary-card__value"><?= number_format($activeOrders) ?></p>
                     <p class="summary-card__details">Comenzi în așteptare</p>
                 </div>
             </article>

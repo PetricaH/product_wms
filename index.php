@@ -39,11 +39,10 @@ $totalLocations = $location->countTotalLocations();
 $occupiedLocations = $location->countOccupiedLocations();
 $totalItemsInStock = $inventory->getTotalItemCount();
 $activeOrders = $orders->countActiveOrders();
-
+$shippedOrdersToday = $orders->countShippedToday();
 
 // Placeholder data (replace with actual logic when available)
 $totalIncasari = 0;
-$totalIesiri = 0;
 
 ?>
 <!DOCTYPE html>
@@ -144,8 +143,8 @@ $totalIesiri = 0;
                 </div>
                 <div class="summary-card__content">
                     <h3 class="summary-card__title">Total Ieșiri</h3>
-                    <p class="summary-card__value"><?= number_format($totalIesiri) ?></p>
-                    <p class="summary-card__details">Articole expediate</p>
+                    <p class="summary-card__value"><?= number_format($shippedOrdersToday) ?></p>
+                    <p class="summary-card__details">Articole expediate azi</p>
                 </div>
             </article>
 

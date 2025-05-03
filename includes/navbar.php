@@ -46,14 +46,14 @@ function getActiveClass(string $page): string {
             <a href="<?= getNavUrl('index.php') ?>"
                class="sidebar__link <?= getActiveClass('index.php') ?>">
                 <span class="material-symbols-outlined">dashboard</span>
-                <span>Dashboard</span>
+                <span>Tablou de Bord</span>
             </a>
         </li>
         <li class="sidebar__item">
             <a href="<?= getNavUrl('users.php') ?>"
                class="sidebar__link <?= getActiveClass('users.php') ?>">
                 <span class="material-symbols-outlined">group</span>
-                <span>Users</span>
+                <span>Utilizatori</span>
             </a>
         </li>
         <li class="sidebar__item">
@@ -73,28 +73,28 @@ function getActiveClass(string $page): string {
             <a href="<?= getNavUrl('views/inventory/items.php') ?>"
                class="sidebar__link <?= getActiveClass('items.php') ?>">
                 <span class="material-symbols-outlined">category</span>
-                <span>Items</span>
+                <span>Produse</span>
             </a>
         </li>
         <li class="sidebar__item">
             <a href="<?= getNavUrl('activities.php') ?>"
                class="sidebar__link <?= getActiveClass('activities.php') ?>">
                 <span class="material-symbols-outlined">history</span>
-                <span>Activities</span>
+                <span>Istoric Actiuni</span>
             </a>
         </li>
         <li class="sidebar__item">
              <a href="<?= getNavUrl('locations.php') ?>"
                 class="sidebar__link <?= getActiveClass('locations.php') ?>">
                  <span class="material-symbols-outlined">pin_drop</span>
-                 <span>Locations</span>
+                 <span>Depozite</span>
              </a>
         </li>
          <li class="sidebar__item">
              <a href="<?= getNavUrl('orders.php') ?>"
                 class="sidebar__link <?= getActiveClass('orders.php') ?>">
                  <span class="material-symbols-outlined">shopping_cart</span>
-                 <span>Orders</span>
+                 <span>Comenzi</span>
              </a>
         </li>
     </ul>

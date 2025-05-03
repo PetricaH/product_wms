@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WMS Picking</title>
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet">
+    <link rel="stylesheet" href="/styles/mobile_picker.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+</head>
+<body class="mobile-picking-interface">
+
+    <div id="loading-overlay" class="hidden">
+        <div class="spinner"></div>
+    </div>
+
+    <div class="picking-card">
+        <h1 class="picking-card__title">Picking Task</h1>
+
+        <div class="order-scanning">
+            <button id="scan-order-btn" class="picking-button picking-button--primary picking-button--scan">
+                <span class="material-icons-outlined">qr_code_scanner</span>
+                Scan Order
+            </button>
+            <div id="scanner-container" class="scanner-container hidden">
+                 <div id="reader"></div>
+            </div>
+             <p id="scanned-order-id" class="scanned-info"></p> </div>
+
+        <div id="task-display" class="task-display hidden">
+            <h2 class="task-display__subtitle">Item to Pick:</h2>
+            <p class="task-display__product-info">
+                <strong id="product-name"></strong> (<span id="product-sku"></span>)
+            </p>
+            <p class="icon-text">
+                <span class="material-icons-outlined">pin_drop</span>
+                Location: <strong id="location-code" class="task-display__location"></strong>
+            </p>
+            <p class="icon-text">
+                 <span class="material-icons-outlined">inventory</span>
+                 Batch: <strong id="batch-number" class="task-display__detail-value"></strong>
+            </p>
+             <p class="icon-text">
+                 <span class="material-icons-outlined">tag</span>
+                 Inv. ID: <strong id="inventory-id" class="task-display__detail-value"></strong>
+            </p>
+            <p class="task-display__quantity-needed">
+                Pick: <strong id="quantity-to-pick"></strong> units
+            </p>
+            <p class="task-display__availability-info details-text">
+                (Need <span id="total-needed"></span> total for item, <span id="available-in-location"></span> available here)
+            </p>
+        </div>
+
+        <div id="confirmation-area" class="confirmation-area hidden">
+            <label for="quantity-picked-input" class="input-label">Quantity Picked:</label>
+            <input type="number" id="quantity-picked-input" inputmode="numeric" pattern="[0-9]*" class="picking-input">
+            <button id="confirm-pick-btn" class="picking-button picking-button--success">
+                Confirm Pick
+            </button>
+        </div>
+
+        <div id="message-area" class="message-area">
+             </div>
+
+         <div id="all-done-message" class="all-done-message hidden">
+            <span class="material-icons-outlined">task_alt</span>
+            All items for this order picked!
+        </div>
+
+    </div>
+
+    <script src="/scripts/mobile_picker.js"></script>
+
+</body>
+</html>

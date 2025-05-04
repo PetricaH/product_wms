@@ -70,8 +70,7 @@ html {
 }
 
 .scanner-container {
-  margin-top: 1rem;
-  margin-bottom: 1rem;
+  margin: 1rem 0;
   border: 1px dashed #6c757d;
   border-radius: 8px;
   overflow: hidden;
@@ -107,14 +106,17 @@ html {
   text-align: center;
 }
 
-.location-scan-prompt {
+.prompt-section, .product-scan-prompt, .location-scan-prompt {
   margin-top: 1.5rem;
   margin-bottom: 1.5rem;
   padding: 1rem;
-  border: 1px solid #0dcaf0;
   border-radius: 8px;
-  background-color: rgb(228.9130434783, 249.4565217391, 253.5869565217);
   text-align: center;
+}
+
+.location-scan-prompt {
+  border: 1px solid #0dcaf0;
+  background-color: rgb(228.9130434783, 249.4565217391, 253.5869565217);
 }
 .location-scan-prompt .prompt-text {
   font-size: 1.1rem;
@@ -127,6 +129,40 @@ html {
   display: block;
   margin-top: 0.25rem;
   font-size: 1.3em;
+}
+
+.product-scan-prompt {
+  border: 1px solid #ffc107;
+  background-color: #fff4d3;
+}
+.product-scan-prompt .prompt-text {
+  font-size: 1.1rem;
+  color: rgb(109, 81.75, 0);
+  margin-bottom: 1rem;
+}
+.product-scan-prompt .prompt-text strong {
+  font-weight: 700;
+  color: rgb(185.5, 139.125, 0);
+}
+.product-scan-prompt .prompt-text .prompt-text-detail {
+  display: block;
+  font-size: 0.9em;
+  color: #495057;
+  margin-top: 0.2rem;
+}
+.product-scan-prompt #scan-product-section .picking-button--scan {
+  margin-bottom: 0.75rem;
+}
+.product-scan-prompt #manual-product-section {
+  margin-top: 1rem;
+}
+.product-scan-prompt #manual-product-section .input-group {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+.product-scan-prompt #manual-product-section .picking-input {
+  flex-grow: 1;
 }
 
 .input-label {
@@ -237,26 +273,8 @@ html {
   width: 100%;
 }
 
-.task-display { /* ... (unchanged) ... */ }
-
-.icon-text { /* ... (unchanged) ... */ }
-
-.details-text { /* ... (unchanged) ... */ }
-
-.confirmation-area { /* ... (unchanged) ... */ }
-
-.message-area { /* ... (unchanged) ... */ }
-
-.all-done-message { /* ... (unchanged) ... */ }
-
-#loading-overlay { /* ... (unchanged) ... */ }
-
-.spinner { /* ... (unchanged) ... */ }
-
-@keyframes spin { /* ... (unchanged) ... */ }
 .task-display {
-  margin-top: 1.5rem;
-  margin-bottom: 1.5rem;
+  margin: 1.5rem 0;
   padding-top: 1rem;
   border-top: 1px solid rgb(190.8434782609, 217.2608695652, 232.3565217391);
 }
@@ -271,6 +289,9 @@ html {
   font-weight: 600;
   color: #212529;
 }
+.task-display .icon-text .material-icons-outlined.text-green-600 {
+  color: #198754;
+}
 .task-display__product-info {
   font-size: 1.125rem;
   color: #212529;
@@ -280,7 +301,7 @@ html {
 }
 .task-display__location {
   font-weight: 500;
-  color: #0d6efd;
+  color: #212529;
 }
 .task-display__detail-value {
   font-weight: 500;

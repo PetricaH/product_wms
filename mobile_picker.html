@@ -30,7 +30,6 @@
                     Enter ID Manually
                 </button>
             </div>
-
             <div id="manual-order-section" class="hidden">
                  <label for="order-id-input" class="input-label">Order ID:</label>
                  <div class="input-group">
@@ -43,7 +42,6 @@
                     Use Scanner
                 </button>
             </div>
-
             <div id="scanner-container" class="scanner-container hidden">
                  <div id="reader"></div>
                  <button id="stop-scan-btn" class="picking-button picking-button--danger picking-button--small hidden">Stop Scanning</button>
@@ -51,23 +49,70 @@
              <p id="scanned-order-id" class="scanned-info"></p>
         </div>
 
-        <div id="location-scan-prompt" class="location-scan-prompt hidden">
+        <div id="location-scan-prompt" class="location-scan-prompt prompt-section hidden">
             <p class="prompt-text">
-                Please go to location: <strong id="target-location-code"></strong>
+                Go to Location: <strong id="target-location-code"></strong>
             </p>
-            <button id="scan-location-btn" class="picking-button picking-button--primary picking-button--scan">
-                <span class="material-icons-outlined">qr_code_scanner</span>
-                Scan Location Barcode
-            </button>
+             <div id="scan-location-section">
+                <button id="scan-location-btn" class="picking-button picking-button--primary picking-button--scan">
+                    <span class="material-icons-outlined">qr_code_scanner</span>
+                    Scan Location Barcode
+                </button>
+                 <button id="toggle-manual-location-btn" class="picking-button picking-button--secondary picking-button--small picking-button--full-width">
+                    Enter Location Manually
+                </button>
             </div>
+             <div id="manual-location-section" class="hidden">
+                 <label for="location-code-input" class="input-label">Location Code:</label>
+                 <div class="input-group">
+                    <input type="text" id="location-code-input" class="picking-input">
+                    <button id="verify-manual-location-btn" class="picking-button picking-button--primary">
+                        Verify
+                    </button>
+                 </div>
+                 <button id="toggle-scan-location-btn" class="picking-button picking-button--secondary picking-button--small picking-button--full-width">
+                    Use Scanner
+                </button>
+            </div>
+        </div>
+
+        <div id="product-scan-prompt" class="product-scan-prompt prompt-section hidden">
+            <p class="prompt-text">
+                Scan Product: <strong id="target-product-sku"></strong>
+                <span id="target-product-name" class="prompt-text-detail"></span>
+            </p>
+            <div id="scan-product-section">
+                 <button id="scan-product-btn" class="picking-button picking-button--primary picking-button--scan">
+                    <span class="material-icons-outlined">qr_code_scanner</span>
+                    Scan Product Barcode
+                </button>
+                 <button id="toggle-manual-product-btn" class="picking-button picking-button--secondary picking-button--small picking-button--full-width">
+                    Enter SKU Manually
+                </button>
+            </div>
+             <div id="manual-product-section" class="hidden">
+                 <label for="product-sku-input" class="input-label">Product SKU:</label>
+                 <div class="input-group">
+                    <input type="text" id="product-sku-input" class="picking-input">
+                    <button id="verify-manual-product-btn" class="picking-button picking-button--primary">
+                        Verify
+                    </button>
+                 </div>
+                 <button id="toggle-scan-product-btn" class="picking-button picking-button--secondary picking-button--small picking-button--full-width">
+                    Use Scanner
+                </button>
+            </div>
+        </div>
+
 
         <div id="task-display" class="task-display hidden">
-            <h2 class="task-display__subtitle">Item to Pick:</h2>
-            <p class="task-display__product-info">
-                <strong id="product-name"></strong> (<span id="product-sku"></span>)
+             <h2 class="task-display__subtitle">Verified - Pick Item:</h2>
+            <p class="icon-text">
+                 <span class="material-icons-outlined text-green-600">check_circle</span>
+                 Product: <strong id="product-name"></strong> (<span id="product-sku"></span>)
             </p>
             <p class="icon-text">
-                <span class="material-icons-outlined">pin_drop</span>
+                <span class="material-icons-outlined text-green-600">check_circle</span>
                 Location: <strong id="location-code" class="task-display__location"></strong>
             </p>
             <p class="icon-text">
@@ -94,8 +139,7 @@
             </button>
         </div>
 
-        <div id="message-area" class="message-area">
-             </div>
+        <div id="message-area" class="message-area"></div>
 
          <div id="all-done-message" class="all-done-message hidden">
              <span class="material-icons-outlined">task_alt</span>

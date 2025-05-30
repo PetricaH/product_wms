@@ -78,16 +78,28 @@
 
         <div id="product-scan-prompt" class="product-scan-prompt prompt-section hidden">
             <p class="prompt-text">
-                Scan/Enter Product SKU: <strong id="target-product-sku"></strong>
+                Scan Product: <strong id="target-product-sku"></strong>
                 <span id="target-product-name" class="prompt-text-detail"></span>
             </p>
             <div id="scan-product-section">
-                <button id="scan-product-btn" class="picking-button picking-button--primary picking-button--scan">
+                 <button id="scan-product-btn" class="picking-button picking-button--primary picking-button--scan">
                     <span class="material-icons-outlined">qr_code_scanner</span>
                     Scan Product Barcode
                 </button>
-                <button id="toggle-manual-product-btn" class="picking-button picking-button--secondary picking-button--small picking-button--full-width">
+                 <button id="toggle-manual-product-btn" class="picking-button picking-button--secondary picking-button--small picking-button--full-width">
                     Enter SKU Manually
+                </button>
+            </div>
+             <div id="manual-product-section" class="hidden">
+                 <label for="product-sku-input" class="input-label">Product SKU:</label>
+                 <div class="input-group">
+                    <input type="text" id="product-sku-input" class="picking-input">
+                    <button id="verify-manual-product-btn" class="picking-button picking-button--primary">
+                        Verify
+                    </button>
+                 </div>
+                 <button id="toggle-scan-product-btn" class="picking-button picking-button--secondary picking-button--small picking-button--full-width">
+                    Use Scanner
                 </button>
             </div>
         </div>

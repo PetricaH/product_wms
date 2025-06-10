@@ -1,14 +1,29 @@
-<?php 
+<?php
+// AT THE VERY TOP of bootstrap.php
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
+
 if (!defined('BASE_PATH')) {
     define('BASE_PATH', __DIR__);
 }
 
-define('BASE_URL', 'http://localhost:3003/');
+define('BASE_URL', 'http://localhost:3000/'); // You confirmed this is correct
 
-//Get asset URL based on current environment
+// ADD THIS FUNCTION DEFINITION:
+// Function to generate correct navigation URLs
+function getNavUrl($path) {
+    // Remove any leading slash from the path
+    $path = ltrim($path, '/');
+    
+    // Combine BASE_URL with path, ensuring no double slashes
+    return rtrim(BASE_URL, '/') . '/' . $path;
+}
+// END OF FUNCTION TO ADD
+
+//Get asset URL based on current environment (Your existing function)
 function getAsset($file, $type, $isUniversal = false) {
     // Read environment from config via bootstrap.php
-    global $config;
+    global $config; // This line means $config must be defined before getAsset is called
     $isProd = ($config['environment'] ?? 'development') === 'production';
     
     $fileExt = $type === 'styles' ? 'css' : 'js';
@@ -36,7 +51,7 @@ function getAsset($file, $type, $isUniversal = false) {
     }
 }
 
-//Load page-specific assets
+//Load page-specific assets (Your existing function)
 function loadPageAsset($page, $type) {
     $fileExt = $type === 'styles' ? 'css' : 'js';
     $devFolder = $type === 'styles' ? 'styles' : 'scripts';

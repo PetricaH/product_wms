@@ -1,0 +1,360 @@
+/* --- SCSS Variables (Import or Define) --- */
+/* --- Main Content Area --- */
+.main-content {
+  flex-grow: 1;
+  padding: 1.5rem;
+  overflow-y: auto;
+}
+
+/* --- Users Page Container --- */
+.users-container {
+  background-color: #ffffff;
+  border-radius: 8px;
+  padding: 1.5rem;
+  border: 1px solid rgba(222, 226, 230, 0.5);
+}
+
+/* --- Page Header --- */
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid #dee2e6;
+}
+.page-header .page-title {
+  font-size: 1.75rem;
+  font-weight: 600;
+  color: rgb(26.4625, 29, 31.5375);
+}
+
+/* --- Buttons (Generic styles, should be in a universal file) --- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 1.2rem;
+  font-size: 0.95rem;
+  font-weight: 500;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s ease-in-out;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.btn .material-symbols-outlined {
+  font-size: 1.25rem;
+}
+.btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+}
+
+.btn-primary {
+  background-color: #0d6efd;
+  color: #fff;
+}
+.btn-primary:hover {
+  background-color: rgb(1.8459016393, 91.3721311475, 223.3540983607);
+}
+
+.btn-secondary {
+  background-color: #6c757d;
+  color: #fff;
+}
+.btn-secondary:hover {
+  background-color: rgb(89.0884120172, 96.5124463519, 103.1115879828);
+}
+
+.btn-danger {
+  background-color: #dc3545;
+  color: #fff;
+}
+.btn-danger:hover {
+  background-color: rgb(197.9088607595, 34.2911392405, 49.9670886076);
+}
+
+.btn-success {
+  background-color: #198754;
+  color: #fff;
+}
+.btn-success:hover {
+  background-color: rgb(18.625, 100.575, 62.58);
+}
+
+/* --- Feedback Messages --- */
+.message {
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+  border-radius: 8px;
+  border: 1px solid;
+  font-weight: 500;
+}
+.message.success {
+  background-color: rgb(131.8125, 232.1875, 185.65);
+  border-color: rgb(88.78125, 224.21875, 161.425);
+  color: rgb(17.03125, 91.96875, 57.225);
+}
+.message.error {
+  background-color: rgb(242.5949367089, 183.4050632911, 189.0759493671);
+  border-color: rgb(235.0632911392, 139.9367088608, 149.0506329114);
+  color: rgb(189.2151898734, 32.7848101266, 47.7721518987);
+}
+
+/* --- Users Table Styling --- */
+.users-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 1.5rem;
+  font-size: 0.9rem;
+}
+.users-table th, .users-table td {
+  padding: 0.9rem 1rem;
+  text-align: left;
+  vertical-align: middle;
+  border-bottom: 1px solid #dee2e6;
+}
+.users-table thead th {
+  background-color: rgb(253.95, 254.1, 254.25);
+  font-weight: 600;
+  color: #495057;
+  border-bottom-width: 2px;
+  border-top: 1px solid #dee2e6;
+}
+.users-table tbody tr {
+  transition: background-color 0.15s ease-in-out;
+}
+.users-table tbody tr:hover {
+  background-color: rgb(239.847826087, 246.0869565217, 249.652173913);
+}
+.users-table td {
+  color: #212529;
+}
+.users-table th:first-child, .users-table td:first-child {
+  width: 5%;
+}
+.users-table th:last-child, .users-table td:last-child {
+  width: 15%;
+  text-align: right;
+}
+
+.actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+.actions .btn {
+  padding: 0.35rem 0.6rem;
+}
+.actions .btn .material-symbols-outlined {
+  font-size: 1.1rem;
+}
+
+/* --- Badges for Role & Status --- */
+.role-badge, .status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.6rem;
+  border-radius: 1rem;
+  font-weight: 500;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.role-badge.role-admin {
+  background-color: rgb(255, 231.25, 160);
+  color: rgb(134.5, 100.875, 0);
+}
+.role-badge.role-user {
+  background-color: rgb(202.1566523605, 205.9613733906, 209.3433476395);
+  color: #6c757d;
+}
+
+.status-badge.status-active {
+  background-color: rgb(153.328125, 236.171875, 197.7625);
+  color: rgb(13.046875, 70.453125, 43.8375);
+}
+.status-badge.status-inactive {
+  background-color: rgb(246.3607594937, 205.1392405063, 209.0886075949);
+  color: rgb(167.4810126582, 29.0189873418, 42.2848101266);
+}
+.status-badge .material-symbols-outlined {
+  font-size: 1em;
+}
+
+/* --- Empty State --- */
+.empty-state {
+  text-align: center;
+  padding: 3rem;
+  border: 2px dashed #dee2e6;
+  border-radius: 8px;
+  margin-top: 1.5rem;
+}
+.empty-state .material-symbols-outlined {
+  font-size: 4rem;
+  color: rgb(147.88125, 156.5, 165.11875);
+}
+.empty-state h3 {
+  margin-top: 1rem;
+  color: #495057;
+  font-weight: 600;
+}
+.empty-state p {
+  color: rgb(96.26875, 105.5, 114.73125);
+  max-width: 300px;
+  margin: 0.5rem auto 0;
+}
+
+/* --- Modal Styling --- */
+.modal {
+  display: none; /* This now correctly hides the modal by default */
+  position: fixed;
+  z-index: 1000;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  background-color: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(5px);
+  /* The flex properties are removed from here */
+}
+
+/* We must ensure the flex properties are applied when the modal is shown by JS */
+/* The JS uses style="display: block", but for centering we should target it when it's not 'none' */
+.modal[style*="display: block"] {
+  display: flex !important; /* Use flex for centering when JS makes it visible */
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-content {
+  background-color: #ffffff;
+  margin: auto;
+  border: 1px solid #888;
+  width: 90%;
+  max-width: 500px;
+  border-radius: 8px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+  display: flex;
+  flex-direction: column;
+  animation: slide-down 0.3s ease-out;
+}
+
+@keyframes slide-down {
+  from {
+    transform: translateY(-30px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+.modal-header {
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid #dee2e6;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.modal-header .modal-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #212529;
+}
+.modal-header .close {
+  color: #6c757d;
+  font-size: 2rem;
+  font-weight: bold;
+  cursor: pointer;
+  background: none;
+  border: none;
+  line-height: 1;
+}
+.modal-header .close:hover, .modal-header .close:focus {
+  color: #dc3545;
+}
+
+#userForm, .modal-content > p {
+  padding: 1.5rem;
+}
+
+.form-group {
+  margin-bottom: 1rem;
+}
+
+.form-label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+  color: #495057;
+  font-size: 0.9rem;
+}
+
+.form-control {
+  display: block;
+  width: 100%;
+  padding: 0.75rem 1rem;
+  font-size: 1rem;
+  background-color: #fff;
+  border: 1px solid #dee2e6;
+  border-radius: 8px;
+  transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+}
+.form-control:focus {
+  border-color: #0d6efd;
+  outline: 0;
+  box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+}
+
+select.form-control {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%23343a40' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M2 5l6 6 6-6'/%3e%3c/svg%3e");
+  background-repeat: no-repeat;
+  background-position: right 1rem center;
+  background-size: 16px 12px;
+}
+
+.form-check {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0;
+}
+
+.form-check-input {
+  width: 1.25em;
+  height: 1.25em;
+  cursor: pointer;
+  accent-color: #0d6efd;
+}
+
+.modal-footer {
+  padding: 1rem 1.5rem;
+  border-top: 1px solid #dee2e6;
+  background-color: rgb(253.95, 254.1, 254.25);
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  border-radius: 0 0 8px 8px;
+}
+
+/* --- Delete Confirmation Modal --- */
+#deleteModal .modal-content p {
+  color: #495057;
+  line-height: 1.5;
+}
+#deleteModal .modal-content p strong {
+  color: #212529;
+}
+#deleteModal .modal-content p:last-of-type {
+  font-weight: 500;
+  color: rgb(189.2151898734, 32.7848101266, 47.7721518987);
+}
+/*# sourceMappingURL=users.css.map */

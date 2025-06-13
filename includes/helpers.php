@@ -16,14 +16,16 @@ function asset(string $path): string {
         }
     }
 
+    // Get the base URL for the project
+    $baseUrl = '/product_wms';  // Add this line
+    
     // In production, return revved if available
     if (getenv('NODE_ENV') === 'production' && isset($manifest[$path])) {
-        return '/dist/' . $manifest[$path];
+        return $baseUrl . '/dist/' . $manifest[$path];  // Updated this line
     }
 
     // Otherwise fallback to unrevved
-    // strip “.min” if you want unminified in dev, but here we assume dev builds .css/.js without .min
-    return '/' . $path;
+    return $baseUrl . '/' . $path;  // Updated this line
 }
 
 /** in_prod(): are we in production mode? */

@@ -23,6 +23,7 @@ require_once __DIR__ . '/models/User.php';
 require_once __DIR__ . '/models/Location.php';
 require_once __DIR__ . '/models/Inventory.php';
 require_once __DIR__ . '/models/Order.php';
+$currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
 
 // Instantiate Models
 $product       = new Product($db);
@@ -52,7 +53,6 @@ $totalIncasari = 0;
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <?php require_once __DIR__ . '/includes/header.php'; ?>
 
-    <link rel="stylesheet" href="/path/to/your/compiled/main.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">

@@ -1,5 +1,4 @@
 <?php
-// AT THE VERY TOP of bootstrap.php
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 
@@ -7,9 +6,8 @@ if (!defined('BASE_PATH')) {
     define('BASE_PATH', __DIR__);
 }
 
-define('BASE_URL', 'http://localhost:3000/'); // You confirmed this is correct
+define('BASE_URL', 'http://localhost/product_wms/');
 
-// ADD THIS FUNCTION DEFINITION:
 // Function to generate correct navigation URLs
 function getNavUrl($path) {
     // Remove any leading slash from the path
@@ -18,45 +16,31 @@ function getNavUrl($path) {
     // Combine BASE_URL with path, ensuring no double slashes
     return rtrim(BASE_URL, '/') . '/' . $path;
 }
-// END OF FUNCTION TO ADD
 
-//Get asset URL based on current environment (Your existing function)
+//Get asset URL based on current environment
 function getAsset($file, $type, $isUniversal = false) {
-    // Read environment from config via bootstrap.php
-    global $config; // This line means $config must be defined before getAsset is called
+    global $config;
     $isProd = ($config['environment'] ?? 'development') === 'production';
     
     $fileExt = $type === 'styles' ? 'css' : 'js';
+    $baseUrl = '/product_wms';
     
     if (!$isProd) {
-        // Development environment - unminified files
         if ($type === 'styles') {
-            return "/styles/{$file}.css"; // Match your existing structure
+            return $baseUrl . "/styles/{$file}.css";
         } else {
-            return "/scripts/{$file}.js";
+            return $baseUrl . "/scripts/{$file}.js";
         }
     } else {
-        // Production environment - minified files with versioning
-        $manifestFile = BASE_PATH . "/dist/manifest/{$type}-" . 
-                       ($isUniversal ? "universal" : "pages") . "-manifest.json";
-        
-        if (file_exists($manifestFile)) {
-            $manifest = json_decode(file_get_contents($manifestFile), true);
-            $fileName = "{$file}.min.{$fileExt}";
-            $versionedFile = $manifest[$fileName] ?? $fileName;
-            return "/dist/{$type}/{$versionedFile}";
-        }
-        
-        return "/dist/{$type}/{$file}.min.{$fileExt}";
+        return $baseUrl . "/dist/{$type}/{$file}.min.{$fileExt}";
     }
 }
 
-//Load page-specific assets (Your existing function)
+//Load page-specific assets
 function loadPageAsset($page, $type) {
     $fileExt = $type === 'styles' ? 'css' : 'js';
     $devFolder = $type === 'styles' ? 'styles' : 'scripts';
     
-    // Check if the file exists in development location
     $devFile = BASE_PATH . "/{$devFolder}/{$page}.{$fileExt}";
     $prodFile = BASE_PATH . "/dist/{$devFolder}/{$page}.min.{$fileExt}";
     

@@ -70,6 +70,16 @@ document.addEventListener('DOMContentLoaded', () => {
     // ... (previous checks) ...
     if (!locationCodeInput) console.error("Error: Manual Location input not found!");
     if (!verifyManualLocationBtn) console.error("Error: Verify Manual Location button not found!");
+    if (!productScanPrompt) console.error("Error: Product Scan Prompt section not found!");
+    if (!targetProductSkuEl) console.error("Error: Target Product SKU element not found!");
+    if (!targetProductNameEl) console.error("Error: Target Product Name element not found!");
+    if (!scanProductBtn) console.error("Error: Scan Product button not found!");
+    if (!scanProductSection) console.error("Error: Scan Product Section not found!");
+    if (!manualProductSection) console.error("Error: Manual Product Section not found!");
+    if (!productSkuInput) console.error("Error: Product SKU input not found!");
+    if (!verifyManualProductBtn) console.error("Error: Verify Manual Product button not found!");
+    if (!toggleManualProductBtn) console.error("Error: Toggle Manual Product button not found!");
+    if (!toggleScanProductBtn) console.error("Error: Toggle Scan Product button not found!");
     // ... etc. ...
 
     // --- State ---
@@ -286,13 +296,18 @@ document.addEventListener('DOMContentLoaded', () => {
             fetchNextTask(scannedValue);
         }
         else if (currentScanMode === 'location') {
-            if (!currentTask) { showMessage("Error: No task loaded.", true); return; }
-            const expectedLocation = currentTask.location_code.trim().toUpperCase();
+            if (!currentTask) { showMessage("Error: No task loaded for location scan.", true); return;}
+            const expectedLocation = (currentTask.location_code || '' ).trim().toUpperCase();
             if (scannedValue === expectedLocation) {
                 showMessage("Location verified!", false);
-                showProductScanPrompt(currentTask); // Proceed to product scan
+                showProductScanPrompt(currentTask);
             } else {
                 showMessage(`Wrong Location! Scanned: ${decodedText}, Expected: ${currentTask.location_code}`, true);
+                if (scanLocationBtn && !scanLocationSection.classList.contains('hidden')) {
+
+                } else if (locationCodeInput && !manualLocationSection.classList.contains('hidden')) {
+                    locationCodeInput.focus();
+                }
             }
         }
         else if (currentScanMode === 'product') {
@@ -303,6 +318,11 @@ document.addEventListener('DOMContentLoaded', () => {
                  enablePickingControls(currentTask); // Enable final controls
              } else {
                  showMessage(`Wrong Product! Scanned: ${decodedText}, Expected: ${currentTask.product_sku}`, true);
+                 if (scanProductBtn && !scanProductSection.classList.contains('hidden')) {
+
+                 } else if (productSkuInput && !manualProductSection.classList.contains('hidden')) {
+                    productSkuInput.focus();
+                 }
              }
         }
         else { console.warn("Scan occurred in unknown mode:", currentScanMode); }
@@ -360,19 +380,38 @@ document.addEventListener('DOMContentLoaded', () => {
     if (toggleScanLocationBtn) { toggleScanLocationBtn.addEventListener('click', () => { manualLocationSection?.classList.add('hidden'); scanLocationSection?.classList.remove('hidden'); }); }
     if (verifyManualLocationBtn) {
         verifyManualLocationBtn.addEventListener('click', () => {
-            if (!currentTask) { showMessage("Error: No task loaded.", true); return; }
-            const enteredCode = locationCodeInput.value.trim().toUpperCase();
-            const expectedCode = currentTask.location_code.trim().toUpperCase();
-            if (enteredCode === expectedCode) { showMessage("Location verified!", false); showProductScanPrompt(currentTask); } // Proceed to product scan
-            else { showMessage(`Wrong Location! Entered: ${locationCodeInput.value}, Expected: ${currentTask.location_code}`, true); locationCodeInput?.focus(); }
+            if (!currentTask) { showMessage("Error: No task loaded for manual location verification.", true); return; }
+            const enteredCode = (locationCodeInput.value || '').trim().toUpperCase();
+            const expectedCode = (currentTask.location_code || '').trim().toUpperCase();
+            if (enteredCode === expectedCode) {
+                showMessage("Location verified!", false);
+                showProductScanPrompt(currentTask);
+            } else {
+                showMessage(`Wrong Location! Entered: ${locationCodeInput.value}, Expected: ${currentTask.location_code}`, true);
+                locationCodeInput?.focus();
+            }
         });
     }
      if (locationCodeInput) { locationCodeInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') { e.preventDefault(); verifyManualLocationBtn.click(); } }); }
 
 
     // Product Input Mode Toggles & Verify
-    if (toggleManualProductBtn) { toggleManualProductBtn.addEventListener('click', () => { stopScanner(false); scanProductSection?.classList.add('hidden'); manualProductSection?.classList.remove('hidden'); productSkuInput?.focus(); }); }
-    if (toggleScanProductBtn) { toggleScanProductBtn.addEventListener('click', () => { manualProductSection?.classList.add('hidden'); scanProductSection?.classList.remove('hidden'); }); }
+    if (toggleManualProductBtn) { 
+            toggleManualProductBtn.addEventListener('click', () => { 
+            stopScanner(false);
+            scanProductSection?.classList.add('hidden'); 
+            manualProductSection?.classList.remove('hidden'); 
+            productSkuInput?.focus(); 
+        });
+    }
+
+    if (toggleScanProductBtn) { 
+            toggleScanProductBtn.addEventListener('click', () => { 
+            manualProductSection?.classList.add('hidden'); 
+            scanProductSection?.classList.remove('hidden'); 
+        }); 
+    }
+
     if (verifyManualProductBtn) {
         verifyManualProductBtn.addEventListener('click', () => {
              if (!currentTask) { showMessage("Error: No task loaded.", true); return; }
@@ -382,22 +421,62 @@ document.addEventListener('DOMContentLoaded', () => {
              else { showMessage(`Wrong Product! Entered: ${productSkuInput.value}, Expected: ${currentTask.product_sku}`, true); productSkuInput?.focus(); }
         });
     }
-    if (productSkuInput) { productSkuInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') { e.preventDefault(); verifyManualProductBtn.click(); } }); }
+
+    if (productSkuInput) { 
+        productSkuInput.addEventListener('keypress', (e) => { 
+            if (e.key === 'Enter') { 
+                e.preventDefault();
+                verifyManualProductBtn.click(); 
+            } 
+        }); 
+    }
 
 
     // Scan Buttons
-    if (scanOrderBtn) { scanOrderBtn.addEventListener('click', () => { resetUI(); currentScanMode = 'order'; startScanner(); }); }
-    if (scanLocationBtn) { scanLocationBtn.addEventListener('click', () => { currentScanMode = 'location'; startScanner(); }); }
-    if (scanProductBtn) { scanProductBtn.addEventListener('click', () => { currentScanMode = 'product'; startScanner(); }); }
+    if (scanOrderBtn) { 
+        scanOrderBtn.addEventListener('click', () => {
+            resetUI(); 
+            currentScanMode = 'order'; 
+            startScanner(); 
+        }); 
+    }
+
+    if (scanLocationBtn) { 
+        scanLocationBtn.addEventListener('click', () => { 
+            currentScanMode = 'location'; 
+            startScanner(); 
+        }); 
+    }
+
+    if (scanProductBtn) { 
+        scanProductBtn.addEventListener('click', () => { 
+            currentScanMode = 'product'; 
+            startScanner(); 
+        }); 
+    }
 
     // Stop Scan Button
-    if (stopScanBtn) { stopScanBtn.addEventListener('click', () => { stopScanner(false); showMessage("Scanning stopped.", false); }); }
+    if (stopScanBtn) { 
+        stopScanBtn.addEventListener('click', () => { 
+            stopScanner(false); 
+            showMessage("Scanning stopped.", false); 
+        }); 
+    }
 
     // Confirmation Button & Input
-    if (confirmPickBtn) { confirmPickBtn.addEventListener('click', confirmPick); }
-    if (quantityPickedInput) { quantityPickedInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') { e.preventDefault(); confirmPick(); } }); }
+    if (confirmPickBtn) { 
+        confirmPickBtn.addEventListener('click', confirmPick); 
+    }
 
-
+    if (quantityPickedInput) { 
+        quantityPickedInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault(); 
+                confirmPick(); 
+            } 
+        }); 
+    }
+    
     // --- Initial State ---
     resetUI(); // Start with a clean UI
 

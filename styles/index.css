@@ -1,11 +1,12 @@
-/* --- SCSS Variables --- */
-/* --- Main Content Area Styles (Specific to Dashboard Page) --- */
+/* --- SCSS Variables (Import or Define) --- */
+/* --- Main Content Area --- */
 .main-content {
   flex-grow: 1;
   padding: 1.5rem;
   overflow-y: auto;
 }
 
+/* --- Dashboard Header --- */
 .main-header {
   margin-bottom: 1.5rem;
   padding-bottom: 1rem;
@@ -23,10 +24,24 @@
   gap: 1.5rem;
   grid-template-columns: 1fr;
 }
+@media (min-width: 576px) {
+  .summary-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (min-width: 992px) {
+  .summary-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+@media (min-width: 1400px) {
+  .summary-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
 
 /* --- Summary Card Base Styles --- */
 .summary-card {
-  background-color: #DDEBF3;
   border-radius: 8px;
   padding: 1.25rem;
   box-shadow: 0 5px 15px rgba(0, 0, 0, 0.07);
@@ -53,7 +68,6 @@
 .summary-card__icon {
   font-size: 2.25rem;
   line-height: 1;
-  color: #00385E;
   flex-shrink: 0;
 }
 .summary-card--products .summary-card__icon {
@@ -110,7 +124,7 @@
   text-align: left;
 }
 
-/* --- Warehouse Occupation Card Specific Styles (Progress Circle) --- */
+/* --- Warehouse Occupation Card Specific Styles --- */
 .summary-card--occupation .summary-card__data {
   display: flex;
   justify-content: center;
@@ -143,65 +157,14 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
   box-shadow: inset 0 0 5px rgba(0, 0, 0, 0.05);
 }
 .summary-card--occupation .percentage-text {
   font-size: 1rem;
   font-weight: 600;
-  color: #212529;
+  color: red;
 }
 .summary-card--occupation .summary-card__value {
   display: none;
-}
-
-/* --- Responsive Adjustments for the Grid --- */
-@media (min-width: 576px) {
-  .summary-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-@media (min-width: 768px) {
-  .summary-grid {
-    grid-template-columns: repeat(3, 1fr);
-  }
-  .main-header h1 {
-    font-size: 2rem;
-  }
-}
-@media (min-width: 992px) {
-  .summary-grid {
-    grid-template-columns: repeat(3, 1fr);
-  }
-}
-@media (min-width: 1200px) {
-  .summary-grid {
-    grid-template-columns: repeat(4, 1fr);
-  }
-  .main-content {
-    padding: 2.25rem;
-  }
-}
-@media (min-width: 1400px) {
-  .summary-grid {
-    grid-template-columns: repeat(4, 1fr);
-  }
-}
-/* --- Optional: Styles for other sections (Charts, Tables) --- */
-.dashboard-section {
-  margin-top: 2.25rem;
-  background-color: rgb(228.5391304348, 239.4347826087, 245.6608695652);
-  padding: 1.5rem;
-  border-radius: 8px;
-  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.07);
-  border: 1px solid rgb(190.8434782609, 217.2608695652, 232.3565217391);
-}
-.dashboard-section h2 {
-  font-size: 1.25rem;
-  font-weight: 600;
-  margin-bottom: 1rem;
-  color: rgb(49.73125, 54.5, 59.26875);
 }
 /*# sourceMappingURL=index.css.map */

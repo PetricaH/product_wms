@@ -1,0 +1,229 @@
+/* --- SCSS Variables (Import or Define) --- */
+/* --- Products Page Container --- */
+.products-container {
+  background-color: #ffffff;
+  border-radius: 8px;
+  padding: 1.5rem;
+  border: 1px solid rgba(222, 226, 230, 0.5);
+}
+
+/* --- Page Header --- */
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid #dee2e6;
+}
+.page-header .page-title {
+  font-size: 1.75rem;
+  font-weight: 600;
+  color: rgb(26.4625, 29, 31.5375);
+}
+.page-header .header-actions {
+  display: flex;
+  gap: 0.75rem;
+}
+
+/* --- Filters Section --- */
+.filters-section {
+  padding: 1.5rem;
+  background-color: rgb(253.95, 254.1, 254.25);
+  border-radius: 8px;
+  border: 1px solid #e9ecef;
+  margin-bottom: 1.5rem;
+  overflow: hidden;
+  transition: max-height 0.5s ease-out, padding 0.5s ease-out;
+}
+.filters-section.is-hidden {
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  border: none;
+  margin-bottom: 0;
+}
+
+.filters-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1.5rem;
+  align-items: flex-end;
+}
+.filters-form .filter-label {
+  font-weight: 500;
+  font-size: 0.9rem;
+  margin-bottom: 0.5rem;
+  display: block;
+}
+.filters-form .filter-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+.filters-form .filter-actions .btn {
+  flex-grow: 1;
+}
+
+/* --- Products Grid Layout --- */
+.products-grid {
+  display: grid;
+  gap: 1.5rem;
+  grid-template-columns: 1fr;
+}
+@media (min-width: 600px) {
+  .products-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (min-width: 992px) {
+  .products-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+@media (min-width: 1400px) {
+  .products-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+/* --- Product Card Styling --- */
+.product-card {
+  background-color: #fff;
+  border-radius: 8px;
+  border: 1px solid #e9ecef;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.product-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.07);
+}
+
+.product-image {
+  width: 100%;
+  padding-top: 75%;
+  position: relative;
+  background-color: #f0f2f5;
+}
+.product-image img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.product-image .product-image-placeholder {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.product-image .product-image-placeholder .material-symbols-outlined {
+  font-size: 4rem;
+  color: #dee2e6;
+}
+
+.product-info {
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+}
+
+.product-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+.product-header .product-name {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #212529;
+  line-height: 1.3;
+}
+.product-header .product-sku {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: #495057;
+  background-color: #f8f9fa;
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.product-description {
+  font-size: 0.85rem;
+  color: #495057;
+  margin-bottom: 1rem;
+  flex-grow: 1;
+}
+
+.product-details {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+  border-top: 1px solid #e9ecef;
+  padding-top: 1rem;
+}
+.product-details .price-label, .product-details .weight-label {
+  color: #495057;
+}
+.product-details .price-value, .product-details .weight-value {
+  font-weight: 600;
+  color: #212529;
+}
+
+.product-status {
+  margin-bottom: 1rem;
+}
+
+.product-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+.product-actions .btn {
+  flex: 1;
+  padding: 0.5rem;
+  font-size: 0.85rem;
+}
+
+/* --- Large Modal for Product Form --- */
+.modal-content.modal-large {
+  max-width: 800px;
+}
+
+.form-grid {
+  padding: 1.5rem;
+  display: grid;
+  gap: 1rem 1.5rem;
+  grid-template-columns: 1fr;
+}
+@media (min-width: 768px) {
+  .form-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+.form-grid .form-group.full-width {
+  grid-column: 1/-1;
+}
+
+.form-help {
+  font-size: 0.8rem;
+  color: #495057;
+  margin-top: 0.25rem;
+  display: block;
+}
+/*# sourceMappingURL=products.css.map */

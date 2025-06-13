@@ -19,6 +19,7 @@ require_once __DIR__ . '/../bootstrap.php';
   <link rel="stylesheet" href="/product_wms/styles/global.css">
   <link rel="stylesheet" href="/product_wms/styles/index.css">
   <link rel="stylesheet" href="/product_wms/styles/users.css">
+  <link rel="stylesheet" href="/product_wms/styles/products.css">
   <script src="/product_wms/scripts/universal.js" defer></script>
   <script src="/product_wms/scripts/index.js" defer></script>
 <?php endif; ?>

@@ -1085,4 +1085,262 @@ class Transaction {
             return [];
         }
     }
+
+    /**
+ * Get detailed transaction information including items
+ * @param int $transactionId Transaction ID
+ * @return array|null Transaction details with items
+ */
+public function getTransactionDetails(int $transactionId): ?array {
+    try {
+        // Get main transaction data
+        $query = "SELECT t.*, 
+                         CASE 
+                           WHEN t.transaction_type IN ('sales', 'return') THEN t.customer_name
+                           WHEN t.transaction_type = 'purchase' THEN t.supplier_name
+                           ELSE NULL
+                         END as party_name
+                  FROM {$this->transactionsTable} t
+                  WHERE t.id = :id";
+        
+        $stmt = $this->conn->prepare($query);
+        $stmt->bindParam(':id', $transactionId, PDO::PARAM_INT);
+        $stmt->execute();
+        $transaction = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if (!$transaction) {
+            return null;
+        }
+        
+        // Get transaction items
+        $itemsQuery = "SELECT ti.*, p.name as product_name, p.sku
+                       FROM {$this->transactionItemsTable} ti
+                       LEFT JOIN products p ON ti.product_id = p.id
+                       WHERE ti.transaction_id = :transaction_id
+                       ORDER BY ti.id ASC";
+        
+        $itemsStmt = $this->conn->prepare($itemsQuery);
+        $itemsStmt->bindParam(':transaction_id', $transactionId, PDO::PARAM_INT);
+        $itemsStmt->execute();
+        $transaction['items'] = $itemsStmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        // Calculate totals if items exist
+        if (!empty($transaction['items'])) {
+            $itemsTotal = 0;
+            $taxTotal = 0;
+            
+            foreach ($transaction['items'] as &$item) {
+                $lineTotal = $item['quantity'] * $item['unit_price'];
+                $discount = $lineTotal * ($item['discount_percent'] / 100);
+                $lineSubtotal = $lineTotal - $discount;
+                $lineTax = $lineSubtotal * ($item['tax_percent'] / 100);
+                
+                $item['line_subtotal'] = $lineSubtotal;
+                $item['line_tax'] = $lineTax;
+                $item['line_total'] = $lineSubtotal + $lineTax;
+                $item['total_amount'] = $item['line_total']; // For backward compatibility
+                
+                $itemsTotal += $lineSubtotal;
+                $taxTotal += $lineTax;
+            }
+            
+            $transaction['calculated_subtotal'] = $itemsTotal;
+            $transaction['calculated_tax'] = $taxTotal;
+            $transaction['calculated_total'] = $itemsTotal + $taxTotal;
+        }
+        
+        // Get SmartBill sync information if available
+        $syncQuery = "SELECT smartbill_doc_id, smartbill_doc_number, smartbill_doc_type,
+                             sync_date, sync_status, sync_message
+                      FROM transaction_smartbill_sync
+                      WHERE transaction_id = :transaction_id
+                      ORDER BY sync_date DESC
+                      LIMIT 1";
+        
+        try {
+            $syncStmt = $this->conn->prepare($syncQuery);
+            $syncStmt->bindParam(':transaction_id', $transactionId, PDO::PARAM_INT);
+            $syncStmt->execute();
+            $syncData = $syncStmt->fetch(PDO::FETCH_ASSOC);
+            
+            if ($syncData) {
+                $transaction['smartbill_sync'] = $syncData;
+                $transaction['smartbill_doc_id'] = $syncData['smartbill_doc_id'];
+                $transaction['smartbill_doc_number'] = $syncData['smartbill_doc_number'];
+                $transaction['smartbill_doc_type'] = $syncData['smartbill_doc_type'];
+                $transaction['sync_date'] = $syncData['sync_date'];
+                $transaction['sync_status'] = $syncData['sync_status'];
+                $transaction['sync_message'] = $syncData['sync_message'];
+            }
+        } catch (PDOException $e) {
+            // SmartBill sync table might not exist, ignore this error
+            error_log("SmartBill sync info not available: " . $e->getMessage());
+        }
+        
+        return $transaction;
+        
+    } catch (PDOException $e) {
+        error_log("Error getting transaction details: " . $e->getMessage());
+        return null;
+    }
+}
+
+/**
+ * Get transaction audit trail
+ * @param int $transactionId Transaction ID
+ * @return array Audit trail entries
+ */
+public function getTransactionAudit(int $transactionId): array {
+    try {
+        $query = "SELECT ta.*, u.username, u.first_name, u.last_name
+                  FROM {$this->transactionAuditTable} ta
+                  LEFT JOIN users u ON ta.user_id = u.id
+                  WHERE ta.transaction_id = :transaction_id
+                  ORDER BY ta.created_at DESC";
+        
+        $stmt = $this->conn->prepare($query);
+        $stmt->bindParam(':transaction_id', $transactionId, PDO::PARAM_INT);
+        $stmt->execute();
+        $auditEntries = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        // Format audit entries
+        foreach ($auditEntries as &$entry) {
+            if ($entry['metadata']) {
+                $entry['metadata'] = json_decode($entry['metadata'], true);
+            }
+            
+            // Create user display name
+            if ($entry['username']) {
+                $entry['user_display'] = trim($entry['first_name'] . ' ' . $entry['last_name']);
+                if (empty($entry['user_display'])) {
+                    $entry['user_display'] = $entry['username'];
+                }
+            } else {
+                $entry['user_display'] = 'System';
+            }
+            
+            // Format timestamps
+            $entry['created_at_formatted'] = date('d.m.Y H:i:s', strtotime($entry['created_at']));
+        }
+        
+        return $auditEntries;
+        
+    } catch (PDOException $e) {
+        error_log("Error getting transaction audit: " . $e->getMessage());
+        return [];
+    }
+}
+
+/**
+ * Update transaction status with audit logging
+ * @param int $transactionId Transaction ID
+ * @param string $newStatus New status
+ * @param string $message Optional status message
+ * @param array $metadata Optional metadata
+ * @return bool Success status
+ */
+public function updateTransactionStatus(int $transactionId, string $newStatus, string $message = '', array $metadata = []): bool {
+    try {
+        $this->conn->beginTransaction();
+        
+        // Get current status for audit
+        $currentTransaction = $this->findById($transactionId);
+        if (!$currentTransaction) {
+            $this->conn->rollback();
+            return false;
+        }
+        
+        $oldStatus = $currentTransaction['status'];
+        
+        // Update status
+        $query = "UPDATE {$this->transactionsTable} 
+                  SET status = :status, 
+                      error_message = :message,
+                      updated_at = CURRENT_TIMESTAMP 
+                  WHERE id = :id";
+        
+        $stmt = $this->conn->prepare($query);
+        $stmt->bindParam(':status', $newStatus, PDO::PARAM_STR);
+        $stmt->bindParam(':message', $message, PDO::PARAM_STR);
+        $stmt->bindParam(':id', $transactionId, PDO::PARAM_INT);
+        $result = $stmt->execute();
+        
+        if ($result) {
+            // Log audit trail
+            $this->logAudit($transactionId, 'status_change', $oldStatus, $newStatus, array_merge($metadata, [
+                'message' => $message
+            ]));
+            
+            $this->conn->commit();
+            return true;
+        } else {
+            $this->conn->rollback();
+            return false;
+        }
+        
+    } catch (Exception $e) {
+        $this->conn->rollback();
+        error_log("Error updating transaction status: " . $e->getMessage());
+        return false;
+    }
+}
+
+/**
+ * Get transactions summary/statistics
+ * @param array $filters Optional filters
+ * @return array Summary data
+ */
+public function getTransactionsSummary(array $filters = []): array {
+    try {
+        $whereClause = "WHERE 1=1";
+        $params = [];
+        
+        // Apply filters
+        if (!empty($filters['date_from'])) {
+            $whereClause .= " AND DATE(created_at) >= :date_from";
+            $params['date_from'] = $filters['date_from'];
+        }
+        
+        if (!empty($filters['date_to'])) {
+            $whereClause .= " AND DATE(created_at) <= :date_to";
+            $params['date_to'] = $filters['date_to'];
+        }
+        
+        if (!empty($filters['status'])) {
+            $whereClause .= " AND status = :status";
+            $params['status'] = $filters['status'];
+        }
+        
+        if (!empty($filters['type'])) {
+            $whereClause .= " AND transaction_type = :type";
+            $params['type'] = $filters['type'];
+        }
+        
+        $query = "SELECT 
+                    COUNT(*) as total_count,
+                    SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed_count,
+                    SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending_count,
+                    SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed_count,
+                    SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END) as cancelled_count,
+                    SUM(CASE WHEN status = 'completed' THEN amount ELSE 0 END) as total_completed_amount,
+                    SUM(amount) as total_amount,
+                    AVG(amount) as avg_amount,
+                    MIN(created_at) as first_transaction,
+                    MAX(created_at) as last_transaction
+                  FROM {$this->transactionsTable} 
+                  {$whereClause}";
+        
+        $stmt = $this->conn->prepare($query);
+        foreach ($params as $key => $value) {
+            $stmt->bindValue(":{$key}", $value);
+        }
+        $stmt->execute();
+        
+        return $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+        
+    } catch (PDOException $e) {
+        error_log("Error getting transactions summary: " . $e->getMessage());
+        return [];
+    }
+}
 }

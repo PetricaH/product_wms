@@ -30,6 +30,7 @@ require_once __DIR__ . '/../bootstrap.php';
   <link rel="stylesheet" href="/product_wms/styles/locations.css">
   <link rel="stylesheet" href="/product_wms/styles/inventory.css">
   <link rel="stylesheet" href="/product_wms/styles/orders.css">
+  <link rel="stylesheet" href="/product_wms/styles/transactions.css">
   <script src="/product_wms/scripts/universal.js" defer></script>
   <script src="/product_wms/scripts/index.js" defer></script>
 <?php endif; ?>

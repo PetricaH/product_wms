@@ -13,7 +13,7 @@ $app-background-color: #f8f9fa; // Very light grey background for the main area
 $card-background-color: #ffffff; // White cards in main content
 
 // Sidebar Specific Colors
-$sidebar-background-color: #DDEBF3; // Your original light blue
+$sidebar-background-color: #ffffff; // Your original light blue
 $sidebar-hover-background-color: #A4C8E1; // Your original darker blue hover
 $sidebar-text-color: #212529; // Darker text for better contrast
 $sidebar-icon-color: #495057; // Slightly muted icon color
@@ -63,7 +63,6 @@ body {
 
 /* --- Sidebar Styles --- */
 .sidebar {
-    background-color: $sidebar-background-color; // Set sidebar background
     width: $sidebar-width; // Set the fixed width
     height: calc(100vh - (#{$sidebar-margin} * 2)); // Calculate height based on viewport and margin
     border-radius: $border-radius-large; // Apply large rounding

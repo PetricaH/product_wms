@@ -41,7 +41,6 @@ body {
 
 /* --- Sidebar Styles --- */
 .sidebar {
-  background-color: #DDEBF3;
   width: 260px;
   height: calc(100vh - 20px * 2);
   border-radius: 20px;

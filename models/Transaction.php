@@ -1,4 +1,7 @@
 <?php
+ini_set('display_errors', 1);
+ini_set('display_startup_errors', 1);
+error_reporting(E_ALL);
 /**
  * Transaction Model - Manages WMS to SmartBill transaction synchronization
  * Handles automatic invoice generation, inventory updates, and accounting integration
@@ -448,35 +451,35 @@ class Transaction {
         $totalAmount = $netAfterDiscount + $taxAmount;
 
         $query = "INSERT INTO {$this->transactionItemsTable} 
-                  (transaction_id, product_id, sku, product_name, quantity, unit_price, 
-                   discount_percent, discount_amount, tax_percent, tax_amount, 
-                   net_amount, total_amount, unit_of_measure, warehouse_code, 
-                   batch_number, lot_number, expiry_date)
-                  VALUES 
-                  (:transaction_id, :product_id, :sku, :product_name, :quantity, :unit_price,
-                   :discount_percent, :discount_amount, :tax_percent, :tax_amount,
-                   :net_amount, :total_amount, :unit_of_measure, :warehouse_code,
-                   :batch_number, :lot_number, :expiry_date)";
+                (transaction_id, product_id, sku, product_name, quantity, unit_price, 
+                discount_percent, discount_amount, tax_percent, tax_amount, 
+                net_amount, total_amount, unit_of_measure, warehouse_code, 
+                batch_number, lot_number, expiry_date)
+                VALUES 
+                (:transaction_id, :product_id, :sku, :product_name, :quantity, :unit_price,
+                :discount_percent, :discount_amount, :tax_percent, :tax_amount,
+                :net_amount, :total_amount, :unit_of_measure, :warehouse_code,
+                :batch_number, :lot_number, :expiry_date)";
 
         try {
             $stmt = $this->conn->prepare($query);
-            $stmt->bindParam(':transaction_id', $transactionId, PDO::PARAM_INT);
-            $stmt->bindParam(':product_id', $itemData['product_id'] ?? null, PDO::PARAM_INT);
-            $stmt->bindParam(':sku', $itemData['sku'] ?? null, PDO::PARAM_STR);
-            $stmt->bindParam(':product_name', $itemData['product_name'] ?? null, PDO::PARAM_STR);
-            $stmt->bindParam(':quantity', $itemData['quantity'], PDO::PARAM_STR);
-            $stmt->bindParam(':unit_price', $itemData['unit_price'], PDO::PARAM_STR);
-            $stmt->bindParam(':discount_percent', $itemData['discount_percent'] ?? 0, PDO::PARAM_STR);
-            $stmt->bindParam(':discount_amount', $discountAmount, PDO::PARAM_STR);
-            $stmt->bindParam(':tax_percent', $itemData['tax_percent'] ?? 19.00, PDO::PARAM_STR);
-            $stmt->bindParam(':tax_amount', $taxAmount, PDO::PARAM_STR);
-            $stmt->bindParam(':net_amount', $netAfterDiscount, PDO::PARAM_STR);
-            $stmt->bindParam(':total_amount', $totalAmount, PDO::PARAM_STR);
-            $stmt->bindParam(':unit_of_measure', $itemData['unit_of_measure'] ?? 'buc', PDO::PARAM_STR);
-            $stmt->bindParam(':warehouse_code', $itemData['warehouse_code'] ?? null, PDO::PARAM_STR);
-            $stmt->bindParam(':batch_number', $itemData['batch_number'] ?? null, PDO::PARAM_STR);
-            $stmt->bindParam(':lot_number', $itemData['lot_number'] ?? null, PDO::PARAM_STR);
-            $stmt->bindParam(':expiry_date', $itemData['expiry_date'] ?? null, PDO::PARAM_STR);
+            $stmt->bindValue(':transaction_id', $transactionId, PDO::PARAM_INT);
+            $stmt->bindValue(':product_id', $itemData['product_id'] ?? null, PDO::PARAM_INT);
+            $stmt->bindValue(':sku', $itemData['sku'] ?? null, PDO::PARAM_STR);
+            $stmt->bindValue(':product_name', $itemData['product_name'] ?? null, PDO::PARAM_STR);
+            $stmt->bindValue(':quantity', $itemData['quantity'], PDO::PARAM_STR);
+            $stmt->bindValue(':unit_price', $itemData['unit_price'], PDO::PARAM_STR);
+            $stmt->bindValue(':discount_percent', $itemData['discount_percent'] ?? 0, PDO::PARAM_STR);
+            $stmt->bindValue(':discount_amount', $discountAmount, PDO::PARAM_STR);
+            $stmt->bindValue(':tax_percent', $itemData['tax_percent'] ?? 19.00, PDO::PARAM_STR);
+            $stmt->bindValue(':tax_amount', $taxAmount, PDO::PARAM_STR);
+            $stmt->bindValue(':net_amount', $netAfterDiscount, PDO::PARAM_STR);
+            $stmt->bindValue(':total_amount', $totalAmount, PDO::PARAM_STR);
+            $stmt->bindValue(':unit_of_measure', $itemData['unit_of_measure'] ?? 'buc', PDO::PARAM_STR);
+            $stmt->bindValue(':warehouse_code', $itemData['warehouse_code'] ?? null, PDO::PARAM_STR);
+            $stmt->bindValue(':batch_number', $itemData['batch_number'] ?? null, PDO::PARAM_STR);
+            $stmt->bindValue(':lot_number', $itemData['lot_number'] ?? null, PDO::PARAM_STR);
+            $stmt->bindValue(':expiry_date', $itemData['expiry_date'] ?? null, PDO::PARAM_STR);
             
             return $stmt->execute();
         } catch (PDOException $e) {
@@ -683,19 +686,26 @@ class Transaction {
      */
     public function updateStatus(int $transactionId, string $status): bool {
         $query = "UPDATE {$this->transactionsTable} 
-                  SET status = :status, 
-                      processed_by = :processed_by,
-                      updated_at = CURRENT_TIMESTAMP 
-                  WHERE id = :id";
+                SET status = :status, 
+                    processed_by = :processed_by,
+                    updated_at = CURRENT_TIMESTAMP 
+                WHERE id = :id";
 
         try {
             $stmt = $this->conn->prepare($query);
-            $stmt->bindParam(':status', $status, PDO::PARAM_STR);
-            $stmt->bindParam(':processed_by', $_SESSION['user_id'] ?? null, PDO::PARAM_INT);
-            $stmt->bindParam(':id', $transactionId, PDO::PARAM_INT);
-            return $stmt->execute();
+
+            // CORRECTION: Replaced bindParam with an array passed to execute().
+            // This avoids the "pass by reference" error with the null coalescing operator.
+            $params = [
+                ':status' => $status,
+                ':processed_by' => $_SESSION['user_id'] ?? null,
+                ':id' => $transactionId
+            ];
+            
+            return $stmt->execute($params);
+
         } catch (PDOException $e) {
-            error_log("Error updating transaction status: " . $e->getMessage());
+            error_log("Error updating transaction status for ID {$transactionId}: " . $e->getMessage());
             return false;
         }
     }
@@ -769,9 +779,14 @@ class Transaction {
             // Get current retry count
             $query = "SELECT retry_count, max_retries FROM {$this->transactionsTable} WHERE id = :id";
             $stmt = $this->conn->prepare($query);
-            $stmt->bindParam(':id', $transactionId, PDO::PARAM_INT);
-            $stmt->execute();
+            $stmt->execute([':id' => $transactionId]); // Use execute with params for safety
             $result = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            // If transaction not found, rollback and exit.
+            if (!$result) {
+                $this->conn->rollback();
+                return false;
+            }
 
             $retryCount = ($result['retry_count'] ?? 0) + 1;
             $maxRetries = $result['max_retries'] ?? 3;
@@ -779,38 +794,49 @@ class Transaction {
             // Calculate next retry time (exponential backoff)
             $baseDelay = 300; // 5 minutes
             $nextRetryDelay = $baseDelay * pow(2, $retryCount - 1);
-            $nextRetry = date('Y-m-d H:i:s', time() + $nextRetryDelay);
+            $nextRetryTimestamp = time() + $nextRetryDelay;
+
+            // Determine the next retry date, or null if max retries exceeded
+            $nextRetryDate = $retryCount < $maxRetries ? date('Y-m-d H:i:s', $nextRetryTimestamp) : null;
 
             // Update transaction
             $updateQuery = "UPDATE {$this->transactionsTable} 
-                           SET status = :status,
-                               error_message = :error_message,
-                               retry_count = :retry_count,
-                               next_retry = :next_retry,
-                               updated_at = CURRENT_TIMESTAMP
-                           WHERE id = :id";
+                            SET status = :status,
+                                error_message = :error_message,
+                                retry_count = :retry_count,
+                                next_retry = :next_retry,
+                                updated_at = CURRENT_TIMESTAMP
+                            WHERE id = :id";
 
             $updateStmt = $this->conn->prepare($updateQuery);
-            $updateStmt->bindParam(':status', self::STATUS_FAILED, PDO::PARAM_STR);
-            $updateStmt->bindParam(':error_message', $errorMessage, PDO::PARAM_STR);
-            $updateStmt->bindParam(':retry_count', $retryCount, PDO::PARAM_INT);
-            $updateStmt->bindParam(':next_retry', $retryCount < $maxRetries ? $nextRetry : null, PDO::PARAM_STR);
-            $updateStmt->bindParam(':id', $transactionId, PDO::PARAM_INT);
-            $updateStmt->execute();
+            
+            // CORRECTION: Replaced bindParam with an array to avoid reference errors.
+            $updateParams = [
+                ':status' => self::STATUS_FAILED,
+                ':error_message' => $errorMessage,
+                ':retry_count' => $retryCount,
+                ':next_retry' => $nextRetryDate,
+                ':id' => $transactionId
+            ];
+            $updateStmt->execute($updateParams);
 
             // Update queue status
             $queueQuery = "UPDATE {$this->transactionQueueTable} 
-                          SET status = 'failed',
-                              attempts = attempts + 1,
-                              last_attempt = NOW(),
-                              last_error = :error_message,
-                              updated_at = CURRENT_TIMESTAMP
-                          WHERE transaction_id = :transaction_id AND status IN ('queued', 'processing')";
+                        SET status = 'failed',
+                            attempts = attempts + 1,
+                            last_attempt = NOW(),
+                            last_error = :error_message,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE transaction_id = :transaction_id AND status IN ('queued', 'processing')";
 
             $queueStmt = $this->conn->prepare($queueQuery);
-            $queueStmt->bindParam(':error_message', $errorMessage, PDO::PARAM_STR);
-            $queueStmt->bindParam(':transaction_id', $transactionId, PDO::PARAM_INT);
-            $queueStmt->execute();
+            
+            // Use execute with params here as well for consistency and safety.
+            $queueParams = [
+                ':error_message' => $errorMessage,
+                ':transaction_id' => $transactionId
+            ];
+            $queueStmt->execute($queueParams);
 
             $this->conn->commit();
 
@@ -818,14 +844,16 @@ class Transaction {
             $this->logAudit($transactionId, 'sync_failed', self::STATUS_PROCESSING, self::STATUS_FAILED, [
                 'error' => $errorMessage,
                 'retry_count' => $retryCount,
-                'next_retry' => $retryCount < $maxRetries ? $nextRetry : null
+                'next_retry' => $nextRetryDate
             ]);
 
             return true;
 
         } catch (Exception $e) {
-            $this->conn->rollback();
-            error_log("Error handling sync failure: " . $e->getMessage());
+            if ($this->conn->inTransaction()) {
+                $this->conn->rollback();
+            }
+            error_log("Error handling sync failure for transaction ID {$transactionId}: " . $e->getMessage());
             return false;
         }
     }
@@ -861,22 +889,31 @@ class Transaction {
      */
     private function logAudit(int $transactionId, string $action, ?string $oldStatus = null, ?string $newStatus = null, array $changes = []): bool {
         $query = "INSERT INTO {$this->transactionAuditTable} 
-                  (transaction_id, user_id, action, old_status, new_status, changes, ip_address, user_agent)
-                  VALUES (:transaction_id, :user_id, :action, :old_status, :new_status, :changes, :ip_address, :user_agent)";
+                (transaction_id, user_id, action, old_status, new_status, changes, ip_address, user_agent)
+                VALUES (:transaction_id, :user_id, :action, :old_status, :new_status, :changes, :ip_address, :user_agent)";
 
         try {
             $stmt = $this->conn->prepare($query);
-            $stmt->bindParam(':transaction_id', $transactionId, PDO::PARAM_INT);
-            $stmt->bindParam(':user_id', $_SESSION['user_id'] ?? null, PDO::PARAM_INT);
-            $stmt->bindParam(':action', $action, PDO::PARAM_STR);
-            $stmt->bindParam(':old_status', $oldStatus, PDO::PARAM_STR);
-            $stmt->bindParam(':new_status', $newStatus, PDO::PARAM_STR);
-            $stmt->bindParam(':changes', json_encode($changes), PDO::PARAM_STR);
-            $stmt->bindParam(':ip_address', $_SERVER['REMOTE_ADDR'] ?? null, PDO::PARAM_STR);
-            $stmt->bindParam(':user_agent', $_SERVER['HTTP_USER_AGENT'] ?? null, PDO::PARAM_STR);
-            return $stmt->execute();
+
+            // CORRECTION: Instead of multiple bindParam calls, we create an array
+            // of parameters. This is cleaner and avoids the "pass by reference" error.
+            $params = [
+                ':transaction_id' => $transactionId,
+                ':user_id' => $_SESSION['user_id'] ?? null,
+                ':action' => $action,
+                ':old_status' => $oldStatus,
+                ':new_status' => $newStatus,
+                ':changes' => json_encode($changes), // json_encode is safe here
+                ':ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
+                ':user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null,
+            ];
+
+            // Pass the parameters array directly to execute().
+            return $stmt->execute($params);
+
         } catch (PDOException $e) {
-            error_log("Error logging audit: " . $e->getMessage());
+            // Log the detailed error message for debugging, but don't expose it to the user.
+            error_log("Error logging audit for transaction ID {$transactionId}: " . $e->getMessage());
             return false;
         }
     }
@@ -981,22 +1018,26 @@ class Transaction {
 
             // Update transaction status
             $query = "UPDATE {$this->transactionsTable} 
-                      SET status = :status, 
-                          error_message = :reason,
-                          updated_at = CURRENT_TIMESTAMP 
-                      WHERE id = :id AND status IN ('pending', 'failed')";
+                    SET status = :status, 
+                        error_message = :reason,
+                        updated_at = CURRENT_TIMESTAMP 
+                    WHERE id = :id AND status IN ('pending', 'failed')";
 
             $stmt = $this->conn->prepare($query);
-            $stmt->bindParam(':status', self::STATUS_CANCELLED, PDO::PARAM_STR);
-            $stmt->bindParam(':reason', $reason, PDO::PARAM_STR);
-            $stmt->bindParam(':id', $transactionId, PDO::PARAM_INT);
-            $result = $stmt->execute();
+
+            $params = [
+                ':status' => self::STATUS_CANCELLED,
+                ':reason' => $reason,
+                ':id' => $transactionId
+            ];
+            
+            $result = $stmt->execute($params);
 
             if ($result && $stmt->rowCount() > 0) {
-                // Remove from queue
+                // Remove from queue if applicable
                 $this->removeFromQueue($transactionId);
 
-                // Log audit trail
+                // Log audit trail using the already-corrected logAudit function
                 $this->logAudit($transactionId, 'cancelled', $oldStatus, self::STATUS_CANCELLED, [
                     'reason' => $reason
                 ]);
@@ -1004,13 +1045,17 @@ class Transaction {
                 $this->conn->commit();
                 return true;
             } else {
+                // Rollback if the transaction was not found or not in a cancellable state
                 $this->conn->rollback();
                 return false;
             }
 
         } catch (Exception $e) {
-            $this->conn->rollback();
-            error_log("Error cancelling transaction: " . $e->getMessage());
+            // Rollback on any exception
+            if ($this->conn->inTransaction()) {
+                $this->conn->rollback();
+            }
+            error_log("Error cancelling transaction ID {$transactionId}: " . $e->getMessage());
             return false;
         }
     }

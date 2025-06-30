@@ -11,9 +11,9 @@ $environment = getenv('APP_ENV') ?: 'development';
 // Database configuration values
 $dbCfg = [
     'driver'   => 'mysql',
-    'host'     => getenv('DB_HOST') ?: 'localhost',
+    'host'     => getenv('DB_HOST') ?: '127.0.0.1',
     'port'     => getenv('DB_PORT') ?: '3372',
-    'database' => getenv('DB_NAME') ?: 'wartung_wms',
+    'database' => getenv('DB_NAME') ?: 'product_wms',
     'username' => getenv('DB_USER') ?: 'root',
     'password' => getenv('DB_PASS') ?: '',
     'charset'  => 'utf8mb4',

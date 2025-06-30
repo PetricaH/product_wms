@@ -1,0 +1,1 @@
+echo "<?php echo 'in_prod(): ' . (in_prod() ? 'true' : 'false'); ?>"

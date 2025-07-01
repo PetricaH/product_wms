@@ -276,8 +276,8 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                     
                                     <div class="product-stock">
                                         <span class="stock-label">Stoc actual:</span>
-                                        <span class="stock-value <?= $product['current_stock'] <= $product['min_stock_level'] ? 'low-stock' : '' ?>">
-                                            <?= number_format($product['current_stock']) ?>
+                                        <span class="stock-value <?= $product['quantity'] <= $product['min_stock_level'] ? 'low-stock' : '' ?>">
+                                            <?= number_format($product['quantity']) ?>
                                         </span>
                                     </div>
                                     
@@ -295,7 +295,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                 </div>
                                 
                                 <div class="product-status">
-                                    <?php if ($product['current_stock'] <= $product['min_stock_level'] && $product['min_stock_level'] > 0): ?>
+                                    <?php if ($product['quantity'] <= $product['min_stock_level'] && $product['min_stock_level'] > 0): ?>
                                         <span class="status-badge status-warning">
                                             <span class="material-symbols-outlined">warning</span>
                                             Stoc Redus

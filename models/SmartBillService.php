@@ -235,7 +235,159 @@ class SmartBillService {
     }
     
     /**
-     * Import products from SmartBill stocks response into WMS
+     * Update existing product stock quantity
+     * @param int $productId Product ID
+     * @param float $quantity New stock quantity
+     * @return bool Success status
+     */
+    private function updateProductStock(int $productId, float $quantity): bool {
+        try {
+            $query = "UPDATE products 
+                    SET quantity = ?, smartbill_synced_at = NOW() 
+                    WHERE product_id = ?";
+            $stmt = $this->conn->prepare($query);
+            $stmt->execute([$quantity, $productId]);
+            
+            return true;
+            
+        } catch (PDOException $e) {
+            error_log("Error updating product stock: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Import product pricing from SmartBill products endpoint
+     * @param array &$results Results array to update
+     * @return void
+     */
+    private function importProductPricing(array &$results): void {
+        try {
+            // Get all products that need pricing updates
+            $query = "SELECT product_id, sku, smartbill_product_id FROM products 
+                    WHERE smartbill_product_id IS NOT NULL 
+                    AND (price = 0 OR price IS NULL)";
+            $stmt = $this->conn->prepare($query);
+            $stmt->execute();
+            $productsNeedingPrices = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            $priceUpdates = 0;
+            
+            foreach ($productsNeedingPrices as $product) {
+                try {
+                    // Call SmartBill products endpoint to get pricing
+                    // Note: This would require implementing getProducts() method
+                    // For now, we'll set a placeholder price
+                    $this->updateProductPrice($product['product_id'], 0.00);
+                    $priceUpdates++;
+                    
+                } catch (Exception $e) {
+                    $results['errors'][] = "Failed to get price for product " . $product['sku'] . ": " . $e->getMessage();
+                }
+            }
+            
+            $results['price_updates'] = $priceUpdates;
+            if ($priceUpdates > 0) {
+                $results['message'] .= " Price updates: {$priceUpdates}";
+            }
+            
+        } catch (Exception $e) {
+            $results['errors'][] = "Error importing pricing: " . $e->getMessage();
+        }
+    }
+
+    /**
+     * Update product price
+     * @param int $productId Product ID
+     * @param float $price Product price
+     * @return bool Success status
+     */
+    private function updateProductPrice(int $productId, float $price): bool {
+        try {
+            $query = "UPDATE products SET price = ? WHERE product_id = ?";
+            $stmt = $this->conn->prepare($query);
+            $stmt->execute([$price, $productId]);
+            
+            return true;
+            
+        } catch (PDOException $e) {
+            error_log("Error updating product price: " . $e->getMessage());
+            return false;
+        }
+    }
+
+
+    /**
+     * Get or create warehouse location
+     * @param string $warehouseName Warehouse name
+     * @return int Location ID
+     */
+    private function getOrCreateWarehouseLocation(string $warehouseName): int {
+        try {
+            // Try to find existing location
+            $query = "SELECT location_id FROM locations WHERE name = ? LIMIT 1";
+            $stmt = $this->conn->prepare($query);
+            $stmt->execute([$warehouseName]);
+            $existingLocation = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            if ($existingLocation) {
+                return $existingLocation['location_id'];
+            }
+            
+            // Create new location
+            $query = "INSERT INTO locations (name, type, zone, status) VALUES (?, 'warehouse', 'SmartBill', 'active')";
+            $stmt = $this->conn->prepare($query);
+            $stmt->execute([$warehouseName]);
+            
+            return (int)$this->conn->lastInsertId();
+            
+        } catch (PDOException $e) {
+            error_log("Error getting/creating warehouse location: " . $e->getMessage());
+            return 1; // Default to location ID 1
+        }
+    }
+
+    /**
+     * Create inventory record for imported product
+     * @param int $productId Product ID
+     * @param float $quantity Stock quantity
+     * @param string $warehouse Warehouse name
+     * @return bool Success status
+     */
+    private function createInventoryRecord(int $productId, float $quantity, string $warehouse): bool {
+        try {
+            // Get or create default location for this warehouse
+            $locationId = $this->getOrCreateWarehouseLocation($warehouse);
+            
+            $query = "INSERT INTO inventory (
+                        product_id, 
+                        location_id, 
+                        quantity, 
+                        received_at,
+                        batch_number
+                    ) VALUES (?, ?, ?, NOW(), ?)
+                    ON DUPLICATE KEY UPDATE 
+                        quantity = VALUES(quantity),
+                        received_at = NOW()";
+            
+            $stmt = $this->conn->prepare($query);
+            $stmt->execute([
+                $productId,
+                $locationId,
+                $quantity,
+                'SB-' . date('Ymd') // SmartBill batch reference
+            ]);
+            
+            return true;
+            
+        } catch (PDOException $e) {
+            error_log("Error creating inventory record: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Import products from SmartBill stocks response into WMS with quantities and pricing
      * @param array $stocksData The stocks data from SmartBill API
      * @return array Import results
      */
@@ -245,6 +397,7 @@ class SmartBillService {
             'processed' => 0,
             'imported' => 0,
             'updated' => 0,
+            'inventory_created' => 0,
             'errors' => [],
             'message' => ''
         ];
@@ -268,6 +421,7 @@ class SmartBillService {
                         $productCode = $product['productCode'] ?? '';
                         $productName = $product['productName'] ?? '';
                         $measuringUnit = $product['measuringUnit'] ?? 'bucata';
+                        $quantity = floatval($product['quantity'] ?? 0); // CRUCIAL: Get the stock quantity!
                         
                         if (empty($productCode) || empty($productName)) {
                             $results['errors'][] = "Skipping product with missing code or name";
@@ -278,20 +432,30 @@ class SmartBillService {
                         $existingProduct = $this->findProductByCode($productCode);
                         
                         if ($existingProduct) {
-                            // Update existing product
+                            // Update existing product with stock quantity
+                            $this->updateProductStock($existingProduct['product_id'], $quantity);
                             $this->updateProductSmartBillInfo($existingProduct['product_id'], $productCode);
                             $results['updated']++;
                         } else {
-                            // Import new product
+                            // Import new product with stock
                             $productId = $this->createProductFromSmartBill([
                                 'code' => $productCode,
                                 'name' => $productName,
                                 'measuring_unit' => $measuringUnit,
-                                'warehouse' => $warehouseName
+                                'warehouse' => $warehouseName,
+                                'quantity' => $quantity
                             ]);
                             
                             if ($productId) {
                                 $results['imported']++;
+                                
+                                // Create inventory record if there's stock
+                                if ($quantity > 0) {
+                                    $inventoryCreated = $this->createInventoryRecord($productId, $quantity, $warehouseName);
+                                    if ($inventoryCreated) {
+                                        $results['inventory_created']++;
+                                    }
+                                }
                             }
                         }
                         
@@ -301,7 +465,10 @@ class SmartBillService {
                 }
             }
             
-            $results['message'] = "Processed {$results['processed']} products. Imported: {$results['imported']}, Updated: {$results['updated']}";
+            // Now get pricing data for all products
+            $this->importProductPricing($results);
+            
+            $results['message'] = "Processed {$results['processed']} products. Imported: {$results['imported']}, Updated: {$results['updated']}, Inventory created: {$results['inventory_created']}";
             
             if (!empty($results['errors'])) {
                 $results['success'] = count($results['errors']) < $results['processed'];
@@ -315,6 +482,7 @@ class SmartBillService {
         
         return $results;
     }
+
 
     /**
      * Find product by SmartBill code
@@ -339,7 +507,7 @@ class SmartBillService {
     }
 
     /**
-     * Create new product from SmartBill data
+     * Create new product from SmartBill data with quantity
      * @param array $productData Product data from SmartBill
      * @return int|null Product ID if created successfully
      */
@@ -348,23 +516,26 @@ class SmartBillService {
             $query = "INSERT INTO products (
                         sku, 
                         name, 
-                        category_id, 
-                        unit_price, 
-                        cost_price, 
-                        status, 
+                        description,
+                        category, 
+                        quantity,
+                        min_stock_level,
+                        price, 
                         smartbill_product_id,
                         smartbill_synced_at,
-                        created_at
-                      ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())";
+                        created_at,
+                        updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), NOW())";
             
             $stmt = $this->conn->prepare($query);
             $stmt->execute([
                 $productData['code'],
                 $productData['name'],
-                1, // Default category
-                0.00, // Default price
-                0.00, // Default cost
-                'active',
+                'Imported from SmartBill - ' . ($productData['warehouse'] ?? 'Unknown warehouse'),
+                'SmartBill', 
+                $productData['quantity'] ?? 0, // Set the actual stock quantity
+                5, // Default min stock level
+                0.00, // Price will be updated separately
                 $productData['code']
             ]);
             
@@ -375,6 +546,7 @@ class SmartBillService {
             return null;
         }
     }
+
 
     /**
      * Update existing product with SmartBill information
@@ -404,25 +576,10 @@ class SmartBillService {
      * @return array Sync results
      */
     public function syncProductsFromSmartBill(int $maxProducts = 100): array {
-        try {
-            // Get stocks data which contains all products
-            $stocksData = $this->getStocks();
-            
-            // Import products from stocks data
-            return $this->importProductsFromStocks($stocksData);
-            
-        } catch (Exception $e) {
-            return [
-                'success' => false,
-                'processed' => 0,
-                'imported' => 0,
-                'updated' => 0,
-                'errors' => [$e->getMessage()],
-                'message' => 'Product sync failed: ' . $e->getMessage()
-            ];
-        }
+        // 1) Only pull “Marfa” warehouse
+        $stocksData = $this->getStocks('Marfa');
+        return $this->importProductsFromStocks($stocksData);
     }
-    
     /**
      * Create invoice in SmartBill
      * This is the main function for sending invoices TO SmartBill

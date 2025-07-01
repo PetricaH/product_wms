@@ -86,6 +86,15 @@ function getActiveClass(string $page): string {
                 <span>Tranzacții</span>
             </a>
         </li>
+
+        <!-- SmartBill Sync -->
+        <li class="sidebar__item">
+            <a href="<?= getNavUrl('smartbill-sync.php') ?>"
+               class="sidebar__link <?= getActiveClass('smartbill-sync.php') ?>">
+                <span class="material-symbols-outlined">shopping_cart</span>
+                <span>SmartBill Sync</span>
+            </a>
+        </li>
         
         <!-- Activity Log -->
         <li class="sidebar__item">

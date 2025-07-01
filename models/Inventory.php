@@ -115,36 +115,53 @@ class Inventory {
      * @return int|false Inventory record ID on success, false on failure
      */
     public function addStock(array $data): int|false {
+        // 1) Check required fields
         $requiredFields = ['product_id', 'location_id', 'quantity'];
         foreach ($requiredFields as $field) {
-            if (empty($data[$field])) {
+            if (empty($data[$field]) && $data[$field] !== 0) {
                 error_log("Add stock failed: Required field '{$field}' missing");
                 return false;
             }
         }
-
-        // Set received_at to current time if not provided
+    
+        // 2) Default received_at if not provided
         if (empty($data['received_at'])) {
             $data['received_at'] = date('Y-m-d H:i:s');
         }
-
+    
+        // 3) Normalize nullable fields into actual variables
+        $batchNumber = $data['batch_number'] ?? null;
+        $lotNumber   = $data['lot_number']   ?? null;
+        $expiryDate  = $data['expiry_date']  ?? null;
+    
+        // 4) Prepare SQL
         $query = "INSERT INTO {$this->inventoryTable} 
                   (product_id, location_id, quantity, received_at, batch_number, lot_number, expiry_date)
                   VALUES (:product_id, :location_id, :quantity, :received_at, :batch_number, :lot_number, :expiry_date)";
-
+    
         try {
+            // Ensure PDO throws exceptions
+            $this->conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+    
             $stmt = $this->conn->prepare($query);
-            $stmt->bindParam(':product_id', $data['product_id'], PDO::PARAM_INT);
-            $stmt->bindParam(':location_id', $data['location_id'], PDO::PARAM_INT);
-            $stmt->bindParam(':quantity', $data['quantity'], PDO::PARAM_INT);
-            $stmt->bindParam(':received_at', $data['received_at'], PDO::PARAM_STR);
-            $stmt->bindParam(':batch_number', $data['batch_number'] ?? null, PDO::PARAM_STR);
-            $stmt->bindParam(':lot_number', $data['lot_number'] ?? null, PDO::PARAM_STR);
-            $stmt->bindParam(':expiry_date', $data['expiry_date'] ?? null, PDO::PARAM_STR);
+    
+            // 5) Bind values
+            $stmt->bindValue(':product_id',   $data['product_id'], PDO::PARAM_INT);
+            $stmt->bindValue(':location_id',  $data['location_id'], PDO::PARAM_INT);
+            $stmt->bindValue(':quantity',     $data['quantity'],    PDO::PARAM_INT);
+            $stmt->bindValue(':received_at',  $data['received_at'], PDO::PARAM_STR);
+            $stmt->bindValue(':batch_number', $batchNumber,         PDO::PARAM_STR);
+            $stmt->bindValue(':lot_number',   $lotNumber,           PDO::PARAM_STR);
+            $stmt->bindValue(':expiry_date',  $expiryDate,          PDO::PARAM_STR);
+    
+            // 6) Execute and return new ID
             $stmt->execute();
-
             return (int)$this->conn->lastInsertId();
+    
         } catch (PDOException $e) {
+            // Show the real error in-page for debugging
+            echo "<pre>Eroare la adăugarea stocului: " . htmlspecialchars($e->getMessage()) . "</pre>";
+            // Also log it
             error_log("Error adding stock: " . $e->getMessage());
             return false;
         }
@@ -157,7 +174,7 @@ class Inventory {
      * @param int|null $locationId Specific location (optional)
      * @return bool Success status
      */
-    public function removeStock(int $productId, int $quantity, int $locationId = null): bool {
+    public function removeStock(int $productId, int $quantity, ?int $locationId = null): bool {
         if ($quantity <= 0) {
             error_log("Remove stock failed: Invalid quantity");
             return false;
@@ -236,7 +253,7 @@ class Inventory {
      * @param int $quantity Quantity to move (optional, moves all if not specified)
      * @return bool Success status
      */
-    public function moveStock(int $inventoryId, int $newLocationId, int $quantity = null): bool {
+    public function moveStock(int $inventoryId, int $newLocationId, ?int $quantity = null): bool {
         try {
             $this->conn->beginTransaction();
 

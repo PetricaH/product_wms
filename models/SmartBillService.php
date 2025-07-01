@@ -1,6 +1,6 @@
 <?php
 /**
- * SmartBill API Service Class - Correct Implementation
+ * SmartBill API Service Class - Complete Implementation
  * Based on official SmartBill API documentation
  * 
  * IMPORTANT: SmartBill API does NOT support bulk invoice retrieval
@@ -203,6 +203,227 @@ class SmartBillService {
     }
     
     /**
+     * Get current stocks from SmartBill API
+     * @return array Stocks data
+     */
+    public function getStocks(?string $warehouseName = null, ?string $productCode = null, ?string $date = null): array {
+        if (!$this->isConfigured()) {
+            throw new Exception('SmartBill API not configured');
+        }
+        
+        $params = [
+            'cif' => $this->companyVatCode,
+            'date' => $date ?? date('Y-m-d')
+        ];
+        
+        if ($warehouseName) {
+            $params['warehouseName'] = $warehouseName;
+        }
+        
+        if ($productCode) {
+            $params['productCode'] = $productCode;
+        }
+        
+        $queryString = http_build_query($params);
+        $endpoint = self::ENDPOINT_STOCKS . '?' . $queryString;
+        
+        if ($this->debugMode) {
+            error_log("SmartBill Get Stocks: GET {$endpoint}");
+        }
+        
+        return $this->makeApiCall('GET', $endpoint);
+    }
+    
+    /**
+     * Import products from SmartBill stocks response into WMS
+     * @param array $stocksData The stocks data from SmartBill API
+     * @return array Import results
+     */
+    public function importProductsFromStocks(array $stocksData): array {
+        $results = [
+            'success' => true,
+            'processed' => 0,
+            'imported' => 0,
+            'updated' => 0,
+            'errors' => [],
+            'message' => ''
+        ];
+        
+        try {
+            if (!isset($stocksData['list']) || !is_array($stocksData['list'])) {
+                throw new Exception('Invalid stocks data format');
+            }
+            
+            foreach ($stocksData['list'] as $warehouse) {
+                if (!isset($warehouse['products']) || !is_array($warehouse['products'])) {
+                    continue;
+                }
+                
+                $warehouseName = $warehouse['warehouse']['warehouseName'] ?? 'Unknown';
+                
+                foreach ($warehouse['products'] as $product) {
+                    try {
+                        $results['processed']++;
+                        
+                        $productCode = $product['productCode'] ?? '';
+                        $productName = $product['productName'] ?? '';
+                        $measuringUnit = $product['measuringUnit'] ?? 'bucata';
+                        
+                        if (empty($productCode) || empty($productName)) {
+                            $results['errors'][] = "Skipping product with missing code or name";
+                            continue;
+                        }
+                        
+                        // Check if product exists
+                        $existingProduct = $this->findProductByCode($productCode);
+                        
+                        if ($existingProduct) {
+                            // Update existing product
+                            $this->updateProductSmartBillInfo($existingProduct['product_id'], $productCode);
+                            $results['updated']++;
+                        } else {
+                            // Import new product
+                            $productId = $this->createProductFromSmartBill([
+                                'code' => $productCode,
+                                'name' => $productName,
+                                'measuring_unit' => $measuringUnit,
+                                'warehouse' => $warehouseName
+                            ]);
+                            
+                            if ($productId) {
+                                $results['imported']++;
+                            }
+                        }
+                        
+                    } catch (Exception $e) {
+                        $results['errors'][] = "Error processing product {$productCode}: " . $e->getMessage();
+                    }
+                }
+            }
+            
+            $results['message'] = "Processed {$results['processed']} products. Imported: {$results['imported']}, Updated: {$results['updated']}";
+            
+            if (!empty($results['errors'])) {
+                $results['success'] = count($results['errors']) < $results['processed'];
+            }
+            
+        } catch (Exception $e) {
+            $results['success'] = false;
+            $results['message'] = 'Product import failed: ' . $e->getMessage();
+            $results['errors'][] = $e->getMessage();
+        }
+        
+        return $results;
+    }
+
+    /**
+     * Find product by SmartBill code
+     * @param string $productCode Product code from SmartBill
+     * @return array|null Product data or null if not found
+     */
+    private function findProductByCode(string $productCode): ?array {
+        try {
+            $query = "SELECT * FROM products 
+                      WHERE sku = ? OR smartbill_product_id = ? 
+                      LIMIT 1";
+            $stmt = $this->conn->prepare($query);
+            $stmt->execute([$productCode, $productCode]);
+            
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            return $result ?: null;
+            
+        } catch (PDOException $e) {
+            error_log("Error finding product by code: " . $e->getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Create new product from SmartBill data
+     * @param array $productData Product data from SmartBill
+     * @return int|null Product ID if created successfully
+     */
+    private function createProductFromSmartBill(array $productData): ?int {
+        try {
+            $query = "INSERT INTO products (
+                        sku, 
+                        name, 
+                        category_id, 
+                        unit_price, 
+                        cost_price, 
+                        status, 
+                        smartbill_product_id,
+                        smartbill_synced_at,
+                        created_at
+                      ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())";
+            
+            $stmt = $this->conn->prepare($query);
+            $stmt->execute([
+                $productData['code'],
+                $productData['name'],
+                1, // Default category
+                0.00, // Default price
+                0.00, // Default cost
+                'active',
+                $productData['code']
+            ]);
+            
+            return (int)$this->conn->lastInsertId();
+            
+        } catch (PDOException $e) {
+            error_log("Error creating product from SmartBill: " . $e->getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Update existing product with SmartBill information
+     * @param int $productId Product ID
+     * @param string $smartBillCode SmartBill product code
+     * @return bool Success status
+     */
+    private function updateProductSmartBillInfo(int $productId, string $smartBillCode): bool {
+        try {
+            $query = "UPDATE products 
+                      SET smartbill_product_id = ?, smartbill_synced_at = NOW() 
+                      WHERE product_id = ?";
+            $stmt = $this->conn->prepare($query);
+            $stmt->execute([$smartBillCode, $productId]);
+            
+            return true;
+            
+        } catch (PDOException $e) {
+            error_log("Error updating product SmartBill info: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Sync products from SmartBill to WMS
+     * @param int $maxProducts Maximum number of products to sync (ignored for stocks endpoint)
+     * @return array Sync results
+     */
+    public function syncProductsFromSmartBill(int $maxProducts = 100): array {
+        try {
+            // Get stocks data which contains all products
+            $stocksData = $this->getStocks();
+            
+            // Import products from stocks data
+            return $this->importProductsFromStocks($stocksData);
+            
+        } catch (Exception $e) {
+            return [
+                'success' => false,
+                'processed' => 0,
+                'imported' => 0,
+                'updated' => 0,
+                'errors' => [$e->getMessage()],
+                'message' => 'Product sync failed: ' . $e->getMessage()
+            ];
+        }
+    }
+    
+    /**
      * Create invoice in SmartBill
      * This is the main function for sending invoices TO SmartBill
      */
@@ -243,58 +464,6 @@ class SmartBillService {
                 'message' => $e->getMessage(),
                 'smartbill_id' => null,
                 'data' => null
-            ];
-        }
-    }
-    
-    /**
-     * Get stock information from SmartBill
-     * This can be used to sync inventory levels
-     */
-    public function getStocks(?string $warehouseName = null, ?string $productCode = null, ?string $date = null): array {
-        if (!$this->isConfigured()) {
-            return [
-                'success' => false,
-                'stocks' => [],
-                'message' => 'SmartBill API not configured'
-            ];
-        }
-        
-        try {
-            $params = [
-                'cif' => $this->companyVatCode,
-                'date' => $date ?? date('Y-m-d')
-            ];
-            
-            if ($warehouseName) {
-                $params['warehouseName'] = $warehouseName;
-            }
-            
-            if ($productCode) {
-                $params['productCode'] = $productCode;
-            }
-            
-            $queryString = http_build_query($params);
-            $endpoint = self::ENDPOINT_STOCKS . '?' . $queryString;
-            
-            if ($this->debugMode) {
-                error_log("SmartBill Get Stocks: GET {$endpoint}");
-            }
-            
-            $response = $this->makeApiCall('GET', $endpoint);
-            
-            return [
-                'success' => true,
-                'stocks' => $response['stocks']['list'] ?? [],
-                'message' => 'Stock information retrieved successfully'
-            ];
-            
-        } catch (Exception $e) {
-            error_log("SmartBill Get Stocks Error: " . $e->getMessage());
-            return [
-                'success' => false,
-                'stocks' => [],
-                'message' => $e->getMessage()
             ];
         }
     }
@@ -400,6 +569,19 @@ class SmartBillService {
                 'Manually create orders in WMS when invoices are created',
                 'Use a different workflow: WMS creates orders first, then generates invoices in SmartBill'
             ]
+        ];
+    }
+    
+    /**
+     * Stub method for compatibility with sync service
+     */
+    public function syncInvoicesToOrders(int $maxInvoices = 50): array {
+        return [
+            'success' => false,
+            'processed' => 0,
+            'created_orders' => [],
+            'errors' => ['SmartBill API does not support invoice retrieval'],
+            'message' => 'SmartBill API limitation: Cannot retrieve invoices for sync. Use webhooks or manual order creation instead.'
         ];
     }
     

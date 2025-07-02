@@ -110,6 +110,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $syncStatus = $syncService->getSyncStatus();
 $recentLogs = [];
 $pendingInvoices = [];
+$syncSchedule = [];
 
 try {
     // Get recent sync logs

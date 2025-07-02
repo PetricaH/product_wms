@@ -77,6 +77,51 @@ class Product {
             return false;
         }
     }
+
+    /**
+     * Get all products with optional filters and limit
+     * @param array $filters Optional filters
+     * @param int $limit Maximum number of results
+     * @return array Array of products
+     */
+    public function getAllProducts(array $filters = [], int $limit = 100): array {
+        $query = "SELECT * FROM {$this->table} WHERE 1=1";
+        $params = [];
+        
+        // Apply filters
+        if (!empty($filters['search'])) {
+            $query .= " AND (name LIKE :search OR sku LIKE :search OR description LIKE :search)";
+            $params[':search'] = '%' . $filters['search'] . '%';
+        }
+        
+        if (!empty($filters['category'])) {
+            $query .= " AND category = :category";
+            $params[':category'] = $filters['category'];
+        }
+        
+        $query .= " ORDER BY name ASC LIMIT :limit";
+        $params[':limit'] = $limit;
+        
+        try {
+            $stmt = $this->conn->prepare($query);
+            
+            // Bind limit parameter separately for proper type
+            $stmt->bindParam(':limit', $limit, PDO::PARAM_INT);
+            
+            // Bind other parameters
+            foreach ($params as $key => $value) {
+                if ($key !== ':limit') {
+                    $stmt->bindValue($key, $value);
+                }
+            }
+            
+            $stmt->execute();
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (PDOException $e) {
+            error_log("Error getting all products: " . $e->getMessage());
+            return [];
+        }
+    }
     
     /**
      * Get a single product by ID

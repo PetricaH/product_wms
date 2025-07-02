@@ -59,6 +59,11 @@ class Order {
             $query .= " AND o.customer_name LIKE :customer_name";
             $params[':customer_name'] = '%' . $filters['customer_name'] . '%';
         }
+        
+        if (!empty($filters['order_number'])) {
+            $query .= " AND o.order_number LIKE :order_number";
+            $params[':order_number'] = '%' . $filters['order_number'] . '%';
+        }
 
         $query .= " GROUP BY o.id ORDER BY o.order_date DESC";
 
@@ -339,6 +344,71 @@ class Order {
         } catch (PDOException $e) {
             error_log("Error fetching orders for picking: " . $e->getMessage());
             return [];
+        }
+    }
+
+    /**
+     * Get order by ID with items
+     * @param int $orderId Order ID
+     * @return array|null Order data with items
+     */
+    public function getOrderById(int $orderId): ?array {
+        // Get order details
+        $orderQuery = "SELECT * FROM {$this->ordersTable} WHERE id = :order_id";
+        
+        try {
+            $stmt = $this->conn->prepare($orderQuery);
+            $stmt->bindParam(':order_id', $orderId, PDO::PARAM_INT);
+            $stmt->execute();
+            
+            $order = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            if (!$order) {
+                return null;
+            }
+            
+            // Get order items
+            $itemsQuery = "SELECT oi.*, p.sku, p.name as product_name, p.unit_of_measure
+                          FROM {$this->orderItemsTable} oi
+                          LEFT JOIN {$this->productsTable} p ON oi.product_id = p.product_id
+                          WHERE oi.order_id = :order_id
+                          ORDER BY oi.id ASC";
+            
+            $stmt = $this->conn->prepare($itemsQuery);
+            $stmt->bindParam(':order_id', $orderId, PDO::PARAM_INT);
+            $stmt->execute();
+            
+            $order['items'] = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            return $order;
+            
+        } catch (PDOException $e) {
+            error_log("Error getting order by ID: " . $e->getMessage());
+            return null;
+        }
+    }
+    
+    /**
+     * Update order status
+     * @param int $orderId Order ID
+     * @param string $status New status
+     * @return bool Success status
+     */
+    public function updateStatus(int $orderId, string $status): bool {
+        $query = "UPDATE {$this->ordersTable} 
+                  SET status = :status, 
+                      updated_at = NOW()
+                  WHERE id = :order_id";
+        
+        try {
+            $stmt = $this->conn->prepare($query);
+            $stmt->bindParam(':status', $status, PDO::PARAM_STR);
+            $stmt->bindParam(':order_id', $orderId, PDO::PARAM_INT);
+            
+            return $stmt->execute();
+        } catch (PDOException $e) {
+            error_log("Error updating order status: " . $e->getMessage());
+            return false;
         }
     }
 

@@ -420,7 +420,37 @@ class Inventory {
         }
     }
 
-    // === EXISTING DASHBOARD METHODS (Compatibility) ===
+    public function getStockSummaryBySku(string $sku): array {
+        $query = "SELECT 
+                    COALESCE(SUM(i.quantity), 0) as total_quantity,
+                    COUNT(DISTINCT i.location_id) as locations_count,
+                    GROUP_CONCAT(DISTINCT l.location_code) as locations
+                  FROM {$this->inventoryTable} i
+                  LEFT JOIN {$this->productsTable} p ON i.product_id = p.product_id
+                  LEFT JOIN {$this->locationsTable} l ON i.location_id = l.id
+                  WHERE p.sku = :sku AND i.quantity > 0";
+
+        try {
+            $stmt = $this->conn->prepare($query);
+            $stmt->bindParam(':sku', $sku, PDO::PARAM_STR);
+            $stmt->execute();
+            
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            return [
+                'total_quantity' => floatval($result['total_quantity'] ?? 0),
+                'locations_count' => intval($result['locations_count'] ?? 0),
+                'locations' => $result['locations'] ? explode(',', $result['locations']) : []
+            ];
+        } catch (PDOException $e) {
+            error_log("Error getting stock summary by SKU: " . $e->getMessage());
+            return [
+                'total_quantity' => 0,
+                'locations_count' => 0,
+                'locations' => []
+            ];
+        }
+    }
 
     /**
      * Get total item count (existing dashboard method)

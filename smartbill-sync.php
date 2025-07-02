@@ -113,23 +113,23 @@ $pendingInvoices = [];
 $syncSchedule = [];
 
 try {
-    // Get recent sync logs
-    $stmt = $db->prepare("SELECT * FROM smartbill_sync_log ORDER BY created_at DESC LIMIT 20");
-    $stmt->execute();
-    $recentLogs = $stmt->fetchAll(PDO::FETCH_ASSOC);
-    
-    // Get pending invoices
-    $stmt = $db->prepare("SELECT * FROM view_smartbill_pending_invoices ORDER BY created_at ASC LIMIT 50");
-    $stmt->execute();
-    $pendingInvoices = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    // DEBUG: Check database connection
+    error_log("Database connected to: " . $db->query("SELECT DATABASE()")->fetchColumn());
     
     // Get sync schedule
     $stmt = $db->prepare("SELECT * FROM smartbill_sync_schedule ORDER BY sync_type");
     $stmt->execute();
     $syncSchedule = $stmt->fetchAll(PDO::FETCH_ASSOC);
     
+    // DEBUG: Log the results
+    error_log("SmartBill sync schedule count: " . count($syncSchedule));
+    if (count($syncSchedule) > 0) {
+        error_log("First sync schedule: " . print_r($syncSchedule[0], true));
+    }
+    
 } catch (PDOException $e) {
     error_log("Error loading sync dashboard data: " . $e->getMessage());
+    $syncSchedule = []; // Ensure it's an empty array
 }
 
 $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');

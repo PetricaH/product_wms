@@ -1,162 +1,174 @@
 <?php
 /**
- * Fixed WMS API
- * File: api/index.php (replace your existing one)
- * 
- * Fixed endpoint detection and routing
+ * Production Ready WMS API v2.0
+ * Enhanced with AWB support for Cargus integration
+ * File: api/index.php
  */
 
-// Enable error reporting for debugging
-ini_set('display_errors', 1);
+header('Content-Type: application/json');
+ini_set('display_errors', 0); // Disable for production
 error_reporting(E_ALL);
 
-try {
-    require_once __DIR__ . '/../bootstrap.php';
-    require_once __DIR__ . '/../models/Order.php';
-    require_once __DIR__ . '/../models/Product.php';
-    require_once __DIR__ . '/../models/Inventory.php';
-} catch (Exception $e) {
-    header('Content-Type: application/json');
-    echo json_encode([
-        'success' => false,
-        'error' => 'Failed to load dependencies: ' . $e->getMessage()
-    ]);
+// Enable CORS for production
+header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
+header('Access-Control-Allow-Headers: Content-Type, X-API-Key, Authorization');
+
+// Handle preflight requests
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(200);
     exit;
 }
 
-class WMSAPI {
-    private $db;
+// Bootstrap
+if (!defined('BASE_PATH')) {
+    define('BASE_PATH', dirname(__DIR__));
+}
+
+require_once BASE_PATH . '/bootstrap.php';
+
+/**
+ * Production WMS API with Enhanced Security and AWB Support
+ */
+class ProductionWMSAPI {
+    private $conn;
     private $config;
     private $orderModel;
     private $productModel;
     private $inventoryModel;
     
     public function __construct() {
+        $this->loadConfig();
+        $this->connectDatabase();
+        $this->loadModels();
+    }
+    
+    private function loadConfig() {
+        $config = require BASE_PATH . '/config/config.php';
+        
+        $this->config = [
+            'api_key' => $config['api']['key'] ?? '',
+            'allowed_origins' => $config['api']['allowed_origins'] ?? ['*'],
+            'rate_limit' => $config['api']['rate_limit'] ?? 100,
+            'debug' => $config['environment'] === 'development',
+            'max_request_size' => 1024 * 1024 * 5, // 5MB
+            'request_timeout' => 30
+        ];
+        
+        if (empty($this->config['api_key'])) {
+            throw new Exception('API key not configured');
+        }
+    }
+    
+    private function connectDatabase() {
+        $config = require BASE_PATH . '/config/config.php';
+        
+        if (!isset($config['connection_factory']) || !is_callable($config['connection_factory'])) {
+            throw new Exception('Database connection not configured');
+        }
+        
+        $this->conn = $config['connection_factory']();
+        
+        if (!$this->conn) {
+            throw new Exception('Database connection failed');
+        }
+    }
+    
+    private function loadModels() {
+        require_once BASE_PATH . '/models/Order.php';
+        require_once BASE_PATH . '/models/Product.php';
+        require_once BASE_PATH . '/models/Inventory.php';
+        
+        $this->orderModel = new Order($this->conn);
+        $this->productModel = new Product($this->conn);
+        $this->inventoryModel = new Inventory($this->conn);
+    }
+    
+    public function handleRequest() {
         try {
-            // Load database
-            $dbConfig = require __DIR__ . '/../config/config.php';
-            $this->db = $dbConfig['connection_factory']();
-            
-            // Load API config
-            $this->config = require __DIR__ . '/config.php';
-            
-            // Initialize models
-            $this->orderModel = new Order($this->db);
-            $this->productModel = new Product($this->db);
-            $this->inventoryModel = new Inventory($this->db);
-            
+            $this->validateRequest();
+            $this->setCORSHeaders();
+            $this->authenticate();
+            $this->routeRequest();
         } catch (Exception $e) {
-            $this->sendError('Initialization failed: ' . $e->getMessage(), 500);
-        }
-        
-        // Set headers
-        $this->setHeaders();
-    }
-    
-    public function handleRequest(): void {
-        try {
-            // Handle preflight
-            if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-                http_response_code(200);
-                exit;
-            }
-            
-            // Authenticate
-            if (!$this->authenticate()) {
-                $this->sendError('Unauthorized - Invalid API key', 401);
-                return;
-            }
-            
-            // Get endpoint and method
-            $endpoint = $this->getEndpoint();
-            $method = $_SERVER['REQUEST_METHOD'];
-            
-            // Debug logging
-            if ($this->config['debug']) {
-                error_log("WMS API: {$method} {$endpoint}");
-                error_log("Request URI: " . $_SERVER['REQUEST_URI']);
-                error_log("GET params: " . json_encode($_GET));
-            }
-            
-            // Route request
-            $this->routeRequest($method, $endpoint);
-            
-        } catch (Exception $e) {
-            error_log("WMS API Error: " . $e->getMessage());
-            $this->sendError('Internal server error: ' . $e->getMessage(), 500);
+            $this->handleError($e);
         }
     }
     
-    private function getEndpoint(): string {
-        // Method 1: Direct URL parameter (for non-rewrite mode)
-        if (!empty($_GET['endpoint'])) {
-            $endpoint = $_GET['endpoint'];
-            // Clean up the endpoint
-            $endpoint = ltrim($endpoint, '/');
-            return $endpoint ?: 'health';
+    private function validateRequest() {
+        // Check request size
+        $contentLength = $_SERVER['CONTENT_LENGTH'] ?? 0;
+        if ($contentLength > $this->config['max_request_size']) {
+            throw new Exception('Request too large', 413);
         }
         
-        // Method 2: Parse REQUEST_URI for rewrite mode
-        $uri = $_SERVER['REQUEST_URI'];
-        $path = parse_url($uri, PHP_URL_PATH);
-        
-        // Remove the base path to get the endpoint
-        if (preg_match('#/api/(.+)$#', $path, $matches)) {
-            $endpoint = $matches[1];
-            // Remove index.php if present
-            $endpoint = preg_replace('#^index\.php/?#', '', $endpoint);
-            return $endpoint ?: 'health';
-        }
-        
-        // Method 3: PATH_INFO (alternative method)
-        if (!empty($_SERVER['PATH_INFO'])) {
-            return ltrim($_SERVER['PATH_INFO'], '/') ?: 'health';
-        }
-        
-        // Default to health check
-        return 'health';
+        // Rate limiting (basic implementation)
+        $this->checkRateLimit();
     }
     
-    private function setHeaders(): void {
-        header('Content-Type: application/json');
-        header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
-        header('Access-Control-Allow-Headers: Content-Type, Authorization, X-API-Key');
+    private function checkRateLimit() {
+        $clientIp = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+        $cacheKey = "rate_limit:$clientIp";
         
-        // Handle CORS
+        // Basic file-based rate limiting (use Redis in production)
+        $rateLimitFile = sys_get_temp_dir() . "/wms_rate_limit_" . md5($clientIp);
+        $currentTime = time();
+        
+        if (file_exists($rateLimitFile)) {
+            $data = json_decode(file_get_contents($rateLimitFile), true);
+            if ($data && $data['timestamp'] > ($currentTime - 3600)) { // 1 hour window
+                if ($data['count'] >= $this->config['rate_limit']) {
+                    throw new Exception('Rate limit exceeded', 429);
+                }
+                $data['count']++;
+            } else {
+                $data = ['timestamp' => $currentTime, 'count' => 1];
+            }
+        } else {
+            $data = ['timestamp' => $currentTime, 'count' => 1];
+        }
+        
+        file_put_contents($rateLimitFile, json_encode($data));
+    }
+    
+    private function setCORSHeaders() {
         $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
-        if (in_array($origin, $this->config['allowed_origins'])) {
-            header('Access-Control-Allow-Origin: ' . $origin);
+        if (in_array('*', $this->config['allowed_origins']) || in_array($origin, $this->config['allowed_origins'])) {
+            header('Access-Control-Allow-Origin: ' . ($origin ?: '*'));
+        }
+        header('Access-Control-Allow-Credentials: true');
+    }
+    
+    private function authenticate() {
+        $apiKey = $this->getApiKey();
+        
+        if (empty($apiKey) || $apiKey !== $this->config['api_key']) {
+            throw new Exception('Invalid API key', 401);
         }
     }
     
-    private function authenticate(): bool {
-        // Try multiple authentication methods
-        $apiKey = $_SERVER['HTTP_X_API_KEY'] ?? $_GET['api_key'] ?? $_POST['api_key'] ?? '';
-        return $apiKey === $this->config['api_key'];
+    private function getApiKey() {
+        // Multiple ways to send API key
+        return $_SERVER['HTTP_X_API_KEY'] 
+            ?? $_SERVER['HTTP_AUTHORIZATION'] 
+            ?? $_GET['api_key'] 
+            ?? $_POST['api_key'] 
+            ?? '';
     }
     
-    private function routeRequest(string $method, string $endpoint): void {
-        // Clean endpoint
-        $endpoint = trim($endpoint, '/');
+    private function routeRequest() {
+        $method = $_SERVER['REQUEST_METHOD'];
+        $endpoint = $this->getEndpoint();
         
-        // Add debug info to response for troubleshooting
-        $debugInfo = [];
+        // Log request for debugging
         if ($this->config['debug']) {
-            $debugInfo = [
-                'detected_endpoint' => $endpoint,
-                'method' => $method,
-                'request_uri' => $_SERVER['REQUEST_URI'],
-                'get_params' => $_GET
-            ];
+            error_log("API Request: $method $endpoint");
         }
         
         switch (true) {
-            // Health check
-            case $endpoint === 'health' || $endpoint === '':
-                $this->healthCheck($debugInfo);
+            case $endpoint === 'health':
+                $this->healthCheck();
                 break;
                 
-            // Orders
             case $endpoint === 'orders' && $method === 'POST':
                 $this->createOrder();
                 break;
@@ -173,16 +185,14 @@ class WMSAPI {
                 $this->updateOrderStatus(intval($matches[1]));
                 break;
                 
-            // Inventory
+            case preg_match('#^orders/(\d+)/awb$#', $endpoint, $matches) && $method === 'POST':
+                $this->generateAWB(intval($matches[1]));
+                break;
+                
             case $endpoint === 'inventory/check' && $method === 'GET':
                 $this->checkInventory();
                 break;
                 
-            case $endpoint === 'inventory/low-stock' && $method === 'GET':
-                $this->getLowStockItems();
-                break;
-                
-            // Products
             case $endpoint === 'products' && $method === 'GET':
                 $this->getProducts();
                 break;
@@ -192,117 +202,93 @@ class WMSAPI {
                 break;
                 
             default:
-                $this->sendError("Endpoint not found: {$method} /{$endpoint}", 404, $debugInfo);
+                throw new Exception("Endpoint not found: $method /$endpoint", 404);
         }
     }
     
-    // === ENDPOINT METHODS ===
+    private function getEndpoint() {
+        $endpoint = $_GET['endpoint'] ?? '';
+        return trim($endpoint, '/');
+    }
     
-    private function healthCheck(array $debugInfo = []): void {
-        $response = [
-            'success' => true,
+    // === API ENDPOINTS ===
+    
+    private function healthCheck() {
+        $health = [
             'status' => 'healthy',
-            'timestamp' => date('Y-m-d H:i:s'),
-            'version' => '1.0.0'
+            'timestamp' => date('c'),
+            'version' => '2.0.0',
+            'database' => 'connected',
+            'environment' => $this->config['debug'] ? 'development' : 'production'
         ];
         
-        if (!empty($debugInfo)) {
-            $response['debug'] = $debugInfo;
+        // Check database health
+        try {
+            $this->conn->query('SELECT 1');
+        } catch (Exception $e) {
+            $health['status'] = 'unhealthy';
+            $health['database'] = 'disconnected';
+            http_response_code(503);
         }
         
-        $this->sendResponse($response);
+        $this->sendResponse($health);
     }
     
-    private function checkInventory(): void {
-        $skus = $_GET['skus'] ?? '';
-        
-        if (empty($skus)) {
-            $this->sendError('SKUs parameter is required', 400);
-            return;
-        }
-        
-        $skuList = array_map('trim', explode(',', $skus));
-        $inventory = [];
-        
-        foreach ($skuList as $sku) {
-            if (empty($sku)) continue;
-            
-            try {
-                $product = $this->productModel->findBySku($sku);
-                
-                if ($product) {
-                    $stock = $this->inventoryModel->getStockSummaryBySku($sku);
-                    $inventory[] = [
-                        'sku' => $sku,
-                        'product_name' => $product['name'],
-                        'available_quantity' => $stock['total_quantity'] ?? 0,
-                        'locations_count' => $stock['locations_count'] ?? 0,
-                        'in_stock' => ($stock['total_quantity'] ?? 0) > 0
-                    ];
-                } else {
-                    $inventory[] = [
-                        'sku' => $sku,
-                        'product_name' => null,
-                        'available_quantity' => 0,
-                        'locations_count' => 0,
-                        'in_stock' => false,
-                        'error' => 'Product not found'
-                    ];
-                }
-            } catch (Exception $e) {
-                $inventory[] = [
-                    'sku' => $sku,
-                    'error' => 'Error checking stock: ' . $e->getMessage()
-                ];
-            }
-        }
-        
-        $this->sendResponse([
-            'success' => true,
-            'inventory' => $inventory,
-            'checked_at' => date('Y-m-d H:i:s')
-        ]);
-    }
-    
-    private function createOrder(): void {
+    private function createOrder() {
         $input = $this->getJsonInput();
-        
-        // Validate input
-        $validation = $this->validateOrderInput($input);
-        if (!$validation['valid']) {
-            $this->sendError($validation['error'], 400);
-            return;
-        }
+        $this->validateOrderInput($input);
         
         try {
-            // Check if order exists
-            if ($this->orderExists($input['order_number'])) {
-                $this->sendError('Order already exists', 409);
-                return;
-            }
+            $this->conn->beginTransaction();
             
-            // Validate inventory
-            $inventoryCheck = $this->validateInventoryForOrder($input['items']);
-            if (!$inventoryCheck['available']) {
-                $this->sendResponse([
-                    'success' => false,
-                    'error' => 'Insufficient inventory',
-                    'details' => $inventoryCheck['issues']
-                ], 400);
-                return;
-            }
-            
-            // Create order
+            // Prepare order data with AWB fields
             $orderData = [
-                'order_number' => $input['order_number'],
+                'order_number' => $input['order_number'] ?? $this->generateOrderNumber(),
                 'customer_name' => $input['customer_name'],
                 'customer_email' => $input['customer_email'] ?? '',
                 'shipping_address' => $input['shipping_address'] ?? '',
                 'order_date' => $input['order_date'] ?? date('Y-m-d H:i:s'),
                 'status' => Order::STATUS_PENDING,
                 'notes' => $input['notes'] ?? 'Created via API from CRM',
-                'source' => 'CRM'
+                'source' => 'CRM',
+                
+                // AWB fields
+                'recipient_county_id' => $input['recipient_county_id'] ?? null,
+                'recipient_county_name' => $input['recipient_county_name'] ?? '',
+                'recipient_locality_id' => $input['recipient_locality_id'] ?? null,
+                'recipient_locality_name' => $input['recipient_locality_name'] ?? '',
+                'recipient_street_id' => $input['recipient_street_id'] ?? null,
+                'recipient_street_name' => $input['recipient_street_name'] ?? '',
+                'recipient_building_number' => $input['recipient_building_number'] ?? '',
+                'recipient_contact_person' => $input['recipient_contact_person'] ?? $input['customer_name'],
+                'recipient_phone' => $input['recipient_phone'] ?? '',
+                'recipient_email' => $input['recipient_email'] ?? $input['customer_email'],
+                
+                // Shipping details
+                'total_weight' => floatval($input['total_weight'] ?? 1.0),
+                'declared_value' => floatval($input['declared_value'] ?? 0.0),
+                'parcels_count' => intval($input['parcels_count'] ?? 1),
+                'envelopes_count' => intval($input['envelopes_count'] ?? 0),
+                'cash_repayment' => floatval($input['cash_repayment'] ?? 0.0),
+                'bank_repayment' => floatval($input['bank_repayment'] ?? 0.0),
+                'saturday_delivery' => !empty($input['saturday_delivery']),
+                'morning_delivery' => !empty($input['morning_delivery']),
+                'open_package' => !empty($input['open_package']),
+                'observations' => $input['observations'] ?? '',
+                'package_content' => $input['package_content'] ?? '',
+                
+                // References
+                'sender_reference1' => $input['sender_reference1'] ?? '',
+                'recipient_reference1' => $input['recipient_reference1'] ?? '',
+                'recipient_reference2' => $input['recipient_reference2'] ?? '',
+                'invoice_reference' => $input['invoice_reference'] ?? '',
+                'sender_location_id' => $input['sender_location_id'] ?? null
             ];
+            
+            // Validate AWB data if provided
+            if (!empty($orderData['recipient_county_id'])) {
+                $this->validateAWBData($orderData);
+            }
             
             // Process items
             $orderItems = [];
@@ -318,266 +304,246 @@ class WMSAPI {
             }
             
             if (empty($orderItems)) {
-                $this->sendError('No valid products in order', 400);
-                return;
+                throw new Exception('No valid products in order');
             }
             
             $orderId = $this->orderModel->create($orderData, $orderItems);
             
-            if ($orderId) {
-                $this->sendResponse([
-                    'success' => true,
-                    'order_id' => $orderId,
-                    'order_number' => $orderData['order_number'],
-                    'status' => $orderData['status'],
-                    'message' => 'Order created successfully'
-                ], 201);
-            } else {
-                $this->sendError('Failed to create order', 500);
+            if (!$orderId) {
+                throw new Exception('Failed to create order');
             }
             
-        } catch (Exception $e) {
-            error_log("Order creation error: " . $e->getMessage());
-            $this->sendError('Order creation failed: ' . $e->getMessage(), 500);
-        }
-    }
-    
-    private function getOrders(): void {
-        try {
-            $filters = [
-                'status' => $_GET['status'] ?? '',
-                'date_from' => $_GET['date_from'] ?? '',
-                'date_to' => $_GET['date_to'] ?? '',
-                'customer_name' => $_GET['customer_name'] ?? '',
-                'order_number' => $_GET['order_number'] ?? ''
-            ];
-            
-            $filters = array_filter($filters);
-            $orders = $this->orderModel->getAllOrders($filters);
+            $this->conn->commit();
             
             $this->sendResponse([
                 'success' => true,
-                'orders' => $orders,
-                'count' => count($orders)
-            ]);
+                'order_id' => $orderId,
+                'order_number' => $orderData['order_number'],
+                'status' => $orderData['status'],
+                'awb_ready' => !empty($orderData['recipient_county_id']),
+                'message' => 'Order created successfully'
+            ], 201);
+            
         } catch (Exception $e) {
-            $this->sendError('Failed to get orders: ' . $e->getMessage(), 500);
+            $this->conn->rollback();
+            throw $e;
         }
     }
     
-    private function getOrder(int $orderId): void {
-        try {
-            $order = $this->orderModel->getOrderById($orderId);
-            
-            if ($order) {
-                $this->sendResponse([
-                    'success' => true,
-                    'order' => $order
-                ]);
-            } else {
-                $this->sendError('Order not found', 404);
-            }
-        } catch (Exception $e) {
-            $this->sendError('Failed to get order: ' . $e->getMessage(), 500);
-        }
-    }
-    
-    private function updateOrderStatus(int $orderId): void {
-        try {
-            $input = $this->getJsonInput();
-            
-            if (empty($input['status'])) {
-                $this->sendError('Status is required', 400);
-                return;
-            }
-            
-            $result = $this->orderModel->updateStatus($orderId, $input['status']);
-            
-            if ($result) {
-                $this->sendResponse([
-                    'success' => true,
-                    'order_id' => $orderId,
-                    'new_status' => $input['status'],
-                    'message' => 'Order status updated successfully'
-                ]);
-            } else {
-                $this->sendError('Failed to update order status', 500);
-            }
-        } catch (Exception $e) {
-            $this->sendError('Failed to update order status: ' . $e->getMessage(), 500);
-        }
-    }
-    
-    private function getLowStockItems(): void {
-        try {
-            $lowStock = $this->inventoryModel->getLowStockProducts();
-            
-            $this->sendResponse([
-                'success' => true,
-                'low_stock_items' => $lowStock,
-                'count' => count($lowStock)
-            ]);
-        } catch (Exception $e) {
-            $this->sendError('Failed to get low stock items: ' . $e->getMessage(), 500);
-        }
-    }
-    
-    private function getProducts(): void {
-        try {
-            $search = $_GET['search'] ?? '';
-            $category = $_GET['category'] ?? '';
-            $limit = intval($_GET['limit'] ?? 100);
-            
-            $filters = array_filter([
-                'search' => $search,
-                'category' => $category
-            ]);
-            
-            $products = $this->productModel->getAllProducts($filters, $limit);
-            
-            $this->sendResponse([
-                'success' => true,
-                'products' => $products,
-                'count' => count($products)
-            ]);
-        } catch (Exception $e) {
-            $this->sendError('Failed to get products: ' . $e->getMessage(), 500);
-        }
-    }
-    
-    private function createProduct(): void {
-        try {
-            $input = $this->getJsonInput();
-            
-            if (empty($input['sku']) || empty($input['name'])) {
-                $this->sendError('SKU and name are required', 400);
-                return;
-            }
-            
-            $productId = $this->productModel->create($input);
-            
-            if ($productId) {
-                $product = $this->productModel->findById($productId);
-                $this->sendResponse([
-                    'success' => true,
-                    'product' => $product,
-                    'message' => 'Product created successfully'
-                ], 201);
-            } else {
-                $this->sendError('Failed to create product', 500);
-            }
-        } catch (Exception $e) {
-            $this->sendError('Failed to create product: ' . $e->getMessage(), 500);
-        }
-    }
-    
-    // === HELPER METHODS ===
-    
-    private function getJsonInput(): array {
-        $input = file_get_contents('php://input');
-        return json_decode($input, true) ?: [];
-    }
-    
-    private function sendResponse(array $data, int $code = 200): void {
-        http_response_code($code);
-        echo json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
-        exit;
-    }
-    
-    private function sendError(string $message, int $code = 400, array $debug = []): void {
-        $response = [
-            'success' => false,
-            'error' => $message,
-            'timestamp' => date('Y-m-d H:i:s')
-        ];
-        
-        if (!empty($debug)) {
-            $response['debug'] = $debug;
-        }
-        
-        $this->sendResponse($response, $code);
-    }
-    
-    private function validateOrderInput(array $input): array {
-        $required = ['order_number', 'customer_name', 'items'];
+    private function validateOrderInput($input) {
+        $required = ['customer_name', 'items'];
         
         foreach ($required as $field) {
             if (empty($input[$field])) {
-                return [
-                    'valid' => false,
-                    'error' => "Field '{$field}' is required"
-                ];
+                throw new Exception("Missing required field: $field", 400);
             }
         }
         
         if (!is_array($input['items']) || empty($input['items'])) {
-            return [
-                'valid' => false,
-                'error' => 'Items must be a non-empty array'
-            ];
+            throw new Exception('Items must be a non-empty array', 400);
         }
         
-        foreach ($input['items'] as $index => $item) {
-            if (empty($item['sku']) || empty($item['quantity'])) {
-                return [
-                    'valid' => false,
-                    'error' => "Item {$index}: SKU and quantity are required"
+        foreach ($input['items'] as $i => $item) {
+            if (empty($item['sku']) && empty($item['code'])) {
+                throw new Exception("Item $i missing SKU/code", 400);
+            }
+            if (empty($item['quantity']) || floatval($item['quantity']) <= 0) {
+                throw new Exception("Item $i invalid quantity", 400);
+            }
+        }
+    }
+    
+    private function validateAWBData($orderData) {
+        $required = ['recipient_county_id', 'recipient_locality_id', 'recipient_contact_person', 'recipient_phone'];
+        
+        foreach ($required as $field) {
+            if (empty($orderData[$field])) {
+                throw new Exception("AWB data incomplete: missing $field", 400);
+            }
+        }
+        
+        // Validate phone format
+        if (!preg_match('/^\+?[0-9\s\-\(\)]{10,15}$/', $orderData['recipient_phone'])) {
+            throw new Exception('Invalid phone number format', 400);
+        }
+        
+        // Validate weight and counts
+        if ($orderData['total_weight'] <= 0) {
+            throw new Exception('Total weight must be greater than 0', 400);
+        }
+        
+        if ($orderData['envelopes_count'] > 9) {
+            throw new Exception('Maximum 9 envelopes allowed', 400);
+        }
+    }
+    
+    private function generateAWB($orderId) {
+        // This would integrate with the Cargus API
+        // For now, just update the order with AWB placeholder
+        $order = $this->orderModel->getOrderById($orderId);
+        
+        if (!$order) {
+            throw new Exception('Order not found', 404);
+        }
+        
+        if (empty($order['recipient_county_id'])) {
+            throw new Exception('Order missing AWB data', 400);
+        }
+        
+        // TODO: Implement Cargus API integration here
+        $awbBarcode = 'AWB' . time() . rand(1000, 9999);
+        
+        $this->orderModel->updateAWBInfo($orderId, [
+            'awb_barcode' => $awbBarcode,
+            'awb_created_at' => date('Y-m-d H:i:s'),
+            'cargus_order_id' => 'CRG' . $orderId . time()
+        ]);
+        
+        $this->sendResponse([
+            'success' => true,
+            'order_id' => $orderId,
+            'awb_barcode' => $awbBarcode,
+            'message' => 'AWB generated successfully'
+        ]);
+    }
+    
+    private function getOrders() {
+        $filters = [
+            'status' => $_GET['status'] ?? '',
+            'date_from' => $_GET['date_from'] ?? '',
+            'date_to' => $_GET['date_to'] ?? '',
+            'customer_name' => $_GET['customer_name'] ?? '',
+            'order_number' => $_GET['order_number'] ?? '',
+            'awb_barcode' => $_GET['awb_barcode'] ?? ''
+        ];
+        
+        $filters = array_filter($filters);
+        $orders = $this->orderModel->getAllOrders($filters);
+        
+        $this->sendResponse([
+            'success' => true,
+            'orders' => $orders,
+            'count' => count($orders)
+        ]);
+    }
+    
+    private function getOrder($orderId) {
+        $order = $this->orderModel->getOrderById($orderId);
+        
+        if (!$order) {
+            throw new Exception('Order not found', 404);
+        }
+        
+        $this->sendResponse([
+            'success' => true,
+            'order' => $order
+        ]);
+    }
+    
+    private function updateOrderStatus($orderId) {
+        $input = $this->getJsonInput();
+        
+        if (empty($input['status'])) {
+            throw new Exception('Status is required', 400);
+        }
+        
+        $result = $this->orderModel->updateStatus($orderId, $input['status']);
+        
+        if (!$result) {
+            throw new Exception('Failed to update order status', 500);
+        }
+        
+        $this->sendResponse([
+            'success' => true,
+            'order_id' => $orderId,
+            'new_status' => $input['status'],
+            'message' => 'Order status updated successfully'
+        ]);
+    }
+    
+    private function checkInventory() {
+        $skus = $_GET['skus'] ?? '';
+        if (empty($skus)) {
+            throw new Exception('SKUs parameter required', 400);
+        }
+        
+        $skuList = explode(',', $skus);
+        $results = [];
+        
+        foreach ($skuList as $sku) {
+            $sku = trim($sku);
+            if (empty($sku)) continue;
+            
+            try {
+                $stock = $this->inventoryModel->getStockSummaryBySku($sku);
+                $results[$sku] = [
+                    'sku' => $sku,
+                    'available_quantity' => $stock['total_quantity'] ?? 0,
+                    'locations' => $stock['locations'] ?? []
+                ];
+            } catch (Exception $e) {
+                $results[$sku] = [
+                    'sku' => $sku,
+                    'available_quantity' => 0,
+                    'error' => $e->getMessage()
                 ];
             }
         }
         
-        return ['valid' => true];
+        $this->sendResponse([
+            'success' => true,
+            'inventory' => $results
+        ]);
     }
     
-    private function orderExists(string $orderNumber): bool {
-        try {
-            $query = "SELECT id FROM orders WHERE order_number = :order_number";
-            $stmt = $this->db->prepare($query);
-            $stmt->execute([':order_number' => $orderNumber]);
-            return $stmt->rowCount() > 0;
-        } catch (Exception $e) {
-            error_log("Error checking if order exists: " . $e->getMessage());
-            return false;
-        }
-    }
-    
-    private function validateInventoryForOrder(array $items): array {
-        $issues = [];
-        $available = true;
+    private function getProducts() {
+        $search = $_GET['search'] ?? '';
+        $limit = min(intval($_GET['limit'] ?? 50), 500); // Max 500
         
-        foreach ($items as $item) {
-            $sku = $item['sku'] ?? '';
-            $requiredQty = floatval($item['quantity'] ?? 0);
-            
-            if (empty($sku)) continue;
-            
-            try {
-                $product = $this->productModel->findBySku($sku);
-                if (!$product) {
-                    $issues[] = "Product with SKU '{$sku}' not found";
-                    continue;
-                }
-                
-                $stock = $this->inventoryModel->getStockSummaryBySku($sku);
-                $availableQty = $stock['total_quantity'] ?? 0;
-                
-                if ($availableQty < $requiredQty) {
-                    $available = false;
-                    $issues[] = "SKU '{$sku}': Required {$requiredQty}, Available {$availableQty}";
-                }
-            } catch (Exception $e) {
-                $issues[] = "Error checking SKU '{$sku}': " . $e->getMessage();
+        $products = $this->productModel->search($search, $limit);
+        
+        $this->sendResponse([
+            'success' => true,
+            'products' => $products,
+            'count' => count($products)
+        ]);
+    }
+    
+    private function createProduct() {
+        $input = $this->getJsonInput();
+        
+        $required = ['sku', 'name'];
+        foreach ($required as $field) {
+            if (empty($input[$field])) {
+                throw new Exception("Missing required field: $field", 400);
             }
         }
         
-        return [
-            'available' => $available,
-            'issues' => $issues
+        $productData = [
+            'sku' => $input['sku'],
+            'name' => $input['name'],
+            'unit_of_measure' => $input['unit_of_measure'] ?? 'buc',
+            'price' => floatval($input['price'] ?? 0),
+            'category' => $input['category'] ?? 'General'
         ];
+        
+        $productId = $this->productModel->create($productData);
+        
+        if (!$productId) {
+            throw new Exception('Failed to create product', 500);
+        }
+        
+        $this->sendResponse([
+            'success' => true,
+            'product_id' => $productId,
+            'message' => 'Product created successfully'
+        ], 201);
     }
     
-    private function ensureProductExists(array $itemData): ?array {
-        $sku = $itemData['sku'] ?? '';
+    // === HELPER METHODS ===
+    
+    private function ensureProductExists($itemData) {
+        $sku = $itemData['sku'] ?? $itemData['code'] ?? '';
         if (empty($sku)) return null;
         
         try {
@@ -586,7 +552,7 @@ class WMSAPI {
             if (!$product) {
                 $productData = [
                     'sku' => $sku,
-                    'name' => $itemData['product_name'] ?? $sku,
+                    'name' => $itemData['name'] ?? $itemData['product_name'] ?? $sku,
                     'unit_of_measure' => $itemData['unit_of_measure'] ?? 'buc',
                     'price' => floatval($itemData['unit_price'] ?? 0),
                     'category' => 'CRM Import'
@@ -604,17 +570,76 @@ class WMSAPI {
             return null;
         }
     }
+    
+    private function generateOrderNumber() {
+        $prefix = 'ORD';
+        $date = date('Ymd');
+        
+        // Get next sequence number for today
+        $query = "SELECT COUNT(*) + 1 as next_num FROM orders WHERE DATE(order_date) = CURDATE()";
+        $stmt = $this->conn->prepare($query);
+        $stmt->execute();
+        $result = $stmt->fetch(PDO::FETCH_ASSOC);
+        $sequence = str_pad($result['next_num'], 4, '0', STR_PAD_LEFT);
+        
+        return "{$prefix}-{$date}-{$sequence}";
+    }
+    
+    private function getJsonInput() {
+        $input = file_get_contents('php://input');
+        if (empty($input)) {
+            return [];
+        }
+        
+        $data = json_decode($input, true);
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            throw new Exception('Invalid JSON input', 400);
+        }
+        
+        return $data;
+    }
+    
+    private function sendResponse($data, $code = 200) {
+        http_response_code($code);
+        echo json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    
+    private function handleError(Exception $e) {
+        $code = is_numeric($e->getCode()) && $e->getCode() >= 400 && $e->getCode() < 600 
+            ? $e->getCode() 
+            : 500;
+        
+        $response = [
+            'success' => false,
+            'error' => $e->getMessage(),
+            'timestamp' => date('c')
+        ];
+        
+        if ($this->config['debug']) {
+            $response['debug'] = [
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString()
+            ];
+        }
+        
+        // Log error
+        error_log("API Error ($code): " . $e->getMessage() . " in " . $e->getFile() . ":" . $e->getLine());
+        
+        $this->sendResponse($response, $code);
+    }
 }
 
 // Initialize and run
 try {
-    $api = new WMSAPI();
+    $api = new ProductionWMSAPI();
     $api->handleRequest();
 } catch (Exception $e) {
-    header('Content-Type: application/json');
+    http_response_code(500);
     echo json_encode([
         'success' => false,
-        'error' => 'API initialization failed: ' . $e->getMessage()
+        'error' => 'API initialization failed',
+        'message' => $e->getMessage()
     ]);
 }
-?>

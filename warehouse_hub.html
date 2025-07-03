@@ -44,7 +44,7 @@
 
         /* Header */
         .header {
-            background-color: var(--primary-color);
+            background-color: var(--primary-color); 
             color: white;
             padding: 1rem 2rem;
             box-shadow: var(--base-shadow);
@@ -556,7 +556,8 @@
                 setTimeout(() => {
                     switch(operation) {
                         case 'picking':
-                            window.location.href = 'mobile_picker.html';
+                            // Changed: Go to order selection dashboard first, not directly to mobile picker
+                            window.location.href = 'warehouse_orders.html';
                             break;
                         case 'receiving':
                             window.location.href = 'mobile_receiving.html';

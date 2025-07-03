@@ -1,0 +1,868 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Comenzi în Așteptare - WMS</title>
+    <link rel="stylesheet" href="styles/warehouse_orders.css">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet">
+</head>
+<body>
+    <div class="warehouse-dashboard">
+        <!-- Header -->
+        <header class="dashboard-header">
+            <div class="header-content">
+                <h1>
+                    <span class="material-icons-outlined">inventory_2</span>
+                    Comenzi în Așteptare
+                </h1>
+                <div class="header-stats">
+                    <div class="stat-item">
+                        <span class="stat-number" id="total-orders">-</span>
+                        <span class="stat-label">Comenzi Totale</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-number" id="urgent-orders">-</span>
+                        <span class="stat-label">Urgente</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-number" id="assigned-orders">-</span>
+                        <span class="stat-label">În Lucru</span>
+                    </div>
+                </div>
+                <button class="refresh-btn" onclick="loadOrders()">
+                    <span class="material-icons-outlined">refresh</span>
+                    Actualizează
+                </button>
+            </div>
+        </header>
+
+        <!-- Filters -->
+        <div class="filters-section">
+            <div class="filter-group">
+                <label for="status-filter">Status:</label>
+                <select id="status-filter" onchange="filterOrders()">
+                    <option value="all">Toate</option>
+                    <option value="pending" selected>În Așteptare</option>
+                    <option value="assigned">Asignate</option>
+                    <option value="picking">În Colectare</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label for="priority-filter">Prioritate:</label>
+                <select id="priority-filter" onchange="filterOrders()">
+                    <option value="all">Toate</option>
+                    <option value="urgent">Urgent</option>
+                    <option value="high">Ridicată</option>
+                    <option value="normal">Normală</option>
+                    <option value="low">Scăzută</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label for="source-filter">Sursă:</label>
+                <select id="source-filter" onchange="filterOrders()">
+                    <option value="all">Toate</option>
+                    <option value="manual">Manual</option>
+                    <option value="email">Email/Factură</option>
+                </select>
+            </div>
+            <div class="search-group">
+                <input type="text" id="search-input" placeholder="Caută comandă, client..." onkeyup="filterOrders()">
+                <span class="material-icons-outlined">search</span>
+            </div>
+        </div>
+
+        <!-- Orders Grid -->
+        <div class="orders-container">
+            <div id="loading" class="loading-state">
+                <div class="loading-spinner"></div>
+                <p>Se încarcă comenzile...</p>
+            </div>
+            
+            <div id="no-orders" class="empty-state" style="display: none;">
+                <span class="material-icons-outlined">inbox</span>
+                <h3>Nu există comenzi disponibile</h3>
+                <p>Toate comenzile au fost procesate sau nu există comenzi noi.</p>
+            </div>
+
+            <div id="orders-grid" class="orders-grid">
+                <!-- Orders will be loaded here dynamically -->
+            </div>
+        </div>
+
+        <!-- Quick Actions -->
+        <!-- <div class="quick-actions">
+            <button class="quick-action-btn" onclick="window.location.href='mobile_picker.html'">
+                <span class="material-icons-outlined">qr_code_scanner</span>
+                Scanează Comandă Direct
+            </button>
+            <button class="quick-action-btn" onclick="window.location.href='orders.php'">
+                <span class="material-icons-outlined">add</span>
+                Comandă Nouă
+            </button>
+        </div> -->
+    </div>
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Poppins', sans-serif;
+            background-color: #f5f7fa;
+            color: #2d3748;
+            line-height: 1.6;
+        }
+
+        .warehouse-dashboard {
+            min-height: 100vh;
+            padding: 20px;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        /* Header Styles */
+        .dashboard-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 16px;
+            color: white;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.3);
+        }
+
+        .header-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+
+        .dashboard-header h1 {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 2rem;
+            font-weight: 600;
+        }
+
+        .header-stats {
+            display: flex;
+            gap: 30px;
+        }
+
+        .stat-item {
+            text-align: center;
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            min-width: 80px;
+        }
+
+        .stat-number {
+            display: block;
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: #ffd700;
+        }
+
+        .stat-label {
+            font-size: 0.9rem;
+            opacity: 0.9;
+        }
+
+        .refresh-btn {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(255, 255, 255, 0.2);
+            border: none;
+            color: white;
+            padding: 12px 20px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+
+        .refresh-btn:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: translateY(-2px);
+        }
+
+        /* Filters Section */
+        .filters-section {
+            background: white;
+            padding: 25px;
+            border-radius: 16px;
+            margin-bottom: 30px;
+            display: flex;
+            gap: 25px;
+            align-items: center;
+            flex-wrap: wrap;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+        }
+
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .filter-group label {
+            font-weight: 500;
+            color: #4a5568;
+            font-size: 0.9rem;
+        }
+
+        .filter-group select {
+            padding: 10px 14px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            background: white;
+            font-size: 0.95rem;
+            min-width: 140px;
+            transition: border-color 0.3s ease;
+        }
+
+        .filter-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .search-group {
+            position: relative;
+            margin-left: auto;
+        }
+
+        .search-group input {
+            padding: 12px 45px 12px 16px;
+            border: 2px solid #e2e8f0;
+            border-radius: 10px;
+            font-size: 0.95rem;
+            width: 280px;
+            transition: all 0.3s ease;
+        }
+
+        .search-group input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .search-group .material-icons-outlined {
+            position: absolute;
+            right: 14px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #a0aec0;
+        }
+
+        /* Orders Grid */
+        .orders-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+            gap: 25px;
+        }
+
+        .order-card {
+            background: white;
+            border-radius: 16px;
+            padding: 25px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+            border: 2px solid transparent;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .order-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.1);
+            border-color: #667eea;
+        }
+
+        .order-card.urgent {
+            border-left: 5px solid #e53e3e;
+        }
+
+        .order-card.high {
+            border-left: 5px solid #f56500;
+        }
+
+        .order-card.normal {
+            border-left: 5px solid #38a169;
+        }
+
+        .order-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 20px;
+        }
+
+        .order-number {
+            font-size: 1.3rem;
+            font-weight: 600;
+            color: #2d3748;
+        }
+
+        .order-status {
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 500;
+            text-transform: uppercase;
+        }
+
+        .status-pending {
+            background: #fef5e7;
+            color: #c05621;
+        }
+
+        .status-assigned {
+            background: #e6fffa;
+            color: #234e52;
+        }
+
+        .status-picking {
+            background: #ebf8ff;
+            color: #2a69ac;
+        }
+
+        .priority-badge {
+            position: absolute;
+            top: -2px;
+            right: 20px;
+            background: #667eea;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 0 0 10px 10px;
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+
+        .priority-badge.urgent {
+            background: #e53e3e;
+        }
+
+        .priority-badge.high {
+            background: #f56500;
+        }
+
+        .order-details {
+            margin-bottom: 20px;
+        }
+
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 0.95rem;
+        }
+
+        .detail-label {
+            color: #718096;
+            font-weight: 500;
+        }
+
+        .detail-value {
+            color: #2d3748;
+            font-weight: 600;
+        }
+
+        .order-items {
+            background: #f7fafc;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+
+        .items-preview {
+            font-size: 0.9rem;
+            color: #4a5568;
+            margin-bottom: 10px;
+        }
+
+        .item-count {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: #667eea;
+            font-weight: 600;
+        }
+
+        .order-actions {
+            display: flex;
+            gap: 12px;
+        }
+
+        .action-btn {
+            flex: 1;
+            padding: 12px 16px;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.95rem;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-secondary {
+            background: #f7fafc;
+            color: #4a5568;
+            border: 2px solid #e2e8f0;
+        }
+
+        .btn-secondary:hover {
+            background: #edf2f7;
+            border-color: #cbd5e0;
+        }
+
+        /* Loading and Empty States */
+        .loading-state, .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #718096;
+        }
+
+        .loading-spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid #e2e8f0;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .empty-state .material-icons-outlined {
+            font-size: 4rem;
+            color: #cbd5e0;
+            margin-bottom: 20px;
+        }
+
+        /* Quick Actions */
+        .quick-actions {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .quick-action-btn {
+            background: linear-gradient(135deg, #48bb78, #38a169);
+            color: white;
+            border: none;
+            padding: 15px 20px;
+            border-radius: 50px;
+            cursor: pointer;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            box-shadow: 0 8px 25px rgba(72, 187, 120, 0.3);
+            transition: all 0.3s ease;
+        }
+
+        .quick-action-btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 12px 30px rgba(72, 187, 120, 0.4);
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .warehouse-dashboard {
+                padding: 15px;
+            }
+
+            .header-content {
+                flex-direction: column;
+                text-align: center;
+            }
+
+            .header-stats {
+                order: 2;
+            }
+
+            .refresh-btn {
+                order: 3;
+            }
+
+            .filters-section {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 15px;
+            }
+
+            .search-group {
+                margin-left: 0;
+            }
+
+            .search-group input {
+                width: 100%;
+            }
+
+            .orders-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .quick-actions {
+                bottom: 20px;
+                right: 20px;
+            }
+        }
+    </style>
+
+    <script>
+        let allOrders = [];
+        let filteredOrders = [];
+
+        // Initialize the dashboard
+        document.addEventListener('DOMContentLoaded', function() {
+            loadOrders();
+            setInterval(loadOrders, 30000); // Auto-refresh every 30 seconds
+        });
+
+        // Load orders from API (Enhanced Debug Version)
+        async function loadOrders() {
+            const loadingEl = document.getElementById('loading');
+            const ordersGrid = document.getElementById('orders-grid');
+            const noOrdersEl = document.getElementById('no-orders');
+
+            loadingEl.style.display = 'block';
+            ordersGrid.style.display = 'none';
+            noOrdersEl.style.display = 'none';
+
+            try {
+                console.log('🔍 Attempting to load orders...');
+                
+                // Try multiple API endpoints in order of preference (fixed paths)
+                const endpoints = [
+                    'api/warehouse/get_orders.php',       // Real API (has DB issues)
+                ];
+                
+                let response, data, apiEndpoint;
+                
+                for (const endpoint of endpoints) {
+                    try {
+                        console.log(`🚀 Trying: ${endpoint}`);
+                        response = await fetch(endpoint);
+                        
+                        // Get the raw response text first
+                        const responseText = await response.text();
+                        console.log(`📄 Raw response from ${endpoint}:`, responseText.substring(0, 500));
+                        
+                        // Check if response is HTML (error page)
+                        if (responseText.trim().startsWith('<')) {
+                            console.log(`❌ ${endpoint} returned HTML (probably an error page)`);
+                            continue;
+                        }
+                        
+                        // Try to parse as JSON
+                        data = JSON.parse(responseText);
+                        apiEndpoint = endpoint;
+                        console.log(`✅ JSON parsed successfully from ${endpoint}:`, data);
+                        break;
+                        
+                    } catch (error) {
+                        console.log(`❌ Failed ${endpoint}:`, error.message);
+                        continue;
+                    }
+                }
+                
+                if (!data) {
+                    throw new Error('All API endpoints failed. Check browser console for details.');
+                }
+
+                if (data.status === 'success') {
+                    allOrders = data.orders || [];
+                    updateStats();
+                    filterOrders();
+                    
+                    console.log(`✅ Loaded ${allOrders.length} orders from ${apiEndpoint}`);
+                    
+                    // Show success message if using minimal API
+                    if (apiEndpoint.includes('minimal_test')) {
+                        showSuccessMessage(`Folosind API-ul de test (${apiEndpoint}). Creează date reale pentru a vedea comenzile reale.`);
+                    }
+                    
+                } else {
+                    throw new Error(data.message || 'API returned error status');
+                }
+                
+            } catch (error) {
+                console.error('❌ Complete error details:', error);
+                showError('Eroare la încărcarea comenzilor: ' + error.message);
+            } finally {
+                loadingEl.style.display = 'none';
+            }
+        }
+
+        // Show success message helper
+        function showSuccessMessage(message) {
+            const successEl = document.createElement('div');
+            successEl.style.cssText = `
+                background: #d4edda; border: 1px solid #c3e6cb; color: #155724;
+                padding: 15px; margin: 15px 0; border-radius: 8px; text-align: center;
+            `;
+            successEl.innerHTML = `
+                <strong>ℹ️ Info:</strong> ${message}
+                <br><small>Pentru a crea date reale, rulează: <code>php simple_test_data.php</code></small>
+            `;
+            
+            const container = document.querySelector('.orders-container');
+            container.insertBefore(successEl, container.firstChild);
+        }
+
+        // Update header statistics
+        function updateStats() {
+            const totalOrders = allOrders.length;
+            const urgentOrders = allOrders.filter(order => order.priority === 'urgent').length;
+            const assignedOrders = allOrders.filter(order => order.status === 'assigned' || order.status === 'picking').length;
+
+            document.getElementById('total-orders').textContent = totalOrders;
+            document.getElementById('urgent-orders').textContent = urgentOrders;
+            document.getElementById('assigned-orders').textContent = assignedOrders;
+        }
+
+        // Filter and search orders
+        function filterOrders() {
+            const statusFilter = document.getElementById('status-filter').value;
+            const priorityFilter = document.getElementById('priority-filter').value;
+            const sourceFilter = document.getElementById('source-filter').value;
+            const searchText = document.getElementById('search-input').value.toLowerCase();
+
+            filteredOrders = allOrders.filter(order => {
+                const matchesStatus = statusFilter === 'all' || order.status === statusFilter;
+                const matchesPriority = priorityFilter === 'all' || order.priority === priorityFilter;
+                const matchesSource = sourceFilter === 'all' || order.source === sourceFilter;
+                const matchesSearch = searchText === '' || 
+                    order.order_number.toLowerCase().includes(searchText) ||
+                    order.customer_name.toLowerCase().includes(searchText);
+
+                return matchesStatus && matchesPriority && matchesSource && matchesSearch;
+            });
+
+            displayOrders();
+        }
+
+        // Display filtered orders
+        function displayOrders() {
+            const ordersGrid = document.getElementById('orders-grid');
+            const noOrdersEl = document.getElementById('no-orders');
+
+            if (filteredOrders.length === 0) {
+                ordersGrid.style.display = 'none';
+                noOrdersEl.style.display = 'block';
+                return;
+            }
+
+            ordersGrid.style.display = 'grid';
+            noOrdersEl.style.display = 'none';
+
+            ordersGrid.innerHTML = filteredOrders.map(order => createOrderCard(order)).join('');
+        }
+
+        // Create order card HTML
+        function createOrderCard(order) {
+            const priorityText = {
+                'urgent': 'URGENT',
+                'high': 'RIDICATĂ',
+                'normal': 'NORMALĂ',
+                'low': 'SCĂZUTĂ'
+            };
+
+            const statusText = {
+                'pending': 'În Așteptare',
+                'assigned': 'Asignată',
+                'picking': 'În Colectare',
+                'completed': 'Finalizată'
+            };
+
+            const sourceText = {
+                'manual': 'Manual',
+                'email': 'Email/Factură',
+                'api': 'API'
+            };
+
+            return `
+                <div class="order-card ${order.priority}">
+                    ${order.priority !== 'normal' ? `<div class="priority-badge ${order.priority}">${priorityText[order.priority]}</div>` : ''}
+                    
+                    <div class="order-header">
+                        <div class="order-number">#${order.order_number}</div>
+                        <div class="order-status status-${order.status}">${statusText[order.status]}</div>
+                    </div>
+
+                    <div class="order-details">
+                        <div class="detail-row">
+                            <span class="detail-label">Client:</span>
+                            <span class="detail-value">${order.customer_name}</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">Valoare:</span>
+                            <span class="detail-value">${order.total_value} RON</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">Dată:</span>
+                            <span class="detail-value">${new Date(order.order_date).toLocaleDateString('ro-RO')}</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">Sursă:</span>
+                            <span class="detail-value">${sourceText[order.source] || 'Manual'}</span>
+                        </div>
+                    </div>
+
+                    <div class="order-items">
+                        <div class="items-preview">Articole de colectat:</div>
+                        <div class="item-count">
+                            <span class="material-icons-outlined">inventory</span>
+                            ${order.total_items} articole în ${order.total_locations || 1} locații
+                        </div>
+                    </div>
+
+                    <div class="order-actions">
+                        ${order.status === 'pending' ? 
+                            `<button class="action-btn btn-primary" onclick="startPicking('${order.order_number}')">
+                                <span class="material-icons-outlined">play_arrow</span>
+                                Începe Colectarea
+                            </button>` :
+                            `<button class="action-btn btn-secondary" onclick="continuePickig('${order.order_number}')">
+                                <span class="material-icons-outlined">resume</span>
+                                Continuă
+                            </button>`
+                        }
+                        <button class="action-btn btn-secondary" onclick="viewOrderDetails('${order.id}')">
+                            <span class="material-icons-outlined">visibility</span>
+                            Detalii
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Start picking an order
+        async function startPicking(orderNumber) {
+            try {
+                // Assign order to current user and redirect to mobile interface
+                const response = await fetch('/api/warehouse/assign_order.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ order_number: orderNumber })
+                });
+
+                const data = await response.json();
+                if (data.status === 'success') {
+                    // Redirect to mobile picker with pre-filled order
+                    window.location.href = `mobile_picker.html?order=${orderNumber}`;
+                } else {
+                    alert('Eroare la asignarea comenzii: ' + data.message);
+                }
+            } catch (error) {
+                alert('Eroare: ' + error.message);
+            }
+        }
+
+        // Continue picking an assigned order
+        function continuePickig(orderNumber) {
+            window.location.href = `mobile_picker.html?order=${orderNumber}`;
+        }
+
+        // View order details
+        function viewOrderDetails(orderId) {
+            window.location.href = `order_details.php?id=${orderId}`;
+        }
+
+        // Show error message
+        function showError(message) {
+            const ordersGrid = document.getElementById('orders-grid');
+            const noOrdersEl = document.getElementById('no-orders');
+            const loadingEl = document.getElementById('loading');
+            
+            loadingEl.style.display = 'none';
+            ordersGrid.style.display = 'none';
+            noOrdersEl.style.display = 'block';
+            
+            // Update no-orders element to show error
+            noOrdersEl.innerHTML = `
+                <span class="material-icons-outlined" style="color: #e53e3e; font-size: 4rem;">error</span>
+                <h3 style="color: #e53e3e;">Eroare la încărcarea comenzilor</h3>
+                <p style="color: #718096;">${message}</p>
+                <button onclick="loadOrders()" style="margin-top: 15px; padding: 10px 20px; background: #667eea; color: white; border: none; border-radius: 8px; cursor: pointer;">
+                    Încearcă din nou
+                </button>
+                <div style="margin-top: 20px; padding: 15px; background: #f7fafc; border-radius: 8px; text-align: left; max-width: 500px; margin-left: auto; margin-right: auto;">
+                    <strong>Debugging:</strong><br>
+                    • Verifică că fișierul <code>/api/warehouse/get_orders.php</code> există<br>
+                    • Verifică log-urile PHP pentru erori<br>
+                    • Testează API-ul direct: <a href="/api/warehouse/debug_orders.php" target="_blank">/api/warehouse/debug_orders.php</a><br>
+                    • Rulează: <code>php compatible_test_data.php</code>
+                </div>
+            `;
+        }
+
+        // Sample data for testing (remove when API is ready)
+        function loadSampleData() {
+            allOrders = [
+                {
+                    id: 1,
+                    order_number: 'WMS-2025-001',
+                    customer_name: 'SC Test Company SRL',
+                    total_value: '1,250.00',
+                    order_date: '2025-07-03T10:30:00',
+                    status: 'pending',
+                    priority: 'urgent',
+                    source: 'email',
+                    total_items: 5,
+                    total_locations: 3
+                },
+                {
+                    id: 2,
+                    order_number: 'WMS-2025-002',
+                    customer_name: 'Magazin ABC',
+                    total_value: '750.50',
+                    order_date: '2025-07-03T09:15:00',
+                    status: 'assigned',
+                    priority: 'normal',
+                    source: 'manual',
+                    total_items: 3,
+                    total_locations: 2
+                }
+            ];
+            
+            updateStats();
+            filterOrders();
+        }
+
+        // Uncomment for testing without API
+        // setTimeout(loadSampleData, 1000);
+    </script>
+</body>
+</html>

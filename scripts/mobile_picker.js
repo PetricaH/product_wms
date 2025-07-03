@@ -66,6 +66,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const totalNeededEl = document.getElementById('total-needed');
     const availableInLocationEl = document.getElementById('available-in-location');
 
+    const urlParams = new URLSearchParams(window.location.search);
+    const orderParam = urlParams.get('order');
+
     // Check elements exist (add new checks)
     // ... (previous checks) ...
     if (!locationCodeInput) console.error("Error: Manual Location input not found!");
@@ -86,6 +89,11 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentTask = null;
     let html5QrCode = null;
     let currentScanMode = null; // 'order', 'location', 'product'
+
+    if (orderParam) {
+        // Auto-load the order from dashboard
+        autoLoadOrder(orderParam);
+    }
 
     // --- Core Functions ---
 
@@ -366,6 +374,217 @@ document.addEventListener('DOMContentLoaded', () => {
         if (stopScanBtn) stopScanBtn.classList.add('hidden');
         if (shouldResetUI) resetUI();
     }
+
+    /**
+     * Auto-load order when coming from warehouse dashboard
+     */
+    function autoLoadOrder(orderNumber) {
+        console.log(`Auto-loading order: ${orderNumber}`);
+        
+        // Update UI to show we're loading a specific order
+        if (scannedOrderIdEl) {
+            scannedOrderIdEl.textContent = `Se încarcă: ${orderNumber}`;
+        }
+        
+        // Hide manual input section and show that order is pre-selected
+        if (manualOrderSection) {
+            manualOrderSection.style.display = 'none';
+        }
+        
+        if (scanOrderSection) {
+            const autoLoadMessage = document.createElement('div');
+            autoLoadMessage.className = 'auto-load-message';
+            autoLoadMessage.innerHTML = `
+                <div style="background: #e6fffa; border: 2px solid #319795; border-radius: 8px; padding: 15px; margin: 10px 0; text-align: center;">
+                    <span style="color: #2c7a7b; font-weight: 600;">📦 Comandă selectată din tablou de bord</span>
+                    <div style="color: #285e61; margin-top: 5px;">Comanda ${orderNumber} se încarcă automat...</div>
+                </div>
+            `;
+            scanOrderSection.appendChild(autoLoadMessage);
+            
+            // Hide the scan button since order is pre-selected
+            if (scanOrderBtn) {
+                scanOrderBtn.style.display = 'none';
+            }
+        }
+        
+        // Update status and start task fetching
+        updateOrderStatus(orderNumber, 'assigned');
+        
+        // Fetch the first task for this order
+        setTimeout(() => {
+            fetchNextTask(orderNumber);
+        }, 500); // Small delay to show the loading message
+    }
+
+    /**
+     * Update order status on the server
+     */
+    async function updateOrderStatus(orderNumber, newStatus) {
+        try {
+            const response = await fetch('/api/warehouse/update_order_status.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    order_number: orderNumber, 
+                    status: newStatus 
+                })
+            });
+            
+            const result = await response.json();
+            if (result.status !== 'success') {
+                console.warn('Could not update order status:', result.message);
+            }
+        } catch (error) {
+            console.warn('Error updating order status:', error);
+            // Continue anyway - status update is not critical for picking
+        }
+    }
+
+    /**
+     * Enhanced fetchNextTask function with better status updates
+     */
+    async function fetchNextTaskEnhanced(orderId) {
+        if (!orderId || String(orderId).trim() === '') { 
+            showMessage('ID comandă invalid.', true); 
+            stopScanner(); 
+            return; 
+        }
+        
+        const trimmedOrderId = String(orderId).trim();
+        console.log(`fetchNextTask called with Order ID: ${trimmedOrderId}`);
+
+        if (scannedOrderIdEl) scannedOrderIdEl.textContent = `Se încarcă comanda: ${trimmedOrderId}`;
+        
+        // Reset UI except for the order input section
+        [locationScanPrompt, productScanPrompt, taskDisplay, confirmationArea, allDoneMessage].forEach(el => el?.classList.add('hidden'));
+        if (messageArea) messageArea.textContent = '';
+        currentTask = null;
+        showLoading();
+
+        try {
+            const response = await fetch(`${GET_TASK_API_URL}?order_id=${encodeURIComponent(trimmedOrderId)}`);
+            if (!response.ok) { 
+                let e = `HTTP error ${response.status}`; 
+                try { e = (await response.json()).message || e; } catch(err){} 
+                throw new Error(e); 
+            }
+            
+            const result = await response.json();
+            console.log("Fetch result:", result);
+
+            if (result.status === 'success') {
+                showLocationScanPrompt(result.data); // Start workflow with location prompt
+                if (scannedOrderIdEl) scannedOrderIdEl.textContent = `Comandă încărcată: ${trimmedOrderId}`;
+                
+                // Update order status to 'picking' when first task is loaded
+                updateOrderStatus(trimmedOrderId, 'picking');
+                
+            } else if (result.status === 'complete') {
+                if (allDoneMessage) allDoneMessage.classList.remove('hidden');
+                showMessage('Colectarea comenzii este finalizată!', false);
+                if (scannedOrderIdEl) scannedOrderIdEl.textContent = `Comanda ${trimmedOrderId} este completă.`;
+                
+                // Update order status to completed
+                updateOrderStatus(trimmedOrderId, 'completed');
+                
+                // Show option to return to dashboard
+                showCompletionOptions();
+                
+            } else {
+                showMessage(result.message || `Eroare API: ${result.status}`, true);
+                if (scannedOrderIdEl) scannedOrderIdEl.textContent = `Eroare încărcare comandă: ${trimmedOrderId}`;
+            }
+        } catch (error) {
+            console.error('Fetch Task Error:', error);
+            showMessage(`Eroare: ${error.message || 'Eroare rețea.'}`, true);
+            if (scannedOrderIdEl) scannedOrderIdEl.textContent = `Eroare încărcare comandă: ${trimmedOrderId}`;
+        } finally {
+            hideLoading();
+        }
+    }
+
+    /**
+     * Show completion options when order is finished
+     */
+    function showCompletionOptions() {
+        const completionSection = document.createElement('div');
+        completionSection.className = 'completion-options';
+        completionSection.innerHTML = `
+            <div style="background: #f0fff4; border: 2px solid #38a169; border-radius: 12px; padding: 20px; margin: 20px 0; text-align: center;">
+                <div style="color: #2f855a; font-size: 1.2rem; font-weight: 600; margin-bottom: 15px;">
+                    ✅ Comandă finalizată cu succes!
+                </div>
+                <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+                    <button onclick="returnToDashboard()" style="background: #667eea; color: white; border: none; padding: 12px 20px; border-radius: 8px; cursor: pointer; font-weight: 600;">
+                        🏠 Înapoi la Tablou
+                    </button>
+                    <button onclick="startNewOrder()" style="background: #48bb78; color: white; border: none; padding: 12px 20px; border-radius: 8px; cursor: pointer; font-weight: 600;">
+                        📦 Comandă Nouă
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        // Insert after the all done message
+        if (allDoneMessage && allDoneMessage.parentNode) {
+            allDoneMessage.parentNode.insertBefore(completionSection, allDoneMessage.nextSibling);
+        }
+    }
+
+    /**
+     * Return to warehouse dashboard
+     */
+    function returnToDashboard() {
+        window.location.href = 'warehouse_orders.php';
+    }
+
+    /**
+     * Start a new order (reload picker)
+     */
+    function startNewOrder() {
+        window.location.href = 'mobile_picker.html';
+    }
+
+    // Replace the original fetchNextTask with the enhanced version
+    if (typeof fetchNextTask !== 'undefined') {
+        // Save original function as fallback
+        window.originalFetchNextTask = fetchNextTask;
+        // Replace with enhanced version
+        window.fetchNextTask = fetchNextTaskEnhanced;
+    }
+
+    // Add CSS for enhanced UI elements
+    const enhancedStyles = `
+    <style>
+    .auto-load-message {
+        animation: slideIn 0.5s ease-out;
+    }
+
+    .completion-options {
+        animation: fadeIn 0.5s ease-out;
+    }
+
+    @keyframes slideIn {
+        from { transform: translateY(-20px); opacity: 0; }
+        to { transform: translateY(0); opacity: 1; }
+    }
+
+    @keyframes fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+    }
+
+    .completion-options button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        transition: all 0.2s ease;
+    }
+    </style>
+    `;
+
+    // Add enhanced styles to head
+    document.head.insertAdjacentHTML('beforeend', enhancedStyles);
 
     // --- Event Listeners ---
 

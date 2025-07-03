@@ -9,24 +9,42 @@ class Users {
     }
 
     /**
-     * Find a user by their username or email
+     * Find user by username or email (for login)
      * @param string $identifier Username or email
-     * @return array|false User data or false if not found
+     * @return array|null User data or null if not found
      */
-    public function findByUsernameOrEmail(string $identifier): array|false {
+    public function findByUsernameOrEmail(string $identifier): ?array {
         try {
-            $stmt = $this->db->prepare("SELECT id, username, email, password, role, status
-                                        FROM users
-                                        WHERE (username = :identifier OR email = :identifier_email)
-                                        AND status = 1
-                                        LIMIT 1");
+            $stmt = $this->db->prepare("
+                SELECT id, username, email, password, role, status, created_at 
+                FROM users 
+                WHERE (username = :identifier OR email = :identifier) 
+                AND status = 1 
+                LIMIT 1
+            ");
             $stmt->bindParam(':identifier', $identifier, PDO::PARAM_STR);
-            $stmt->bindParam(':identifier_email', $identifier, PDO::PARAM_STR);
             $stmt->execute();
+            
             $user = $stmt->fetch(PDO::FETCH_ASSOC);
-            return $user ?: false;
+            return $user ?: null;
         } catch (PDOException $e) {
             error_log("Error in Users::findByUsernameOrEmail: " . $e->getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Update user's last login timestamp
+     * @param int $userId User ID
+     * @return bool Success status
+     */
+    public function updateLastLogin(int $userId): bool {
+        try {
+            $stmt = $this->db->prepare("UPDATE users SET updated_at = NOW() WHERE id = :user_id");
+            $stmt->bindParam(':user_id', $userId, PDO::PARAM_INT);
+            return $stmt->execute();
+        } catch (PDOException $e) {
+            error_log("Error in Users::updateLastLogin: " . $e->getMessage());
             return false;
         }
     }

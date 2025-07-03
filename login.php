@@ -1,32 +1,112 @@
+<?php
+/**
+ * Login Page with Backend Authentication
+ * File: login.php
+ */
+
+// Bootstrap and configuration
+if (!defined('BASE_PATH')) {
+    define('BASE_PATH', __DIR__);
+}
+require_once BASE_PATH . '/bootstrap.php';
+
+// Start session
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
+// If user is already logged in, redirect to dashboard
+if (isset($_SESSION['user_id']) && isset($_SESSION['role'])) {
+    header('Location: ' . getNavUrl('index.php'));
+    exit;
+}
+
+// Handle POST request (login processing)
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $username = trim($_POST['username'] ?? '');
+    $password = $_POST['password'] ?? '';
+    $userType = $_POST['user_type'] ?? 'admin';
+
+    $error = '';
+
+    if (empty($username) || empty($password)) {
+        $error = 'Completați toate câmpurile obligatorii.';
+    } else {
+        // Get database connection
+        $config = require BASE_PATH . '/config/config.php';
+        
+        if (!isset($config['connection_factory']) || !is_callable($config['connection_factory'])) {
+            $error = 'Eroare de configurare a bazei de date.';
+        } else {
+            try {
+                $dbFactory = $config['connection_factory'];
+                $db = $dbFactory();
+                
+                // Include User model
+                require_once BASE_PATH . '/models/User.php';
+                $usersModel = new Users($db);
+                
+                // Find user by username or email
+                $user = $usersModel->findByUsernameOrEmail($username);
+                
+                if ($user && $user['status'] == 1 && password_verify($password, $user['password'])) {
+                    // Check user type matches
+                    if ($userType === 'admin' && $user['role'] !== 'admin') {
+                        $error = 'Credențiale invalide pentru administrator.';
+                    } elseif ($userType === 'worker' && $user['role'] === 'admin') {
+                        $error = 'Utilizați tipul de cont corect.';
+                    } else {
+                        // Successful login - set session variables
+                        $_SESSION['user_id'] = $user['id'];
+                        $_SESSION['username'] = $user['username'];
+                        $_SESSION['email'] = $user['email'];
+                        $_SESSION['role'] = $user['role'];
+                        $_SESSION['user_type'] = $userType;
+                        $_SESSION['login_time'] = time();
+                        
+                        // Update last login
+                        $usersModel->updateLastLogin($user['id']);
+                        
+                        // Redirect based on user type
+                        if ($userType === 'worker' || $user['role'] !== 'admin') {
+                            header('Location: ' . getNavUrl('warehouse_hub.html'));
+                        } else {
+                            header('Location: ' . getNavUrl('index.php'));
+                        }
+                        exit;
+                    }
+                } else {
+                    $error = 'Credențiale invalide sau cont inactiv.';
+                }
+            } catch (Exception $e) {
+                error_log("Login error: " . $e->getMessage());
+                $error = 'Eroare de sistem. Încercați din nou.';
+            }
+        }
+    }
+    
+    // If there's an error and this is an AJAX request, return JSON
+    if (!empty($error) && !empty($_SERVER['HTTP_X_REQUESTED_WITH'])) {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'message' => $error]);
+        exit;
+    }
+}
+?>
 <!DOCTYPE html>
 <html lang="ro">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WMS - Autentificare</title>
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet">
+    <title>Autentificare - WMS</title>
+    
+    <!-- Material Symbols -->
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
     <style>
-        /* WMS Design Language */
-        :root {
-            --primary-color: #00385E;
-            --secondary-color: #DDEBF3;
-            --hover-color: #A4C8E1;
-            --success-color: #198754;
-            --warning-color: #ffc107;
-            --danger-color: #dc3545;
-            --info-color: #0dcaf0;
-            --background-color: #f8f9fa;
-            --container-background: #ffffff;
-            --text-primary: #212529;
-            --text-secondary: #495057;
-            --text-muted: #6c757d;
-            --border-color: #dee2e6;
-            --border-radius: 8px;
-            --base-padding: 1.5rem;
-            --base-shadow: 0 5px 15px rgba(0, 0, 0, 0.07);
-        }
-
         * {
             margin: 0;
             padding: 0;
@@ -34,327 +114,281 @@
         }
 
         body {
-            font-family: 'Poppins', sans-serif;
-            background: linear-gradient(135deg, var(--primary-color) 0%, #004a7c 100%);
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
             display: flex;
             align-items: center;
             justify-content: center;
-            color: var(--text-primary);
-            overflow-x: hidden;
+            padding: 20px;
         }
 
-        /* Background Pattern */
-        body::before {
-            content: '';
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-image: 
-                radial-gradient(circle at 25% 25%, rgba(255, 255, 255, 0.1) 0%, transparent 50%),
-                radial-gradient(circle at 75% 75%, rgba(255, 255, 255, 0.05) 0%, transparent 50%);
-            z-index: -1;
-        }
-
-        /* Login Container */
         .login-container {
-            background-color: var(--container-background);
-            border-radius: var(--border-radius);
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-            padding: 2rem;
-            width: 100%;
-            max-width: 400px;
-            margin: 1rem;
-            position: relative;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
             overflow: hidden;
+            width: 100%;
+            max-width: 420px;
+            position: relative;
         }
 
-        .login-container::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            height: 4px;
-            background: linear-gradient(90deg, var(--primary-color), var(--info-color), var(--success-color));
-        }
-
-        /* Header */
         .login-header {
-            text-align: center;
-            margin-bottom: 2rem;
-        }
-
-        .logo {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 0.75rem;
-            margin-bottom: 1rem;
-        }
-
-        .logo-icon {
-            background-color: var(--primary-color);
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
-            width: 60px;
-            height: 60px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 2rem;
-            box-shadow: 0 4px 20px rgba(0, 56, 94, 0.3);
+            padding: 40px 30px 30px;
+            text-align: center;
         }
 
-        .logo-text {
-            font-size: 1.8rem;
+        .login-header h1 {
+            font-size: 28px;
             font-weight: 700;
-            color: var(--primary-color);
+            margin-bottom: 8px;
         }
 
-        .login-title {
-            font-size: 1.3rem;
+        .login-header p {
+            opacity: 0.9;
+            font-size: 16px;
+        }
+
+        .login-body {
+            padding: 30px;
+        }
+
+        .user-type-selection {
+            margin-bottom: 30px;
+        }
+
+        .user-type-label {
+            font-size: 14px;
             font-weight: 600;
-            color: var(--text-primary);
-            margin-bottom: 0.5rem;
+            color: #374151;
+            margin-bottom: 12px;
+            display: block;
         }
 
-        .login-subtitle {
-            color: var(--text-secondary);
-            font-size: 0.95rem;
+        .user-type-options {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
         }
 
-        /* Form */
-        .login-form {
-            margin-bottom: 1.5rem;
+        .user-type-card {
+            border: 2px solid #e5e7eb;
+            border-radius: 12px;
+            padding: 20px 16px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            background: #f9fafb;
+        }
+
+        .user-type-card:hover {
+            border-color: #667eea;
+            background: #f0f4ff;
+        }
+
+        .user-type-card.selected {
+            border-color: #667eea;
+            background: #667eea;
+            color: white;
+        }
+
+        .user-type-card .material-symbols-outlined {
+            font-size: 32px;
+            margin-bottom: 8px;
+            display: block;
+        }
+
+        .user-type-card .type-title {
+            font-weight: 600;
+            font-size: 14px;
+            margin-bottom: 4px;
+        }
+
+        .user-type-card .type-desc {
+            font-size: 12px;
+            opacity: 0.8;
         }
 
         .form-group {
-            margin-bottom: 1.5rem;
-            position: relative;
+            margin-bottom: 20px;
         }
 
         .form-label {
             display: block;
-            margin-bottom: 0.5rem;
             font-weight: 500;
-            color: var(--text-primary);
-            font-size: 0.9rem;
+            color: #374151;
+            margin-bottom: 8px;
+            font-size: 14px;
         }
 
         .form-input {
             width: 100%;
-            padding: 1rem 1rem 1rem 3rem;
-            border: 2px solid var(--border-color);
-            border-radius: var(--border-radius);
-            font-size: 1rem;
-            transition: all 0.3s ease;
-            background-color: var(--container-background);
+            padding: 16px 16px 16px 48px;
+            border: 2px solid #e5e7eb;
+            border-radius: 12px;
+            font-size: 16px;
+            transition: all 0.2s;
+            background: #f9fafb;
         }
 
         .form-input:focus {
             outline: none;
-            border-color: var(--primary-color);
-            box-shadow: 0 0 0 3px rgba(0, 56, 94, 0.1);
+            border-color: #667eea;
+            background: white;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
         }
 
-        .form-input.error {
-            border-color: var(--danger-color);
-            box-shadow: 0 0 0 3px rgba(220, 53, 69, 0.1);
+        .form-group {
+            position: relative;
         }
 
         .input-icon {
             position: absolute;
-            left: 1rem;
+            left: 16px;
             top: 50%;
             transform: translateY(-50%);
-            color: var(--text-muted);
-            font-size: 1.2rem;
-            pointer-events: none;
-            margin-top: 12px;
+            color: #6b7280;
+            font-size: 20px;
         }
 
         .password-toggle {
             position: absolute;
-            right: 1rem;
+            right: 16px;
             top: 50%;
             transform: translateY(-50%);
             background: none;
             border: none;
-            color: var(--text-muted);
             cursor: pointer;
-            font-size: 1.2rem;
-            margin-top: 12px;
-            transition: color 0.3s ease;
+            color: #6b7280;
+            font-size: 20px;
         }
 
-        .password-toggle:hover {
-            color: var(--primary-color);
+        .remember-section {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
         }
 
-        /* Buttons */
+        .remember-checkbox {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .remember-checkbox input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+        }
+
+        .remember-checkbox label {
+            font-size: 14px;
+            color: #6b7280;
+        }
+
+        .forgot-password {
+            color: #667eea;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .forgot-password:hover {
+            text-decoration: underline;
+        }
+
         .btn {
             width: 100%;
-            padding: 1rem;
+            padding: 16px;
             border: none;
-            border-radius: var(--border-radius);
-            font-size: 1rem;
+            border-radius: 12px;
+            font-size: 16px;
             font-weight: 600;
             cursor: pointer;
-            transition: all 0.3s ease;
+            transition: all 0.2s;
             display: flex;
             align-items: center;
             justify-content: center;
-            gap: 0.5rem;
-            text-decoration: none;
-            margin-bottom: 1rem;
+            gap: 8px;
         }
 
         .btn-primary {
-            background-color: var(--primary-color);
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
         }
 
-        .btn-primary:hover:not(:disabled) {
-            background-color: #002c4a;
+        .btn-primary:hover {
             transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(0, 56, 94, 0.3);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
         }
 
-        .btn:disabled {
+        .btn-primary:disabled {
             opacity: 0.6;
             cursor: not-allowed;
-            transform: none !important;
+            transform: none;
         }
 
-        /* User Type Selection */
-        .user-type-selection {
-            margin-bottom: 1.5rem;
-        }
-
-        .user-type-grid {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 0.75rem;
-        }
-
-        .user-type-card {
-            background-color: var(--background-color);
-            border: 2px solid var(--border-color);
-            border-radius: var(--border-radius);
-            padding: 1rem;
-            text-align: center;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            position: relative;
-        }
-
-        .user-type-card:hover {
-            border-color: var(--primary-color);
-            background-color: var(--secondary-color);
-        }
-
-        .user-type-card.selected {
-            border-color: var(--primary-color);
-            background-color: var(--secondary-color);
-            box-shadow: 0 0 0 3px rgba(0, 56, 94, 0.1);
-        }
-
-        .user-type-icon {
-            font-size: 2rem;
-            color: var(--primary-color);
-            margin-bottom: 0.5rem;
-        }
-
-        .user-type-title {
-            font-size: 0.9rem;
-            font-weight: 600;
-            color: var(--text-primary);
-            margin-bottom: 0.25rem;
-        }
-
-        .user-type-subtitle {
-            font-size: 0.75rem;
-            color: var(--text-secondary);
-        }
-
-        /* Status Messages */
         .status-message {
-            padding: 1rem;
-            border-radius: var(--border-radius);
-            margin-bottom: 1rem;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            font-size: 0.9rem;
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            font-weight: 500;
         }
 
-        .status-success {
-            background-color: rgba(25, 135, 84, 0.1);
-            color: var(--success-color);
-            border: 1px solid rgba(25, 135, 84, 0.2);
+        .status-message.error {
+            background: #fef2f2;
+            color: #dc2626;
+            border: 1px solid #fecaca;
         }
 
-        .status-error {
-            background-color: rgba(220, 53, 69, 0.1);
-            color: var(--danger-color);
-            border: 1px solid rgba(220, 53, 69, 0.2);
+        .status-message.success {
+            background: #f0fdf4;
+            color: #16a34a;
+            border: 1px solid #bbf7d0;
         }
 
-        .status-info {
-            background-color: rgba(13, 202, 240, 0.1);
-            color: var(--info-color);
-            border: 1px solid rgba(13, 202, 240, 0.2);
+        .status-message.info {
+            background: #eff6ff;
+            color: #2563eb;
+            border: 1px solid #bfdbfe;
         }
 
-        /* Footer */
         .login-footer {
+            background: #f9fafb;
+            padding: 20px 30px;
             text-align: center;
-            padding-top: 1rem;
-            border-top: 1px solid var(--border-color);
+            border-top: 1px solid #e5e7eb;
         }
 
         .footer-links {
-            display: flex;
-            justify-content: center;
-            gap: 1rem;
-            margin-bottom: 0.75rem;
+            margin-bottom: 12px;
         }
 
         .footer-link {
-            color: var(--text-muted);
+            color: #6b7280;
             text-decoration: none;
-            font-size: 0.85rem;
-            transition: color 0.3s ease;
+            font-size: 14px;
+            margin: 0 12px;
         }
 
         .footer-link:hover {
-            color: var(--primary-color);
+            color: #667eea;
         }
 
         .footer-text {
-            color: var(--text-muted);
-            font-size: 0.8rem;
+            color: #9ca3af;
+            font-size: 12px;
         }
 
-        /* Loading States */
-        .loading {
-            position: relative;
-            pointer-events: none;
-        }
-
-        .loading::after {
-            content: '';
-            position: absolute;
-            top: 50%;
-            left: 50%;
+        .loading-spinner {
+            display: none;
             width: 20px;
             height: 20px;
-            margin: -10px 0 0 -10px;
-            border: 2px solid rgba(255, 255, 255, 0.3);
-            border-top: 2px solid white;
+            border: 2px solid transparent;
+            border-top: 2px solid currentColor;
             border-radius: 50%;
             animation: spin 1s linear infinite;
         }
@@ -364,69 +398,12 @@
             100% { transform: rotate(360deg); }
         }
 
-        /* Remember Me */
-        .remember-section {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            margin-bottom: 1.5rem;
+        .btn-primary.loading .loading-spinner {
+            display: block;
         }
 
-        .remember-checkbox {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            cursor: pointer;
-        }
-
-        .remember-checkbox input[type="checkbox"] {
-            width: 16px;
-            height: 16px;
-            accent-color: var(--primary-color);
-        }
-
-        .remember-checkbox label {
-            font-size: 0.9rem;
-            color: var(--text-secondary);
-            cursor: pointer;
-        }
-
-        .forgot-password {
-            color: var(--primary-color);
-            text-decoration: none;
-            font-size: 0.9rem;
-            transition: color 0.3s ease;
-        }
-
-        .forgot-password:hover {
-            color: #002c4a;
-        }
-
-        /* Hidden utility */
-        .hidden {
-            display: none !important;
-        }
-
-        /* Responsive Design */
-        @media (max-width: 480px) {
-            .login-container {
-                padding: 1.5rem;
-                margin: 0.5rem;
-            }
-
-            .logo-text {
-                font-size: 1.5rem;
-            }
-
-            .user-type-grid {
-                grid-template-columns: 1fr;
-            }
-
-            .remember-section {
-                flex-direction: column;
-                gap: 1rem;
-                align-items: flex-start;
-            }
+        .btn-primary.loading .material-symbols-outlined {
+            display: none;
         }
     </style>
 </head>
@@ -434,53 +411,52 @@
     <div class="login-container">
         <!-- Header -->
         <div class="login-header">
-            <div class="logo">
-                <div class="logo-icon">
-                    <span class="material-symbols-outlined">warehouse</span>
-                </div>
-                <div class="logo-text">WMS</div>
-            </div>
-            <h1 class="login-title">Autentificare</h1>
-            <p class="login-subtitle">Intrați în contul dumneavoastră pentru a accesa sistemul</p>
+            <h1>Bun venit înapoi</h1>
+            <p>Conectează-te la contul tău WMS</p>
         </div>
-
-        <!-- User Type Selection -->
-        <div class="user-type-selection">
-            <div class="user-type-grid">
-                <div class="user-type-card" data-type="admin">
-                    <div class="user-type-icon">
-                        <span class="material-symbols-outlined">admin_panel_settings</span>
-                    </div>
-                    <div class="user-type-title">Administrator</div>
-                    <div class="user-type-subtitle">Acces complet sistem</div>
-                </div>
-                <div class="user-type-card selected" data-type="worker">
-                    <div class="user-type-icon">
-                        <span class="material-symbols-outlined">person</span>
-                    </div>
-                    <div class="user-type-title">Lucrător Depozit</div>
-                    <div class="user-type-subtitle">Operații depozit</div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Status Messages -->
-        <div id="status-message-container"></div>
 
         <!-- Login Form -->
-        <form class="login-form" id="login-form">
-            <div class="form-group">
-                <label class="form-label" for="username">Nume utilizator sau Email</label>
-                <div style="position: relative;">
-                    <span class="input-icon material-symbols-outlined">person</span>
-                    <input type="text" class="form-input" id="username" name="username" 
-                           placeholder="Introduceți numele de utilizator" autocomplete="username" required>
+        <div class="login-body">
+            <!-- User Type Selection -->
+            <div class="user-type-selection">
+                <label class="user-type-label">Selectează tipul de cont</label>
+                <div class="user-type-options">
+                    <div class="user-type-card" data-type="worker">
+                        <span class="material-symbols-outlined">badge</span>
+                        <div class="type-title">Lucrător</div>
+                        <div class="type-desc">Personal depozit</div>
+                    </div>
+                    <div class="user-type-card" data-type="admin">
+                        <span class="material-symbols-outlined">admin_panel_settings</span>
+                        <div class="type-title">Administrator</div>
+                        <div class="type-desc">Acces complet</div>
+                    </div>
                 </div>
             </div>
 
-            <div class="form-group">
-                <label class="form-label" for="password">Parolă</label>
-                <div style="position: relative;">
+            <!-- Error Message -->
+            <?php if (!empty($error) && $_SERVER['REQUEST_METHOD'] === 'POST'): ?>
+                <div class="status-message error">
+                    <?= htmlspecialchars($error) ?>
+                </div>
+            <?php endif; ?>
+
+            <!-- Status Message Area (for JavaScript) -->
+            <div id="status-message" style="display: none;"></div>
+
+            <form id="login-form" method="POST" action="login.php">
+                <input type="hidden" name="user_type" id="user_type" value="worker">
+                
+                <div class="form-group">
+                    <label class="form-label" for="username">Nume utilizator sau email</label>
+                    <span class="input-icon material-symbols-outlined">person</span>
+                    <input type="text" class="form-input" id="username" name="username" 
+                           placeholder="Administrator username" autocomplete="username" 
+                           value="<?= htmlspecialchars($_POST['username'] ?? '') ?>" required>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="password">Parolă</label>
                     <span class="input-icon material-symbols-outlined">lock</span>
                     <input type="password" class="form-input" id="password" name="password" 
                            placeholder="Introduceți parola" autocomplete="current-password" required>
@@ -488,21 +464,22 @@
                         <span class="material-symbols-outlined">visibility</span>
                     </button>
                 </div>
-            </div>
 
-            <div class="remember-section">
-                <div class="remember-checkbox">
-                    <input type="checkbox" id="remember-me" name="remember">
-                    <label for="remember-me">Ține-mă minte</label>
+                <div class="remember-section">
+                    <div class="remember-checkbox">
+                        <input type="checkbox" id="remember-me" name="remember">
+                        <label for="remember-me">Ține-mă minte</label>
+                    </div>
+                    <a href="#" class="forgot-password" id="forgot-password-link">Parolă uitată?</a>
                 </div>
-                <a href="#" class="forgot-password" id="forgot-password-link">Parolă uitată?</a>
-            </div>
 
-            <button type="submit" class="btn btn-primary" id="login-btn">
-                <span class="material-symbols-outlined">login</span>
-                Autentificare
-            </button>
-        </form>
+                <button type="submit" class="btn btn-primary" id="login-btn">
+                    <span class="material-symbols-outlined">login</span>
+                    <div class="loading-spinner"></div>
+                    Autentificare
+                </button>
+            </form>
+        </div>
 
         <!-- Footer -->
         <div class="login-footer">
@@ -520,7 +497,7 @@
     <script>
         class LoginInterface {
             constructor() {
-                this.selectedUserType = 'worker'; // Default to worker
+                this.selectedUserType = 'worker';
                 this.init();
             }
 
@@ -556,7 +533,7 @@
 
                 document.getElementById('password').addEventListener('keypress', (e) => {
                     if (e.key === 'Enter') {
-                        this.handleLogin(e);
+                        document.getElementById('login-form').dispatchEvent(new Event('submit'));
                     }
                 });
             }
@@ -570,6 +547,9 @@
                 });
                 document.querySelector(`[data-type="${type}"]`).classList.add('selected');
 
+                // Update form
+                document.getElementById('user_type').value = type;
+
                 // Update form placeholder based on user type
                 const usernameInput = document.getElementById('username');
                 if (type === 'admin') {
@@ -579,120 +559,11 @@
                 }
             }
 
-            async handleLogin(e) {
-                e.preventDefault();
-                
-                const username = document.getElementById('username').value.trim();
-                const password = document.getElementById('password').value;
-                const remember = document.getElementById('remember-me').checked;
-
-                // Validation
-                if (!username || !password) {
-                    this.showStatusMessage('error', 'Completați toate câmpurile obligatorii.');
-                    return;
-                }
-
-                try {
-                    this.setLoading(true);
-                    this.showStatusMessage('info', 'Se verifică credențialele...');
-
-                    const response = await this.authenticate(username, password, this.selectedUserType);
-
-                    if (response.success) {
-                        // Save session data
-                        this.saveSession(response.data, remember);
-                        
-                        // Show success message
-                        this.showStatusMessage('success', 'Autentificare reușită! Se redirecționează...');
-                        
-                        // Redirect based on user role
-                        setTimeout(() => {
-                            this.redirectUser(response.data);
-                        }, 1000);
-                    } else {
-                        this.showStatusMessage('error', response.message || 'Credențiale invalide.');
-                        this.clearFormErrors();
-                        this.highlightFormErrors();
-                    }
-                } catch (error) {
-                    this.showStatusMessage('error', 'Eroare de conexiune. Încercați din nou.');
-                    console.error('Login error:', error);
-                } finally {
-                    this.setLoading(false);
-                }
-            }
-
-            async authenticate(username, password, userType) {
-                const formData = new FormData();
-                formData.append('username', username);
-                formData.append('password', password);
-                formData.append('user_type', userType);
-
-                const response = await fetch('login.php', {
-                    method: 'POST',
-                    body: formData
-                });
-
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-
-                const result = await response.text();
-                
-                // Check if login was successful (assuming your login.php redirects on success)
-                if (response.redirected || result.includes('Location:') || result.includes('redirect')) {
-                    // Extract user data from session or response
-                    return {
-                        success: true,
-                        data: {
-                            username: username,
-                            role: userType === 'admin' ? 'admin' : 'warehouse_worker',
-                            first_name: username,
-                            user_type: userType
-                        }
-                    };
-                } else {
-                    // Parse error message from response if available
-                    return {
-                        success: false,
-                        message: 'Credențiale invalide sau cont inactiv.'
-                    };
-                }
-            }
-
-            redirectUser(userData) {
-                // Determine redirect based on user role/quality
-                if (this.isWarehouseWorker(userData)) {
-                    // Redirect to warehouse worker hub
-                    window.location.href = 'warehouse_hub.html';
-                } else {
-                    // Redirect to existing admin dashboard
-                    window.location.href = 'index.php';
-                }
-            }
-
-            isWarehouseWorker(userData) {
-                // Check if user has warehouse worker role/quality
-                return userData.role === 'warehouse_worker' || 
-                       userData.role === 'worker' ||
-                       userData.user_type === 'worker' ||
-                       this.selectedUserType === 'worker';
-            }
-
-            saveSession(userData, remember) {
-                // Save remember me data if checked
-                if (remember) {
-                    localStorage.setItem('wms_remember_user', document.getElementById('username').value);
-                    localStorage.setItem('wms_remember_type', this.selectedUserType);
-                } else {
-                    localStorage.removeItem('wms_remember_user');
-                    localStorage.removeItem('wms_remember_type');
-                }
-
-                // Set worker name for worker interfaces
-                if (this.isWarehouseWorker(userData)) {
-                    localStorage.setItem('workerName', userData.first_name || userData.username || 'Lucrător');
-                }
+            handleLogin(e) {
+                // Let the form submit normally - PHP will handle it
+                const btn = document.getElementById('login-btn');
+                btn.classList.add('loading');
+                btn.disabled = true;
             }
 
             loadRememberedCredentials() {
@@ -706,6 +577,8 @@
 
                 if (rememberedType) {
                     this.selectUserType(rememberedType);
+                } else {
+                    this.selectUserType('worker'); // Default
                 }
             }
 
@@ -723,71 +596,11 @@
             }
 
             handleForgotPassword() {
-                // In a real implementation, this would open a forgot password modal or redirect
                 alert('Funcția de recuperare a parolei va fi disponibilă în curând.\n\nContactați administratorul pentru resetarea parolei.');
-            }
-
-            showStatusMessage(type, message) {
-                const container = document.getElementById('status-message-container');
-                container.innerHTML = `
-                    <div class="status-message status-${type}">
-                        <span class="material-symbols-outlined">${this.getStatusIcon(type)}</span>
-                        ${message}
-                    </div>
-                `;
-
-                // Auto-hide success/info messages
-                if (type === 'success' || type === 'info') {
-                    setTimeout(() => {
-                        container.innerHTML = '';
-                    }, 3000);
-                }
-            }
-
-            getStatusIcon(type) {
-                switch(type) {
-                    case 'success': return 'check_circle';
-                    case 'error': return 'error';
-                    case 'info': return 'info';
-                    default: return 'info';
-                }
-            }
-
-            clearFormErrors() {
-                document.querySelectorAll('.form-input').forEach(input => {
-                    input.classList.remove('error');
-                });
-            }
-
-            highlightFormErrors() {
-                const username = document.getElementById('username').value.trim();
-                const password = document.getElementById('password').value;
-
-                if (!username) {
-                    document.getElementById('username').classList.add('error');
-                }
-                if (!password) {
-                    document.getElementById('password').classList.add('error');
-                }
-            }
-
-            setLoading(loading) {
-                const loginBtn = document.getElementById('login-btn');
-                const form = document.getElementById('login-form');
-                
-                if (loading) {
-                    loginBtn.disabled = true;
-                    loginBtn.classList.add('loading');
-                    form.style.pointerEvents = 'none';
-                } else {
-                    loginBtn.disabled = false;
-                    loginBtn.classList.remove('loading');
-                    form.style.pointerEvents = 'auto';
-                }
             }
         }
 
-        // Initialize the login interface when DOM is loaded
+        // Initialize login interface
         document.addEventListener('DOMContentLoaded', () => {
             new LoginInterface();
         });

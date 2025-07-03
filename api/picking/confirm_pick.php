@@ -1,171 +1,225 @@
 <?php
 // File: /api/picking/confirm_pick.php
-// Correct version with quantity check and error logging
-
-// --- Basic Setup ---
 header('Content-Type: application/json');
 error_reporting(E_ALL);
-ini_set('display_errors', 1); // TODO: Disable in production
+ini_set('display_errors', 0);
+ini_set('log_errors', 1);
 
-// --- Define Base Path ---
+// Only allow POST requests
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    http_response_code(405);
+    echo json_encode(['status' => 'error', 'message' => 'Method not allowed.']);
+    exit;
+}
+
+// Define Base Path
 if (!defined('BASE_PATH')) {
-    define('BASE_PATH', dirname(__DIR__, 2)); // Go up two levels
+    define('BASE_PATH', dirname(__DIR__, 2));
 }
 
-// --- Bootstrap and Config ---
-require_once BASE_PATH . '/bootstrap.php';
-$config = require BASE_PATH . '/config/config.php';
-
-// --- Database Connection ---
-if (!isset($config['connection_factory']) || !is_callable($config['connection_factory'])) {
+if (!file_exists(BASE_PATH . '/config/config.php')) {
     http_response_code(500);
-    echo json_encode(['status' => 'error', 'message' => 'Database connection factory not configured correctly.']);
+    echo json_encode(['status' => 'error', 'message' => 'Config file missing.']);
     exit;
 }
-$dbFactory = $config['connection_factory'];
-/** @var PDO $db */
-$db = $dbFactory();
-
-// --- Input Handling (from POST request body) ---
-$inputData = json_decode(file_get_contents('php://input'), true);
-
-$orderItemId = filter_var($inputData['order_item_id'] ?? null, FILTER_VALIDATE_INT);
-$inventoryId = filter_var($inputData['inventory_id'] ?? null, FILTER_VALIDATE_INT);
-$quantityPicked = filter_var($inputData['quantity_picked'] ?? null, FILTER_VALIDATE_INT);
-
-// Basic validation
-if (!$orderItemId || !$inventoryId || $quantityPicked === null || $quantityPicked <= 0) {
-    http_response_code(400); // Bad Request
-    error_log("[confirm_pick] Bad Request: Invalid input data received: " . json_encode($inputData));
-    echo json_encode([
-        'status' => 'error',
-        'message' => 'Missing or invalid data: order_item_id, inventory_id, and positive quantity_picked are required.'
-    ]);
-    exit;
-}
-
-error_log("[confirm_pick] Received valid input: OrderItemID={$orderItemId}, InventoryID={$inventoryId}, QtyPicked={$quantityPicked}");
-
-// --- Core Logic: Confirm Pick and Update Inventory/Order ---
-$response = ['status' => 'error', 'message' => 'Failed to confirm pick.']; // Default response
-http_response_code(500); // Default to Internal Server Error
-
-// Use a transaction to ensure atomicity
-$db->beginTransaction();
-error_log("[confirm_pick] Transaction started.");
 
 try {
-    // 1. Check if sufficient quantity exists in the specified inventory row
-    error_log("[confirm_pick] Checking inventory quantity for ID: {$inventoryId}");
-    $checkStmt = $db->prepare("SELECT quantity FROM inventory WHERE id = :inventory_id");
-    $checkStmt->bindParam(':inventory_id', $inventoryId, PDO::PARAM_INT);
-    $checkStmt->execute();
-    $currentInvQuantityResult = $checkStmt->fetchColumn();
-    $currentInvQuantity = ($currentInvQuantityResult === false) ? 0 : (int)$currentInvQuantityResult;
-    error_log("[confirm_pick] Current inventory quantity found: " . ($currentInvQuantityResult === false ? 'Not Found' : $currentInvQuantity));
+    $config = require BASE_PATH . '/config/config.php';
+    
+    if (!isset($config['connection_factory']) || !is_callable($config['connection_factory'])) {
+        http_response_code(500);
+        echo json_encode(['status' => 'error', 'message' => 'Database config error.']);
+        exit;
+    }
 
+    $dbFactory = $config['connection_factory'];
+    $db = $dbFactory();
 
-    if ($currentInvQuantityResult === false || $currentInvQuantity < $quantityPicked) {
-        $db->rollBack(); // Abort transaction
-        error_log("[confirm_pick] Rollback: Insufficient quantity. Required: {$quantityPicked}, Available: " . ($currentInvQuantity ?: 0));
-        http_response_code(409); // Conflict
+    // Get JSON input
+    $input = json_decode(file_get_contents('php://input'), true);
+
+    if (!$input) {
+        http_response_code(400);
+        echo json_encode(['status' => 'error', 'message' => 'Invalid JSON input.']);
+        exit;
+    }
+
+    // Validate required fields
+    $required = ['order_item_id', 'quantity_picked'];
+    foreach ($required as $field) {
+        if (!isset($input[$field]) || $input[$field] === '') {
+            http_response_code(400);
+            echo json_encode(['status' => 'error', 'message' => "Field '{$field}' is required."]);
+            exit;
+        }
+    }
+
+    $orderItemId = (int)$input['order_item_id'];
+    $quantityPicked = (int)$input['quantity_picked'];
+    $inventoryId = isset($input['inventory_id']) ? (int)$input['inventory_id'] : null;
+
+    if ($orderItemId <= 0 || $quantityPicked <= 0) {
+        http_response_code(400);
+        echo json_encode(['status' => 'error', 'message' => 'Invalid order item ID or quantity.']);
+        exit;
+    }
+
+    $db->beginTransaction();
+
+    // Get current order item info
+    $itemQuery = "
+        SELECT 
+            oi.order_id,
+            oi.product_id,
+            oi.quantity_ordered,
+            oi.picked_quantity,
+            o.order_number,
+            p.name as product_name,
+            p.sku as product_sku
+        FROM order_items oi
+        JOIN orders o ON oi.order_id = o.id
+        JOIN products p ON oi.product_id = p.product_id
+        WHERE oi.id = :order_item_id
+    ";
+
+    $itemStmt = $db->prepare($itemQuery);
+    $itemStmt->execute([':order_item_id' => $orderItemId]);
+    $item = $itemStmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$item) {
+        $db->rollback();
+        http_response_code(404);
+        echo json_encode(['status' => 'error', 'message' => 'Order item not found.']);
+        exit;
+    }
+
+    $currentPicked = (int)$item['picked_quantity'];
+    $newPickedTotal = $currentPicked + $quantityPicked;
+
+    // Validate that we don't pick more than ordered
+    if ($newPickedTotal > $item['quantity_ordered']) {
+        $db->rollback();
+        http_response_code(400);
         echo json_encode([
-            'status' => 'error',
-            'message' => "Insufficient quantity in inventory location (ID: {$inventoryId}). Required: {$quantityPicked}, Available: {$currentInvQuantity}.",
-            'debug_fetched_quantity' => $currentInvQuantityResult
+            'status' => 'error', 
+            'message' => "Cannot pick more than ordered. Ordered: {$item['quantity_ordered']}, Already picked: {$currentPicked}, Trying to pick: {$quantityPicked}"
         ]);
         exit;
     }
 
-    // 2. Decrement inventory quantity for the specific inventory ID
-    error_log("[confirm_pick] Attempting to UPDATE inventory ID: {$inventoryId}, Decrement by: {$quantityPicked}");
-    $updateInvStmt = $db->prepare("UPDATE inventory SET quantity = quantity - :quantity_picked WHERE id = :inventory_id");
-    $updateInvStmt->bindParam(':quantity_picked', $quantityPicked, PDO::PARAM_INT);
-    $updateInvStmt->bindParam(':inventory_id', $inventoryId, PDO::PARAM_INT);
-    $invUpdated = $updateInvStmt->execute();
-    $invRowCount = $updateInvStmt->rowCount();
-    error_log("[confirm_pick] Inventory UPDATE execute result: " . ($invUpdated ? 'Success' : 'Failure') . ", Rows Affected: " . $invRowCount);
+    // Update the picked quantity in order_items
+    $updateItemQuery = "
+        UPDATE order_items 
+        SET picked_quantity = :new_picked_total,
+            updated_at = NOW()
+        WHERE id = :order_item_id
+    ";
 
+    $updateItemStmt = $db->prepare($updateItemQuery);
+    $updateItemStmt->execute([
+        ':new_picked_total' => $newPickedTotal,
+        ':order_item_id' => $orderItemId
+    ]);
 
-    // 3. Increment picked_quantity for the order item
-    error_log("[confirm_pick] Attempting to UPDATE order_items ID: {$orderItemId}, Increment picked_quantity by: {$quantityPicked}");
-    // This query will now work because the column exists
-    $updateOiStmt = $db->prepare("UPDATE order_items SET picked_quantity = picked_quantity + :quantity_picked WHERE id = :order_item_id");
-    $updateOiStmt->bindParam(':quantity_picked', $quantityPicked, PDO::PARAM_INT);
-    $updateOiStmt->bindParam(':order_item_id', $orderItemId, PDO::PARAM_INT);
-    $oiUpdated = $updateOiStmt->execute();
-    $oiRowCount = $updateOiStmt->rowCount();
-    error_log("[confirm_pick] Order Item UPDATE execute result: " . ($oiUpdated ? 'Success' : 'Failure') . ", Rows Affected: " . $oiRowCount);
+    // If inventory_id is provided, reduce inventory
+    if ($inventoryId) {
+        $updateInventoryQuery = "
+            UPDATE inventory 
+            SET quantity = quantity - :quantity_picked,
+                updated_at = NOW()
+            WHERE id = :inventory_id AND quantity >= :quantity_picked
+        ";
 
-    // Check if updates actually affected rows
-    if (!$invUpdated || !$oiUpdated || $invRowCount < 1 || $oiRowCount < 1) {
-         error_log("[confirm_pick] Update failure or 0 rows affected. Inv Rows: {$invRowCount}, OI Rows: {$oiRowCount}");
-        throw new Exception("Failed to update inventory or order item records (0 rows affected?).");
-    }
+        $updateInventoryStmt = $db->prepare($updateInventoryQuery);
+        $updateInventoryStmt->execute([
+            ':quantity_picked' => $quantityPicked,
+            ':inventory_id' => $inventoryId
+        ]);
 
-    // --- Post-Pick Checks ---
-    $checkOiCompleteStmt = $db->prepare("SELECT quantity_ordered, picked_quantity, order_id FROM order_items WHERE id = :order_item_id");
-    $checkOiCompleteStmt->bindParam(':order_item_id', $orderItemId, PDO::PARAM_INT);
-    $checkOiCompleteStmt->execute();
-    $orderItemStatus = $checkOiCompleteStmt->fetch(PDO::FETCH_ASSOC);
-
-    $orderItemFullyPicked = false;
-    if ($orderItemStatus && $orderItemStatus['picked_quantity'] >= $orderItemStatus['quantity_ordered']) {
-        $orderItemFullyPicked = true;
-        error_log("[confirm_pick] Order item ID {$orderItemId} is now fully picked.");
-    }
-
-    $orderFullyPicked = false;
-    if ($orderItemFullyPicked) {
-        $orderId = $orderItemStatus['order_id'];
-        error_log("[confirm_pick] Checking if entire order ID {$orderId} is fully picked.");
-        $checkOrderCompleteStmt = $db->prepare("SELECT COUNT(*) FROM order_items WHERE order_id = :order_id AND quantity_ordered > picked_quantity");
-        $checkOrderCompleteStmt->bindParam(':order_id', $orderId, PDO::PARAM_INT);
-        $checkOrderCompleteStmt->execute();
-        $remainingItems = $checkOrderCompleteStmt->fetchColumn();
-        error_log("[confirm_pick] Remaining items for order ID {$orderId}: " . $remainingItems);
-
-        if ($remainingItems === 0) {
-            $orderFullyPicked = true;
-            error_log("[confirm_pick] Order ID {$orderId} is now fully picked. Updating status.");
-            $updateOrderStatusStmt = $db->prepare("UPDATE orders SET status = 'Awaiting Shipment' WHERE id = :order_id AND status = 'Picking'");
-            $updateOrderStatusStmt->bindParam(':order_id', $orderId, PDO::PARAM_INT);
-            $updateOrderStatusStmt->execute();
-            error_log("[confirm_pick] Order status update affected rows: " . $updateOrderStatusStmt->rowCount());
+        // Check if inventory was actually updated
+        if ($updateInventoryStmt->rowCount() === 0) {
+            // Inventory update failed - not enough stock
+            $db->rollback();
+            echo json_encode([
+                'status' => 'error',
+                'message' => 'Insufficient inventory at specified location.'
+            ]);
+            exit;
         }
     }
 
-    // --- Commit Transaction ---
-    error_log("[confirm_pick] Attempting to commit transaction.");
-    if ($db->commit()) {
-        error_log("[confirm_pick] Transaction committed successfully.");
-        http_response_code(200); // OK
-        $response = [
-            'status' => 'success',
-            'message' => "Pick confirmed for {$quantityPicked} units.",
-            'order_item_fully_picked' => $orderItemFullyPicked,
-            'order_fully_picked' => $orderFullyPicked
-        ];
-    } else {
-        error_log("[confirm_pick] db->commit() returned false.");
-        $db->rollBack();
-        throw new Exception("Failed to commit database transaction.");
+    // Check if this order item is now fully picked
+    $isItemComplete = ($newPickedTotal >= $item['quantity_ordered']);
+
+    // Check if entire order is complete
+    $remainingQuery = "
+        SELECT COUNT(*) as remaining_items
+        FROM order_items 
+        WHERE order_id = :order_id 
+        AND quantity_ordered > COALESCE(picked_quantity, 0)
+    ";
+
+    $remainingStmt = $db->prepare($remainingQuery);
+    $remainingStmt->execute([':order_id' => $item['order_id']]);
+    $remainingItems = (int)$remainingStmt->fetchColumn();
+
+    $isOrderComplete = ($remainingItems === 0);
+
+    // If order is complete, update order status
+    if ($isOrderComplete) {
+        $updateOrderQuery = "
+            UPDATE orders 
+            SET status = 'Completed',
+                updated_at = NOW()
+            WHERE id = :order_id
+        ";
+
+        $updateOrderStmt = $db->prepare($updateOrderQuery);
+        $updateOrderStmt->execute([':order_id' => $item['order_id']]);
     }
 
-} catch (PDOException $e) {
-    $db->rollBack();
-    error_log("[confirm_pick] PDOException during transaction: " . $e->getMessage() . " Input: " . json_encode($inputData));
-    http_response_code(500);
-    $response = ['status' => 'error', 'message' => 'Database error during pick confirmation.'];
-} catch (Exception $e) {
-    $db->rollBack();
-    error_log("[confirm_pick] Exception during transaction: " . $e->getMessage() . " Input: " . json_encode($inputData));
-    http_response_code(500);
-    $response = ['status' => 'error', 'message' => 'Server error during pick confirmation.'];
-}
+    $db->commit();
 
-// --- Output JSON ---
-error_log("[confirm_pick] Sending final response: " . json_encode($response));
-echo json_encode($response);
-exit;
+    // Return success response
+    echo json_encode([
+        'status' => 'success',
+        'message' => $isItemComplete ? 
+            "Item fully picked! {$item['product_sku']} - {$item['product_name']}" :
+            "Partial pick confirmed. {$quantityPicked} of {$item['product_name']} picked.",
+        'data' => [
+            'order_number' => $item['order_number'],
+            'product_sku' => $item['product_sku'],
+            'product_name' => $item['product_name'],
+            'quantity_picked_now' => $quantityPicked,
+            'total_picked' => $newPickedTotal,
+            'quantity_ordered' => (int)$item['quantity_ordered'],
+            'item_complete' => $isItemComplete,
+            'order_complete' => $isOrderComplete,
+            'remaining_items_in_order' => $remainingItems
+        ]
+    ]);
+
+} catch (PDOException $e) {
+    if ($db && $db->inTransaction()) {
+        $db->rollback();
+    }
+    error_log("Database error in confirm_pick.php: " . $e->getMessage());
+    http_response_code(500);
+    echo json_encode([
+        'status' => 'error',
+        'message' => 'Database error.',
+        'error_code' => 'DB_ERROR'
+    ]);
+} catch (Exception $e) {
+    if ($db && $db->inTransaction()) {
+        $db->rollback();
+    }
+    error_log("General error in confirm_pick.php: " . $e->getMessage());
+    http_response_code(500);
+    echo json_encode([
+        'status' => 'error',
+        'message' => 'Server error.',
+        'error_code' => 'SERVER_ERROR'
+    ]);
+}
 ?>

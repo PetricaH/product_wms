@@ -14,38 +14,40 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 // Define Base Path
 if (!defined('BASE_PATH')) {
-    define('BASE_PATH', dirname(__DIR__, 2)); // Go up 2 levels from /api/warehouse/
+    define('BASE_PATH', dirname(__DIR__, 2));
 }
 
-// Bootstrap and Config
-require_once BASE_PATH . '/bootstrap.php';
-$config = require BASE_PATH . '/config/config.php';
-
-// Database Connection
-if (!isset($config['connection_factory']) || !is_callable($config['connection_factory'])) {
+// Simple error handling for missing files
+if (!file_exists(BASE_PATH . '/config/config.php')) {
     http_response_code(500);
-    echo json_encode(['status' => 'error', 'message' => 'Eroare configurare bază de date.']);
+    echo json_encode(['status' => 'error', 'message' => 'Config file missing.']);
     exit;
 }
-
-$dbFactory = $config['connection_factory'];
-$db = $dbFactory();
-
-// Get JSON input
-$input = json_decode(file_get_contents('php://input'), true);
-
-if (!$input || !isset($input['order_number'])) {
-    http_response_code(400);
-    echo json_encode(['status' => 'error', 'message' => 'Numărul comenzii este necesar.']);
-    exit;
-}
-
-$orderNumber = trim($input['order_number']);
-
-// For now, we'll use a default user ID. In production, get from session/auth
-$assignedUserId = 1; // TODO: Get from authenticated user session
 
 try {
+    $config = require BASE_PATH . '/config/config.php';
+    
+    if (!isset($config['connection_factory']) || !is_callable($config['connection_factory'])) {
+        http_response_code(500);
+        echo json_encode(['status' => 'error', 'message' => 'Database config error.']);
+        exit;
+    }
+
+    $dbFactory = $config['connection_factory'];
+    $db = $dbFactory();
+
+    // Get JSON input
+    $input = json_decode(file_get_contents('php://input'), true);
+
+    if (!$input || !isset($input['order_number'])) {
+        http_response_code(400);
+        echo json_encode(['status' => 'error', 'message' => 'Numărul comenzii este necesar.']);
+        exit;
+    }
+
+    $orderNumber = trim($input['order_number']);
+    $assignedUserId = 1; // Default user ID for now
+
     $db->beginTransaction();
 
     // Check if order exists and is available for assignment
@@ -68,7 +70,7 @@ try {
         exit;
     }
 
-    // Check if order is already completed
+    // Check if order can be assigned
     if (in_array($order['status'], ['Completed', 'Shipped', 'Cancelled'])) {
         $db->rollback();
         http_response_code(400);
@@ -79,57 +81,51 @@ try {
         exit;
     }
 
-    // Update order status using actual schema
+    // Update order status to Processing and assign user
     $updateQuery = "
         UPDATE orders 
-        SET 
-            status = CASE 
-                WHEN status = 'pending' THEN 'processing'
-                ELSE status 
-            END,
+        SET status = 'Processing', 
             assigned_to = :assigned_to,
-            notes = CONCAT(COALESCE(notes, ''), ' [Asignat pentru picking la ', NOW(), ']'),
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = :order_id
+            updated_at = NOW()
+        WHERE order_number = :order_number
     ";
     
     $updateStmt = $db->prepare($updateQuery);
     $updateStmt->bindParam(':assigned_to', $assignedUserId, PDO::PARAM_INT);
-    $updateStmt->bindParam(':order_id', $order['id'], PDO::PARAM_INT);
+    $updateStmt->bindParam(':order_number', $orderNumber, PDO::PARAM_STR);
     $updateStmt->execute();
 
     $db->commit();
 
-    // Return success response
     echo json_encode([
         'status' => 'success',
         'message' => 'Comanda a fost asignată cu succes.',
-        'data' => [
-            'order_id' => $order['id'],
-            'order_number' => $orderNumber,
-            'customer_name' => $order['customer_name'],
-            'status' => 'Processing',
-            'timestamp' => date('Y-m-d H:i:s')
-        ]
+        'order_id' => $order['id'],
+        'order_number' => $orderNumber,
+        'customer_name' => $order['customer_name']
     ]);
 
 } catch (PDOException $e) {
-    $db->rollback();
+    if ($db->inTransaction()) {
+        $db->rollback();
+    }
     error_log("Database error in assign_order.php: " . $e->getMessage());
     http_response_code(500);
     echo json_encode([
         'status' => 'error',
         'message' => 'Eroare bază de date.',
-        'debug' => $e->getMessage() // Remove in production
+        'error_code' => 'DB_ERROR'
     ]);
 } catch (Exception $e) {
-    $db->rollback();
+    if ($db->inTransaction()) {
+        $db->rollback();
+    }
     error_log("General error in assign_order.php: " . $e->getMessage());
     http_response_code(500);
     echo json_encode([
         'status' => 'error',
         'message' => 'Eroare server.',
-        'debug' => $e->getMessage() // Remove in production
+        'error_code' => 'SERVER_ERROR'
     ]);
 }
 ?>

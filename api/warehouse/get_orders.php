@@ -1,5 +1,5 @@
 <?php
-// File: /api/warehouse/get_orders.php (Fixed version)
+// File: /api/warehouse/get_orders.php (Fixed simplified version)
 header('Content-Type: application/json');
 error_reporting(E_ALL);
 ini_set('display_errors', 0);
@@ -7,31 +7,28 @@ ini_set('log_errors', 1);
 
 // Define Base Path
 if (!defined('BASE_PATH')) {
-    define('BASE_PATH', dirname(__DIR__, 2)); // Go up 2 levels from /api/warehouse/
+    define('BASE_PATH', dirname(__DIR__, 2));
 }
 
-// Simple error handling for missing files
 if (!file_exists(BASE_PATH . '/config/config.php')) {
     http_response_code(500);
-    echo json_encode(['status' => 'error', 'message' => 'Fișier de configurare lipsă.']);
+    echo json_encode(['status' => 'error', 'message' => 'Config file missing.']);
     exit;
 }
 
 try {
-    // Bootstrap and Config
     $config = require BASE_PATH . '/config/config.php';
-
-    // Database Connection
+    
     if (!isset($config['connection_factory']) || !is_callable($config['connection_factory'])) {
         http_response_code(500);
-        echo json_encode(['status' => 'error', 'message' => 'Eroare configurare bază de date.']);
+        echo json_encode(['status' => 'error', 'message' => 'Database config error.']);
         exit;
     }
 
     $dbFactory = $config['connection_factory'];
     $db = $dbFactory();
 
-    // Query to get orders with items count - adjusted for existing schema
+    // Simplified query - get outbound orders that are pending or processing
     $query = "
         SELECT 
             o.id,
@@ -41,47 +38,25 @@ try {
             o.shipping_address,
             o.order_date,
             o.status,
-            CASE 
-                WHEN o.notes LIKE '%urgent%' OR o.notes LIKE '%priority%' THEN 'urgent'
-                WHEN o.notes LIKE '%high%' THEN 'high'
-                ELSE 'normal'
-            END as priority,
+            o.priority,
             COALESCE(o.source, 'manual') as source,
             o.notes,
-            -- Calculate total value from order items if not set
-            CASE 
-                WHEN o.total_value > 0 THEN o.total_value
-                ELSE COALESCE((
-                    SELECT SUM(oi.quantity_ordered * oi.unit_price) 
-                    FROM order_items oi 
-                    WHERE oi.order_id = o.id
-                ), 0)
-            END as total_value,
-            -- Count items
+            COALESCE(o.total_value, 0) as total_value,
             COALESCE((
                 SELECT COUNT(*) 
                 FROM order_items oi 
                 WHERE oi.order_id = o.id
             ), 0) as total_items,
-            -- Count distinct locations (estimated)
             COALESCE((
-                SELECT COUNT(DISTINCT i.location_id)
-                FROM order_items oi
-                JOIN inventory i ON oi.product_id = i.product_id AND i.quantity > 0
-                WHERE oi.order_id = o.id
-            ), 1) as total_locations,
-            -- Count remaining items to pick
-            COALESCE((
-                SELECT SUM(oi.quantity_ordered - oi.picked_quantity)
+                SELECT SUM(oi.quantity_ordered - COALESCE(oi.picked_quantity, 0))
                 FROM order_items oi 
                 WHERE oi.order_id = o.id
-                AND oi.quantity_ordered > oi.picked_quantity
             ), 0) as remaining_items
         FROM orders o
-        WHERE o.status IN ('Pending', 'Processing') -- Using existing enum values
-        HAVING remaining_items > 0  -- Only orders with items left to pick
+        WHERE o.type = 'outbound' 
+        AND o.status IN ('Pending', 'Processing')
         ORDER BY 
-            CASE priority 
+            CASE o.priority 
                 WHEN 'urgent' THEN 1
                 WHEN 'high' THEN 2  
                 WHEN 'normal' THEN 3
@@ -102,13 +77,13 @@ try {
             'customer_name' => $order['customer_name'] ?: 'Client necunoscut',
             'total_value' => number_format((float)$order['total_value'], 2, '.', ''),
             'order_date' => $order['order_date'],
-            'status' => strtolower($order['status']) === 'pending' ? 'pending' : 'assigned', // Map to frontend values
+            'status' => strtolower($order['status']) === 'pending' ? 'pending' : 'assigned',
             'priority' => $order['priority'] ?: 'normal',
             'source' => $order['source'],
             'notes' => $order['notes'],
             'total_items' => (int)$order['total_items'],
-            'total_locations' => (int)$order['total_locations'],
-            'remaining_items' => (int)$order['remaining_items']
+            'total_locations' => 1, // Default to 1 location for now
+            'remaining_items' => max(1, (int)$order['remaining_items']) // At least 1 to show order
         ];
     }, $orders);
 
@@ -125,7 +100,7 @@ try {
     http_response_code(500);
     echo json_encode([
         'status' => 'error',
-        'message' => 'Eroare bază de date.',
+        'message' => 'Database error.',
         'error_code' => 'DB_ERROR'
     ]);
 } catch (Exception $e) {
@@ -133,7 +108,7 @@ try {
     http_response_code(500);
     echo json_encode([
         'status' => 'error',
-        'message' => 'Eroare server.',
+        'message' => 'Server error.',
         'error_code' => 'SERVER_ERROR'
     ]);
 }

@@ -1,170 +1,144 @@
 <?php
 // File: /api/picking/get_next_task.php
-
-// --- Basic Setup ---
 header('Content-Type: application/json');
-// Report errors, but ideally configure php.ini to not display them in production APIs
 error_reporting(E_ALL);
-ini_set('display_errors', 0); // Turn off direct display (errors should go to log)
-ini_set('log_errors', 1);    // Ensure errors are logged (configure error_log in php.ini)
+ini_set('display_errors', 0);
+ini_set('log_errors', 1);
 
-// --- Define Base Path ---
+// Define Base Path
 if (!defined('BASE_PATH')) {
     define('BASE_PATH', dirname(__DIR__, 2));
 }
 
-// --- Bootstrap and Config ---
-require_once BASE_PATH . '/bootstrap.php';
-$config = require BASE_PATH . '/config/config.php';
-
-// --- Database Connection ---
-if (!isset($config['connection_factory']) || !is_callable($config['connection_factory'])) {
+if (!file_exists(BASE_PATH . '/config/config.php')) {
     http_response_code(500);
-    echo json_encode(['status' => 'error', 'message' => 'DB factory error.']);
+    echo json_encode(['status' => 'error', 'message' => 'Config file missing.']);
     exit;
 }
-$dbFactory = $config['connection_factory'];
-/** @var PDO $db */
-$db = $dbFactory();
-
-// --- Input Handling ---
-// Get order_id from query string. Use trim to remove whitespace.
-$orderIdInput = isset($_GET['order_id']) ? trim($_GET['order_id']) : null; // Get raw input and trim
-
-if ($orderIdInput === null || $orderIdInput === '') {
-    http_response_code(400);
-    echo json_encode(['status' => 'error', 'message' => 'Valid Order ID/Number is required.']);
-    exit;
-}
-// Use the potentially non-numeric identifier directly now
-$orderIdentifier = $orderIdInput;
-
-// --- Core Logic: Find the Next Pick Task (FIFO) ---
-$response = ['status' => 'error', 'message' => 'No items left to pick for this order or order not found.'];
-http_response_code(404);
 
 try {
-    // Find the internal order ID based on the identifier (assuming order_number is unique)
-    $findOrderStmt = $db->prepare("SELECT id FROM orders WHERE order_number = :order_number LIMIT 1");
-    $findOrderStmt->bindParam(':order_number', $orderIdentifier, PDO::PARAM_STR);
-    $findOrderStmt->execute();
-    $orderId = $findOrderStmt->fetchColumn();
-
-    if (!$orderId) {
-         // If not found by order_number, try treating input as numeric ID (fallback)
-         if (filter_var($orderIdentifier, FILTER_VALIDATE_INT)) {
-              $orderId = (int)$orderIdentifier;
-              // Verify this numeric ID exists
-              $verifyOrderStmt = $db->prepare("SELECT id FROM orders WHERE id = :order_id LIMIT 1");
-              $verifyOrderStmt->bindParam(':order_id', $orderId, PDO::PARAM_INT);
-              $verifyOrderStmt->execute();
-              if (!$verifyOrderStmt->fetchColumn()) {
-                   $orderId = false; // ID doesn't exist
-              }
-         } else {
-              $orderId = false;
-         }
+    $config = require BASE_PATH . '/config/config.php';
+    
+    if (!isset($config['connection_factory']) || !is_callable($config['connection_factory'])) {
+        http_response_code(500);
+        echo json_encode(['status' => 'error', 'message' => 'Database config error.']);
+        exit;
     }
 
-    if (!$orderId) {
-         $response['message'] = "Order '{$orderIdentifier}' not found.";
-         http_response_code(404);
-         echo json_encode($response);
-         exit;
+    $dbFactory = $config['connection_factory'];
+    $db = $dbFactory();
+
+    // Get order ID from query parameter
+    $orderId = $_GET['order_id'] ?? '';
+    
+    if (empty($orderId)) {
+        http_response_code(400);
+        echo json_encode(['status' => 'error', 'message' => 'Order ID is required.']);
+        exit;
     }
 
+    // First, check if this is an order number or order ID
+    $orderQuery = "SELECT id, order_number, customer_name, status FROM orders WHERE order_number = :order_id OR id = :order_id_int";
+    $orderStmt = $db->prepare($orderQuery);
+    $orderStmt->execute([
+        ':order_id' => $orderId,
+        ':order_id_int' => is_numeric($orderId) ? (int)$orderId : 0
+    ]);
+    $order = $orderStmt->fetch(PDO::FETCH_ASSOC);
 
-    // 1. Find the next unpicked item in the order using the internal orderId
-    // Assumes 'picked_quantity' column exists in 'order_items'
-    $orderItemQuery = "SELECT
-                           oi.id as order_item_id,
-                           oi.product_id,
-                           p.sku as product_sku,
-                           p.name as product_name,
-                           (oi.quantity_ordered - oi.picked_quantity) as quantity_needed
-                       FROM order_items oi
-                       JOIN products p ON oi.product_id = p.product_id
-                       WHERE oi.order_id = :order_id
-                         AND oi.quantity_ordered > oi.picked_quantity
-                       ORDER BY oi.id ASC -- Or your specific picking priority
-                       LIMIT 1";
-    $stmtItem = $db->prepare($orderItemQuery);
-    $stmtItem->bindParam(':order_id', $orderId, PDO::PARAM_INT);
-    $stmtItem->execute();
-    $orderItem = $stmtItem->fetch(PDO::FETCH_ASSOC);
-
-    if ($orderItem) {
-        $productId = $orderItem['product_id'];
-        $quantityNeeded = (int)$orderItem['quantity_needed'];
-
-        // 2. Find the oldest inventory batch for this product ID (FIFO)
-        $inventoryQuery = "SELECT
-                               i.id as inventory_id,
-                               i.location_id,
-                               l.location_code,
-                               i.quantity as available_quantity,
-                               i.batch_number,
-                               i.lot_number,
-                               i.expiry_date,
-                               i.received_at
-                           FROM inventory i
-                           JOIN locations l ON i.location_id = l.id
-                           WHERE i.product_id = :product_id
-                             AND i.quantity > 0
-                           ORDER BY i.received_at ASC, i.id ASC -- FIFO logic
-                           LIMIT 1";
-        $stmtInv = $db->prepare($inventoryQuery);
-        $stmtInv->bindParam(':product_id', $productId, PDO::PARAM_INT);
-        $stmtInv->execute();
-        $inventoryLocation = $stmtInv->fetch(PDO::FETCH_ASSOC);
-
-        if ($inventoryLocation) {
-            // 3. Determine quantity to pick from this specific inventory record
-            $quantityToPick = min($quantityNeeded, (int)$inventoryLocation['available_quantity']);
-
-            // 4. Prepare the success response
-            $response = [
-                'status' => 'success',
-                'data' => [
-                    'order_id' => (int)$orderId, // Return the internal ID
-                    'order_identifier' => $orderIdentifier, // Return the original identifier used
-                    'order_item_id' => (int)$orderItem['order_item_id'],
-                    'product_id' => (int)$productId,
-                    'product_sku' => $orderItem['product_sku'],
-                    'product_name' => $orderItem['product_name'],
-                    'location_code' => $inventoryLocation['location_code'],
-                    'inventory_id' => (int)$inventoryLocation['inventory_id'],
-                    'batch_number' => $inventoryLocation['batch_number'],
-                    'lot_number' => $inventoryLocation['lot_number'],
-                    'expiry_date' => $inventoryLocation['expiry_date'],
-                    'quantity_to_pick' => $quantityToPick,
-                    'total_needed_for_item' => $quantityNeeded,
-                    'available_in_location' => (int)$inventoryLocation['available_quantity']
-                ]
-            ];
-            http_response_code(200); // OK
-
-        } else {
-            $response['message'] = "Item '{$orderItem['product_name']}' (ID: {$productId}) required, but no available stock found.";
-            http_response_code(404);
-        }
-    } else {
-         $response['status'] = 'complete';
-         $response['message'] = 'All items for this order appear to be picked.';
-         http_response_code(200); // OK, but indicate completion
+    if (!$order) {
+        http_response_code(404);
+        echo json_encode(['status' => 'error', 'message' => 'Order not found.']);
+        exit;
     }
+
+    $actualOrderId = $order['id'];
+
+    // Get the next picking task (order item that needs picking)
+    $taskQuery = "
+        SELECT 
+            oi.id as order_item_id,
+            oi.order_id,
+            oi.product_id,
+            oi.quantity_ordered,
+            oi.picked_quantity,
+            (oi.quantity_ordered - COALESCE(oi.picked_quantity, 0)) as quantity_to_pick,
+            p.sku as product_sku,
+            p.name as product_name,
+            p.barcode as product_barcode,
+            -- Get inventory location (simplified - pick from first available location)
+            COALESCE(i.location_id, 1) as location_id,
+            COALESCE(l.code, 'A1-01-01') as location_code,
+            COALESCE(i.quantity, 0) as available_in_location,
+            i.id as inventory_id
+        FROM order_items oi
+        JOIN products p ON oi.product_id = p.product_id
+        LEFT JOIN inventory i ON p.product_id = i.product_id AND i.quantity > 0
+        LEFT JOIN locations l ON i.location_id = l.id
+        WHERE oi.order_id = :order_id
+        AND oi.quantity_ordered > COALESCE(oi.picked_quantity, 0)
+        ORDER BY oi.id ASC
+        LIMIT 1
+    ";
+
+    $taskStmt = $db->prepare($taskQuery);
+    $taskStmt->execute([':order_id' => $actualOrderId]);
+    $task = $taskStmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$task) {
+        // No more items to pick - order is complete
+        echo json_encode([
+            'status' => 'complete',
+            'message' => 'All items have been picked for this order.',
+            'order_info' => [
+                'id' => $order['id'],
+                'order_number' => $order['order_number'],
+                'customer_name' => $order['customer_name']
+            ]
+        ]);
+        exit;
+    }
+
+    // Return the next task
+    echo json_encode([
+        'status' => 'success',
+        'message' => 'Next picking task retrieved.',
+        'data' => [
+            'order_item_id' => (int)$task['order_item_id'],
+            'order_id' => (int)$task['order_id'],
+            'product_id' => (int)$task['product_id'],
+            'product_sku' => $task['product_sku'],
+            'product_name' => $task['product_name'],
+            'product_barcode' => $task['product_barcode'],
+            'quantity_ordered' => (int)$task['quantity_ordered'],
+            'picked_quantity' => (int)$task['picked_quantity'],
+            'quantity_to_pick' => (int)$task['quantity_to_pick'],
+            'location_id' => (int)$task['location_id'],
+            'location_code' => $task['location_code'],
+            'available_in_location' => (int)$task['available_in_location'],
+            'inventory_id' => $task['inventory_id'],
+            'order_info' => [
+                'order_number' => $order['order_number'],
+                'customer_name' => $order['customer_name']
+            ]
+        ]
+    ]);
 
 } catch (PDOException $e) {
+    error_log("Database error in get_next_task.php: " . $e->getMessage());
     http_response_code(500);
-    error_log("API Error (PDO) in get_next_task.php for Order '{$orderIdentifier}': " . $e->getMessage());
-    $response = ['status' => 'error', 'message' => 'Database error fetching task.'];
+    echo json_encode([
+        'status' => 'error',
+        'message' => 'Database error.',
+        'error_code' => 'DB_ERROR'
+    ]);
 } catch (Exception $e) {
+    error_log("General error in get_next_task.php: " . $e->getMessage());
     http_response_code(500);
-    error_log("API Error (General) in get_next_task.php for Order '{$orderIdentifier}': " . $e->getMessage());
-    $response = ['status' => 'error', 'message' => 'Server error fetching task.'];
+    echo json_encode([
+        'status' => 'error',
+        'message' => 'Server error.',
+        'error_code' => 'SERVER_ERROR'
+    ]);
 }
-
-// --- Output JSON ---
-echo json_encode($response);
-exit;
 ?>

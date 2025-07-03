@@ -11,11 +11,11 @@ class Order {
     private $productsTable = "products";
 
     // Order statuses corrected to match database ENUM
-    public const STATUS_PENDING = 'pending';
-    public const STATUS_PROCESSING = 'processing';
-    public const STATUS_COMPLETED = 'completed';
-    public const STATUS_CANCELLED = 'cancelled';
-    public const STATUS_SHIPPED = 'shipped';
+    public const STATUS_PENDING = 'Pending';
+    public const STATUS_PROCESSING = 'Processing';
+    public const STATUS_COMPLETED = 'Completed';
+    public const STATUS_CANCELLED = 'Cancelled';
+    public const STATUS_SHIPPED = 'Shipped';
 
     public function __construct($db) {
         $this->conn = $db;
@@ -82,14 +82,14 @@ class Order {
 
             // Insert order items
             // CORRECTED: 'quantity' column is used instead of 'quantity_ordered'
-            $itemQuery = "INSERT INTO {$this->orderItemsTable} (order_id, product_id, quantity, unit_price, picked_quantity) VALUES (:order_id, :product_id, :quantity, :unit_price, 0)";
+            $itemQuery = "INSERT INTO {$this->orderItemsTable} (order_id, product_id, quantity_ordered, unit_price, picked_quantity) VALUES (:order_id, :product_id, :quantity_ordered, :unit_price, 0)";
             $itemStmt = $this->conn->prepare($itemQuery);
 
             foreach ($items as $item) {
                 $itemStmt->execute([
                     ':order_id' => $orderId,
                     ':product_id' => $item['product_id'],
-                    ':quantity' => $item['quantity'], // CORRECTED
+                    ':quantity_ordered' => $item['quantity'], // CORRECTED
                     ':unit_price' => $item['unit_price'] ?? 0
                 ]);
             }
@@ -164,12 +164,17 @@ class Order {
      * @param int $orderId Order ID
      * @return array|null Order data with items
      */
+    /**
+     * Get order by ID with full details.
+     * @param int $orderId Order ID
+     * @return array|null Order data with items
+     */
     public function getOrderById(int $orderId): ?array {
         try {
             // Get main order data
-            $orderQuery = "SELECT o.*, o.awb_barcode AS tracking_number
-                           FROM {$this->ordersTable} o
-                           WHERE o.id = :order_id";
+            $orderQuery = "SELECT o.*, COALESCE(o.awb_barcode, '') AS tracking_number
+                        FROM {$this->ordersTable} o
+                        WHERE o.id = :order_id";
 
             $orderStmt = $this->conn->prepare($orderQuery);
             $orderStmt->execute([':order_id' => $orderId]);
@@ -179,18 +184,17 @@ class Order {
                 return null;
             }
 
-            // Get order items with aliases for the front-end
-            // CORRECTED: `quantity` and `total_price` are aliased for the JS function
+            // Get order items with correct aliases for the front-end
             $itemsQuery = "SELECT
-                               oi.quantity AS quantity_ordered,
-                               oi.picked_quantity,
-                               oi.unit_price,
-                               oi.total_price AS line_total,
-                               p.name AS product_name,
-                               p.sku
-                           FROM {$this->orderItemsTable} oi
-                           JOIN {$this->productsTable} p ON oi.product_id = p.product_id
-                           WHERE oi.order_id = :order_id";
+                            oi.quantity_ordered,
+                            oi.picked_quantity,
+                            oi.unit_price,
+                            (oi.quantity_ordered * oi.unit_price) AS line_total,
+                            p.name AS product_name,
+                            p.sku
+                        FROM {$this->orderItemsTable} oi
+                        JOIN {$this->productsTable} p ON oi.product_id = p.product_id
+                        WHERE oi.order_id = :order_id";
 
             $itemsStmt = $this->conn->prepare($itemsQuery);
             $itemsStmt->execute([':order_id' => $orderId]);
@@ -210,16 +214,16 @@ class Order {
      * @return array Array of orders
      */
     public function getAllOrders(array $filters = []): array {
-        // CORRECTED: Query now uses `quantity` and `picked_quantity` and aliases `awb_barcode`
         $query = "SELECT
-                     o.id, o.order_number, o.customer_name, o.customer_email, o.order_date,
-                     o.status, o.total_value, o.awb_barcode AS tracking_number,
-                     COUNT(oi.id) as item_count,
-                     COALESCE(SUM(oi.quantity), 0) as total_items,
-                     COALESCE(SUM(oi.picked_quantity), 0) as picked_items
-                  FROM {$this->ordersTable} o
-                  LEFT JOIN {$this->orderItemsTable} oi ON o.id = oi.order_id
-                  WHERE o.type = 'outbound'";
+                    o.id, o.order_number, o.customer_name, o.customer_email, o.order_date,
+                    o.status, o.total_value, 
+                    COALESCE(o.awb_barcode, '') AS tracking_number,
+                    COUNT(oi.id) as item_count,
+                    COALESCE(SUM(oi.quantity_ordered), 0) as total_items,
+                    COALESCE(SUM(oi.picked_quantity), 0) as picked_items
+                FROM {$this->ordersTable} o
+                LEFT JOIN {$this->orderItemsTable} oi ON o.id = oi.order_id
+                WHERE o.type = 'outbound'";
 
         $params = [];
 
@@ -245,9 +249,16 @@ class Order {
         try {
             $stmt = $this->conn->prepare($query);
             $stmt->execute($params);
-            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+            $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            // Debug: Log the query and results
+            error_log("Query executed: " . $query);
+            error_log("Results count: " . count($results));
+            
+            return $results;
         } catch (PDOException $e) {
             error_log("Error fetching all orders: " . $e->getMessage());
+            error_log("Query was: " . $query);
             return [];
         }
     }
@@ -275,5 +286,28 @@ class Order {
         $date = date('Ymd');
         $sequence = str_pad(rand(1, 9999), 4, '0', STR_PAD_LEFT);
         return "{$prefix}-{$date}-{$sequence}";
+    }
+
+    public function countActiveOrders(): int {
+        try {
+            $stmt = $this->conn->prepare("SELECT COUNT(*) FROM {$this->ordersTable} WHERE status IN ('pending', 'processing')");
+            $stmt->execute();
+            return (int)$stmt->fetchColumn();
+        } catch (Exception $e) {
+            error_log("Error counting active errors: " . $e->getMessage());
+            return 0;
+        }
+    }
+
+    public function countShippedToday(): int {
+        try {
+            $today = date('Y-m-d');
+            $stmt = $this->conn->prepare("SELECT COUNT(*) FROM {$this->ordersTable} WHERE status = 'shipped' AND DATE(shipped_date) = ?");
+            $stmt->execute([$today]);
+            return (int)$stmt->fetchColumn();
+        } catch (PDOException $e) {
+            error_log("Error counting shipped orders today: " . $e->getMessage());
+            return 0;
+        }
     }
 }

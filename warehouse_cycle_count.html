@@ -1,0 +1,1416 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WMS - Inventariere Ciclică</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet">
+    <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+    <style>
+        /* WMS Design Language */
+        :root {
+            --primary-color: #00385E;
+            --secondary-color: #DDEBF3;
+            --hover-color: #A4C8E1;
+            --success-color: #198754;
+            --warning-color: #ffc107;
+            --danger-color: #dc3545;
+            --info-color: #0dcaf0;
+            --background-color: #f8f9fa;
+            --container-background: #ffffff;
+            --text-primary: #212529;
+            --text-secondary: #495057;
+            --text-muted: #6c757d;
+            --border-color: #dee2e6;
+            --border-radius: 8px;
+            --base-padding: 1.5rem;
+            --base-shadow: 0 5px 15px rgba(0, 0, 0, 0.07);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Poppins', sans-serif;
+            background-color: var(--background-color);
+            color: var(--text-primary);
+            line-height: 1.6;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* Header */
+        .header {
+            background-color: var(--primary-color);
+            color: white;
+            padding: 1rem;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 1000;
+            box-shadow: var(--base-shadow);
+        }
+
+        .header-content {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        .back-btn {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 1.5rem;
+            cursor: pointer;
+            padding: 0.5rem;
+            border-radius: 50%;
+            transition: background-color 0.3s ease;
+        }
+
+        .back-btn:hover {
+            background-color: rgba(255, 255, 255, 0.1);
+        }
+
+        .header-title {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 1.2rem;
+            font-weight: 600;
+        }
+
+        .count-progress {
+            background-color: var(--secondary-color);
+            color: var(--primary-color);
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            font-weight: 600;
+        }
+
+        /* Main Container */
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: var(--container-background);
+            min-height: 100vh;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.1);
+        }
+
+        .content {
+            padding: 5rem 1rem 2rem 1rem;
+        }
+
+        /* Steps */
+        .step {
+            display: none;
+            animation: fadeIn 0.3s ease-in;
+        }
+
+        .step.active {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .step-header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+
+        .step-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--primary-color);
+            margin-bottom: 0.5rem;
+        }
+
+        .step-subtitle {
+            color: var(--text-secondary);
+            font-size: 1rem;
+        }
+
+        /* Count Assignment Card */
+        .assignment-card {
+            background-color: var(--danger-color);
+            color: white;
+            padding: var(--base-padding);
+            border-radius: var(--border-radius);
+            margin-bottom: 1.5rem;
+        }
+
+        .assignment-header {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .assignment-details-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+
+        .assignment-detail {
+            text-align: center;
+        }
+
+        .detail-value {
+            font-size: 1.1rem;
+            font-weight: 600;
+            display: block;
+        }
+
+        .detail-label {
+            font-size: 0.8rem;
+            opacity: 0.8;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        /* Form Elements */
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+
+        .form-label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+            color: var(--text-primary);
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 1rem;
+            border: 2px solid var(--border-color);
+            border-radius: var(--border-radius);
+            font-size: 1rem;
+            transition: all 0.3s ease;
+            background-color: var(--container-background);
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 3px rgba(0, 56, 94, 0.1);
+        }
+
+        .form-select {
+            width: 100%;
+            padding: 1rem;
+            border: 2px solid var(--border-color);
+            border-radius: var(--border-radius);
+            font-size: 1rem;
+            background-color: var(--container-background);
+            transition: all 0.3s ease;
+        }
+
+        /* Buttons */
+        .btn {
+            padding: 1rem 1.5rem;
+            border: none;
+            border-radius: var(--border-radius);
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            text-decoration: none;
+        }
+
+        .btn-primary {
+            background-color: var(--primary-color);
+            color: white;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            background-color: #002c4a;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 56, 94, 0.3);
+        }
+
+        .btn-secondary {
+            background-color: var(--secondary-color);
+            color: var(--primary-color);
+            border: 2px solid var(--border-color);
+        }
+
+        .btn-success {
+            background-color: var(--success-color);
+            color: white;
+        }
+
+        .btn-success:hover:not(:disabled) {
+            background-color: #146c43;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(25, 135, 84, 0.3);
+        }
+
+        .btn-warning {
+            background-color: var(--warning-color);
+            color: var(--text-primary);
+        }
+
+        .btn-danger {
+            background-color: var(--danger-color);
+            color: white;
+        }
+
+        .btn-full {
+            width: 100%;
+            margin-bottom: 1rem;
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+
+        /* Scanner */
+        .scanner-container {
+            background-color: var(--background-color);
+            border: 2px dashed var(--border-color);
+            border-radius: var(--border-radius);
+            overflow: hidden;
+            margin-bottom: 1.5rem;
+            position: relative;
+        }
+
+        .scanner-container.active {
+            border-color: var(--primary-color);
+            border-style: solid;
+        }
+
+        #reader {
+            width: 100%;
+            min-height: 300px;
+        }
+
+        .scanner-controls {
+            padding: 1rem;
+            background-color: var(--container-background);
+            text-align: center;
+        }
+
+        /* Location Guidance */
+        .location-guidance {
+            background-color: var(--warning-color);
+            color: var(--text-primary);
+            padding: var(--base-padding);
+            border-radius: var(--border-radius);
+            text-align: center;
+            margin-bottom: 1.5rem;
+        }
+
+        .guidance-title {
+            font-size: 0.9rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 0.5rem;
+        }
+
+        .guidance-location {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+
+        .guidance-instructions {
+            font-size: 0.9rem;
+            opacity: 0.9;
+        }
+
+        /* Count Items */
+        .count-items {
+            margin-bottom: 1.5rem;
+        }
+
+        .item-card {
+            background-color: var(--container-background);
+            border: 2px solid var(--border-color);
+            border-radius: var(--border-radius);
+            padding: var(--base-padding);
+            margin-bottom: 1rem;
+            transition: all 0.3s ease;
+        }
+
+        .item-card.current {
+            border-color: var(--danger-color);
+            box-shadow: 0 0 0 3px rgba(220, 53, 69, 0.1);
+        }
+
+        .item-card.counted {
+            border-color: var(--success-color);
+            background-color: rgba(25, 135, 84, 0.05);
+        }
+
+        .item-card.variance {
+            border-color: var(--warning-color);
+            background-color: rgba(255, 193, 7, 0.05);
+        }
+
+        .item-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .item-sku {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--primary-color);
+        }
+
+        .item-system-qty {
+            background-color: var(--info-color);
+            color: white;
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+
+        .item-name {
+            font-size: 1rem;
+            color: var(--text-primary);
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+        }
+
+        .item-details {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        .item-batch {
+            color: var(--text-muted);
+        }
+
+        /* Count Input */
+        .count-input-section {
+            background-color: var(--secondary-color);
+            padding: var(--base-padding);
+            border-radius: var(--border-radius);
+            margin-bottom: 1.5rem;
+        }
+
+        .count-comparison {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .comparison-item {
+            text-align: center;
+            padding: 1rem;
+            background-color: var(--container-background);
+            border-radius: var(--border-radius);
+        }
+
+        .comparison-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            display: block;
+            margin-bottom: 0.25rem;
+        }
+
+        .comparison-label {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .system-qty .comparison-value {
+            color: var(--info-color);
+        }
+
+        .counted-qty .comparison-value {
+            color: var(--success-color);
+        }
+
+        .variance-qty .comparison-value {
+            color: var(--danger-color);
+        }
+
+        /* Progress Bar */
+        .progress-container {
+            margin: 1.5rem 0;
+        }
+
+        .progress-label {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 0.5rem;
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background-color: var(--border-color);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background-color: var(--danger-color);
+            transition: width 0.3s ease;
+            border-radius: 4px;
+        }
+
+        /* Status Messages */
+        .status-message {
+            padding: 1rem;
+            border-radius: var(--border-radius);
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .status-success {
+            background-color: rgba(25, 135, 84, 0.1);
+            color: var(--success-color);
+            border: 1px solid rgba(25, 135, 84, 0.2);
+        }
+
+        .status-error {
+            background-color: rgba(220, 53, 69, 0.1);
+            color: var(--danger-color);
+            border: 1px solid rgba(220, 53, 69, 0.2);
+        }
+
+        .status-warning {
+            background-color: rgba(255, 193, 7, 0.1);
+            color: #856404;
+            border: 1px solid rgba(255, 193, 7, 0.2);
+        }
+
+        /* Summary Cards */
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .summary-card {
+            background-color: var(--container-background);
+            border: 2px solid var(--border-color);
+            border-radius: var(--border-radius);
+            padding: 1rem;
+            text-align: center;
+        }
+
+        .summary-card.accurate {
+            border-color: var(--success-color);
+            background-color: rgba(25, 135, 84, 0.05);
+        }
+
+        .summary-card.variance {
+            border-color: var(--warning-color);
+            background-color: rgba(255, 193, 7, 0.05);
+        }
+
+        .summary-number {
+            font-size: 2rem;
+            font-weight: 700;
+            display: block;
+            margin-bottom: 0.25rem;
+        }
+
+        .summary-label {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+        }
+
+        /* Loading States */
+        .loading {
+            opacity: 0.6;
+            pointer-events: none;
+            position: relative;
+        }
+
+        .loading::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 20px;
+            height: 20px;
+            margin: -10px 0 0 -10px;
+            border: 2px solid var(--border-color);
+            border-top: 2px solid var(--primary-color);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Hidden utility */
+        .hidden {
+            display: none !important;
+        }
+
+        /* Responsive Design */
+        @media (max-width: 480px) {
+            .content {
+                padding: 5rem 0.75rem 2rem 0.75rem;
+            }
+
+            .item-header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 0.5rem;
+            }
+
+            .assignment-details-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .count-comparison {
+                grid-template-columns: 1fr;
+            }
+
+            .summary-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .guidance-location {
+                font-size: 1.5rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <div class="header-content">
+                <button class="back-btn" onclick="window.history.back()">
+                    <span class="material-symbols-outlined">arrow_back</span>
+                </button>
+                <div class="header-title">
+                    <span class="material-symbols-outlined">fact_check</span>
+                    Inventariere Ciclică
+                </div>
+                <div class="count-progress">
+                    <span id="count-progress">0/0</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="content">
+            <!-- Step 1: Assignment Selection -->
+            <div class="step active" id="step-assignment">
+                <div class="step-header">
+                    <h1 class="step-title">Selectează Inventarierea</h1>
+                    <p class="step-subtitle">Alege zona sau task-ul de inventariere</p>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="assignment-select">Task Inventariere:</label>
+                    <select class="form-select" id="assignment-select">
+                        <option value="">Selectează task-ul...</option>
+                    </select>
+                </div>
+
+                <button class="btn btn-primary btn-full" id="start-assignment-btn">
+                    <span class="material-symbols-outlined">play_arrow</span>
+                    Începe Inventarierea
+                </button>
+
+                <button class="btn btn-secondary btn-full" id="manual-count-btn">
+                    <span class="material-symbols-outlined">edit</span>
+                    Inventariere Manuală
+                </button>
+
+                <div class="form-group hidden" id="manual-count-section">
+                    <label class="form-label" for="location-input">Cod Locație:</label>
+                    <input type="text" class="form-input" id="location-input" placeholder="ex: A01-B02-C03">
+                    <button class="btn btn-primary btn-full" id="start-manual-btn" style="margin-top: 1rem;">
+                        <span class="material-symbols-outlined">search</span>
+                        Inventariază Locația
+                    </button>
+                </div>
+
+                <div id="assignment-status-message"></div>
+            </div>
+
+            <!-- Step 2: Assignment Overview -->
+            <div class="step" id="step-overview">
+                <div class="step-header">
+                    <h1 class="step-title">Detalii Inventariere</h1>
+                    <p class="step-subtitle">Verifică datele și începe numărarea</p>
+                </div>
+
+                <div class="assignment-card" id="assignment-info-card">
+                    <div class="assignment-header">
+                        <span class="material-symbols-outlined">assignment</span>
+                        <span id="assignment-name">-</span>
+                    </div>
+                    <div class="assignment-details-grid">
+                        <div class="assignment-detail">
+                            <span class="detail-value" id="assignment-location">-</span>
+                            <span class="detail-label">Locație</span>
+                        </div>
+                        <div class="assignment-detail">
+                            <span class="detail-value" id="assignment-type">-</span>
+                            <span class="detail-label">Tip</span>
+                        </div>
+                        <div class="assignment-detail">
+                            <span class="detail-value" id="total-items">-</span>
+                            <span class="detail-label">Articole</span>
+                        </div>
+                        <div class="assignment-detail">
+                            <span class="detail-value" id="assignment-priority">-</span>
+                            <span class="detail-label">Prioritate</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="progress-container">
+                    <div class="progress-label">
+                        <span>Progres Inventariere</span>
+                        <span id="progress-text">0/0 articole</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progress-fill" style="width: 0%;"></div>
+                    </div>
+                </div>
+
+                <div id="items-preview"></div>
+
+                <button class="btn btn-success btn-full" id="start-counting-btn">
+                    <span class="material-symbols-outlined">play_arrow</span>
+                    Începe Numărarea
+                </button>
+            </div>
+
+            <!-- Step 3: Counting -->
+            <div class="step" id="step-counting">
+                <div class="step-header">
+                    <h1 class="step-title">Inventariere în Curs</h1>
+                    <p class="step-subtitle">Numără fiecare articol cu atenție</p>
+                </div>
+
+                <div class="location-guidance" id="location-guidance">
+                    <div class="guidance-title">Locația Curentă</div>
+                    <div class="guidance-location" id="current-location">-</div>
+                    <div class="guidance-instructions">Scanează locația pentru confirmare</div>
+                </div>
+
+                <div class="scanner-container" id="scanner-container">
+                    <div id="reader"></div>
+                    <div class="scanner-controls">
+                        <button class="btn btn-secondary btn-full" id="stop-scan-btn" style="display: none;">
+                            <span class="material-symbols-outlined">stop</span>
+                            Oprește Scanner
+                        </button>
+                    </div>
+                </div>
+
+                <button class="btn btn-primary btn-full" id="scan-location-btn">
+                    <span class="material-symbols-outlined">qr_code_scanner</span>
+                    Scanează Locația
+                </button>
+
+                <button class="btn btn-secondary btn-full" id="manual-location-btn">
+                    <span class="material-symbols-outlined">edit</span>
+                    Introdu Locația Manual
+                </button>
+
+                <div class="form-group hidden" id="manual-location-section">
+                    <label class="form-label" for="location-verify-input">Cod Locație:</label>
+                    <input type="text" class="form-input" id="location-verify-input" placeholder="ex: A01-B02-C03">
+                    <button class="btn btn-primary btn-full" id="verify-location-btn" style="margin-top: 1rem;">
+                        <span class="material-symbols-outlined">check</span>
+                        Verifică Locația
+                    </button>
+                </div>
+
+                <div class="count-items hidden" id="count-items-section">
+                    <div class="item-card current" id="current-item-card">
+                        <div class="item-header">
+                            <span class="item-sku" id="current-item-sku">-</span>
+                            <span class="item-system-qty" id="current-system-qty">0</span>
+                        </div>
+                        <div class="item-name" id="current-item-name">-</div>
+                        <div class="item-details">
+                            <span id="current-item-category">-</span>
+                            <span class="item-batch" id="current-item-batch">-</span>
+                        </div>
+                    </div>
+
+                    <div class="count-input-section">
+                        <div class="count-comparison">
+                            <div class="comparison-item system-qty">
+                                <span class="comparison-value" id="system-quantity">0</span>
+                                <span class="comparison-label">Sistem</span>
+                            </div>
+                            <div class="comparison-item counted-qty">
+                                <span class="comparison-value" id="counted-quantity">0</span>
+                                <span class="comparison-label">Numărat</span>
+                            </div>
+                            <div class="comparison-item variance-qty">
+                                <span class="comparison-value" id="variance-quantity">0</span>
+                                <span class="comparison-label">Diferență</span>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label" for="count-input">Cantitate Numărată:</label>
+                            <input type="number" class="form-input" id="count-input" min="0" step="1" placeholder="0" autocomplete="off">
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label" for="count-notes">Observații (opțional):</label>
+                            <input type="text" class="form-input" id="count-notes" placeholder="ex: produs deteriorat, locație incorectă">
+                        </div>
+
+                        <button class="btn btn-success btn-full" id="confirm-count-btn">
+                            <span class="material-symbols-outlined">check_circle</span>
+                            Confirmă Numărarea
+                        </button>
+                    </div>
+                </div>
+
+                <div id="counting-status-message"></div>
+            </div>
+
+            <!-- Step 4: Summary -->
+            <div class="step" id="step-summary">
+                <div class="step-header">
+                    <h1 class="step-title">Inventariere Finalizată</h1>
+                    <p class="step-subtitle">Rezumatul inventarierii</p>
+                </div>
+
+                <div class="status-message status-success">
+                    <span class="material-symbols-outlined">check_circle</span>
+                    <div>
+                        <strong>Inventariere finalizată cu succes!</strong><br>
+                        Toate articolele au fost numărate.
+                    </div>
+                </div>
+
+                <div class="summary-grid">
+                    <div class="summary-card accurate">
+                        <span class="summary-number" id="accurate-count">0</span>
+                        <span class="summary-label">Articole Corecte</span>
+                    </div>
+                    <div class="summary-card variance">
+                        <span class="summary-number" id="variance-count">0</span>
+                        <span class="summary-label">Cu Diferențe</span>
+                    </div>
+                </div>
+
+                <div class="assignment-card">
+                    <div class="assignment-header">
+                        <span class="material-symbols-outlined">done</span>
+                        <span id="completed-assignment-name">-</span>
+                    </div>
+                    <div class="assignment-details-grid">
+                        <div class="assignment-detail">
+                            <span class="detail-value" id="completion-time">-</span>
+                            <span class="detail-label">Timp Finalizare</span>
+                        </div>
+                        <div class="assignment-detail">
+                            <span class="detail-value" id="items-counted">-</span>
+                            <span class="detail-label">Articole Numărate</span>
+                        </div>
+                    </div>
+                </div>
+
+                <button class="btn btn-primary btn-full" id="generate-report-btn">
+                    <span class="material-symbols-outlined">print</span>
+                    Generează Raport
+                </button>
+
+                <button class="btn btn-warning btn-full" id="review-variances-btn">
+                    <span class="material-symbols-outlined">warning</span>
+                    Revizuiește Diferențele
+                </button>
+
+                <button class="btn btn-primary btn-full" id="new-assignment-btn">
+                    <span class="material-symbols-outlined">add</span>
+                    Inventariere Nouă
+                </button>
+
+                <button class="btn btn-secondary btn-full" onclick="window.location.href='warehouse_hub.html'">
+                    <span class="material-symbols-outlined">home</span>
+                    Înapoi la Hub
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class CycleCountInterface {
+            constructor() {
+                this.apiBase = '/api';
+                this.currentAssignment = null;
+                this.currentItems = [];
+                this.currentItemIndex = 0;
+                this.countedItems = [];
+                this.scanner = null;
+                this.init();
+            }
+
+            async init() {
+                this.initEventListeners();
+                await this.loadAssignments();
+                this.showStep('step-assignment');
+            }
+
+            initEventListeners() {
+                // Assignment selection
+                document.getElementById('start-assignment-btn').addEventListener('click', () => this.startAssignment());
+                document.getElementById('manual-count-btn').addEventListener('click', () => this.toggleManualCount());
+                document.getElementById('start-manual-btn').addEventListener('click', () => this.startManualCount());
+                document.getElementById('location-input').addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') this.startManualCount();
+                });
+
+                // Overview
+                document.getElementById('start-counting-btn').addEventListener('click', () => this.startCounting());
+
+                // Counting
+                document.getElementById('scan-location-btn').addEventListener('click', () => this.startScanner());
+                document.getElementById('stop-scan-btn').addEventListener('click', () => this.stopScanner());
+                document.getElementById('manual-location-btn').addEventListener('click', () => this.toggleManualLocation());
+                document.getElementById('verify-location-btn').addEventListener('click', () => this.verifyLocationManually());
+                document.getElementById('location-verify-input').addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') this.verifyLocationManually();
+                });
+                document.getElementById('count-input').addEventListener('input', () => this.updateVarianceDisplay());
+                document.getElementById('confirm-count-btn').addEventListener('click', () => this.confirmCount());
+
+                // Summary
+                document.getElementById('generate-report-btn').addEventListener('click', () => this.generateReport());
+                document.getElementById('review-variances-btn').addEventListener('click', () => this.reviewVariances());
+                document.getElementById('new-assignment-btn').addEventListener('click', () => this.resetInterface());
+            }
+
+            showStep(stepId) {
+                document.querySelectorAll('.step').forEach(step => step.classList.remove('active'));
+                document.getElementById(stepId).classList.add('active');
+            }
+
+            async loadAssignments() {
+                try {
+                    const response = await this.fetchAPI('/cycle-count/assignments');
+                    if (response.success && response.data) {
+                        this.populateAssignmentSelect(response.data);
+                    }
+                } catch (error) {
+                    console.error('Error loading assignments:', error);
+                }
+            }
+
+            populateAssignmentSelect(assignments) {
+                const select = document.getElementById('assignment-select');
+                select.innerHTML = '<option value="">Selectează task-ul...</option>';
+                
+                assignments.forEach(assignment => {
+                    const option = document.createElement('option');
+                    option.value = assignment.id;
+                    option.textContent = `${assignment.name} - ${assignment.location_code} (${assignment.item_count} articole)`;
+                    select.appendChild(option);
+                });
+            }
+
+            toggleManualCount() {
+                const section = document.getElementById('manual-count-section');
+                section.classList.toggle('hidden');
+                if (!section.classList.contains('hidden')) {
+                    document.getElementById('location-input').focus();
+                }
+            }
+
+            async startAssignment() {
+                const assignmentId = document.getElementById('assignment-select').value;
+                if (!assignmentId) {
+                    this.showStatusMessage('error', 'Selectați un task de inventariere.');
+                    return;
+                }
+
+                await this.loadAssignment(assignmentId);
+            }
+
+            async startManualCount() {
+                const locationCode = document.getElementById('location-input').value.trim();
+                if (!locationCode) {
+                    this.showStatusMessage('error', 'Introduceți codul locației.');
+                    return;
+                }
+
+                await this.loadLocationCount(locationCode);
+            }
+
+            async loadAssignment(assignmentId) {
+                try {
+                    this.setLoading(true);
+                    this.showStatusMessage('info', 'Se încarcă task-ul...');
+
+                    const response = await this.fetchAPI(`/cycle-count/assignment/${assignmentId}`);
+                    
+                    if (response.success && response.data) {
+                        this.currentAssignment = response.data;
+                        this.currentItems = response.data.items || [];
+                        this.currentItemIndex = 0;
+                        this.countedItems = [];
+                        this.displayAssignmentInfo();
+                        this.showStep('step-overview');
+                        this.showStatusMessage('success', 'Task-ul a fost încărcat cu succes.');
+                    } else {
+                        this.showStatusMessage('error', response.message || 'Task-ul nu a fost găsit.');
+                    }
+                } catch (error) {
+                    this.showStatusMessage('error', 'Eroare la încărcarea task-ului: ' + error.message);
+                } finally {
+                    this.setLoading(false);
+                }
+            }
+
+            async loadLocationCount(locationCode) {
+                try {
+                    this.setLoading(true);
+                    this.showStatusMessage('info', 'Se încarcă articolele din locație...');
+
+                    const response = await this.fetchAPI(`/cycle-count/location/${locationCode}`);
+                    
+                    if (response.success && response.data) {
+                        this.currentAssignment = {
+                            id: 'manual',
+                            name: `Inventariere Manuală - ${locationCode}`,
+                            location_code: locationCode,
+                            type: 'Manual',
+                            priority: 'Normal'
+                        };
+                        this.currentItems = response.data.items || [];
+                        this.currentItemIndex = 0;
+                        this.countedItems = [];
+                        this.displayAssignmentInfo();
+                        this.showStep('step-overview');
+                        this.showStatusMessage('success', 'Articolele au fost încărcate cu succes.');
+                    } else {
+                        this.showStatusMessage('error', response.message || 'Locația nu a fost găsită sau nu conține articole.');
+                    }
+                } catch (error) {
+                    this.showStatusMessage('error', 'Eroare la încărcarea locației: ' + error.message);
+                } finally {
+                    this.setLoading(false);
+                }
+            }
+
+            displayAssignmentInfo() {
+                if (!this.currentAssignment) return;
+
+                document.getElementById('assignment-name').textContent = this.currentAssignment.name || '-';
+                document.getElementById('assignment-location').textContent = this.currentAssignment.location_code || '-';
+                document.getElementById('assignment-type').textContent = this.currentAssignment.type || '-';
+                document.getElementById('total-items').textContent = this.currentItems.length;
+                document.getElementById('assignment-priority').textContent = this.currentAssignment.priority || 'Normal';
+
+                this.updateProgress();
+                this.displayItemsPreview();
+            }
+
+            displayItemsPreview() {
+                const container = document.getElementById('items-preview');
+                container.innerHTML = '';
+
+                // Show first 3 items as preview
+                const previewItems = this.currentItems.slice(0, 3);
+                
+                previewItems.forEach((item, index) => {
+                    const itemCard = document.createElement('div');
+                    itemCard.className = 'item-card';
+                    if (index === 0) {
+                        itemCard.classList.add('current');
+                    }
+
+                    itemCard.innerHTML = `
+                        <div class="item-header">
+                            <span class="item-sku">${item.sku}</span>
+                            <span class="item-system-qty">${item.system_quantity}</span>
+                        </div>
+                        <div class="item-name">${item.name}</div>
+                        <div class="item-details">
+                            <span>${item.category || 'General'}</span>
+                            <span class="item-batch">${item.batch_number || 'Fără lot'}</span>
+                        </div>
+                    `;
+
+                    container.appendChild(itemCard);
+                });
+
+                if (this.currentItems.length > 3) {
+                    const moreCard = document.createElement('div');
+                    moreCard.className = 'item-card';
+                    moreCard.style.opacity = '0.6';
+                    moreCard.innerHTML = `
+                        <div class="item-header">
+                            <span class="item-sku">...</span>
+                            <span class="item-system-qty">+${this.currentItems.length - 3}</span>
+                        </div>
+                        <div class="item-name">Și încă ${this.currentItems.length - 3} articole</div>
+                    `;
+                    container.appendChild(moreCard);
+                }
+            }
+
+            updateProgress() {
+                const completed = this.currentItemIndex;
+                const total = this.currentItems.length;
+                const percentage = total > 0 ? (completed / total) * 100 : 0;
+
+                document.getElementById('progress-text').textContent = `${completed}/${total} articole`;
+                document.getElementById('progress-fill').style.width = `${percentage}%`;
+                document.getElementById('count-progress').textContent = `${completed}/${total}`;
+            }
+
+            startCounting() {
+                if (this.currentItems.length === 0) {
+                    this.showStatusMessage('error', 'Nu există articole de numărat.');
+                    return;
+                }
+
+                this.showCurrentLocation();
+                this.showStep('step-counting');
+            }
+
+            showCurrentLocation() {
+                if (this.currentItemIndex >= this.currentItems.length) {
+                    this.completeCounting();
+                    return;
+                }
+
+                const item = this.currentItems[this.currentItemIndex];
+                
+                document.getElementById('current-location').textContent = item.location_code || this.currentAssignment.location_code;
+                
+                // Reset state
+                document.getElementById('count-items-section').classList.add('hidden');
+                document.getElementById('manual-location-section').classList.add('hidden');
+                this.clearStatusMessage('counting-status-message');
+            }
+
+            async startScanner() {
+                try {
+                    document.getElementById('scan-location-btn').style.display = 'none';
+                    document.getElementById('stop-scan-btn').style.display = 'block';
+                    document.getElementById('scanner-container').classList.add('active');
+
+                    this.scanner = new Html5QrcodeScanner("reader", {
+                        qrbox: { width: 200, height: 200 },
+                        fps: 10
+                    });
+
+                    this.scanner.render(
+                        (decodedText) => this.handleLocationScan(decodedText),
+                        (error) => console.log('Location scan error:', error)
+                    );
+                } catch (error) {
+                    this.showStatusMessage('error', 'Eroare la pornirea scannerului: ' + error.message, 'counting-status-message');
+                }
+            }
+
+            stopScanner() {
+                if (this.scanner) {
+                    this.scanner.clear();
+                    this.scanner = null;
+                }
+                document.getElementById('scan-location-btn').style.display = 'block';
+                document.getElementById('stop-scan-btn').style.display = 'none';
+                document.getElementById('scanner-container').classList.remove('active');
+            }
+
+            toggleManualLocation() {
+                const section = document.getElementById('manual-location-section');
+                section.classList.toggle('hidden');
+                if (!section.classList.contains('hidden')) {
+                    document.getElementById('location-verify-input').focus();
+                }
+            }
+
+            handleLocationScan(locationCode) {
+                this.stopScanner();
+                this.verifyLocation(locationCode);
+            }
+
+            verifyLocationManually() {
+                const locationCode = document.getElementById('location-verify-input').value.trim();
+                if (!locationCode) {
+                    this.showStatusMessage('error', 'Introduceți codul locației.', 'counting-status-message');
+                    return;
+                }
+                this.verifyLocation(locationCode);
+            }
+
+            verifyLocation(scannedLocation) {
+                const item = this.currentItems[this.currentItemIndex];
+                const expectedLocation = item.location_code || this.currentAssignment.location_code;
+                
+                if (scannedLocation === expectedLocation) {
+                    this.showStatusMessage('success', 'Locația este corectă! Puteți începe numărarea.', 'counting-status-message');
+                    this.showCurrentItem();
+                } else {
+                    this.showStatusMessage('error', `Locația incorectă! Așteptată: ${expectedLocation}, Scanată: ${scannedLocation}`, 'counting-status-message');
+                }
+            }
+
+            showCurrentItem() {
+                const item = this.currentItems[this.currentItemIndex];
+                
+                document.getElementById('current-item-sku').textContent = item.sku;
+                document.getElementById('current-item-name').textContent = item.name;
+                document.getElementById('current-system-qty').textContent = item.system_quantity;
+                document.getElementById('current-item-category').textContent = item.category || 'General';
+                document.getElementById('current-item-batch').textContent = item.batch_number || 'Fără lot';
+
+                document.getElementById('system-quantity').textContent = item.system_quantity;
+                document.getElementById('counted-quantity').textContent = '0';
+                document.getElementById('variance-quantity').textContent = '0';
+
+                document.getElementById('count-input').value = '';
+                document.getElementById('count-notes').value = '';
+
+                document.getElementById('count-items-section').classList.remove('hidden');
+                document.getElementById('count-input').focus();
+            }
+
+            updateVarianceDisplay() {
+                const item = this.currentItems[this.currentItemIndex];
+                const systemQty = parseInt(item.system_quantity) || 0;
+                const countedQty = parseInt(document.getElementById('count-input').value) || 0;
+                const variance = countedQty - systemQty;
+
+                document.getElementById('counted-quantity').textContent = countedQty;
+                document.getElementById('variance-quantity').textContent = variance > 0 ? `+${variance}` : variance;
+
+                // Update color based on variance
+                const varianceElement = document.getElementById('variance-quantity');
+                const comparisonItem = varianceElement.parentElement;
+                
+                if (variance === 0) {
+                    comparisonItem.style.backgroundColor = 'rgba(25, 135, 84, 0.1)';
+                    varianceElement.style.color = 'var(--success-color)';
+                } else {
+                    comparisonItem.style.backgroundColor = 'rgba(220, 53, 69, 0.1)';
+                    varianceElement.style.color = 'var(--danger-color)';
+                }
+            }
+
+            async confirmCount() {
+                try {
+                    this.setLoading(true);
+                    const item = this.currentItems[this.currentItemIndex];
+                    const countedQty = parseInt(document.getElementById('count-input').value);
+                    const notes = document.getElementById('count-notes').value.trim();
+
+                    if (isNaN(countedQty) || countedQty < 0) {
+                        this.showStatusMessage('error', 'Introduceți o cantitate validă.', 'counting-status-message');
+                        return;
+                    }
+
+                    const countData = {
+                        assignment_id: this.currentAssignment.id,
+                        item_id: item.id,
+                        sku: item.sku,
+                        location_code: item.location_code || this.currentAssignment.location_code,
+                        system_quantity: item.system_quantity,
+                        counted_quantity: countedQty,
+                        variance: countedQty - item.system_quantity,
+                        notes: notes
+                    };
+
+                    const response = await this.fetchAPI('/cycle-count/confirm-count', {
+                        method: 'POST',
+                        body: JSON.stringify(countData)
+                    });
+
+                    if (response.success) {
+                        this.countedItems.push(countData);
+                        this.showStatusMessage('success', 'Numărarea a fost confirmată!', 'counting-status-message');
+                        this.currentItemIndex++;
+                        this.updateProgress();
+                        
+                        setTimeout(() => {
+                            if (this.currentItemIndex < this.currentItems.length) {
+                                this.showCurrentLocation();
+                            } else {
+                                this.completeCounting();
+                            }
+                        }, 1000);
+                    } else {
+                        this.showStatusMessage('error', response.message || 'Eroare la confirmarea numărării.', 'counting-status-message');
+                    }
+                } catch (error) {
+                    this.showStatusMessage('error', 'Eroare la confirmarea numărării: ' + error.message, 'counting-status-message');
+                } finally {
+                    this.setLoading(false);
+                }
+            }
+
+            completeCounting() {
+                const accurateCount = this.countedItems.filter(item => item.variance === 0).length;
+                const varianceCount = this.countedItems.filter(item => item.variance !== 0).length;
+
+                document.getElementById('accurate-count').textContent = accurateCount;
+                document.getElementById('variance-count').textContent = varianceCount;
+                document.getElementById('completed-assignment-name').textContent = this.currentAssignment.name;
+                document.getElementById('completion-time').textContent = new Date().toLocaleTimeString('ro-RO');
+                document.getElementById('items-counted').textContent = this.countedItems.length;
+
+                this.showStep('step-summary');
+            }
+
+            async generateReport() {
+                try {
+                    this.setLoading(true);
+                    const response = await this.fetchAPI('/cycle-count/generate-report', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            assignment_id: this.currentAssignment.id,
+                            counted_items: this.countedItems
+                        })
+                    });
+
+                    if (response.success) {
+                        window.open(response.data.report_url, '_blank');
+                    } else {
+                        alert('Eroare la generarea raportului: ' + (response.message || 'Eroare necunoscută'));
+                    }
+                } catch (error) {
+                    alert('Eroare la generarea raportului: ' + error.message);
+                } finally {
+                    this.setLoading(false);
+                }
+            }
+
+            reviewVariances() {
+                const varianceItems = this.countedItems.filter(item => item.variance !== 0);
+                if (varianceItems.length === 0) {
+                    alert('Nu există diferențe de revizuit.');
+                    return;
+                }
+
+                let varianceDetails = 'Articole cu diferențe:\n\n';
+                varianceItems.forEach(item => {
+                    varianceDetails += `SKU: ${item.sku}\n`;
+                    varianceDetails += `Sistem: ${item.system_quantity}, Numărat: ${item.counted_quantity}\n`;
+                    varianceDetails += `Diferență: ${item.variance > 0 ? '+' : ''}${item.variance}\n`;
+                    if (item.notes) {
+                        varianceDetails += `Observații: ${item.notes}\n`;
+                    }
+                    varianceDetails += '\n';
+                });
+
+                alert(varianceDetails);
+            }
+
+            resetInterface() {
+                this.currentAssignment = null;
+                this.currentItems = [];
+                this.currentItemIndex = 0;
+                this.countedItems = [];
+                document.getElementById('assignment-select').value = '';
+                document.getElementById('location-input').value = '';
+                document.getElementById('location-verify-input').value = '';
+                document.getElementById('count-input').value = '';
+                document.getElementById('count-notes').value = '';
+                this.clearStatusMessage('assignment-status-message');
+                this.clearStatusMessage('counting-status-message');
+                this.showStep('step-assignment');
+            }
+
+            showStatusMessage(type, message, containerId = 'assignment-status-message') {
+                const container = document.getElementById(containerId);
+                container.innerHTML = `
+                    <div class="status-message status-${type}">
+                        <span class="material-symbols-outlined">${this.getStatusIcon(type)}</span>
+                        ${message}
+                    </div>
+                `;
+            }
+
+            clearStatusMessage(containerId) {
+                document.getElementById(containerId).innerHTML = '';
+            }
+
+            getStatusIcon(type) {
+                switch(type) {
+                    case 'success': return 'check_circle';
+                    case 'error': return 'error';
+                    case 'warning': return 'warning';
+                    case 'info': return 'info';
+                    default: return 'info';
+                }
+            }
+
+            setLoading(loading) {
+                const container = document.querySelector('.container');
+                if (loading) {
+                    container.classList.add('loading');
+                } else {
+                    container.classList.remove('loading');
+                }
+            }
+
+            async fetchAPI(endpoint, options = {}) {
+                const response = await fetch(`${this.apiBase}${endpoint}`, {
+                    headers: {
+                        'Content-Type': 'application/json',
+                        ...options.headers
+                    },
+                    ...options
+                });
+
+                if (!response.ok) {
+                    throw new Error(`API Error: ${response.status}`);
+                }
+
+                return await response.json();
+            }
+        }
+
+        // Initialize the cycle count interface when DOM is loaded
+        document.addEventListener('DOMContentLoaded', () => {
+            new CycleCountInterface();
+        });
+    </script>
+</body>
+</html>

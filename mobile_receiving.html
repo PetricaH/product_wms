@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WMS Mobile Receiving</title>
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
+    
+    <!-- QR Code Library -->
+    <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+    
+    <!-- CSS -->
+    <link rel="stylesheet" href="./styles/mobile_receiving.css">
+</head>
+<body class="mobile-receiving-interface">
+    
+    <div id="loading-overlay" class="hidden">
+        <div class="spinner"></div>
+    </div>
+
+    <div class="receiving-card">
+        <h1 class="receiving-card__title">
+            <span class="material-symbols-outlined">inventory_2</span>
+            Mobile Receiving
+        </h1>
+
+        <!-- Step 1: Document Input -->
+        <div class="step-section" id="step1">
+            <div class="step-header">
+                <span class="step-number">1</span>
+                <span class="step-title">Document de Livrare</span>
+            </div>
+            
+            <div class="document-input-section">
+                <div id="scan-document-section">
+                    <button id="scan-document-btn" class="receiving-button receiving-button--primary receiving-button--scan">
+                        <span class="material-symbols-outlined">qr_code_scanner</span>
+                        Scanează Document
+                    </button>
+                    <button id="toggle-manual-document-btn" class="receiving-button receiving-button--secondary receiving-button--small receiving-button--full-width">
+                        Introdu Manual
+                    </button>
+                </div>
+                
+                <div id="manual-document-section" class="hidden">
+                    <label for="document-number-input" class="input-label">Număr Document:</label>
+                    <div class="input-group">
+                        <input type="text" id="document-number-input" class="receiving-input" 
+                               placeholder="ex: NIR-2025-001, AWB123456..." autocomplete="off">
+                        <button id="load-document-btn" class="receiving-button receiving-button--primary">
+                            Încarcă
+                        </button>
+                    </div>
+                    <button id="toggle-scan-document-btn" class="receiving-button receiving-button--secondary receiving-button--small receiving-button--full-width">
+                        Folosește Scanner
+                    </button>
+                </div>
+                
+                <div id="scanner-container" class="scanner-container hidden">
+                    <div id="reader"></div>
+                    <button id="stop-scan-btn" class="receiving-button receiving-button--danger receiving-button--small hidden">
+                        Oprește Scanner
+                    </button>
+                </div>
+                
+                <p id="scanned-document-info" class="scanned-info"></p>
+            </div>
+        </div>
+
+        <!-- Step 2: Document Details -->
+        <div class="step-section hidden" id="step2">
+            <div class="step-header">
+                <span class="step-number">2</span>
+                <span class="step-title">Detalii Document</span>
+            </div>
+            
+            <div class="document-details" id="document-details">
+                <div class="detail-row">
+                    <span class="detail-label">Document:</span>
+                    <span class="detail-value" id="doc-number">-</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Furnizor:</span>
+                    <span class="detail-value" id="supplier-name">-</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Data:</span>
+                    <span class="detail-value" id="document-date">-</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Status:</span>
+                    <span class="detail-value" id="document-status">-</span>
+                </div>
+            </div>
+            
+            <div class="receiving-summary">
+                <div class="summary-header">
+                    <span class="material-symbols-outlined">inventory</span>
+                    <span>Articole de primit: <strong id="total-items-count">0</strong></span>
+                </div>
+                <div class="progress-container">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progress-fill"></div>
+                    </div>
+                    <div class="progress-text">
+                        <span id="received-items-count">0</span> / <span id="total-items-display">0</span> primite
+                    </div>
+                </div>
+            </div>
+            
+            <button id="start-receiving-btn" class="receiving-button receiving-button--success receiving-button--full-width">
+                <span class="material-symbols-outlined">play_arrow</span>
+                Începe Recepția
+            </button>
+        </div>
+
+        <!-- Step 3: Item Receiving -->
+        <div class="step-section hidden" id="step3">
+            <div class="step-header">
+                <span class="step-number">3</span>
+                <span class="step-title">Primire Articole</span>
+            </div>
+            
+            <div class="current-item-info" id="current-item-display">
+                <div class="item-header">
+                    <span class="material-symbols-outlined">inventory</span>
+                    <div class="item-details">
+                        <div class="item-name" id="current-item-name">-</div>
+                        <div class="item-sku">SKU: <span id="current-item-sku">-</span></div>
+                        <div class="item-expected">Așteptat: <span id="current-item-expected">0</span> buc</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Product Scanning -->
+            <div class="product-scan-section">
+                <div id="scan-product-section">
+                    <button id="scan-product-btn" class="receiving-button receiving-button--primary receiving-button--scan">
+                        <span class="material-symbols-outlined">qr_code_scanner</span>
+                        Scanează Produs
+                    </button>
+                    <button id="toggle-manual-product-btn" class="receiving-button receiving-button--secondary receiving-button--small receiving-button--full-width">
+                        Introdu Manual SKU
+                    </button>
+                </div>
+                
+                <div id="manual-product-section" class="hidden">
+                    <label for="product-sku-input" class="input-label">SKU Produs:</label>
+                    <div class="input-group">
+                        <input type="text" id="product-sku-input" class="receiving-input" 
+                               placeholder="Scanează sau introdu SKU..." autocomplete="off">
+                        <button id="verify-product-btn" class="receiving-button receiving-button--primary">
+                            Verifică
+                        </button>
+                    </div>
+                    <button id="toggle-scan-product-btn" class="receiving-button receiving-button--secondary receiving-button--small receiving-button--full-width">
+                        Folosește Scanner
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Quantity and Location -->
+            <div class="receiving-details hidden" id="receiving-details-section">
+                <div class="input-group">
+                    <label for="received-quantity" class="input-label">Cantitate Primită:</label>
+                    <input type="number" id="received-quantity" class="receiving-input" 
+                           min="1" step="1" placeholder="0" inputmode="numeric">
+                </div>
+                
+                <div class="input-group">
+                    <label for="storage-location" class="input-label">Locație Depozitare:</label>
+                    <select id="storage-location" class="receiving-input">
+                        <option value="">Selectează locația...</option>
+                    </select>
+                </div>
+                
+                <div class="input-group">
+                    <label for="batch-number" class="input-label">Lot/Batch (opțional):</label>
+                    <input type="text" id="batch-number" class="receiving-input" 
+                           placeholder="ex: LOT2025001" autocomplete="off">
+                </div>
+                
+                <div class="input-group">
+                    <label for="expiry-date" class="input-label">Data Expirare (opțional):</label>
+                    <input type="date" id="expiry-date" class="receiving-input">
+                </div>
+                
+                <button id="confirm-receive-btn" class="receiving-button receiving-button--success receiving-button--full-width">
+                    <span class="material-symbols-outlined">check</span>
+                    Confirmă Primirea
+                </button>
+            </div>
+        </div>
+
+        <!-- Step 4: Completion -->
+        <div class="step-section hidden" id="step4">
+            <div class="step-header">
+                <span class="step-number">4</span>
+                <span class="step-title">Recepție Finalizată</span>
+            </div>
+            
+            <div class="completion-message">
+                <span class="material-symbols-outlined">check_circle</span>
+                <div class="completion-text">
+                    <h3>Recepție Finalizată cu Succes!</h3>
+                    <p>Toate articolele au fost procesate și adăugate în inventar.</p>
+                </div>
+            </div>
+            
+            <div class="completion-summary" id="completion-summary">
+                <div class="summary-item">
+                    <span class="summary-label">Document:</span>
+                    <span class="summary-value" id="final-document-number">-</span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-label">Articole primite:</span>
+                    <span class="summary-value" id="final-items-received">0</span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-label">Data finalizării:</span>
+                    <span class="summary-value" id="completion-date">-</span>
+                </div>
+            </div>
+            
+            <div class="completion-actions">
+                <button id="generate-nir-btn" class="receiving-button receiving-button--primary">
+                    <span class="material-symbols-outlined">description</span>
+                    Generează NIR
+                </button>
+                <button id="new-receiving-btn" class="receiving-button receiving-button--secondary">
+                    <span class="material-symbols-outlined">refresh</span>
+                    Recepție Nouă
+                </button>
+            </div>
+        </div>
+
+        <!-- Messages -->
+        <div id="message-area" class="message-area"></div>
+        
+        <!-- All Done Message -->
+        <div id="all-done-message" class="all-done-message hidden">
+            <span class="material-symbols-outlined">task_alt</span>
+            Toate articolele pentru acest document au fost primite!
+        </div>
+    </div>
+
+    <!-- JavaScript -->
+    <script src="./src/js/pages/mobile_receiving.js"></script>
+</body>
+</html>

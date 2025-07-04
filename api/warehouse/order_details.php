@@ -60,11 +60,11 @@ try {
     $itemsQuery = "
         SELECT
             oi.id as order_item_id,
-            oi.quantity_ordered,
+            oi.quantity as quantity_ordered,
             oi.picked_quantity,
             oi.unit_price,
-            (oi.quantity_ordered * oi.unit_price) AS line_total,
-            (oi.quantity_ordered - COALESCE(oi.picked_quantity, 0)) as remaining_to_pick,
+            (oi.quantity * oi.unit_price) AS line_total,
+            (oi.quantity - COALESCE(oi.picked_quantity, 0)) as remaining_to_pick,
             p.name AS product_name,
             p.sku,
             p.barcode as product_barcode

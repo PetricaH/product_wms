@@ -28,42 +28,41 @@ try {
     $dbFactory = $config['connection_factory'];
     $db = $dbFactory();
 
-    // Simplified query - get outbound orders that are pending or processing
     $query = "
-        SELECT 
-            o.id,
-            o.order_number,
-            o.customer_name,
-            o.customer_email,
-            o.shipping_address,
-            o.order_date,
-            o.status,
-            o.priority,
-            COALESCE(o.source, 'manual') as source,
-            o.notes,
-            COALESCE(o.total_value, 0) as total_value,
-            COALESCE((
-                SELECT COUNT(*) 
-                FROM order_items oi 
-                WHERE oi.order_id = o.id
-            ), 0) as total_items,
-            COALESCE((
-                SELECT SUM(oi.quantity_ordered - COALESCE(oi.picked_quantity, 0))
-                FROM order_items oi 
-                WHERE oi.order_id = o.id
-            ), 0) as remaining_items
-        FROM orders o
-        WHERE o.type = 'outbound' 
-        AND o.status IN ('Pending', 'Processing')
-        ORDER BY 
-            CASE o.priority 
-                WHEN 'urgent' THEN 1
-                WHEN 'high' THEN 2  
-                WHEN 'normal' THEN 3
-                ELSE 4
-            END,
-            o.order_date ASC
-    ";
+            SELECT
+                o.id,
+                o.order_number,
+                o.customer_name,
+                o.customer_email,
+                o.shipping_address,
+                o.order_date,
+                o.status,
+                o.priority,
+                COALESCE('manual', 'manual') as source,  -- No source column in schema
+                o.notes,
+                COALESCE(o.total_value, 0) as total_value,
+                COALESCE((
+                    SELECT COUNT(*)
+                    FROM order_items oi
+                    WHERE oi.order_id = o.id
+                ), 0) as total_items,
+                COALESCE((
+                    SELECT SUM(oi.quantity - COALESCE(oi.picked_quantity, 0))
+                    FROM order_items oi
+                    WHERE oi.order_id = o.id
+                ), 0) as remaining_items
+            FROM orders o
+            WHERE o.type = 'outbound'
+            AND o.status IN ('pending', 'processing')  -- LOWERCASE
+            ORDER BY
+                CASE o.priority
+                    WHEN 'urgent' THEN 1
+                    WHEN 'high' THEN 2
+                    WHEN 'normal' THEN 3
+                    ELSE 4
+                END,
+                o.order_date ASC
+            ";
 
     $stmt = $db->prepare($query);
     $stmt->execute();

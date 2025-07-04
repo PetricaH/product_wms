@@ -159,11 +159,11 @@ $baseUrl = rtrim(BASE_URL, '/');
     
     <!-- Pass configuration to JavaScript -->
     <script>
-        window.WMS_CONFIG = {
-            baseUrl: '<?= htmlspecialchars($baseUrl) ?>',
-            apiBase: '<?= htmlspecialchars($baseUrl) ?>/api'
-        };
-    </script>
+    window.WMS_CONFIG = {
+        baseUrl: '<?= htmlspecialchars($config['base_url']) ?>',
+        apiBase: '/api'  // Always use relative for API calls
+    };
+</script>
 </head>
 <body>
 

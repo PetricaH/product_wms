@@ -12,15 +12,15 @@ require_once __DIR__ . '/../bootstrap.php';
 
 <?php if (in_prod()): ?>
   <!-- Production CSS -->
-  <link rel="stylesheet" href="<?= asset('/styles/global.min.css') ?>">
-  <link rel="stylesheet" href="<?= asset('/styles/index.min.css') ?>">
-  <link rel="stylesheet" href="<?= asset('/styles/users.min.css') ?>">
-  <link rel="stylesheet" href="<?= asset('/styles/products.min.css') ?>">
-  <link rel="stylesheet" href="<?= asset('/styles/locations.min.css') ?>">
-  <link rel="stylesheet" href="<?= asset('/styles/inventory.min.css') ?>">
-  <link rel="stylesheet" href="<?= asset('/styles/orders.min.css') ?>">
-  <script src="<?= asset('scripts/universal.min.js') ?>" defer></script>
-  <script src="<?= asset('scripts/index.min.js') ?>" defer></script>
+  <link rel="stylesheet" href="<?= asset('/styles/global.css') ?>">
+  <link rel="stylesheet" href="<?= asset('/styles/index.css') ?>">
+  <link rel="stylesheet" href="<?= asset('/styles/users.css') ?>">
+  <link rel="stylesheet" href="<?= asset('/styles/products.css') ?>">
+  <link rel="stylesheet" href="<?= asset('/styles/locations.css') ?>">
+  <link rel="stylesheet" href="<?= asset('/styles/inventory.css') ?>">
+  <link rel="stylesheet" href="<?= asset('/styles/orders.css') ?>">
+  <script src="<?= asset('scripts/universal.js') ?>" defer></script>
+  <script src="<?= asset('scripts/index.js') ?>" defer></script>
 <?php else: ?>
   <!-- Development CSS -->
   <link rel="stylesheet" href="/product_wms/styles/global.css">

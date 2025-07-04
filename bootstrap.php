@@ -6,7 +6,17 @@ if (!defined('BASE_PATH')) {
     define('BASE_PATH', __DIR__);
 }
 
-define('BASE_URL', 'http://localhost/product_wms/');
+// Auto-detect base URL with correct protocol
+$serverName = $_SERVER['SERVER_NAME'] ?? $_SERVER['HTTP_HOST'] ?? 'localhost';
+$isProduction = !in_array($serverName, ['localhost', '127.0.0.1', '::1']) && 
+                !preg_match('/\.(local|test|dev)$/', $serverName);
+
+$protocol = $isProduction ? 'https' : 'http';
+$baseUrl = $protocol . '://' . $serverName;
+
+// For production, assume root directory. For dev, use /product_wms/
+$basePath = $isProduction ? '/' : '/product_wms/';
+define('BASE_URL', $baseUrl . $basePath);
 
 // Function to generate correct navigation URLs
 function getNavUrl($path) {
@@ -23,7 +33,7 @@ function getAsset($file, $type, $isUniversal = false) {
     $isProd = ($config['environment'] ?? 'development') === 'production';
     
     $fileExt = $type === 'styles' ? 'css' : 'js';
-    $baseUrl = '/product_wms';
+    $baseUrl = rtrim(BASE_URL, '/');
     
     if (!$isProd) {
         if ($type === 'styles') {

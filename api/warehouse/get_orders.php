@@ -1,13 +1,13 @@
 <?php
-// File: /api/warehouse/get_orders.php (Fixed simplified version)
+// File: /api/warehouse/get_orders.php - Final working version
 header('Content-Type: application/json');
 error_reporting(E_ALL);
 ini_set('display_errors', 0);
 ini_set('log_errors', 1);
 
-// Define Base Path
+// Use absolute path
 if (!defined('BASE_PATH')) {
-    define('BASE_PATH', dirname(__DIR__, 2));
+    define('BASE_PATH', '/var/www/notsowms.ro');
 }
 
 if (!file_exists(BASE_PATH . '/config/config.php')) {
@@ -29,40 +29,40 @@ try {
     $db = $dbFactory();
 
     $query = "
-            SELECT
-                o.id,
-                o.order_number,
-                o.customer_name,
-                o.customer_email,
-                o.shipping_address,
-                o.order_date,
-                o.status,
-                o.priority,
-                COALESCE('manual', 'manual') as source,  -- No source column in schema
-                o.notes,
-                COALESCE(o.total_value, 0) as total_value,
-                COALESCE((
-                    SELECT COUNT(*)
-                    FROM order_items oi
-                    WHERE oi.order_id = o.id
-                ), 0) as total_items,
-                COALESCE((
-                    SELECT SUM(oi.quantity - COALESCE(oi.picked_quantity, 0))
-                    FROM order_items oi
-                    WHERE oi.order_id = o.id
-                ), 0) as remaining_items
-            FROM orders o
-            WHERE o.type = 'outbound'
-            AND o.status IN ('pending', 'processing')  -- LOWERCASE
-            ORDER BY
-                CASE o.priority
-                    WHEN 'urgent' THEN 1
-                    WHEN 'high' THEN 2
-                    WHEN 'normal' THEN 3
-                    ELSE 4
-                END,
-                o.order_date ASC
-            ";
+        SELECT
+            o.id,
+            o.order_number,
+            o.customer_name,
+            o.customer_email,
+            o.shipping_address,
+            o.order_date,
+            o.status,
+            o.priority,
+            'manual' as source,
+            o.notes,
+            COALESCE(o.total_value, 0) as total_value,
+            COALESCE((
+                SELECT COUNT(*)
+                FROM order_items oi
+                WHERE oi.order_id = o.id
+            ), 0) as total_items,
+            COALESCE((
+                SELECT SUM(oi.quantity - COALESCE(oi.picked_quantity, 0))
+                FROM order_items oi
+                WHERE oi.order_id = o.id
+            ), 0) as remaining_items
+        FROM orders o
+        WHERE o.type = 'outbound'
+        AND o.status IN ('Pending', 'Processing')
+        ORDER BY
+            CASE o.priority
+                WHEN 'urgent' THEN 1
+                WHEN 'high' THEN 2
+                WHEN 'normal' THEN 3
+                ELSE 4
+            END,
+            o.order_date ASC
+    ";
 
     $stmt = $db->prepare($query);
     $stmt->execute();
@@ -81,12 +81,11 @@ try {
             'source' => $order['source'],
             'notes' => $order['notes'],
             'total_items' => (int)$order['total_items'],
-            'total_locations' => 1, // Default to 1 location for now
-            'remaining_items' => max(1, (int)$order['remaining_items']) // At least 1 to show order
+            'total_locations' => 1,
+            'remaining_items' => max(1, (int)$order['remaining_items'])
         ];
     }, $orders);
 
-    // Return successful response
     echo json_encode([
         'status' => 'success',
         'orders' => $formattedOrders,

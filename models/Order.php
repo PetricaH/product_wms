@@ -186,7 +186,7 @@ class Order {
 
             // Get order items with correct aliases for the front-end
             $itemsQuery = "SELECT
-                            oi.quantity_ordered,
+                            oi.quantity AS quantity_ordered,
                             oi.picked_quantity,
                             oi.unit_price,
                             (oi.quantity_ordered * oi.unit_price) AS line_total,
@@ -219,7 +219,7 @@ class Order {
                     o.status, o.total_value, 
                     COALESCE(o.awb_barcode, '') AS tracking_number,
                     COUNT(oi.id) as item_count,
-                    COALESCE(SUM(oi.quantity_ordered), 0) as total_items,
+                    COALESCE(SUM(oi.quantity), 0) as total_items,
                     COALESCE(SUM(oi.picked_quantity), 0) as picked_items
                 FROM {$this->ordersTable} o
                 LEFT JOIN {$this->orderItemsTable} oi ON o.id = oi.order_id

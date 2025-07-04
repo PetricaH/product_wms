@@ -109,7 +109,7 @@ async function startPicking(orderNumber) {
         if (data.status === 'success') {
             showMessage('✅ Order assigned successfully! Redirecting to mobile picker...', false);
             setTimeout(() => {
-                window.location.href = `mobile_picker.html?order=${orderNumber}`;
+                window.location.href = `mobile_picker.php?order=${orderNumber}`;
             }, 1000);
         } else {
             throw new Error(data.message || 'Unknown error from server');
@@ -126,7 +126,7 @@ async function startPicking(orderNumber) {
  */
 function continuePicking(orderNumber) {
     console.log('📋 Continuing picking for order:', orderNumber);
-    window.location.href = `mobile_picker.html?order=${orderNumber}`;
+    window.location.href = `mobile_picker.php?order=${orderNumber}`;
 }
 
 /**

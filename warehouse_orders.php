@@ -433,8 +433,7 @@ $baseUrl = rtrim(BASE_URL, '/');
             </form>
         </div>
     </div>
-
     <!-- JavaScript Files -->
-    <script src="scripts/warehouse_orders.js"></script>
+    <script src="scripts/warehouse_orders.js?v=<?= filemtime('scripts/warehouse_orders.js') ?>"></script>
 </body>
 </html>

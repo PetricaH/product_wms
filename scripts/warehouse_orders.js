@@ -76,9 +76,9 @@ async function loadOrders() {
 /**
  * Start picking an order
  */
-async function startPicking(orderNumber) {
+async function startPicking(orderId, orderNumber) { // FIX: Accept both ID and number
     try {
-        console.log('🎯 Starting picking for order:', orderNumber);
+        console.log(`🎯 Starting picking for Order ID: ${orderId} (Number: ${orderNumber})`);
         
         const endpoint = `${API_BASE}/warehouse/assign_order.php`;
         console.log('🚀 POST to:', endpoint);
@@ -89,7 +89,7 @@ async function startPicking(orderNumber) {
                 'Content-Type': 'application/json',
                 'Accept': 'application/json'
             },
-            body: JSON.stringify({ order_number: orderNumber })
+            body: JSON.stringify({ order_id: orderId })
         });
 
         const responseText = await response.text();
@@ -109,6 +109,7 @@ async function startPicking(orderNumber) {
         if (data.status === 'success') {
             showMessage('✅ Order assigned successfully! Redirecting to mobile picker...', false);
             setTimeout(() => {
+                // The redirect correctly uses the orderNumber
                 window.location.href = `mobile_picker.php?order=${orderNumber}`;
             }, 1000);
         } else {
@@ -116,7 +117,7 @@ async function startPicking(orderNumber) {
         }
         
     } catch (error) {
-        console.error('❌ Error assigning order:', error);
+        console.error('❌ ❌ Error assigning order:', error.message);
         showMessage(`❌ Error assigning order: ${error.message}`, true);
     }
 }
@@ -211,7 +212,7 @@ function displayOrders() {
         if (noOrdersEl) noOrdersEl.style.display = 'block';
         return;
     }
-    
+    /*dadada*/
     ordersGrid.innerHTML = filteredOrders.map(order => generateOrderCard(order)).join('');
     ordersGrid.style.display = 'grid';
     if (noOrdersEl) noOrdersEl.style.display = 'none';
@@ -248,7 +249,7 @@ function generateOrderCard(order) {
             
             <div class="order-actions">
                 ${order.status === 'pending' ? 
-                    `<button class="action-btn btn-primary" onclick="startPicking('${order.order_number}')">
+                    `<button class="action-btn btn-primary" onclick="startPicking(${order.id}, '${order.order_number}')">
                         <span class="material-symbols-outlined">play_arrow</span>
                         Start Picking
                     </button>` :

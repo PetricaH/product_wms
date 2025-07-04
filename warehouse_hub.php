@@ -126,6 +126,6 @@
     </div>
 
     <!-- JavaScript Files -->
-    <script src="scripts/warehouse_hub.js"></script>
+    <script src="scripts/warehouse_hub.js?v=<?= filemtime('scripts/warehouse_hub.js') ?>"></script>
 </body>
 </html>

@@ -2,7 +2,7 @@
 // File: /api/picking/confirm_pick.php
 header('Content-Type: application/json');
 error_reporting(E_ALL);
-ini_set('display_errors', 0);
+ini_set('display_errors', 1);
 ini_set('log_errors', 1);
 
 // Only allow POST requests
@@ -208,7 +208,8 @@ try {
     echo json_encode([
         'status' => 'error',
         'message' => 'Database error.',
-        'error_code' => 'DB_ERROR'
+        'error_code' => 'DB_ERROR',
+        'specific_error' => $e->getMessage()
     ]);
 } catch (Exception $e) {
     if ($db && $db->inTransaction()) {
@@ -219,7 +220,8 @@ try {
     echo json_encode([
         'status' => 'error',
         'message' => 'Server error.',
-        'error_code' => 'SERVER_ERROR'
+        'error_code' => 'SERVER_ERROR',
+        'specific_error' => $e->getMessage()
     ]);
 }
 ?>

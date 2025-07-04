@@ -1,5 +1,5 @@
+console.log("✅ Mobile Picker Script Loaded!");
 // File: mobile_picker.js
-// Final, Refactored Version
 
 document.addEventListener('DOMContentLoaded', () => {
     console.log("DOM Loaded. Initializing Mobile Picker script.");
@@ -110,16 +110,39 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function resetUI() {
         console.log("Resetting UI to initial state.");
+        
+        // Hide ALL possible state elements
         [
-            elements.taskDisplay, elements.confirmationArea, elements.allDoneMessage,
-            elements.locationScanPrompt, elements.productScanPrompt, elements.manualOrderSection,
-            elements.manualLocationSection, elements.manualProductSection
-        ].forEach(el => el?.classList.add('hidden'));
-
-        elements.scanOrderSection?.classList.remove('hidden');
-        if (elements.scannedOrderIdEl) elements.scannedOrderIdEl.textContent = '';
-        if (elements.orderIdInput) elements.orderIdInput.value = '';
-        if (elements.messageArea) elements.messageArea.textContent = '';
+            'loading-state',           // ← MISSING: Loading spinner
+            'scan-order-section',      // ← MISSING: Order scan section  
+            'manual-order-section',    // ← MISSING: Manual order section
+            'location-scan-prompt',    // Location prompts
+            'product-scan-prompt',     // Product prompts  
+            'task-display',           // Task display
+            'confirmation-area',      // Confirmation
+            'all-done-message',       // Completion
+            'manual-location-section', // Manual location
+            'manual-product-section'   // Manual product
+        ].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.classList.add('hidden');
+        });
+    
+        // Show ONLY the initial order scan section
+        const scanOrderSection = document.getElementById('scan-order-section');
+        if (scanOrderSection) scanOrderSection.classList.remove('hidden');
+        
+        // Clear all text content
+        const scannedOrderIdEl = document.getElementById('scanned-order-id');
+        const orderIdInput = document.getElementById('order-id-input');
+        const messageArea = document.getElementById('message-area');
+        
+        if (scannedOrderIdEl) scannedOrderIdEl.textContent = '';
+        if (orderIdInput) orderIdInput.value = '';
+        if (messageArea) {
+            messageArea.textContent = '';
+            messageArea.className = 'message-area';
+        }
         
         currentTask = null;
         currentScanMode = null;
@@ -130,12 +153,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function autoLoadOrder(orderNumber) {
         console.log(`Auto-loading order: ${orderNumber}`);
-        if (elements.scannedOrderIdEl) elements.scannedOrderIdEl.textContent = `Se încarcă: ${orderNumber}`;
-        elements.manualOrderSection?.classList.add('hidden');
-        elements.scanOrderSection?.classList.remove('hidden');
         
-        // Temporarily disable scan button and show loading message
-        if (elements.scanOrderBtn) elements.scanOrderBtn.style.display = 'none';
+        // Clear UI completely first
+        resetUI();
+        
+        // Show loading message in order area
+        const scannedOrderIdEl = document.getElementById('scanned-order-id');
+        if (scannedOrderIdEl) scannedOrderIdEl.textContent = `Se încarcă: ${orderNumber}`;
+        
+        // Hide scan button temporarily
+        const scanOrderBtn = document.getElementById('scan-order-btn');
+        if (scanOrderBtn) scanOrderBtn.style.display = 'none';
         
         setTimeout(() => {
             fetchNextTask(orderNumber);
@@ -148,21 +176,38 @@ document.addEventListener('DOMContentLoaded', () => {
             showMessage('ID comandă invalid.', true);
             return;
         }
+        
         console.log(`Fetching next task for Order ID: ${trimmedOrderId}`);
-
-        // Reset relevant parts of UI for new task fetch
-        [elements.locationScanPrompt, elements.productScanPrompt, elements.taskDisplay, elements.confirmationArea, elements.allDoneMessage].forEach(el => el?.classList.add('hidden'));
+        
+        // Show loading state and hide everything else
+        [
+            'scan-order-section',
+            'manual-order-section', 
+            'location-scan-prompt',
+            'product-scan-prompt',
+            'task-display',
+            'confirmation-area',
+            'all-done-message'
+        ].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.classList.add('hidden');
+        });
+        
+        // Show loading state
+        const loadingState = document.getElementById('loading-state');
+        if (loadingState) loadingState.classList.remove('hidden');
+        
         showMessage('');
         currentTask = null;
         showLoading();
-
+    
         try {
             const response = await fetch(`${GET_TASK_API_URL}?order_id=${encodeURIComponent(trimmedOrderId)}`);
             const result = await response.json();
             console.log("API Response for get_next_task:", result);
-
+    
             if (!response.ok) throw new Error(result.message || `HTTP Error ${response.status}`);
-
+    
             if (result.status === 'success') {
                 updateOrderStatus(trimmedOrderId, 'picking');
                 showLocationScanPrompt(result.data);
@@ -175,25 +220,98 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) {
             console.error('Fetch Task Error:', error);
             showMessage(`Eroare: ${error.message}`, true);
+            
+            // On error, hide loading and show order section
+            const loadingState = document.getElementById('loading-state');
+            const scanOrderSection = document.getElementById('scan-order-section');
+            if (loadingState) loadingState.classList.add('hidden');
+            if (scanOrderSection) scanOrderSection.classList.remove('hidden');
         } finally {
             hideLoading();
         }
     }
     
+    // === CRITICAL FIX FOR STATE MANAGEMENT ===
+
+    // 1. FIX resetUI() - Add ALL elements that need to be hidden
+    function resetUI() {
+        console.log("Resetting UI to initial state.");
+        
+        // Hide ALL possible state elements
+        [
+            'loading-state',           // ← MISSING: Loading spinner
+            'scan-order-section',      // ← MISSING: Order scan section  
+            'manual-order-section',    // ← MISSING: Manual order section
+            'location-scan-prompt',    // Location prompts
+            'product-scan-prompt',     // Product prompts  
+            'task-display',           // Task display
+            'confirmation-area',      // Confirmation
+            'all-done-message',       // Completion
+            'manual-location-section', // Manual location
+            'manual-product-section'   // Manual product
+        ].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.classList.add('hidden');
+        });
+
+        // Show ONLY the initial order scan section
+        const scanOrderSection = document.getElementById('scan-order-section');
+        if (scanOrderSection) scanOrderSection.classList.remove('hidden');
+        
+        // Clear all text content
+        const scannedOrderIdEl = document.getElementById('scanned-order-id');
+        const orderIdInput = document.getElementById('order-id-input');
+        const messageArea = document.getElementById('message-area');
+        
+        if (scannedOrderIdEl) scannedOrderIdEl.textContent = '';
+        if (orderIdInput) orderIdInput.value = '';
+        if (messageArea) {
+            messageArea.textContent = '';
+            messageArea.className = 'message-area';
+        }
+        
+        currentTask = null;
+        currentScanMode = null;
+        stopScanner();
+    }
+
+    // 2. FIX showLocationScanPrompt() - Hide ALL elements first
     function showLocationScanPrompt(taskData) {
         console.log("Prompting for location:", taskData.location_code);
-    
-        document.getElementById('loading-state')?.classList.add('hidden'); 
-    
+        
+        // FIRST: Hide absolutely everything
+        [
+            'loading-state',           // ← ADD: Hide loading spinner
+            'scan-order-section',      // ← ADD: Hide order section
+            'manual-order-section',    // ← ADD: Hide manual order
+            'product-scan-prompt',     
+            'task-display', 
+            'confirmation-area', 
+            'all-done-message',
+            'manual-location-section',
+            'manual-product-section'
+        ].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.classList.add('hidden');
+        });
+        
+        // Set current task state
         currentTask = taskData;
         currentScanMode = 'location';
-    
-        if (elements.targetLocationCodeEl) elements.targetLocationCodeEl.textContent = taskData.location_code;
-        if (elements.locationCodeInput) elements.locationCodeInput.value = '';
-    
-        [elements.productScanPrompt, elements.taskDisplay, elements.confirmationArea, elements.allDoneMessage, elements.manualLocationSection].forEach(el => el?.classList.add('hidden'));
-        elements.scanLocationSection?.classList.remove('hidden');
-        elements.locationScanPrompt?.classList.remove('hidden');
+        
+        // Update location elements
+        const targetLocationCodeEl = document.getElementById('target-location-code');
+        const locationCodeInput = document.getElementById('location-code-input');
+        if (targetLocationCodeEl) targetLocationCodeEl.textContent = taskData.location_code;
+        if (locationCodeInput) locationCodeInput.value = '';
+        
+        // Show ONLY location prompt elements
+        const scanLocationSection = document.getElementById('scan-location-section');
+        const locationScanPrompt = document.getElementById('location-scan-prompt');
+        
+        if (scanLocationSection) scanLocationSection.classList.remove('hidden');
+        if (locationScanPrompt) locationScanPrompt.classList.remove('hidden');
+        
         showMessage("Scanați sau introduceți codul locației.", false);
     }
 
@@ -216,24 +334,36 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log("Enabling final picking controls for task:", taskData);
         currentTask = taskData;
         
-        // Populate data fields
+        // --- Populate the data fields in our new consolidated view ---
         if (elements.productNameEl) elements.productNameEl.textContent = taskData.product_name;
         if (elements.productSkuEl) elements.productSkuEl.textContent = taskData.product_sku;
         if (elements.locationCodeEl) elements.locationCodeEl.textContent = taskData.location_code;
         if (elements.quantityToPickEl) elements.quantityToPickEl.textContent = taskData.quantity_to_pick;
         if (elements.availableInLocationEl) elements.availableInLocationEl.textContent = taskData.available_in_location;
+    
+        // Set the quantity input value and max attribute
         if (elements.quantityPickedInput) {
             elements.quantityPickedInput.value = taskData.quantity_to_pick;
             elements.quantityPickedInput.max = taskData.quantity_to_pick;
         }
-
+    
+        // --- Hide the previous steps (prompts) ---
         [elements.locationScanPrompt, elements.productScanPrompt].forEach(el => el?.classList.add('hidden'));
-        elements.taskDisplay?.classList.remove('hidden');
+        
+        // --- Show ONLY the main confirmation area ---
         elements.confirmationArea?.classList.remove('hidden');
+        
+        // Focus the input for quick entry
         elements.quantityPickedInput?.focus();
     }
 
     async function confirmPick() {
+        console.log("🎉 CLICK DETECTED! The 'confirmPick' function is running!"); // <-- ADD THIS LINE
+    
+    if (!currentTask) {
+        showMessage('Nicio sarcină activă.', true);
+        return;
+    }
         if (!currentTask) { showMessage('Nicio sarcină activă.', true); return; }
         const quantity = parseInt(elements.quantityPickedInput.value, 10);
 
@@ -260,12 +390,24 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function showCompletionScreen(message) {
-
-        document.getElementById('loading-state')?.classList.add('hidden');
-
-        if (elements.allDoneMessage) {
-            elements.allDoneMessage.classList.remove('hidden');
-            elements.allDoneMessage.innerHTML = `
+        // Hide everything first
+        [
+            'loading-state',
+            'scan-order-section',
+            'manual-order-section',
+            'location-scan-prompt',
+            'product-scan-prompt',
+            'task-display',
+            'confirmation-area'
+        ].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.classList.add('hidden');
+        });
+    
+        const allDoneMessage = document.getElementById('all-done-message');
+        if (allDoneMessage) {
+            allDoneMessage.classList.remove('hidden');
+            allDoneMessage.innerHTML = `
                 <div style="text-align: center;">
                     <span class="material-symbols-outlined" style="font-size: 4rem; color: #4CAF50;">task_alt</span>
                     <h2>Comandă Finalizată</h2>
@@ -354,6 +496,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Event Listeners Setup ---
     function setupEventListeners() {
+        console.log("🔍 Running setupEventListeners...");
+
+        const buttonElement = elements.confirmPickBtn;
+    
+        if (buttonElement) {
+            console.log("✅ Found the 'Confirmă Colectarea' button element:", buttonElement);
+            buttonElement.addEventListener('click', confirmPick);
+            console.log("✅ Successfully added click listener to the button.");
+        } else {
+            console.error("❌ CRITICAL: Could not find the button with ID 'confirm-pick-btn'.");
+        }
         // Order Input
         elements.toggleManualInputBtn?.addEventListener('click', () => { elements.scanOrderSection.classList.add('hidden'); elements.manualOrderSection.classList.remove('hidden'); elements.orderIdInput.focus(); });
         elements.toggleScanInputBtn?.addEventListener('click', () => { elements.manualOrderSection.classList.add('hidden'); elements.scanOrderSection.classList.remove('hidden'); });

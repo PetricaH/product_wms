@@ -182,12 +182,15 @@ document.addEventListener('DOMContentLoaded', () => {
     
     function showLocationScanPrompt(taskData) {
         console.log("Prompting for location:", taskData.location_code);
+    
+        document.getElementById('loading-state')?.classList.add('hidden'); 
+    
         currentTask = taskData;
         currentScanMode = 'location';
-
+    
         if (elements.targetLocationCodeEl) elements.targetLocationCodeEl.textContent = taskData.location_code;
         if (elements.locationCodeInput) elements.locationCodeInput.value = '';
-
+    
         [elements.productScanPrompt, elements.taskDisplay, elements.confirmationArea, elements.allDoneMessage, elements.manualLocationSection].forEach(el => el?.classList.add('hidden'));
         elements.scanLocationSection?.classList.remove('hidden');
         elements.locationScanPrompt?.classList.remove('hidden');
@@ -257,6 +260,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function showCompletionScreen(message) {
+
+        document.getElementById('loading-state')?.classList.add('hidden');
+
         if (elements.allDoneMessage) {
             elements.allDoneMessage.classList.remove('hidden');
             elements.allDoneMessage.innerHTML = `
@@ -266,7 +272,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <p>${message}</p>
                     <div style="margin-top: 2rem; display: flex; gap: 1rem; justify-content: center;">
                         <button onclick="window.location.href='warehouse_orders.php'" class="btn btn-secondary">Înapoi la Comenzi</button>
-                        <button onclick="window.location.href='mobile_picker.html'" class="btn btn-primary">Comandă Nouă</button>
+                        <button onclick="window.location.href='mobile_picker.php'" class="btn btn-primary">Comandă Nouă</button>
                     </div>
                 </div>
             `;

@@ -218,15 +218,36 @@ class Order {
                     o.id, o.order_number, o.customer_name, o.customer_email, o.order_date,
                     o.status, o.total_value, 
                     COALESCE(o.awb_barcode, '') AS tracking_number,
-                    COUNT(oi.id) as item_count,
-                    COALESCE(SUM(oi.quantity), 0) as total_items,
-                    COALESCE(SUM(oi.picked_quantity), 0) as picked_items
+                    COALESCE((
+                        SELECT COUNT(*)
+                        FROM order_items oi
+                        WHERE oi.order_id = o.id
+                    ), 0) as item_count,
+                    COALESCE((
+                        SELECT SUM(oi.quantity)
+                        FROM order_items oi
+                        WHERE oi.order_id = o.id
+                    ), 0) as total_items,
+                    COALESCE((
+                        SELECT SUM(COALESCE(oi.picked_quantity, 0))
+                        FROM order_items oi
+                        WHERE oi.order_id = o.id
+                    ), 0) as picked_items,
+                    COALESCE((
+                        SELECT SUM(oi.quantity)
+                        FROM order_items oi
+                        WHERE oi.order_id = o.id
+                    ), 0) as total_quantity,
+                    COALESCE((
+                        SELECT SUM(COALESCE(oi.picked_quantity, 0))
+                        FROM order_items oi
+                        WHERE oi.order_id = o.id
+                    ), 0) as picked_quantity
                 FROM {$this->ordersTable} o
-                LEFT JOIN {$this->orderItemsTable} oi ON o.id = oi.order_id
                 WHERE o.type = 'outbound'";
-
+    
         $params = [];
-
+    
         if (!empty($filters['status'])) {
             $query .= " AND o.status = :status";
             $params[':status'] = $filters['status'];
@@ -243,22 +264,28 @@ class Order {
             $query .= " AND o.customer_name LIKE :customer_name";
             $params[':customer_name'] = '%' . $filters['customer_name'] . '%';
         }
-
-        $query .= " GROUP BY o.id ORDER BY o.order_date DESC";
-
+    
+        $query .= " ORDER BY o.order_date DESC";
+    
         try {
             $stmt = $this->conn->prepare($query);
             $stmt->execute($params);
             $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
             
-            // Debug: Log the query and results
-            error_log("Query executed: " . $query);
-            error_log("Results count: " . count($results));
+            // Ensure all numeric fields are properly set to prevent null errors
+            return array_map(function($order) {
+                return array_merge($order, [
+                    'item_count' => (int)($order['item_count'] ?? 0),
+                    'total_items' => (int)($order['total_items'] ?? 0),
+                    'picked_items' => (int)($order['picked_items'] ?? 0),
+                    'total_quantity' => (int)($order['total_quantity'] ?? 0),
+                    'picked_quantity' => (int)($order['picked_quantity'] ?? 0),
+                    'total_value' => (float)($order['total_value'] ?? 0)
+                ]);
+            }, $results);
             
-            return $results;
         } catch (PDOException $e) {
             error_log("Error fetching all orders: " . $e->getMessage());
-            error_log("Query was: " . $query);
             return [];
         }
     }

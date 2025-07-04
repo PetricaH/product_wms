@@ -131,7 +131,8 @@ $filters = [
     'customer_name' => $_GET['customer_name'] ?? ''
 ];
 
-$orders = $orderModel->getAllOrders($filters);
+// $orders = $orderModel->getAllOrders($filters);
+$orders = $orderModel->getAllOrders([]);
 $products = $productModel->getProductsWithInventory();
 $statuses = $orderModel->getStatuses();
 $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
@@ -224,14 +225,14 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                     </td>
                                     <td class="text-center"><?= number_format($order['item_count']) ?></td>
                                     <td>
-                                        <?php $progressPercent = $order['total_items'] > 0 ? ($order['picked_items'] / $order['total_items']) * 100 : 0; ?>
+                                            <?php $progressPercent = $order['total_quantity'] > 0 ? ($order['picked_quantity'] / $order['total_quantity']) * 100 : 0; ?>
                                         <div class="progress-container">
                                             <div class="progress-bar">
                                                 <div class="progress-fill" style="width: <?= $progressPercent ?>%"></div>
                                             </div>
                                             <span class="progress-text"><?= number_format($progressPercent, 0) ?>%</span>
                                         </div>
-                                        <small><?= $order['picked_items'] ?> / <?= $order['total_items'] ?></small>
+                                        <small><?= $order['picked_quantity'] ?> / <?= $order['total_quantity'] ?></small>
                                     </td>
                                     <td class="text-right">
                                         <strong><?= number_format($order['total_value'], 2) ?> RON</strong>

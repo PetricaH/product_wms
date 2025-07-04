@@ -14,6 +14,14 @@ require_once __DIR__ . '/bootstrap.php';
     <!-- CSS Files -->
     <link rel="stylesheet" href="styles/global.css">
     <link rel="stylesheet" href="styles/warehouse_cycle_count.css">
+    
+    <style>
+        /* Immediate dark theme application */
+        body {
+            background: linear-gradient(135deg, #0F1013 0%, #16161A 100%) !important;
+            color: #FEFFFF !important;
+        }
+    </style>
 </head>
 <body>
     <!-- Header -->

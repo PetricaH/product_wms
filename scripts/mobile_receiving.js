@@ -1,760 +1,770 @@
-// File: scripts/mobile_receiving.js
-// Mobile Receiving Interface for WMS
-// Production-ready with real API integration
+/**
+ * Mobile Receiving JavaScript
+ * Handles mobile receiving workflow, barcode scanning, and receiving process management
+ * Optimized for mobile devices following WMS monochrome design language
+ */
 
-document.addEventListener('DOMContentLoaded', () => {
-    console.log("Mobile Receiving Interface Loaded");
-
-    // --- Configuration ---
-    const GET_DOCUMENT_API_URL = '/api/receiving/get_document.php';
-    const VERIFY_PRODUCT_API_URL = '/api/receiving/verify_product.php';
-    const ADD_ITEM_API_URL = '/api/receiving/add_item.php';
-    const COMPLETE_RECEIPT_API_URL = '/api/receiving/complete_receipt.php';
-    const GET_LOCATIONS_API_URL = '/api/receiving/get_locations.php';
-
-    // --- DOM Elements ---
-    // Document Input
-    const scanDocumentBtn = document.getElementById('scan-document-btn');
-    const toggleManualDocumentBtn = document.getElementById('toggle-manual-document-btn');
-    const toggleScanDocumentBtn = document.getElementById('toggle-scan-document-btn');
-    const manualDocumentSection = document.getElementById('manual-document-section');
-    const documentNumberInput = document.getElementById('document-number-input');
-    const loadDocumentBtn = document.getElementById('load-document-btn');
-    const scannedDocumentInfo = document.getElementById('scanned-document-info');
-
-    // Scanner
-    const scannerContainer = document.getElementById('scanner-container');
-    const readerDiv = document.getElementById('reader');
-    const stopScanBtn = document.getElementById('stop-scan-btn');
-
-    // Product Scanning
-    const scanProductBtn = document.getElementById('scan-product-btn');
-    const toggleManualProductBtn = document.getElementById('toggle-manual-product-btn');
-    const toggleScanProductBtn = document.getElementById('toggle-scan-product-btn');
-    const manualProductSection = document.getElementById('manual-product-section');
-    const productSkuInput = document.getElementById('product-sku-input');
-    const verifyProductBtn = document.getElementById('verify-product-btn');
-
-    // Steps
-    const step1 = document.getElementById('step1');
-    const step2 = document.getElementById('step2');
-    const step3 = document.getElementById('step3');
-    const step4 = document.getElementById('step4');
-
-    // Document Details
-    const docNumberEl = document.getElementById('doc-number');
-    const supplierNameEl = document.getElementById('supplier-name');
-    const documentDateEl = document.getElementById('document-date');
-    const documentStatusEl = document.getElementById('document-status');
-    const startReceivingBtn = document.getElementById('start-receiving-btn');
-
-    // Progress
-    const totalItemsCountEl = document.getElementById('total-items-count');
-    const receivedItemsCountEl = document.getElementById('received-items-count');
-    const totalItemsDisplayEl = document.getElementById('total-items-display');
-    const progressFillEl = document.getElementById('progress-fill');
-
-    // Current Item
-    const currentItemNameEl = document.getElementById('current-item-name');
-    const currentItemSkuEl = document.getElementById('current-item-sku');
-    const currentItemExpectedEl = document.getElementById('current-item-expected');
-
-    // Receiving Details
-    const receivingDetailsSection = document.getElementById('receiving-details-section');
-    const receivedQuantityInput = document.getElementById('received-quantity');
-    const storageLocationSelect = document.getElementById('storage-location');
-    const batchNumberInput = document.getElementById('batch-number');
-    const expiryDateInput = document.getElementById('expiry-date');
-    const confirmReceiveBtn = document.getElementById('confirm-receive-btn');
-
-    // Completion
-    const finalDocumentNumberEl = document.getElementById('final-document-number');
-    const finalItemsReceivedEl = document.getElementById('final-items-received');
-    const completionDateEl = document.getElementById('completion-date');
-    const generateNirBtn = document.getElementById('generate-nir-btn');
-    const newReceivingBtn = document.getElementById('new-receiving-btn');
-
-    // Messages
-    const messageArea = document.getElementById('message-area');
-    const allDoneMessage = document.getElementById('all-done-message');
-    const loadingOverlay = document.getElementById('loading-overlay');
-
-    // --- State Variables ---
-    let html5QrCode;
-    let currentScanMode = 'document'; // 'document' or 'product'
-    let currentDocument = null;
-    let currentItemIndex = 0;
-    let receivedItems = [];
-
-    // --- Utility Functions ---
-    function showLoading() {
-        if (loadingOverlay) loadingOverlay.classList.remove('hidden');
+class MobileReceiving {
+    constructor() {
+        this.config = window.WMS_CONFIG || { baseUrl: '', apiBase: '/api' };
+        this.scanner = null;
+        this.currentReceiving = {
+            id: null,
+            po_number: '',
+            supplier: '',
+            items: [],
+            status: 'pending'
+        };
+        this.scannerActive = false;
+        this.currentCamera = 'environment';
+        this.workflowStep = 1; // 1: Scan PO, 2: Receive Items, 3: Confirm Receipt
+        
+        this.init();
     }
 
-    function hideLoading() {
-        if (loadingOverlay) loadingOverlay.classList.add('hidden');
+    init() {
+        this.bindEvents();
+        this.setupScanner();
+        this.initializeWorkflow();
+        this.handleOrientationChange();
     }
 
-    function showMessage(message, type = 'info') {
-        if (!messageArea) return;
+    bindEvents() {
+        // Navigation
+        const backBtn = document.getElementById('back-btn');
+        if (backBtn) backBtn.addEventListener('click', () => this.navigateBack());
+
+        // Scanner controls
+        const startScanBtn = document.getElementById('start-scan');
+        const stopScanBtn = document.getElementById('stop-scan');
+        const toggleFlashBtn = document.getElementById('toggle-flash');
+        const switchCameraBtn = document.getElementById('switch-camera');
         
-        const messageEl = document.createElement('div');
-        messageEl.className = `message ${type}`;
-        messageEl.innerHTML = `
-            <span class="material-symbols-outlined">
-                ${type === 'success' ? 'check_circle' : 
-                  type === 'error' ? 'error' : 
-                  type === 'warning' ? 'warning' : 'info'}
-            </span>
-            ${message}
-        `;
+        if (startScanBtn) startScanBtn.addEventListener('click', () => this.startScanner());
+        if (stopScanBtn) stopScanBtn.addEventListener('click', () => this.stopScanner());
+        if (toggleFlashBtn) toggleFlashBtn.addEventListener('click', () => this.toggleFlash());
+        if (switchCameraBtn) switchCameraBtn.addEventListener('click', () => this.switchCamera());
+
+        // Manual input forms
+        const poForm = document.getElementById('po-form');
+        const itemForm = document.getElementById('item-form');
         
-        messageArea.appendChild(messageEl);
+        if (poForm) poForm.addEventListener('submit', (e) => this.handlePOInput(e));
+        if (itemForm) itemForm.addEventListener('submit', (e) => this.handleItemInput(e));
+
+        // Workflow actions
+        const nextStepBtn = document.getElementById('next-step');
+        const prevStepBtn = document.getElementById('prev-step');
+        const completeReceivingBtn = document.getElementById('complete-receiving');
+        const saveReceivingBtn = document.getElementById('save-receiving');
         
-        // Auto-remove after 5 seconds
-        setTimeout(() => {
-            if (messageEl.parentNode) {
-                messageEl.parentNode.removeChild(messageEl);
+        if (nextStepBtn) nextStepBtn.addEventListener('click', () => this.nextStep());
+        if (prevStepBtn) prevStepBtn.addEventListener('click', () => this.prevStep());
+        if (completeReceivingBtn) completeReceivingBtn.addEventListener('click', () => this.completeReceiving());
+        if (saveReceivingBtn) saveReceivingBtn.addEventListener('click', () => this.saveReceiving());
+
+        // Item actions
+        document.addEventListener('click', (e) => {
+            if (e.target.matches('.edit-item-btn')) {
+                const index = parseInt(e.target.dataset.index);
+                this.editItem(index);
             }
-        }, 5000);
-    }
-
-    function showStep(stepNumber) {
-        [step1, step2, step3, step4].forEach(step => {
-            if (step) step.classList.add('hidden');
+            if (e.target.matches('.remove-item-btn')) {
+                const index = parseInt(e.target.dataset.index);
+                this.removeItem(index);
+            }
         });
+
+        // Touch and swipe gestures
+        this.initializeTouchGestures();
         
-        const targetStep = document.getElementById(`step${stepNumber}`);
-        if (targetStep) targetStep.classList.remove('hidden');
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => this.handleKeyboardShortcuts(e));
     }
 
-    function resetUI() {
-        currentDocument = null;
-        currentItemIndex = 0;
-        receivedItems = [];
-        
-        // Reset form fields
-        if (documentNumberInput) documentNumberInput.value = '';
-        if (productSkuInput) productSkuInput.value = '';
-        if (receivedQuantityInput) receivedQuantityInput.value = '';
-        if (batchNumberInput) batchNumberInput.value = '';
-        if (expiryDateInput) expiryDateInput.value = '';
-        if (storageLocationSelect) storageLocationSelect.value = '';
-        
-        // Hide sections
-        if (manualDocumentSection) manualDocumentSection.classList.add('hidden');
-        if (manualProductSection) manualProductSection.classList.add('hidden');
-        if (receivingDetailsSection) receivingDetailsSection.classList.add('hidden');
-        if (allDoneMessage) allDoneMessage.classList.add('hidden');
-        
-        // Clear messages
-        if (messageArea) messageArea.innerHTML = '';
-        if (scannedDocumentInfo) scannedDocumentInfo.textContent = '';
-        
-        showStep(1);
+    initializeWorkflow() {
+        this.updateWorkflowProgress();
+        this.showWorkflowStep(this.workflowStep);
     }
 
-    // --- API Functions ---
-    async function fetchDocumentDetails(documentNumber) {
-        if (!documentNumber || String(documentNumber).trim() === '') {
-            showMessage('Număr document invalid.', 'error');
-            return;
+    setupScanner() {
+        const videoElement = document.getElementById('scanner-video');
+        if (!videoElement) return;
+
+        // Initialize Html5Qrcode scanner for mobile
+        if (typeof Html5Qrcode !== 'undefined') {
+            this.scanner = new Html5Qrcode("scanner-video");
+        } else {
+            console.warn('Html5Qrcode library not loaded');
+            this.showError('Barcode scanner not available');
         }
+    }
 
-        const trimmedDocNumber = String(documentNumber).trim();
-        console.log(`Fetching document details for: ${trimmedDocNumber}`);
-
-        if (scannedDocumentInfo) {
-            scannedDocumentInfo.textContent = `Se încarcă documentul: ${trimmedDocNumber}`;
-        }
-
-        showLoading();
+    async startScanner() {
+        if (!this.scanner || this.scannerActive) return;
 
         try {
-            const response = await fetch(`${GET_DOCUMENT_API_URL}?document_number=${encodeURIComponent(trimmedDocNumber)}`);
-            
-            if (!response.ok) {
-                let errorMessage = `HTTP error ${response.status}`;
-                try {
-                    const errorData = await response.json();
-                    errorMessage = errorData.message || errorMessage;
-                } catch (err) {
-                    // Use default error message
-                }
-                throw new Error(errorMessage);
-            }
-
-            const result = await response.json();
-            console.log("Document fetch result:", result);
-
-            if (result.status === 'success' && result.data) {
-                currentDocument = result.data;
-                displayDocumentDetails();
-                loadStorageLocations();
-                showStep(2);
-                showMessage('Document încărcat cu succes!', 'success');
-                
-                if (scannedDocumentInfo) {
-                    scannedDocumentInfo.textContent = `Document încărcat: ${trimmedDocNumber}`;
-                }
-            } else {
-                const errorMsg = result.message || `Document '${trimmedDocNumber}' nu a fost găsit.`;
-                showMessage(errorMsg, 'error');
-                
-                if (scannedDocumentInfo) {
-                    scannedDocumentInfo.textContent = `Eroare încărcare document: ${trimmedDocNumber}`;
-                }
-            }
-        } catch (error) {
-            console.error('Document fetch error:', error);
-            showMessage(`Eroare: ${error.message || 'Eroare de rețea.'}`, 'error');
-            
-            if (scannedDocumentInfo) {
-                scannedDocumentInfo.textContent = `Eroare încărcare document: ${trimmedDocNumber}`;
-            }
-        } finally {
-            hideLoading();
-        }
-    }
-
-    async function loadStorageLocations() {
-        try {
-            const response = await fetch(GET_LOCATIONS_API_URL);
-            
-            if (!response.ok) {
-                throw new Error(`HTTP error ${response.status}`);
-            }
-
-            const result = await response.json();
-            
-            if (result.status === 'success' && result.data) {
-                populateLocationSelect(result.data);
-            } else {
-                console.warn('No locations data received');
-                // Add default option if no locations available
-                if (storageLocationSelect) {
-                    storageLocationSelect.innerHTML = '<option value="">Nu sunt locații disponibile</option>';
-                }
-            }
-        } catch (error) {
-            console.error('Error loading locations:', error);
-            showMessage('Eroare la încărcarea locațiilor de depozitare.', 'warning');
-        }
-    }
-
-    function populateLocationSelect(locations) {
-        if (!storageLocationSelect) return;
-        
-        storageLocationSelect.innerHTML = '<option value="">Selectează locația...</option>';
-        
-        locations.forEach(location => {
-            const option = document.createElement('option');
-            option.value = location.id;
-            option.textContent = `${location.location_code} - ${location.description || location.zone}`;
-            storageLocationSelect.appendChild(option);
-        });
-    }
-
-    async function verifyProduct() {
-        const enteredSku = productSkuInput ? productSkuInput.value.trim().toUpperCase() : '';
-        
-        if (!enteredSku) {
-            showMessage('Introduceți SKU-ul produsului!', 'error');
-            return;
-        }
-
-        if (!currentDocument || currentItemIndex >= currentDocument.items.length) {
-            showMessage('Eroare: Nu există articole de procesat.', 'error');
-            return;
-        }
-
-        const currentItem = currentDocument.items[currentItemIndex];
-        
-        showLoading();
-
-        try {
-            const response = await fetch(VERIFY_PRODUCT_API_URL, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json'
+            // Mobile-optimized scanner config
+            const config = {
+                fps: 10,
+                qrbox: function(viewfinderWidth, viewfinderHeight) {
+                    const minEdgePercentage = 0.7;
+                    const minEdgeSize = Math.min(viewfinderWidth, viewfinderHeight);
+                    const qrboxSize = Math.floor(minEdgeSize * minEdgePercentage);
+                    return {
+                        width: qrboxSize,
+                        height: qrboxSize
+                    };
                 },
+                aspectRatio: 1.0,
+                supportedScanTypes: [Html5QrcodeScanType.SCAN_TYPE_CAMERA]
+            };
+
+            await this.scanner.start(
+                { facingMode: this.currentCamera },
+                config,
+                (decodedText, decodedResult) => this.onScanSuccess(decodedText, decodedResult),
+                (errorMessage) => this.onScanError(errorMessage)
+            );
+
+            this.scannerActive = true;
+            this.updateScannerUI(true);
+            this.updateScannerStatus('Scanning...');
+            this.vibrate(50); // Haptic feedback
+
+        } catch (error) {
+            console.error('Scanner start error:', error);
+            this.showError('Failed to start camera. Please check permissions.');
+        }
+    }
+
+    async stopScanner() {
+        if (!this.scanner || !this.scannerActive) return;
+
+        try {
+            await this.scanner.stop();
+            this.scannerActive = false;
+            this.updateScannerUI(false);
+            this.updateScannerStatus('Scanner stopped');
+        } catch (error) {
+            console.error('Scanner stop error:', error);
+        }
+    }
+
+    async switchCamera() {
+        if (!this.scannerActive) return;
+
+        this.currentCamera = this.currentCamera === 'environment' ? 'user' : 'environment';
+        
+        await this.stopScanner();
+        setTimeout(() => this.startScanner(), 500);
+        this.showInfo(`Switched to ${this.currentCamera === 'environment' ? 'back' : 'front'} camera`);
+    }
+
+    onScanSuccess(decodedText, decodedResult) {
+        console.log('Barcode scanned:', decodedText);
+        this.updateScannerStatus(`Scanned: ${decodedText}`);
+        this.vibrate(100); // Success haptic feedback
+        
+        // Process based on current workflow step
+        switch (this.workflowStep) {
+            case 1:
+                this.processPOBarcode(decodedText);
+                break;
+            case 2:
+                this.processItemBarcode(decodedText);
+                break;
+            default:
+                this.showInfo('Barcode scanned but not processed in current step');
+        }
+        
+        // Auto-stop scanner after successful scan
+        setTimeout(() => this.stopScanner(), 1000);
+    }
+
+    onScanError(errorMessage) {
+        // Ignore frequent scanning errors to avoid spam
+        if (errorMessage.includes('NotFoundException')) return;
+        if (errorMessage.includes('ChecksumException')) return;
+        console.log('Scan error:', errorMessage);
+    }
+
+    async processPOBarcode(barcode) {
+        try {
+            this.showLoading(true);
+            
+            // Look up purchase order by barcode/number
+            const response = await fetch(`${this.config.apiBase}/purchase-orders/lookup/${encodeURIComponent(barcode)}`);
+            if (!response.ok) throw new Error('Purchase order not found');
+            
+            const po = await response.json();
+            
+            // Set up receiving for this PO
+            this.currentReceiving.po_number = po.po_number;
+            this.currentReceiving.supplier = po.supplier;
+            this.currentReceiving.expected_items = po.items || [];
+            
+            // Fill PO form
+            this.fillPOForm(po);
+            
+            this.showSuccess(`PO ${po.po_number} loaded successfully`);
+            
+        } catch (error) {
+            console.error('PO processing error:', error);
+            this.showError('Purchase order not found. Please enter manually.');
+            
+            // Fill PO number field for manual entry
+            const poField = document.getElementById('po-number');
+            if (poField) poField.value = barcode;
+        } finally {
+            this.showLoading(false);
+        }
+    }
+
+    async processItemBarcode(barcode) {
+        try {
+            this.showLoading(true);
+            
+            // Look up product by barcode
+            const response = await fetch(`${this.config.apiBase}/products/lookup/${encodeURIComponent(barcode)}`);
+            if (!response.ok) throw new Error('Product not found');
+            
+            const product = await response.json();
+            
+            // Check if this item is expected in the PO
+            const expectedItem = this.currentReceiving.expected_items?.find(
+                item => item.product_id === product.id || item.barcode === barcode
+            );
+            
+            // Auto-fill the item form
+            this.fillItemForm(product, expectedItem);
+            
+            this.showSuccess(`Product found: ${product.name}`);
+            
+        } catch (error) {
+            console.error('Item processing error:', error);
+            this.showError('Product not found. Please enter manually.');
+            
+            // Fill barcode field for manual entry
+            const barcodeField = document.getElementById('item-barcode');
+            if (barcodeField) barcodeField.value = barcode;
+        } finally {
+            this.showLoading(false);
+        }
+    }
+
+    fillPOForm(po) {
+        const fields = {
+            'po-number': po.po_number,
+            'supplier-name': po.supplier_name,
+            'expected-date': po.expected_date
+        };
+
+        Object.entries(fields).forEach(([id, value]) => {
+            const element = document.getElementById(id);
+            if (element) element.value = value || '';
+        });
+    }
+
+    fillItemForm(product, expectedItem) {
+        const fields = {
+            'item-barcode': product.barcode,
+            'product-name': product.name,
+            'product-id': product.id,
+            'expected-qty': expectedItem?.quantity || 0,
+            'location': expectedItem?.location || ''
+        };
+
+        Object.entries(fields).forEach(([id, value]) => {
+            const element = document.getElementById(id);
+            if (element) element.value = value;
+        });
+
+        // Focus on received quantity field
+        const receivedQtyField = document.getElementById('received-qty');
+        if (receivedQtyField) {
+            receivedQtyField.focus();
+            receivedQtyField.select();
+        }
+    }
+
+    async handlePOInput(event) {
+        event.preventDefault();
+        
+        const formData = new FormData(event.target);
+        const poData = {
+            po_number: formData.get('po-number'),
+            supplier_name: formData.get('supplier-name'),
+            expected_date: formData.get('expected-date')
+        };
+
+        if (!poData.po_number) {
+            this.showError('Please enter a PO number');
+            return;
+        }
+
+        try {
+            this.showLoading(true);
+            
+            // Validate PO exists
+            const response = await fetch(`${this.config.apiBase}/purchase-orders/${poData.po_number}`);
+            if (!response.ok) throw new Error('PO not found');
+            
+            const po = await response.json();
+            this.currentReceiving.po_number = po.po_number;
+            this.currentReceiving.supplier = po.supplier;
+            this.currentReceiving.expected_items = po.items || [];
+            
+            this.nextStep();
+            this.showSuccess('PO validated. Ready to receive items.');
+            
+        } catch (error) {
+            console.error('PO validation error:', error);
+            this.showError('Invalid PO number');
+        } finally {
+            this.showLoading(false);
+        }
+    }
+
+    async handleItemInput(event) {
+        event.preventDefault();
+        
+        const formData = new FormData(event.target);
+        const itemData = {
+            product_id: formData.get('product-id'),
+            product_name: formData.get('product-name'),
+            barcode: formData.get('item-barcode'),
+            expected_qty: parseInt(formData.get('expected-qty')) || 0,
+            received_qty: parseInt(formData.get('received-qty')) || 0,
+            location: formData.get('location'),
+            condition: formData.get('condition') || 'good',
+            notes: formData.get('notes') || ''
+        };
+
+        // Validate required fields
+        if (!itemData.product_name || !itemData.received_qty || !itemData.location) {
+            this.showError('Please fill in all required fields');
+            return;
+        }
+
+        // Add to received items
+        this.addItemToReceiving(itemData);
+        
+        // Clear form for next item
+        event.target.reset();
+        document.getElementById('item-barcode').focus();
+    }
+
+    addItemToReceiving(itemData) {
+        // Check if item already exists
+        const existingIndex = this.currentReceiving.items.findIndex(
+            item => item.product_id === itemData.product_id && item.location === itemData.location
+        );
+
+        if (existingIndex >= 0) {
+            // Update existing item
+            this.currentReceiving.items[existingIndex] = itemData;
+            this.showInfo('Item updated');
+        } else {
+            // Add new item
+            itemData.id = Date.now(); // Temporary ID
+            this.currentReceiving.items.push(itemData);
+            this.showSuccess('Item added to receiving');
+        }
+
+        this.updateItemsDisplay();
+        this.updateWorkflowProgress();
+    }
+
+    updateItemsDisplay() {
+        const container = document.getElementById('received-items-list');
+        if (!container) return;
+
+        if (this.currentReceiving.items.length === 0) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <span class="material-symbols-outlined">inventory_2</span>
+                    <p>No items received yet</p>
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = this.currentReceiving.items.map((item, index) => {
+            const isDiscrepancy = item.received_qty !== item.expected_qty;
+            const statusClass = item.condition === 'damaged' ? 'status-partial' : 'status-complete';
+            
+            return `
+                <div class="item-card">
+                    <div class="item-info">
+                        <div class="item-details">
+                            <div class="item-name">${item.product_name}</div>
+                            <div class="item-sku">SKU: ${item.barcode || 'N/A'}</div>
+                            <div class="item-location">Location: ${item.location}</div>
+                        </div>
+                        <div class="item-quantity">
+                            <div class="quantity-value ${isDiscrepancy ? 'discrepancy' : ''}">${item.received_qty}</div>
+                            <div class="quantity-label">Received</div>
+                        </div>
+                    </div>
+                    <div class="item-meta">
+                        <div class="status-badge ${statusClass}">${item.condition}</div>
+                        ${item.notes ? `<div class="item-notes">${item.notes}</div>` : ''}
+                    </div>
+                    <div class="item-actions">
+                        <button class="item-btn edit-item-btn" data-index="${index}">
+                            <span class="material-symbols-outlined">edit</span>
+                        </button>
+                        <button class="item-btn danger remove-item-btn" data-index="${index}">
+                            <span class="material-symbols-outlined">delete</span>
+                        </button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    editItem(index) {
+        const item = this.currentReceiving.items[index];
+        if (!item) return;
+
+        // Fill form with item data
+        this.fillItemForm(item);
+        
+        // Remove item so it can be re-added
+        this.removeItem(index);
+        
+        this.showInfo('Item loaded for editing');
+    }
+
+    removeItem(index) {
+        if (index >= 0 && index < this.currentReceiving.items.length) {
+            this.currentReceiving.items.splice(index, 1);
+            this.updateItemsDisplay();
+            this.updateWorkflowProgress();
+            this.showInfo('Item removed');
+            this.vibrate(50);
+        }
+    }
+
+    nextStep() {
+        if (this.workflowStep < 3) {
+            this.workflowStep++;
+            this.updateWorkflowProgress();
+            this.showWorkflowStep(this.workflowStep);
+            this.vibrate(50);
+        }
+    }
+
+    prevStep() {
+        if (this.workflowStep > 1) {
+            this.workflowStep--;
+            this.updateWorkflowProgress();
+            this.showWorkflowStep(this.workflowStep);
+            this.vibrate(50);
+        }
+    }
+
+    updateWorkflowProgress() {
+        const steps = document.querySelectorAll('.step-circle');
+        const labels = document.querySelectorAll('.step-label');
+        
+        steps.forEach((step, index) => {
+            const stepNumber = index + 1;
+            step.classList.remove('active', 'completed');
+            
+            if (stepNumber < this.workflowStep) {
+                step.classList.add('completed');
+                step.innerHTML = '<span class="material-symbols-outlined">check</span>';
+            } else if (stepNumber === this.workflowStep) {
+                step.classList.add('active');
+                step.textContent = stepNumber;
+            } else {
+                step.textContent = stepNumber;
+            }
+        });
+
+        labels.forEach((label, index) => {
+            label.classList.toggle('active', index + 1 === this.workflowStep);
+        });
+
+        // Update items count badge
+        const itemsCount = document.getElementById('items-count');
+        if (itemsCount) {
+            itemsCount.textContent = this.currentReceiving.items.length;
+        }
+    }
+
+    showWorkflowStep(step) {
+        // Hide all workflow sections
+        document.querySelectorAll('.workflow-section').forEach(section => {
+            section.style.display = 'none';
+        });
+
+        // Show current step section
+        const currentSection = document.getElementById(`step-${step}`);
+        if (currentSection) {
+            currentSection.style.display = 'block';
+        }
+
+        // Update navigation buttons
+        const prevBtn = document.getElementById('prev-step');
+        const nextBtn = document.getElementById('next-step');
+        const completeBtn = document.getElementById('complete-receiving');
+
+        if (prevBtn) prevBtn.style.display = step > 1 ? 'flex' : 'none';
+        if (nextBtn) nextBtn.style.display = step < 3 ? 'flex' : 'none';
+        if (completeBtn) completeBtn.style.display = step === 3 ? 'flex' : 'none';
+    }
+
+    async saveReceiving() {
+        if (this.currentReceiving.items.length === 0) {
+            this.showError('No items to save');
+            return;
+        }
+
+        try {
+            this.showLoading(true);
+            
+            const response = await fetch(`${this.config.apiBase}/receiving/save`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    sku: enteredSku,
-                    expected_sku: currentItem.sku,
-                    document_id: currentDocument.id,
-                    item_id: currentItem.id
+                    po_number: this.currentReceiving.po_number,
+                    supplier: this.currentReceiving.supplier,
+                    items: this.currentReceiving.items,
+                    status: 'draft'
                 })
             });
 
-            if (!response.ok) {
-                let errorMessage = `HTTP error ${response.status}`;
-                try {
-                    const errorData = await response.json();
-                    errorMessage = errorData.message || errorMessage;
-                } catch (err) {
-                    // Use default error message
-                }
-                throw new Error(errorMessage);
-            }
-
+            if (!response.ok) throw new Error('Failed to save receiving');
+            
             const result = await response.json();
-            console.log("Product verification result:", result);
-
-            if (result.status === 'success') {
-                showMessage('Produs verificat cu succes!', 'success');
-                
-                // Set default quantity
-                if (receivedQuantityInput) {
-                    receivedQuantityInput.value = currentItem.expected_quantity || 1;
-                    receivedQuantityInput.max = currentItem.expected_quantity || 999;
-                }
-                
-                // Show receiving details section
-                if (receivingDetailsSection) {
-                    receivingDetailsSection.classList.remove('hidden');
-                }
-                
-                // Focus on quantity input
-                if (receivedQuantityInput) {
-                    receivedQuantityInput.focus();
-                }
-            } else {
-                const errorMsg = result.message || `SKU greșit! Se așteaptă: ${currentItem.sku}`;
-                showMessage(errorMsg, 'error');
-            }
+            this.currentReceiving.id = result.id;
+            
+            this.showSuccess('Receiving saved as draft');
+            this.vibrate(100);
+            
         } catch (error) {
-            console.error('Product verification error:', error);
-            showMessage(`Eroare: ${error.message || 'Eroare de verificare produs.'}`, 'error');
+            console.error('Save error:', error);
+            this.showError('Failed to save receiving');
         } finally {
-            hideLoading();
+            this.showLoading(false);
         }
     }
 
-    async function confirmReceiveItem() {
-        const quantity = parseInt(receivedQuantityInput.value);
-        const locationId = parseInt(storageLocationSelect.value);
-        const batchNumber = batchNumberInput.value.trim();
-        const expiryDate = expiryDateInput.value;
-
-        // Validation
-        if (!quantity || quantity <= 0) {
-            showMessage('Introduceți o cantitate validă!', 'error');
-            if (receivedQuantityInput) receivedQuantityInput.focus();
+    async completeReceiving() {
+        if (this.currentReceiving.items.length === 0) {
+            this.showError('No items to receive');
             return;
         }
 
-        if (!locationId) {
-            showMessage('Selectați locația de depozitare!', 'error');
-            if (storageLocationSelect) storageLocationSelect.focus();
+        if (!confirm('Complete this receiving? This will update inventory levels.')) {
             return;
         }
-
-        const currentItem = currentDocument.items[currentItemIndex];
-
-        if (quantity > currentItem.expected_quantity) {
-            showMessage(`Cantitatea nu poate fi mai mare decât ${currentItem.expected_quantity}!`, 'error');
-            if (receivedQuantityInput) receivedQuantityInput.focus();
-            return;
-        }
-
-        showLoading();
-
-        const payload = {
-            document_id: currentDocument.id,
-            item_id: currentItem.id,
-            product_id: currentItem.product_id,
-            sku: currentItem.sku,
-            received_quantity: quantity,
-            location_id: locationId,
-            batch_number: batchNumber || null,
-            expiry_date: expiryDate || null
-        };
-
-        console.log("Confirm receive payload:", payload);
 
         try {
-            const response = await fetch(ADD_ITEM_API_URL, {
+            this.showLoading(true);
+            
+            const response = await fetch(`${this.config.apiBase}/receiving/complete`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json'
-                },
-                body: JSON.stringify(payload)
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    po_number: this.currentReceiving.po_number,
+                    supplier: this.currentReceiving.supplier,
+                    items: this.currentReceiving.items,
+                    status: 'completed'
+                })
             });
 
-            if (!response.ok) {
-                let errorMessage = `HTTP error ${response.status}`;
-                try {
-                    const errorData = await response.json();
-                    errorMessage = errorData.message || errorMessage;
-                } catch (err) {
-                    // Use default error message
-                }
-                throw new Error(errorMessage);
-            }
-
+            if (!response.ok) throw new Error('Failed to complete receiving');
+            
             const result = await response.json();
-            console.log("Add item result:", result);
+            
+            this.showSuccess('Receiving completed successfully!');
+            this.vibrate(200); // Success haptic
+            
+            // Reset for new receiving
+            setTimeout(() => {
+                this.resetReceiving();
+            }, 2000);
+            
+        } catch (error) {
+            console.error('Complete error:', error);
+            this.showError('Failed to complete receiving');
+        } finally {
+            this.showLoading(false);
+        }
+    }
 
-            if (result.status === 'success') {
-                // Record received item
-                receivedItems.push({
-                    ...currentItem,
-                    received_quantity: quantity,
-                    location_id: locationId,
-                    batch_number: batchNumber,
-                    expiry_date: expiryDate,
-                    received_at: new Date().toISOString()
-                });
+    resetReceiving() {
+        this.currentReceiving = {
+            id: null,
+            po_number: '',
+            supplier: '',
+            items: [],
+            status: 'pending'
+        };
+        
+        this.workflowStep = 1;
+        
+        // Clear all forms
+        document.querySelectorAll('form').forEach(form => form.reset());
+        
+        this.updateWorkflowProgress();
+        this.showWorkflowStep(1);
+        this.updateItemsDisplay();
+        
+        this.showInfo('Ready for new receiving');
+    }
 
-                showMessage(result.message || 'Articol primit cu succes!', 'success');
-
-                // Move to next item
-                currentItemIndex++;
-                updateProgress();
-
-                // Reset form
-                resetReceivingForm();
-
-                if (currentItemIndex >= currentDocument.items.length) {
-                    // All items received
-                    completeReceiving();
+    initializeTouchGestures() {
+        let startX, startY;
+        
+        document.addEventListener('touchstart', (e) => {
+            startX = e.touches[0].clientX;
+            startY = e.touches[0].clientY;
+        });
+        
+        document.addEventListener('touchmove', (e) => {
+            if (!startX || !startY) return;
+            
+            const diffX = startX - e.touches[0].clientX;
+            const diffY = startY - e.touches[0].clientY;
+            
+            // Swipe detection
+            if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 50) {
+                if (diffX > 0) {
+                    // Swipe left - next step
+                    this.nextStep();
                 } else {
-                    // Show next item
-                    showCurrentItem();
+                    // Swipe right - previous step
+                    this.prevStep();
                 }
-            } else {
-                const errorMsg = result.message || 'Eroare la primirea articolului.';
-                showMessage(errorMsg, 'error');
+                
+                startX = null;
+                startY = null;
             }
-        } catch (error) {
-            console.error('Add item error:', error);
-            showMessage(`Eroare: ${error.message || 'Eroare de rețea.'}`, 'error');
-        } finally {
-            hideLoading();
-        }
-    }
-
-    async function completeReceiving() {
-        showLoading();
-
-        try {
-            const response = await fetch(COMPLETE_RECEIPT_API_URL, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json'
-                },
-                body: JSON.stringify({
-                    document_id: currentDocument.id,
-                    received_items: receivedItems
-                })
-            });
-
-            if (!response.ok) {
-                let errorMessage = `HTTP error ${response.status}`;
-                try {
-                    const errorData = await response.json();
-                    errorMessage = errorData.message || errorMessage;
-                } catch (err) {
-                    // Use default error message
-                }
-                throw new Error(errorMessage);
-            }
-
-            const result = await response.json();
-            console.log("Complete receiving result:", result);
-
-            if (result.status === 'success') {
-                // Update completion display
-                if (finalDocumentNumberEl) {
-                    finalDocumentNumberEl.textContent = currentDocument.document_number;
-                }
-                if (finalItemsReceivedEl) {
-                    finalItemsReceivedEl.textContent = receivedItems.length;
-                }
-                if (completionDateEl) {
-                    completionDateEl.textContent = new Date().toLocaleString('ro-RO');
-                }
-
-                showStep(4);
-                showMessage('Recepție finalizată cu succes!', 'success');
-            } else {
-                const errorMsg = result.message || 'Eroare la finalizarea recepției.';
-                showMessage(errorMsg, 'error');
-            }
-        } catch (error) {
-            console.error('Complete receiving error:', error);
-            showMessage(`Eroare: ${error.message || 'Eroare de finalizare.'}`, 'error');
-        } finally {
-            hideLoading();
-        }
-    }
-
-    // --- Display Functions ---
-    function displayDocumentDetails() {
-        if (!currentDocument) return;
-
-        if (docNumberEl) docNumberEl.textContent = currentDocument.document_number;
-        if (supplierNameEl) supplierNameEl.textContent = currentDocument.supplier_name;
-        if (documentDateEl) documentDateEl.textContent = currentDocument.document_date;
-        if (documentStatusEl) documentStatusEl.textContent = currentDocument.status;
-
-        if (totalItemsCountEl) totalItemsCountEl.textContent = currentDocument.items.length;
-        if (totalItemsDisplayEl) totalItemsDisplayEl.textContent = currentDocument.items.length;
-
-        updateProgress();
-    }
-
-    function updateProgress() {
-        const received = receivedItems.length;
-        const total = currentDocument ? currentDocument.items.length : 0;
-        const percentage = total > 0 ? (received / total) * 100 : 0;
-
-        if (progressFillEl) progressFillEl.style.width = `${percentage}%`;
-        if (receivedItemsCountEl) receivedItemsCountEl.textContent = received;
-    }
-
-    function showCurrentItem() {
-        if (!currentDocument || currentItemIndex >= currentDocument.items.length) return;
-
-        const item = currentDocument.items[currentItemIndex];
-        
-        if (currentItemNameEl) currentItemNameEl.textContent = item.product_name;
-        if (currentItemSkuEl) currentItemSkuEl.textContent = item.sku;
-        if (currentItemExpectedEl) currentItemExpectedEl.textContent = item.expected_quantity;
-    }
-
-    function resetReceivingForm() {
-        if (productSkuInput) productSkuInput.value = '';
-        if (receivedQuantityInput) receivedQuantityInput.value = '';
-        if (batchNumberInput) batchNumberInput.value = '';
-        if (expiryDateInput) expiryDateInput.value = '';
-        if (storageLocationSelect) storageLocationSelect.value = '';
-        
-        if (manualProductSection) manualProductSection.classList.add('hidden');
-        if (receivingDetailsSection) receivingDetailsSection.classList.add('hidden');
-    }
-
-    // --- Scanner Functions ---
-    function onScanSuccess(decodedText, decodedResult) {
-        console.log(`Scan Success! Mode: ${currentScanMode}, Decoded: ${decodedText}`);
-        showMessage(`Scanat: ${decodedText}`, 'success');
-        stopScanner();
-
-        const scannedValue = decodedText.trim();
-
-        if (currentScanMode === 'document') {
-            fetchDocumentDetails(scannedValue);
-        } else if (currentScanMode === 'product') {
-            if (productSkuInput) {
-                productSkuInput.value = scannedValue;
-                verifyProduct();
-            }
-        }
-    }
-
-    function onScanFailure(error) {
-        // Usually ignore scanning failures
-    }
-
-    function startScanner() {
-        if (typeof Html5Qrcode === 'undefined') {
-            showMessage("Librăria scanner-ului nu este disponibilă.", 'error');
-            return;
-        }
-
-        if (html5QrCode?.isScanning) {
-            console.log("Scanner-ul rulează deja.");
-            return;
-        }
-
-        if (!html5QrCode) {
-            try {
-                html5QrCode = new Html5Qrcode("reader");
-            } catch (e) {
-                console.error("Eroare inițializare scanner:", e);
-                showMessage("Eroare inițializare scanner.", 'error');
-                return;
-            }
-        }
-
-        const config = {
-            fps: 10,
-            qrbox: (w, h) => {
-                let s = Math.min(w, h) * 0.8;
-                return { width: Math.max(s, 200), height: Math.max(s, 200) };
-            },
-            aspectRatio: 1.0,
-            rememberLastUsedCamera: true,
-            supportedScanTypes: [Html5QrcodeScanType.SCAN_TYPE_CAMERA]
-        };
-
-        console.log("Starting scanner for mode:", currentScanMode);
-        if (scannerContainer) scannerContainer.classList.remove('hidden');
-        if (stopScanBtn) stopScanBtn.classList.remove('hidden');
-
-        const modeText = currentScanMode === 'document' ? 'document' : 'produs';
-        showMessage(`Îndreptați camera către ${modeText}...`, 'info');
-
-        html5QrCode.start(
-            { facingMode: "environment" },
-            config,
-            onScanSuccess,
-            onScanFailure
-        ).catch((err) => {
-            console.error(`Scanner start failed (${currentScanMode}):`, err);
-            
-            let userMsg = `Eroare pornire scanner: ${err}`;
-            if (String(err).includes("Permission") || String(err).includes("NotAllowed")) {
-                userMsg = "Acces la cameră refuzat.";
-            } else if (String(err).includes("NotFoundError") || String(err).includes("Requested camera")) {
-                userMsg = "Camera nu a fost găsită.";
-            }
-            
-            showMessage(userMsg, 'error');
-            if (scannerContainer) scannerContainer.classList.add('hidden');
-            if (stopScanBtn) stopScanBtn.classList.add('hidden');
         });
     }
 
-    function stopScanner() {
-        if (html5QrCode?.isScanning) {
-            console.log("Se oprește scanner-ul...");
-            html5QrCode.stop().then(() => {
-                console.log("Scanner oprit.");
-            }).catch((err) => {
-                console.error("Eroare oprire scanner:", err);
-            });
+    handleOrientationChange() {
+        window.addEventListener('orientationchange', () => {
+            // Restart scanner on orientation change
+            if (this.scannerActive) {
+                setTimeout(() => {
+                    this.stopScanner();
+                    setTimeout(() => this.startScanner(), 500);
+                }, 500);
+            }
+        });
+    }
+
+    handleKeyboardShortcuts(event) {
+        // Ctrl/Cmd + S to save
+        if ((event.ctrlKey || event.metaKey) && event.key === 's') {
+            event.preventDefault();
+            this.saveReceiving();
         }
         
-        if (scannerContainer) scannerContainer.classList.add('hidden');
-        if (stopScanBtn) stopScanBtn.classList.add('hidden');
-    }
-
-    // --- Event Listeners ---
-
-    // Document Input
-    if (toggleManualDocumentBtn) {
-        toggleManualDocumentBtn.addEventListener('click', () => {
-            stopScanner();
-            if (manualDocumentSection) manualDocumentSection.classList.remove('hidden');
-            if (documentNumberInput) documentNumberInput.focus();
-            if (scannedDocumentInfo) scannedDocumentInfo.textContent = '';
-        });
-    }
-
-    if (toggleScanDocumentBtn) {
-        toggleScanDocumentBtn.addEventListener('click', () => {
-            if (manualDocumentSection) manualDocumentSection.classList.add('hidden');
-            if (scannedDocumentInfo) scannedDocumentInfo.textContent = '';
-        });
-    }
-
-    if (loadDocumentBtn) {
-        loadDocumentBtn.addEventListener('click', () => {
-            if (documentNumberInput) {
-                fetchDocumentDetails(documentNumberInput.value);
+        // Ctrl/Cmd + Enter to complete
+        if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+            event.preventDefault();
+            if (this.workflowStep === 3) {
+                this.completeReceiving();
             }
-        });
+        }
+        
+        // Escape to stop scanner
+        if (event.key === 'Escape' && this.scannerActive) {
+            this.stopScanner();
+        }
+        
+        // Arrow keys for navigation
+        if (event.key === 'ArrowRight') {
+            this.nextStep();
+        }
+        if (event.key === 'ArrowLeft') {
+            this.prevStep();
+        }
     }
 
-    if (documentNumberInput) {
-        documentNumberInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                fetchDocumentDetails(documentNumberInput.value);
+    navigateBack() {
+        if (this.workflowStep > 1) {
+            this.prevStep();
+        } else {
+            // Navigate to previous page or show confirmation
+            if (confirm('Are you sure you want to leave? Unsaved changes will be lost.')) {
+                window.history.back();
             }
-        });
+        }
     }
 
-    // Scanner Controls
-    if (scanDocumentBtn) {
-        scanDocumentBtn.addEventListener('click', () => {
-            currentScanMode = 'document';
-            startScanner();
-        });
+    updateScannerUI(isActive) {
+        const startBtn = document.getElementById('start-scan');
+        const stopBtn = document.getElementById('stop-scan');
+        const flashBtn = document.getElementById('toggle-flash');
+        const switchBtn = document.getElementById('switch-camera');
+        
+        if (startBtn) startBtn.style.display = isActive ? 'none' : 'flex';
+        if (stopBtn) stopBtn.style.display = isActive ? 'flex' : 'none';
+        if (flashBtn) flashBtn.style.display = isActive ? 'flex' : 'none';
+        if (switchBtn) switchBtn.style.display = isActive ? 'flex' : 'none';
     }
 
-    if (scanProductBtn) {
-        scanProductBtn.addEventListener('click', () => {
-            currentScanMode = 'product';
-            startScanner();
-        });
+    updateScannerStatus(message) {
+        const statusElement = document.querySelector('.scanner-status');
+        if (statusElement) {
+            statusElement.textContent = message;
+        }
     }
 
-    if (stopScanBtn) {
-        stopScanBtn.addEventListener('click', () => {
-            stopScanner();
-            showMessage("Scanare oprită.", 'info');
-        });
+    // Haptic feedback for mobile devices
+    vibrate(duration = 50) {
+        if ('vibrate' in navigator) {
+            navigator.vibrate(duration);
+        }
     }
 
-    // Product Input
-    if (toggleManualProductBtn) {
-        toggleManualProductBtn.addEventListener('click', () => {
-            stopScanner();
-            if (manualProductSection) manualProductSection.classList.remove('hidden');
-            if (productSkuInput) productSkuInput.focus();
-        });
+    // Utility methods for UI feedback
+    showLoading(show) {
+        const loader = document.getElementById('loading-overlay');
+        if (loader) {
+            loader.style.display = show ? 'flex' : 'none';
+        }
     }
 
-    if (toggleScanProductBtn) {
-        toggleScanProductBtn.addEventListener('click', () => {
-            if (manualProductSection) manualProductSection.classList.add('hidden');
-        });
+    showError(message) {
+        this.showToast(message, 'error');
     }
 
-    if (verifyProductBtn) {
-        verifyProductBtn.addEventListener('click', verifyProduct);
+    showSuccess(message) {
+        this.showToast(message, 'success');
     }
 
-    if (productSkuInput) {
-        productSkuInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                verifyProduct();
-            }
-        });
+    showInfo(message) {
+        this.showToast(message, 'info');
     }
 
-    // Receiving
-    if (startReceivingBtn) {
-        startReceivingBtn.addEventListener('click', () => {
-            currentItemIndex = 0;
-            showCurrentItem();
-            showStep(3);
-        });
+    showToast(message, type = 'info') {
+        const toast = document.createElement('div');
+        toast.className = `toast ${type}`;
+        toast.textContent = message;
+        
+        document.body.appendChild(toast);
+        
+        setTimeout(() => {
+            toast.remove();
+        }, 3000);
     }
+}
 
-    if (confirmReceiveBtn) {
-        confirmReceiveBtn.addEventListener('click', confirmReceiveItem);
-    }
-
-    if (receivedQuantityInput) {
-        receivedQuantityInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                confirmReceiveItem();
-            }
-        });
-    }
-
-    // Completion
-    if (generateNirBtn) {
-        generateNirBtn.addEventListener('click', () => {
-            // Generate NIR report - implement based on your needs
-            showMessage('Funcția de generare NIR va fi implementată.', 'info');
-        });
-    }
-
-    if (newReceivingBtn) {
-        newReceivingBtn.addEventListener('click', resetUI);
-    }
-
-    // --- Initialize ---
-    resetUI();
-    console.log("Mobile Receiving Interface Ready");
+// Initialize the mobile receiving system when DOM is ready
+document.addEventListener('DOMContentLoaded', () => {
+    window.mobileReceiving = new MobileReceiving();
 });
-//# sourceMappingURL=mobile_receiving.js.map
+
+// Export for module systems
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = MobileReceiving;
+}

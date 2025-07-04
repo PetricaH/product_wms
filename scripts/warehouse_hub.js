@@ -246,15 +246,15 @@ class WarehouseHub {
                         break;
                     case 'receiving':
                         console.log('📦 Navigating to receiving interface...');
-                        window.location.href = 'mobile_receiving.html';
+                        window.location.href = 'mobile_receiving.php';
                         break;
                     case 'inventory':
                         console.log('📋 Navigating to inventory search...');
-                        window.location.href = 'warehouse_inventory.html';
+                        window.location.href = 'warehouse_inventory.php';
                         break;
                     case 'cycle-count':
                         console.log('🔍 Navigating to cycle count interface...');
-                        window.location.href = 'warehouse_cycle_count.html';
+                        window.location.href = 'warehouse_cycle_count.php';
                         break;
                     default:
                         console.warn(`⚠️ Unknown operation: ${operation}`);

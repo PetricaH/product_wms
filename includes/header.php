@@ -1,7 +1,10 @@
 <?php
-// includes/header.php - Updated to include new CSS files
+// includes/header.php - Updated to include new CSS files with conditional loading
 require_once __DIR__ . '/helpers.php';
 require_once __DIR__ . '/../bootstrap.php';
+
+// Get current page name for conditional loading
+$currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
 ?>
 <meta charset="UTF-8">
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
@@ -13,24 +16,55 @@ require_once __DIR__ . '/../bootstrap.php';
 <?php if (in_prod()): ?>
   <!-- Production CSS -->
   <link rel="stylesheet" href="<?= asset('/styles/global.css') ?>">
-  <link rel="stylesheet" href="<?= asset('/styles/index.css') ?>">
-  <link rel="stylesheet" href="<?= asset('/styles/users.css') ?>">
-  <link rel="stylesheet" href="<?= asset('/styles/products.css') ?>">
-  <link rel="stylesheet" href="<?= asset('/styles/locations.css') ?>">
-  <link rel="stylesheet" href="<?= asset('/styles/inventory.css') ?>">
-  <link rel="stylesheet" href="<?= asset('/styles/orders.css') ?>">
+  <link rel="stylesheet" href="<?= asset('/styles/sidebar.css') ?>">
+  
+  <?php
+  // Load page-specific CSS in production
+  $pageSpecificCSS = [
+      'index' => 'index.css',
+      'users' => 'users.css', 
+      'products' => 'products.css',
+      'locations' => 'locations.css',
+      'inventory' => 'inventory.css',
+      'orders' => 'orders.css',
+      'transactions' => 'transactions.css',
+      'smartbill-sync' => 'smartbill-sync.css',
+      'activities' => 'activities.css'
+  ];
+  
+  if (isset($pageSpecificCSS[$currentPage])) {
+      echo '<link rel="stylesheet" href="' . asset('/styles/' . $pageSpecificCSS[$currentPage]) . '">';
+  }
+  ?>
+  
+  <!-- Universal Scripts -->
   <script src="<?= asset('scripts/universal.js') ?>" defer></script>
-  <script src="<?= asset('scripts/index.js') ?>" defer></script>
+  
 <?php else: ?>
   <!-- Development CSS -->
   <link rel="stylesheet" href="/product_wms/styles/global.css">
-  <link rel="stylesheet" href="/product_wms/styles/index.css">
-  <link rel="stylesheet" href="/product_wms/styles/users.css">
-  <link rel="stylesheet" href="/product_wms/styles/products.css">
-  <link rel="stylesheet" href="/product_wms/styles/locations.css">
-  <link rel="stylesheet" href="/product_wms/styles/inventory.css">
-  <link rel="stylesheet" href="/product_wms/styles/orders.css">
-  <link rel="stylesheet" href="/product_wms/styles/transactions.css">
+  <link rel="stylesheet" href="/product_wms/styles/sidebar.css">
+  
+  <?php
+  // Load page-specific CSS in development
+  $pageSpecificCSS = [
+      'index' => 'index.css',
+      'users' => 'users.css',
+      'products' => 'products.css', 
+      'locations' => 'locations.css',
+      'inventory' => 'inventory.css',
+      'orders' => 'orders.css',
+      'transactions' => 'transactions.css',
+      'smartbill-sync' => 'smartbill-sync.css',
+      'activities' => 'activities.css'
+  ];
+  
+  if (isset($pageSpecificCSS[$currentPage])) {
+      echo '<link rel="stylesheet" href="/product_wms/styles/' . $pageSpecificCSS[$currentPage] . '">';
+  }
+  ?>
+  
+  <!-- Universal Scripts -->
   <script src="/product_wms/scripts/universal.js" defer></script>
-  <script src="/product_wms/scripts/index.js" defer></script>
+  
 <?php endif; ?>

@@ -1,8 +1,8 @@
 <?php
-// File: products.php - Products Management Interface (Adapted for existing schema)
-ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
-error_reporting(E_ALL);
+/**
+ * Products.php - Modern Products Management with API endpoints
+ * Integrated search, pagination, and CRUD operations
+ */
 
 // Bootstrap and configuration
 if (!defined('BASE_PATH')) {
@@ -16,474 +16,695 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
+// API endpoint handling
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['api_action'])) {
+    header('Content-Type: application/json');
+    handleApiRequest();
+    exit;
+}
+
 // Check if user is logged in and is admin
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
     header('Location: ' . getNavUrl('login.php'));
     exit;
 }
 
-// Database connection
-if (!isset($config['connection_factory']) || !is_callable($config['connection_factory'])) {
-    die("Database connection factory not configured correctly.");
-}
-$dbFactory = $config['connection_factory'];
-$db = $dbFactory();
-
-// Include Product model
-require_once BASE_PATH . '/models/Product.php';
-$productModel = new Product($db);
-
-// Handle CRUD operations
-$message = '';
-$messageType = '';
-
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $action = $_POST['action'] ?? '';
+/**
+ * Handle API requests for AJAX operations
+ */
+function handleApiRequest() {
+    global $config;
     
-    switch ($action) {
-        case 'create':
-            $productData = [
-                'sku' => trim($_POST['sku'] ?? ''),
-                'name' => trim($_POST['name'] ?? ''),
-                'description' => trim($_POST['description'] ?? ''),
-                'category' => trim($_POST['category'] ?? ''),
-                'quantity' => !empty($_POST['quantity']) ? intval($_POST['quantity']) : 0,
-                'min_stock_level' => !empty($_POST['min_stock_level']) ? intval($_POST['min_stock_level']) : 0,
-                'price' => !empty($_POST['price']) ? floatval($_POST['price']) : 0.00
-            ];
-            
-            // Generate SKU if not provided
-            if (empty($productData['sku'])) {
-                $productData['sku'] = $productModel->generateSku();
-            }
-            
-            if (empty($productData['name'])) {
-                $message = 'Numele produsului este obligatoriu.';
-                $messageType = 'error';
-            } else {
-                $productId = $productModel->create($productData);
-                if ($productId) {
-                    $message = 'Produsul a fost creat cu succes.';
-                    $messageType = 'success';
-                } else {
-                    $message = 'Eroare la crearea produsului. Verificați dacă SKU-ul nu există deja.';
-                    $messageType = 'error';
-                }
-            }
-            break;
-            
-        case 'update':
-            $productId = intval($_POST['product_id'] ?? 0);
-            $productData = [
-                'sku' => trim($_POST['sku'] ?? ''),
-                'name' => trim($_POST['name'] ?? ''),
-                'description' => trim($_POST['description'] ?? ''),
-                'category' => trim($_POST['category'] ?? ''),
-                'quantity' => !empty($_POST['quantity']) ? intval($_POST['quantity']) : 0,
-                'min_stock_level' => !empty($_POST['min_stock_level']) ? intval($_POST['min_stock_level']) : 0,
-                'price' => !empty($_POST['price']) ? floatval($_POST['price']) : 0.00
-            ];
-            
-            if ($productId <= 0 || empty($productData['name'])) {
-                $message = 'Date invalide pentru actualizarea produsului.';
-                $messageType = 'error';
-            } else {
-                $success = $productModel->update($productId, $productData);
-                if ($success) {
-                    $message = 'Produsul a fost actualizat cu succes.';
-                    $messageType = 'success';
-                } else {
-                    $message = 'Eroare la actualizarea produsului.';
-                    $messageType = 'error';
-                }
-            }
-            break;
-            
-        case 'delete':
-            $productId = intval($_POST['product_id'] ?? 0);
-            if ($productId <= 0) {
-                $message = 'ID produs invalid.';
-                $messageType = 'error';
-            } else {
-                $success = $productModel->delete($productId);
-                if ($success) {
-                    $message = 'Produsul a fost dezactivat cu succes.';
-                    $messageType = 'success';
-                } else {
-                    $message = 'Eroare la dezactivarea produsului.';
-                    $messageType = 'error';
-                }
-            }
-            break;
+    try {
+        // Database connection
+        if (!isset($config['connection_factory']) || !is_callable($config['connection_factory'])) {
+            throw new Exception("Database connection factory not configured correctly.");
+        }
+        
+        $dbFactory = $config['connection_factory'];
+        $db = $dbFactory();
+        
+        require_once BASE_PATH . '/models/Product.php';
+        $productModel = new Product($db);
+        
+        $action = $_POST['api_action'] ?? '';
+        
+        switch ($action) {
+            case 'search':
+                echo json_encode(handleSearch($productModel));
+                break;
+                
+            case 'create':
+                echo json_encode(handleCreate($productModel));
+                break;
+                
+            case 'update':
+                echo json_encode(handleUpdate($productModel));
+                break;
+                
+            case 'delete':
+                echo json_encode(handleDelete($productModel));
+                break;
+                
+            case 'get_products':
+                echo json_encode(getProducts($productModel));
+                break;
+                
+            default:
+                throw new Exception('Invalid API action');
+        }
+        
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode([
+            'success' => false,
+            'message' => $e->getMessage()
+        ]);
     }
 }
 
-// Get search and filter parameters
-$search = trim($_GET['search'] ?? '');
-$categoryFilter = trim($_GET['category'] ?? '');
-$lowStockFilter = isset($_GET['low_stock']);
-
-// Build filters array
-$filters = [];
-if (!empty($search)) {
-    $filters['search'] = $search;
+/**
+ * Handle product search with filters and pagination
+ */
+function handleSearch($productModel) {
+    $search = $_POST['search'] ?? '';
+    $category = $_POST['category'] ?? '';
+    $stockFilter = $_POST['stock_filter'] ?? '';
+    $sortBy = $_POST['sort_by'] ?? 'name-asc';
+    $page = max(1, intval($_POST['page'] ?? 1));
+    $pageSize = max(10, min(100, intval($_POST['page_size'] ?? 20)));
+    
+    // Build the search query
+    $whereConditions = [];
+    $params = [];
+    
+    // Text search across multiple fields
+    if (!empty($search)) {
+        $whereConditions[] = "(p.name LIKE :search OR p.sku LIKE :search OR p.description LIKE :search OR p.category LIKE :search)";
+        $params[':search'] = "%{$search}%";
+    }
+    
+    // Category filter
+    if (!empty($category)) {
+        $whereConditions[] = "p.category = :category";
+        $params[':category'] = $category;
+    }
+    
+    // Stock filter
+    switch ($stockFilter) {
+        case 'in-stock':
+            $whereConditions[] = "COALESCE(SUM(i.quantity), 0) > p.min_stock_level";
+            break;
+        case 'low-stock':
+            $whereConditions[] = "COALESCE(SUM(i.quantity), 0) > 0 AND COALESCE(SUM(i.quantity), 0) <= p.min_stock_level";
+            break;
+        case 'out-of-stock':
+            $whereConditions[] = "COALESCE(SUM(i.quantity), 0) = 0";
+            break;
+    }
+    
+    // Build WHERE clause
+    $whereClause = !empty($whereConditions) ? 'WHERE ' . implode(' AND ', $whereConditions) : '';
+    
+    // Handle sorting
+    [$sortField, $sortDirection] = explode('-', $sortBy);
+    $orderClause = '';
+    
+    switch ($sortField) {
+        case 'name':
+            $orderClause = "ORDER BY p.name " . strtoupper($sortDirection);
+            break;
+        case 'sku':
+            $orderClause = "ORDER BY p.sku " . strtoupper($sortDirection);
+            break;
+        case 'created':
+            $orderClause = "ORDER BY p.created_at " . strtoupper($sortDirection);
+            break;
+        case 'stock':
+            $orderClause = "ORDER BY current_stock " . strtoupper($sortDirection);
+            break;
+        default:
+            $orderClause = "ORDER BY p.name ASC";
+    }
+    
+    // Get total count for pagination
+    $countQuery = "SELECT COUNT(DISTINCT p.product_id) as total
+                   FROM products p
+                   LEFT JOIN inventory i ON p.product_id = i.product_id
+                   {$whereClause}";
+    
+    $stmt = $productModel->getConnection()->prepare($countQuery);
+    $stmt->execute($params);
+    $totalCount = $stmt->fetch(PDO::FETCH_ASSOC)['total'];
+    
+    // Get paginated results
+    $offset = ($page - 1) * $pageSize;
+    $query = "SELECT p.*, 
+                     COALESCE(SUM(i.quantity), 0) as current_stock,
+                     COUNT(DISTINCT i.location_id) as locations_count
+              FROM products p
+              LEFT JOIN inventory i ON p.product_id = i.product_id
+              {$whereClause}
+              GROUP BY p.product_id
+              {$orderClause}
+              LIMIT :offset, :page_size";
+    
+    $stmt = $productModel->getConnection()->prepare($query);
+    
+    // Bind search parameters
+    foreach ($params as $key => $value) {
+        $stmt->bindValue($key, $value);
+    }
+    
+    // Bind pagination parameters
+    $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+    $stmt->bindValue(':page_size', $pageSize, PDO::PARAM_INT);
+    
+    $stmt->execute();
+    $products = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    
+    // Format products for frontend
+    $formattedProducts = array_map(function($product) {
+        return [
+            'product_id' => intval($product['product_id']),
+            'sku' => $product['sku'],
+            'name' => $product['name'],
+            'description' => $product['description'],
+            'category' => $product['category'],
+            'quantity' => intval($product['current_stock']),
+            'min_stock_level' => intval($product['min_stock_level']),
+            'price' => floatval($product['price']),
+            'created_at' => $product['created_at'],
+            'locations_count' => intval($product['locations_count'])
+        ];
+    }, $products);
+    
+    return [
+        'success' => true,
+        'data' => $formattedProducts,
+        'pagination' => [
+            'current_page' => $page,
+            'page_size' => $pageSize,
+            'total_count' => intval($totalCount),
+            'total_pages' => ceil($totalCount / $pageSize)
+        ]
+    ];
 }
-if (!empty($categoryFilter)) {
-    $filters['category'] = $categoryFilter;
-}
-if ($lowStockFilter) {
-    $filters['low_stock'] = true;
+
+/**
+ * Get all products with inventory data
+ */
+function getProducts($productModel) {
+    try {
+        $products = $productModel->getProductsWithInventory();
+        
+        $formattedProducts = array_map(function($product) {
+            return [
+                'product_id' => intval($product['product_id']),
+                'sku' => $product['sku'],
+                'name' => $product['name'],
+                'description' => $product['description'],
+                'category' => $product['category'],
+                'quantity' => intval($product['current_stock']),
+                'min_stock_level' => intval($product['min_stock_level']),
+                'price' => floatval($product['price']),
+                'created_at' => $product['created_at'],
+                'locations_count' => intval($product['locations_count'])
+            ];
+        }, $products);
+        
+        return [
+            'success' => true,
+            'data' => $formattedProducts
+        ];
+        
+    } catch (Exception $e) {
+        return [
+            'success' => false,
+            'message' => 'Error loading products: ' . $e->getMessage()
+        ];
+    }
 }
 
-// Get products with inventory data
-$products = $productModel->getProductsWithInventory();
-
-// Filter products based on search criteria
-if (!empty($filters)) {
-    $products = array_filter($products, function($product) use ($filters) {
-        // Search filter
-        if (!empty($filters['search'])) {
-            $searchTerm = strtolower($filters['search']);
-            $searchable = strtolower($product['name'] . ' ' . $product['sku'] . ' ' . $product['description']);
-            if (strpos($searchable, $searchTerm) === false) {
-                return false;
-            }
+/**
+ * Create new product
+ */
+function handleCreate($productModel) {
+    try {
+        $productData = [
+            'sku' => trim($_POST['sku'] ?? ''),
+            'name' => trim($_POST['name'] ?? ''),
+            'description' => trim($_POST['description'] ?? ''),
+            'category' => trim($_POST['category'] ?? ''),
+            'quantity' => !empty($_POST['quantity']) ? intval($_POST['quantity']) : 0,
+            'min_stock_level' => !empty($_POST['min_stock_level']) ? intval($_POST['min_stock_level']) : 0,
+            'price' => !empty($_POST['price']) ? floatval($_POST['price']) : 0.00
+        ];
+        
+        // Generate SKU if not provided
+        if (empty($productData['sku'])) {
+            $productData['sku'] = $productModel->generateSku();
         }
         
-        // Category filter
-        if (!empty($filters['category']) && $product['category'] !== $filters['category']) {
-            return false;
+        // Validate required fields
+        if (empty($productData['name'])) {
+            throw new Exception('Numele produsului este obligatoriu.');
         }
         
-        // Low stock filter
-        if (!empty($filters['low_stock'])) {
-            if ($product['current_stock'] > $product['min_stock_level']) {
-                return false;
-            }
+        // Check if SKU already exists
+        if ($productModel->skuExists($productData['sku'])) {
+            throw new Exception('SKU-ul există deja în sistem.');
         }
         
-        return true;
-    });
+        $productId = $productModel->create($productData);
+        
+        if (!$productId) {
+            throw new Exception('Eroare la crearea produsului.');
+        }
+        
+        return [
+            'success' => true,
+            'message' => 'Produsul a fost creat cu succes.',
+            'product_id' => $productId
+        ];
+        
+    } catch (Exception $e) {
+        return [
+            'success' => false,
+            'message' => $e->getMessage()
+        ];
+    }
 }
 
-// Get categories for dropdown
-$categories = $productModel->getCategories();
+/**
+ * Update existing product
+ */
+function handleUpdate($productModel) {
+    try {
+        $productId = intval($_POST['product_id'] ?? 0);
+        
+        if (!$productId) {
+            throw new Exception('ID produs invalid.');
+        }
+        
+        $productData = [
+            'sku' => trim($_POST['sku'] ?? ''),
+            'name' => trim($_POST['name'] ?? ''),
+            'description' => trim($_POST['description'] ?? ''),
+            'category' => trim($_POST['category'] ?? ''),
+            'quantity' => !empty($_POST['quantity']) ? intval($_POST['quantity']) : 0,
+            'min_stock_level' => !empty($_POST['min_stock_level']) ? intval($_POST['min_stock_level']) : 0,
+            'price' => !empty($_POST['price']) ? floatval($_POST['price']) : 0.00
+        ];
+        
+        // Validate required fields
+        if (empty($productData['name'])) {
+            throw new Exception('Numele produsului este obligatoriu.');
+        }
+        
+        // Check if SKU exists for other products
+        if ($productModel->skuExists($productData['sku'], $productId)) {
+            throw new Exception('SKU-ul este folosit de alt produs.');
+        }
+        
+        $success = $productModel->update($productId, $productData);
+        
+        if (!$success) {
+            throw new Exception('Eroare la actualizarea produsului.');
+        }
+        
+        return [
+            'success' => true,
+            'message' => 'Produsul a fost actualizat cu succes.'
+        ];
+        
+    } catch (Exception $e) {
+        return [
+            'success' => false,
+            'message' => $e->getMessage()
+        ];
+    }
+}
 
-// Define current page for footer
-$currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
+/**
+ * Delete product
+ */
+function handleDelete($productModel) {
+    try {
+        $productId = intval($_POST['product_id'] ?? 0);
+        
+        if (!$productId) {
+            throw new Exception('ID produs invalid.');
+        }
+        
+        // Check if product has inventory
+        $product = $productModel->getById($productId);
+        if (!$product) {
+            throw new Exception('Produsul nu a fost găsit.');
+        }
+        
+        $totalStock = $productModel->getTotalProductQuantity($productId);
+        if ($totalStock > 0) {
+            throw new Exception('Nu se poate șterge produsul. Există stoc în inventar.');
+        }
+        
+        $success = $productModel->delete($productId);
+        
+        if (!$success) {
+            throw new Exception('Eroare la ștergerea produsului.');
+        }
+        
+        return [
+            'success' => true,
+            'message' => 'Produsul a fost șters cu succes.'
+        ];
+        
+    } catch (Exception $e) {
+        return [
+            'success' => false,
+            'message' => $e->getMessage()
+        ];
+    }
+}
+
+// If not an API request, serve the HTML page
 ?>
 <!DOCTYPE html>
 <html lang="ro">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <?php require_once __DIR__ . '/includes/header.php'; ?>
-    <title>Gestionare Produse - WMS</title>
+    <title>WMS - Produse</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet">
+    <link rel="stylesheet" href="styles/global.css">
+    <link rel="stylesheet" href="styles/products.css">
 </head>
-<body class="app">
+<body>
+    <!-- Include Sidebar Navigation -->
     <?php require_once __DIR__ . '/includes/navbar.php'; ?>
     
-    <main class="main-content">
-        <div class="products-container">
-            <div class="page-header">
-                <h1 class="page-title">Gestionare Produse</h1>
+    <!-- Main Content Area -->
+    <!-- Main Content Area -->
+    <div class="main-content-wrapper">
+        <!-- Header -->
+        <div class="header">
+            <div class="header-content">
+                <div class="header-title">
+                    <span class="material-symbols-outlined">inventory_2</span>
+                    Produse
+                </div>
                 <div class="header-actions">
-                    <button class="btn btn-secondary" onclick="toggleFilters()">
-                        <span class="material-symbols-outlined">filter_list</span>
-                        Filtre
-                    </button>
-                    <button class="btn btn-primary" onclick="openCreateModal()">
+                    <button class="header-btn" id="add-product-btn">
                         <span class="material-symbols-outlined">add</span>
                         Adaugă Produs
                     </button>
+                    <button class="header-btn" id="export-btn">
+                        <span class="material-symbols-outlined">download</span>
+                        Export
+                    </button>
                 </div>
             </div>
-            
-            <!-- Filters Section -->
-            <div id="filtersSection" class="filters-section" style="display: none;">
-                <form method="GET" class="filters-form">
-                    <div class="filter-group">
-                        <label for="search" class="filter-label">Căutare:</label>
-                        <input type="text" id="search" name="search" value="<?= htmlspecialchars($search) ?>" 
-                               placeholder="Nume, SKU sau descriere..." class="form-control">
-                    </div>
-                    
-                    <div class="filter-group">
-                        <label for="category" class="filter-label">Categorie:</label>
-                        <select id="category" name="category" class="form-control">
-                            <option value="">Toate categoriile</option>
-                            <?php foreach ($categories as $category): ?>
-                                <option value="<?= htmlspecialchars($category['name']) ?>" 
-                                        <?= $categoryFilter == $category['name'] ? 'selected' : '' ?>>
-                                    <?= htmlspecialchars($category['name']) ?>
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                    
-                    <div class="filter-group">
-                        <label class="filter-label">
-                            <input type="checkbox" name="low_stock" <?= $lowStockFilter ? 'checked' : '' ?>>
-                            Doar produse cu stoc redus
-                        </label>
-                    </div>
-                    
-                    <div class="filter-actions">
-                        <button type="submit" class="btn btn-primary">Aplică Filtre</button>
-                        <a href="products.php" class="btn btn-secondary">Resetează</a>
-                    </div>
-                </form>
-            </div>
-            
-            <?php if (!empty($message)): ?>
-                <div class="message <?= $messageType ?>">
-                    <?= htmlspecialchars($message) ?>
-                </div>
-            <?php endif; ?>
-            
-            <?php if (!empty($products)): ?>
-                <div class="products-grid">
-                    <?php foreach ($products as $product): ?>
-                        <div class="product-card">
-                            <div class="product-image">
-                                <div class="product-image-placeholder">
-                                    <span class="material-symbols-outlined">inventory</span>
-                                </div>
-                            </div>
-                            
-                            <div class="product-info">
-                                <div class="product-header">
-                                    <h3 class="product-name"><?= htmlspecialchars($product['name']) ?></h3>
-                                    <span class="product-sku"><?= htmlspecialchars($product['sku']) ?></span>
-                                </div>
-                                
-                                <?php if (!empty($product['description'])): ?>
-                                    <p class="product-description"><?= htmlspecialchars(substr($product['description'], 0, 100)) ?>...</p>
-                                <?php endif; ?>
-                                
-                                <div class="product-details">
-                                    <div class="product-price">
-                                        <span class="price-label">Preț:</span>
-                                        <span class="price-value"><?= number_format($product['price'], 2) ?> RON</span>
-                                    </div>
-                                    
-                                    <?php if (!empty($product['category'])): ?>
-                                        <div class="product-category">
-                                            <span class="category-label">Categorie:</span>
-                                            <span class="category-value"><?= htmlspecialchars($product['category']) ?></span>
-                                        </div>
-                                    <?php endif; ?>
-                                    
-                                    <div class="product-stock">
-                                        <span class="stock-label">Stoc actual:</span>
-                                        <span class="stock-value <?= $product['quantity'] <= $product['min_stock_level'] ? 'low-stock' : '' ?>">
-                                            <?= number_format($product['quantity']) ?>
-                                        </span>
-                                    </div>
-                                    
-                                    <div class="product-min-stock">
-                                        <span class="min-stock-label">Stoc minim:</span>
-                                        <span class="min-stock-value"><?= number_format($product['min_stock_level']) ?></span>
-                                    </div>
-                                    
-                                    <?php if ($product['locations_count'] > 0): ?>
-                                        <div class="product-locations">
-                                            <span class="locations-label">Locații:</span>
-                                            <span class="locations-value"><?= number_format($product['locations_count']) ?></span>
-                                        </div>
-                                    <?php endif; ?>
-                                </div>
-                                
-                                <div class="product-status">
-                                    <?php if ($product['quantity'] <= $product['min_stock_level'] && $product['min_stock_level'] > 0): ?>
-                                        <span class="status-badge status-warning">
-                                            <span class="material-symbols-outlined">warning</span>
-                                            Stoc Redus
-                                        </span>
-                                    <?php else: ?>
-                                        <span class="status-badge status-active">
-                                            <span class="material-symbols-outlined">check_circle</span>
-                                            În Stoc
-                                        </span>
-                                    <?php endif; ?>
-                                </div>
-                                
-                                <div class="product-actions">
-                                    <button class="btn btn-secondary" onclick="openEditModal(<?= htmlspecialchars(json_encode($product)) ?>)">
-                                        <span class="material-symbols-outlined">edit</span>
-                                        Editează
-                                    </button>
-                                    <button class="btn btn-danger" onclick="confirmDelete(<?= $product['product_id'] ?>, '<?= htmlspecialchars($product['name']) ?>')">
-                                        <span class="material-symbols-outlined">remove_circle</span>
-                                        Dezactivează
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    <?php endforeach; ?>
-                </div>
-            <?php else: ?>
-                <div class="empty-state">
-                    <span class="material-symbols-outlined">inventory_2</span>
-                    <h3>Nu există produse</h3>
-                    <p>Adăugați primul produs folosind butonul de mai sus.</p>
-                </div>
-            <?php endif; ?>
         </div>
-    </main>
 
-    <!-- Create/Edit Product Modal -->
-    <div id="productModal" class="modal">
-        <div class="modal-content modal-large">
-            <div class="modal-header">
-                <h2 class="modal-title" id="modalTitle">Adaugă Produs</h2>
-                <button class="close" onclick="closeModal()">&times;</button>
-            </div>
-            <form id="productForm" method="POST">
-                <input type="hidden" name="action" id="formAction" value="create">
-                <input type="hidden" name="product_id" id="productId" value="">
-                
-                <div class="form-grid">
-                    <div class="form-group">
-                        <label for="sku" class="form-label">SKU</label>
-                        <input type="text" class="form-control" id="sku" name="sku" 
-                               placeholder="Generat automat dacă este gol">
-                        <small class="form-help">Lăsați gol pentru generare automată</small>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="name" class="form-label">Nume Produs *</label>
-                        <input type="text" class="form-control" id="name" name="name" required>
-                    </div>
-                    
-                    <div class="form-group full-width">
-                        <label for="description" class="form-label">Descriere</label>
-                        <textarea class="form-control" id="description" name="description" rows="3"></textarea>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="category" class="form-label">Categorie</label>
-                        <input type="text" class="form-control" id="category" name="category" 
-                               placeholder="ex: Electronics, Office Supplies">
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="price" class="form-label">Preț (RON)</label>
-                        <input type="number" class="form-control" id="price" name="price" 
-                               step="0.01" min="0" value="0.00">
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="quantity" class="form-label">Cantitate Inițială</label>
-                        <input type="number" class="form-control" id="quantity" name="quantity" 
-                               min="0" value="0">
-                        <small class="form-help">Cantitatea de bază (pentru referință)</small>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="min_stock_level" class="form-label">Nivel Minim Stoc</label>
-                        <input type="number" class="form-control" id="min_stock_level" name="min_stock_level" 
-                               min="0" value="0">
-                        <small class="form-help">Alertă când stocul scade sub această valoare</small>
-                    </div>
+        <!-- Main Container -->
+        <div class="container">
+        <!-- Search and Filters -->
+        <div class="search-section">
+            <div class="search-container">
+                <div class="search-box">
+                    <span class="material-symbols-outlined">search</span>
+                    <input type="text" id="search-input" placeholder="Caută după nume, SKU sau categorie...">
+                    <button class="clear-search" id="clear-search" style="display: none;">
+                        <span class="material-symbols-outlined">close</span>
+                    </button>
                 </div>
+                
+                <div class="filters">
+                    <select id="category-filter" class="filter-select">
+                        <option value="">Toate categoriile</option>
+                        <?php
+                        try {
+                            $dbFactory = $config['connection_factory'];
+                            $db = $dbFactory();
+                            require_once BASE_PATH . '/models/Product.php';
+                            $productModel = new Product($db);
+                            $categories = $productModel->getCategories();
+                            
+                            foreach ($categories as $category) {
+                                echo "<option value=\"" . htmlspecialchars($category['name']) . "\">" . 
+                                     htmlspecialchars($category['name']) . "</option>";
+                            }
+                        } catch (Exception $e) {
+                            // Handle error silently for now
+                        }
+                        ?>
+                    </select>
+                    
+                    <select id="stock-filter" class="filter-select">
+                        <option value="">Toate stocurile</option>
+                        <option value="in-stock">În stoc</option>
+                        <option value="low-stock">Stoc scăzut</option>
+                        <option value="out-of-stock">Fără stoc</option>
+                    </select>
+                    
+                    <select id="sort-filter" class="filter-select">
+                        <option value="name-asc">Nume A-Z</option>
+                        <option value="name-desc">Nume Z-A</option>
+                        <option value="sku-asc">SKU A-Z</option>
+                        <option value="created-desc">Cel mai recent</option>
+                        <option value="stock-desc">Stoc mare</option>
+                        <option value="stock-asc">Stoc mic</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div class="search-stats">
+                <span id="results-count">0 produse găsite</span>
+                <button class="filter-toggle" id="filter-toggle">
+                    <span class="material-symbols-outlined">filter_list</span>
+                    Filtre
+                </button>
+            </div>
+        </div>
+
+        <!-- Products Grid -->
+        <div class="products-grid" id="products-grid">
+            <!-- Products will be loaded here -->
+        </div>
+
+        <!-- Pagination -->
+        <div class="pagination-container">
+            <div class="pagination-info">
+                <span id="pagination-info">Afișare 1-20 din 100 produse</span>
+            </div>
+            <div class="pagination-controls">
+                <button class="pagination-btn" id="first-page" disabled>
+                    <span class="material-symbols-outlined">first_page</span>
+                </button>
+                <button class="pagination-btn" id="prev-page" disabled>
+                    <span class="material-symbols-outlined">chevron_left</span>
+                </button>
+                
+                <div class="page-numbers" id="page-numbers">
+                    <!-- Page numbers will be generated here -->
+                </div>
+                
+                <button class="pagination-btn" id="next-page">
+                    <span class="material-symbols-outlined">chevron_right</span>
+                </button>
+                <button class="pagination-btn" id="last-page">
+                    <span class="material-symbols-outlined">last_page</span>
+                </button>
+            </div>
+            <div class="page-size-selector">
+                <label for="page-size">Produse per pagină:</label>
+                <select id="page-size">
+                    <option value="10">10</option>
+                    <option value="20" selected>20</option>
+                    <option value="50">50</option>
+                    <option value="100">100</option>
+                </select>
+            </div>
+        </div>
+        </div> <!-- End .container -->
+
+        <!-- Product Modal -->
+        <div class="modal" id="product-modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 id="modal-title">Adaugă Produs</h2>
+                    <button class="modal-close" id="modal-close">
+                        <span class="material-symbols-outlined">close</span>
+                    </button>
+                </div>
+                
+                <form id="product-form" class="modal-body">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="product-sku">SKU</label>
+                            <input type="text" id="product-sku" name="sku" placeholder="Se va genera automat dacă e gol">
+                        </div>
+                        <div class="form-group">
+                            <label for="product-name">Nume Produs*</label>
+                            <input type="text" id="product-name" name="name" required>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="product-description">Descriere</label>
+                        <textarea id="product-description" name="description" rows="3"></textarea>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="product-category">Categorie</label>
+                            <input type="text" id="product-category" name="category" list="categories">
+                            <datalist id="categories">
+                                <?php
+                                try {
+                                    foreach ($categories as $category) {
+                                        echo "<option value=\"" . htmlspecialchars($category['name']) . "\">";
+                                    }
+                                } catch (Exception $e) {
+                                    // Default categories if DB fails
+                                    echo '<option value="SmartBill">';
+                                    echo '<option value="Electronics">';
+                                    echo '<option value="Office">';
+                                }
+                                ?>
+                            </datalist>
+                        </div>
+                        <div class="form-group">
+                            <label for="product-price">Preț (RON)</label>
+                            <input type="number" id="product-price" name="price" step="0.01" min="0">
+                        </div>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="product-quantity">Cantitate</label>
+                            <input type="number" id="product-quantity" name="quantity" min="0" value="0">
+                        </div>
+                        <div class="form-group">
+                            <label for="product-min-stock">Stoc Minim</label>
+                            <input type="number" id="product-min-stock" name="min_stock_level" min="0" value="0">
+                        </div>
+                    </div>
+                    
+                    <input type="hidden" id="product-id" name="product_id">
+                    <input type="hidden" id="form-action" name="api_action" value="create">
+                </form>
                 
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" onclick="closeModal()">Anulează</button>
-                    <button type="submit" class="btn btn-success" id="submitBtn">Salvează</button>
+                    <button type="button" class="btn btn-secondary" id="cancel-btn">Anulare</button>
+                    <button type="submit" form="product-form" class="btn btn-primary">Salvează</button>
                 </div>
-            </form>
+            </div>
         </div>
-    </div>
 
-    <!-- Delete Confirmation Modal -->
-    <div id="deleteModal" class="modal">
+        <!-- Loading Overlay -->
+        <div class="loading-overlay" id="loading-overlay" style="display: none;">
+            <div class="loading-spinner">
+                <div class="spinner"></div>
+                <p>Se încarcă...</p>
+            </div>
+        </div>
+
+        <!-- Success/Error Messages -->
+        <div class="message-container" id="message-container"></div>
+
+    </div> <!-- End .main-content-wrapper -->
+
+    <script src="scripts/products.js"></script>
+    <div class="modal" id="product-modal">
         <div class="modal-content">
             <div class="modal-header">
-                <h2 class="modal-title">Confirmare Dezactivare</h2>
-                <button class="close" onclick="closeDeleteModal()">&times;</button>
+                <h2 id="modal-title">Adaugă Produs</h2>
+                <button class="modal-close" id="modal-close">
+                    <span class="material-symbols-outlined">close</span>
+                </button>
             </div>
-            <p>Sunteți sigur că doriți să dezactivați produsul <strong id="deleteProductName"></strong>?</p>
-            <p style="color: #ffc107; font-weight: 500;">Această acțiune va seta cantitatea produsului la 0.</p>
+            
+            <form id="product-form" class="modal-body">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="product-sku">SKU</label>
+                        <input type="text" id="product-sku" name="sku" placeholder="Se va genera automat dacă e gol">
+                    </div>
+                    <div class="form-group">
+                        <label for="product-name">Nume Produs*</label>
+                        <input type="text" id="product-name" name="name" required>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="product-description">Descriere</label>
+                    <textarea id="product-description" name="description" rows="3"></textarea>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="product-category">Categorie</label>
+                        <input type="text" id="product-category" name="category" list="categories">
+                        <datalist id="categories">
+                            <?php
+                            try {
+                                foreach ($categories as $category) {
+                                    echo "<option value=\"" . htmlspecialchars($category['name']) . "\">";
+                                }
+                            } catch (Exception $e) {
+                                // Default categories if DB fails
+                                echo '<option value="SmartBill">';
+                                echo '<option value="Electronics">';
+                                echo '<option value="Office">';
+                            }
+                            ?>
+                        </datalist>
+                    </div>
+                    <div class="form-group">
+                        <label for="product-price">Preț (RON)</label>
+                        <input type="number" id="product-price" name="price" step="0.01" min="0">
+                    </div>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="product-quantity">Cantitate</label>
+                        <input type="number" id="product-quantity" name="quantity" min="0" value="0">
+                    </div>
+                    <div class="form-group">
+                        <label for="product-min-stock">Stoc Minim</label>
+                        <input type="number" id="product-min-stock" name="min_stock_level" min="0" value="0">
+                    </div>
+                </div>
+                
+                <input type="hidden" id="product-id" name="product_id">
+                <input type="hidden" id="form-action" name="api_action" value="create">
+            </form>
+            
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" onclick="closeDeleteModal()">Anulează</button>
-                <form method="POST" style="display: inline;">
-                    <input type="hidden" name="action" value="delete">
-                    <input type="hidden" name="product_id" id="deleteProductId" value="">
-                    <button type="submit" class="btn btn-danger">Dezactivează</button>
-                </form>
+                <button type="button" class="btn btn-secondary" id="cancel-btn">Anulare</button>
+                <button type="submit" form="product-form" class="btn btn-primary">Salvează</button>
             </div>
         </div>
     </div>
 
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loading-overlay" style="display: none;">
+        <div class="loading-spinner">
+            <div class="spinner"></div>
+            <p>Se încarcă...</p>
+        </div>
+    </div>
+
+    <!-- Success/Error Messages -->
+    <div class="message-container" id="message-container"></div>
+
+    <script src="scripts/products.js"></script>
     <script>
-        function toggleFilters() {
-            const filtersSection = document.getElementById('filtersSection');
-            filtersSection.style.display = filtersSection.style.display === 'none' ? 'block' : 'none';
-        }
-
-        function openCreateModal() {
-            document.getElementById('modalTitle').textContent = 'Adaugă Produs';
-            document.getElementById('formAction').value = 'create';
-            document.getElementById('productId').value = '';
-            document.getElementById('productForm').reset();
-            document.getElementById('submitBtn').textContent = 'Adaugă';
-            document.getElementById('productModal').style.display = 'block';
-        }
-
-        function openEditModal(product) {
-            document.getElementById('modalTitle').textContent = 'Editează Produs';
-            document.getElementById('formAction').value = 'update';
-            document.getElementById('productId').value = product.product_id;
-            
-            // Populate form fields (adapted to your schema)
-            document.getElementById('sku').value = product.sku || '';
-            document.getElementById('name').value = product.name || '';
-            document.getElementById('description').value = product.description || '';
-            document.getElementById('category').value = product.category || '';
-            document.getElementById('price').value = product.price || '0.00';
-            document.getElementById('quantity').value = product.quantity || '0';
-            document.getElementById('min_stock_level').value = product.min_stock_level || '0';
-            
-            document.getElementById('submitBtn').textContent = 'Actualizează';
-            document.getElementById('productModal').style.display = 'block';
-        }
-
-        function closeModal() {
-            document.getElementById('productModal').style.display = 'none';
-        }
-
-        function confirmDelete(productId, productName) {
-            document.getElementById('deleteProductId').value = productId;
-            document.getElementById('deleteProductName').textContent = productName;
-            document.getElementById('deleteModal').style.display = 'block';
-        }
-
-        function closeDeleteModal() {
-            document.getElementById('deleteModal').style.display = 'none';
-        }
-
-        // Close modal when clicking outside
-        window.onclick = function(event) {
-            const productModal = document.getElementById('productModal');
-            const deleteModal = document.getElementById('deleteModal');
-            if (event.target === productModal) {
-                closeModal();
-            }
-            if (event.target === deleteModal) {
-                closeDeleteModal();
-            }
-        }
-
-        // Close modal with Escape key
-        document.addEventListener('keydown', function(event) {
-            if (event.key === 'Escape') {
-                closeModal();
-                closeDeleteModal();
-            }
-        });
+        // Pass API endpoint to JavaScript
+        window.PRODUCTS_API_URL = window.location.href;
     </script>
-
-    <?php require_once __DIR__ . '/includes/footer.php'; ?>
 </body>
 </html>

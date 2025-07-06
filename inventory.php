@@ -1,5 +1,5 @@
 <?php
-// File: inventory.php - Inventory Management Interface
+// File: inventory.php - Updated with table layout and fixed modals
 ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
 error_reporting(E_ALL);
@@ -81,10 +81,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $messageType = 'error';
             } else {
                 if ($inventoryModel->removeStock($productId, $quantity, $locationId)) {
-                    $message = 'Stocul a fost eliminat cu succes (FIFO).';
+                    $message = 'Stocul a fost redus cu succes.';
                     $messageType = 'success';
                 } else {
-                    $message = 'Eroare la eliminarea stocului. Verificați cantitatea disponibilă.';
+                    $message = 'Eroare la reducerea stocului sau stoc insuficient.';
                     $messageType = 'error';
                 }
             }
@@ -93,13 +93,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         case 'move_stock':
             $inventoryId = intval($_POST['inventory_id'] ?? 0);
             $newLocationId = intval($_POST['new_location_id'] ?? 0);
-            $quantity = !empty($_POST['move_quantity']) ? intval($_POST['move_quantity']) : null;
+            $moveQuantity = intval($_POST['move_quantity'] ?? 0);
             
-            if ($inventoryId <= 0 || $newLocationId <= 0) {
-                $message = 'Inventarul și noua locație sunt obligatorii.';
+            if ($inventoryId <= 0 || $newLocationId <= 0 || $moveQuantity <= 0) {
+                $message = 'Toate câmpurile sunt obligatorii pentru mutarea stocului.';
                 $messageType = 'error';
             } else {
-                if ($inventoryModel->moveStock($inventoryId, $newLocationId, $quantity)) {
+                if ($inventoryModel->moveStock($inventoryId, $newLocationId, $moveQuantity)) {
                     $message = 'Stocul a fost mutat cu succes.';
                     $messageType = 'success';
                 } else {
@@ -111,450 +111,566 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// Get data for display
-$view = $_GET['view'] ?? 'summary';
-$filters = [
-    'product_id' => $_GET['product_id'] ?? '',
-    'location_id' => $_GET['location_id'] ?? '',
-    'zone' => $_GET['zone'] ?? '',
-    'low_stock' => isset($_GET['low_stock'])
-];
+// Get view mode and filters
+$view = $_GET['view'] ?? 'detailed';
+$productFilter = $_GET['product'] ?? '';
+$locationFilter = $_GET['location'] ?? '';
+$lowStockOnly = isset($_GET['low_stock']);
 
+// Pagination
+$page = max(1, intval($_GET['page'] ?? 1));
+$pageSize = 25;
+$offset = ($page - 1) * $pageSize;
+
+// Get data based on view
 switch ($view) {
-    case 'detailed':
-        $inventory = $inventoryModel->getAllInventory($filters);
+    case 'summary':
+        $allInventory = $inventoryModel->getStockSummary();
+        $totalCount = count($allInventory);
+        $inventory = array_slice($allInventory, $offset, $pageSize);
         break;
-    case 'low_stock':
-        $inventory = $inventoryModel->getLowStockProducts();
+    case 'detailed':
+        $allInventory = $inventoryModel->getInventoryWithFilters($productFilter, $locationFilter, $lowStockOnly);
+        $totalCount = count($allInventory);
+        $inventory = array_slice($allInventory, $offset, $pageSize);
+        break;
+    case 'low-stock':
+        $allInventory = $inventoryModel->getLowStockItems();
+        $totalCount = count($allInventory);
+        $inventory = array_slice($allInventory, $offset, $pageSize);
         break;
     default:
-        $inventory = $inventoryModel->getStockSummary();
-        break;
+        $allInventory = $inventoryModel->getInventoryWithFilters($productFilter, $locationFilter, $lowStockOnly);
+        $totalCount = count($allInventory);
+        $inventory = array_slice($allInventory, $offset, $pageSize);
 }
 
-// Get data for dropdowns
-$products = $productModel->getProductsWithInventory();
-$locations = $locationModel->getAllLocations();
-$zones = $locationModel->getZones();
+$totalPages = ceil($totalCount / $pageSize);
 
+$allProducts = $productModel->getAllProducts();
+$allLocations = $locationModel->getAllLocations();
+$lowStockItems = $inventoryModel->getLowStockItems();
+$expiringProducts = $inventoryModel->getExpiringProducts();
+
+// Define current page for footer
 $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
 ?>
-
 <!DOCTYPE html>
 <html lang="ro">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <?php require_once __DIR__ . '/includes/header.php'; ?>
     <title>Gestionare Inventar - WMS</title>
 </head>
-<body class="app">
-    <?php require_once __DIR__ . '/includes/navbar.php'; ?>
-
-    <main class="main-content">
-        <div class="inventory-container">
-            <!-- Page Header -->
-            <div class="page-header">
-                <h1 class="page-title">Gestionare Inventar</h1>
-                <div class="header-actions">
-                    <button class="btn btn-success" onclick="openAddStockModal()">
-                        <span class="material-symbols-outlined">add_box</span>
-                        Adaugă Stoc
-                    </button>
-                    <button class="btn btn-warning" onclick="openRemoveStockModal()">
-                        <span class="material-symbols-outlined">remove_circle</span>
-                        Elimină Stoc
-                    </button>
-                </div>
-            </div>
-
-            <!-- Display Messages -->
-            <?php if (!empty($message)): ?>
-                <div class="message <?= $messageType ?>">
-                    <?= htmlspecialchars($message) ?>
-                </div>
-            <?php endif; ?>
-
-            <!-- View Toggle & Filters -->
-            <div class="inventory-controls">
-                <div class="view-toggle">
-                    <a href="?view=summary" class="toggle-link <?= $view === 'summary' ? 'active' : '' ?>">
-                        <span class="material-symbols-outlined">summarize</span>
-                        Sumar
-                    </a>
-                    <a href="?view=detailed" class="toggle-link <?= $view === 'detailed' ? 'active' : '' ?>">
-                        <span class="material-symbols-outlined">list</span>
-                        Detaliat
-                    </a>
-                    <a href="?view=low_stock" class="toggle-link <?= $view === 'low_stock' ? 'active' : '' ?>">
-                        <span class="material-symbols-outlined">warning</span>
-                        Stoc Scăzut
-                    </a>
-                </div>
-
-                <?php if ($view !== 'low_stock'): ?>
-                <form method="GET" class="filter-form">
-                    <input type="hidden" name="view" value="<?= htmlspecialchars($view) ?>">
-                    
-                    <select name="product_id" onchange="this.form.submit()">
-                        <option value="">Toate produsele</option>
-                        <?php foreach ($products as $product): ?>
-                            <option value="<?= $product['product_id'] ?>" <?= $filters['product_id'] == $product['product_id'] ? 'selected' : '' ?>>
-                                <?= htmlspecialchars($product['sku']) ?> - <?= htmlspecialchars($product['name']) ?>
-                            </option>
-                        <?php endforeach; ?>
-                    </select>
-                    
-                    <select name="location_id" onchange="this.form.submit()">
-                        <option value="">Toate locațiile</option>
-                        <?php foreach ($locations as $location): ?>
-                            <option value="<?= $location['id'] ?>" <?= $filters['location_id'] == $location['id'] ? 'selected' : '' ?>>
-                                <?= htmlspecialchars($location['location_code']) ?> (<?= htmlspecialchars($location['zone']) ?>)
-                            </option>
-                        <?php endforeach; ?>
-                    </select>
-                    
-                    <select name="zone" onchange="this.form.submit()">
-                        <option value="">Toate zonele</option>
-                        <?php foreach ($zones as $zone): ?>
-                            <option value="<?= htmlspecialchars($zone) ?>" <?= $filters['zone'] === $zone ? 'selected' : '' ?>>
-                                <?= htmlspecialchars($zone) ?>
-                            </option>
-                        <?php endforeach; ?>
-                    </select>
-                    
-                    <label class="checkbox-label">
-                        <input type="checkbox" name="low_stock" <?= $filters['low_stock'] ? 'checked' : '' ?> onchange="this.form.submit()">
-                        Doar stoc scăzut
-                    </label>
-                </form>
-                <?php endif; ?>
-            </div>
-
-            <!-- Inventory Display -->
-            <?php if (!empty($inventory)): ?>
-                <?php if ($view === 'summary'): ?>
-                    <!-- Summary View -->
-                    <div class="inventory-summary">
-                        <?php foreach ($inventory as $item): ?>
-                            <div class="summary-card <?= $item['total_stock'] <= $item['min_stock_level'] ? 'low-stock' : '' ?>">
-                                <div class="card-header">
-                                    <h3><?= htmlspecialchars($item['name']) ?></h3>
-                                    <span class="sku"><?= htmlspecialchars($item['sku']) ?></span>
-                                </div>
-                                
-                                <div class="card-content">
-                                    <div class="stock-info">
-                                        <div class="stock-number">
-                                            <span class="stock-value"><?= number_format($item['total_stock']) ?></span>
-                                            <span class="stock-label">Total</span>
-                                        </div>
-                                        <div class="stock-details">
-                                            <div class="detail">
-                                                <span class="material-symbols-outlined">pin_drop</span>
-                                                <?= $item['locations_count'] ?> locații
-                                            </div>
-                                            <div class="detail">
-                                                <span class="material-symbols-outlined">category</span>
-                                                <?= htmlspecialchars($item['category'] ?? 'N/A') ?>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    
-                                    <?php if ($item['total_stock'] <= $item['min_stock_level']): ?>
-                                        <div class="low-stock-warning">
-                                            <span class="material-symbols-outlined">warning</span>
-                                            Stoc scăzut! (Min: <?= $item['min_stock_level'] ?>)
-                                        </div>
-                                    <?php endif; ?>
-                                </div>
-                                
-                                <div class="card-actions">
-                                    <button class="btn btn-sm btn-secondary" onclick="viewProductDetails(<?= $item['product_id'] ?>)">
-                                        Detalii
-                                    </button>
-                                </div>
-                            </div>
-                        <?php endforeach; ?>
+<body>
+    <div class="app">
+        <?php require_once __DIR__ . '/includes/navbar.php'; ?>
+        
+        <div class="main-content">
+            <div class="page-container">
+                <!-- Page Header -->
+                <header class="page-header">
+                    <div class="page-header-content">
+                        <h1 class="page-title">
+                            <span class="material-symbols-outlined">inventory_2</span>
+                            Gestionare Inventar
+                        </h1>
+                        <button class="btn btn-primary" onclick="openAddStockModal()">
+                            <span class="material-symbols-outlined">add_box</span>
+                            Adaugă Stoc
+                        </button>
                     </div>
-                    
-                <?php elseif ($view === 'detailed'): ?>
-                    <!-- Detailed View -->
-                    <div class="inventory-table-container">
-                        <table class="inventory-table">
-                            <thead>
-                                <tr>
-                                    <th>Produs</th>
-                                    <th>Locație</th>
-                                    <th>Cantitate</th>
-                                    <th>Lot/Batch</th>
-                                    <th>Data Primirii</th>
-                                    <th>Expirare</th>
-                                    <th>Acțiuni</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <?php foreach ($inventory as $item): ?>
-                                    <tr>
-                                        <td>
-                                            <div class="product-info">
-                                                <strong><?= htmlspecialchars($item['sku']) ?></strong>
-                                                <span><?= htmlspecialchars($item['product_name']) ?></span>
-                                            </div>
-                                        </td>
-                                        <td>
-                                            <div class="location-info">
-                                                <strong><?= htmlspecialchars($item['location_code']) ?></strong>
-                                                <span><?= htmlspecialchars($item['zone']) ?> - <?= htmlspecialchars($item['location_type']) ?></span>
-                                            </div>
-                                        </td>
-                                        <td class="quantity"><?= number_format($item['quantity']) ?></td>
-                                        <td>
-                                            <?php if ($item['batch_number'] || $item['lot_number']): ?>
-                                                <div class="batch-info">
-                                                    <?php if ($item['batch_number']): ?>
-                                                        <span>Batch: <?= htmlspecialchars($item['batch_number']) ?></span>
-                                                    <?php endif; ?>
-                                                    <?php if ($item['lot_number']): ?>
-                                                        <span>Lot: <?= htmlspecialchars($item['lot_number']) ?></span>
-                                                    <?php endif; ?>
-                                                </div>
-                                            <?php else: ?>
-                                                <span class="text-muted">-</span>
-                                            <?php endif; ?>
-                                        </td>
-                                        <td><?= date('d.m.Y H:i', strtotime($item['received_at'])) ?></td>
-                                        <td>
-                                            <?php if ($item['expiry_date']): ?>
-                                                <?php 
-                                                $expiryDate = new DateTime($item['expiry_date']);
-                                                $today = new DateTime();
-                                                $diff = $today->diff($expiryDate);
-                                                $isExpired = $expiryDate < $today;
-                                                $isExpiringSoon = !$isExpired && $diff->days <= 30;
-                                                ?>
-                                                <span class="expiry-date <?= $isExpired ? 'expired' : ($isExpiringSoon ? 'expiring-soon' : '') ?>">
-                                                    <?= $expiryDate->format('d.m.Y') ?>
-                                                    <?php if ($isExpired): ?>
-                                                        <small>(Expirat)</small>
-                                                    <?php elseif ($isExpiringSoon): ?>
-                                                        <small>(<?= $diff->days ?> zile)</small>
-                                                    <?php endif; ?>
-                                                </span>
-                                            <?php else: ?>
-                                                <span class="text-muted">-</span>
-                                            <?php endif; ?>
-                                        </td>
-                                        <td>
-                                            <div class="table-actions">
-                                                <button class="btn btn-sm btn-secondary" onclick="openMoveStockModal(<?= htmlspecialchars(json_encode($item)) ?>)">
-                                                    <span class="material-symbols-outlined">move_location</span>
-                                                </button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                <?php endforeach; ?>
-                            </tbody>
-                        </table>
-                    </div>
-                    
-                <?php else: ?>
-                    <!-- Low Stock View -->
-                    <div class="low-stock-alerts">
-                        <?php foreach ($inventory as $item): ?>
-                            <div class="alert-card">
-                                <div class="alert-icon">
-                                    <span class="material-symbols-outlined">warning</span>
-                                </div>
-                                <div class="alert-content">
-                                    <h3><?= htmlspecialchars($item['name']) ?></h3>
-                                    <div class="alert-details">
-                                        <span class="sku"><?= htmlspecialchars($item['sku']) ?></span>
-                                        <span class="stock-info">
-                                            Stoc: <strong><?= number_format($item['current_stock']) ?></strong> / 
-                                            Min: <strong><?= number_format($item['min_stock_level']) ?></strong>
-                                        </span>
-                                    </div>
-                                </div>
-                                <div class="alert-actions">
-                                    <button class="btn btn-primary" onclick="quickAddStock(<?= $item['product_id'] ?>)">
-                                        Adaugă Stoc
-                                    </button>
-                                </div>
-                            </div>
-                        <?php endforeach; ?>
-                    </div>
-                <?php endif; ?>
+                </header>
                 
-            <?php else: ?>
-                <div class="empty-state">
-                    <span class="material-symbols-outlined">inventory_2</span>
-                    <h3>Nu există date de inventar</h3>
-                    <p>Adăugați primul stoc folosind butonul de mai sus.</p>
+                <!-- Alert Messages -->
+                <?php if (!empty($message)): ?>
+                    <div class="alert alert-<?= $messageType === 'success' ? 'success' : 'danger' ?>" role="alert">
+                        <span class="material-symbols-outlined">
+                            <?= $messageType === 'success' ? 'check_circle' : 'error' ?>
+                        </span>
+                        <?= htmlspecialchars($message) ?>
+                    </div>
+                <?php endif; ?>
+
+                <!-- Low Stock & Expiry Alerts -->
+                <?php if (!empty($lowStockItems) && $view !== 'low-stock'): ?>
+                    <div class="low-stock-warning">
+                        <span class="material-symbols-outlined">warning</span>
+                        <strong>Atenție:</strong> Există <?= count($lowStockItems) ?> produse cu stoc scăzut.
+                        <a href="?view=low-stock" class="alert-link">Vezi produsele</a>
+                    </div>
+                <?php endif; ?>
+
+                <?php if (!empty($expiringProducts)): ?>
+                    <div class="low-stock-warning">
+                        <span class="material-symbols-outlined">schedule</span>
+                        <strong>Atenție:</strong> Există <?= count($expiringProducts) ?> produse care expiră în 30 de zile.
+                    </div>
+                <?php endif; ?>
+
+                <!-- View Controls -->
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">Control Inventar</h3>
+                        <div class="card-actions">
+                            <!-- View Toggle -->
+                            <div class="view-toggle">
+                                <a href="?view=detailed<?= $productFilter ? '&product=' . $productFilter : '' ?><?= $locationFilter ? '&location=' . $locationFilter : '' ?><?= $lowStockOnly ? '&low_stock=1' : '' ?>" 
+                                   class="toggle-link <?= $view === 'detailed' ? 'active' : '' ?>">
+                                    <span class="material-symbols-outlined">table_view</span>
+                                    Detaliat
+                                </a>
+                                <a href="?view=summary<?= $productFilter ? '&product=' . $productFilter : '' ?><?= $locationFilter ? '&location=' . $locationFilter : '' ?><?= $lowStockOnly ? '&low_stock=1' : '' ?>" 
+                                   class="toggle-link <?= $view === 'summary' ? 'active' : '' ?>">
+                                    <span class="material-symbols-outlined">dashboard</span>
+                                    Sumar
+                                </a>
+                                <a href="?view=low-stock" 
+                                   class="toggle-link <?= $view === 'low-stock' ? 'active' : '' ?>">
+                                    <span class="material-symbols-outlined">warning</span>
+                                    Stoc Scăzut
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <?php if ($view === 'detailed'): ?>
+                    <div class="card-body">
+                        <!-- Filters -->
+                        <form method="GET" class="filter-form">
+                            <input type="hidden" name="view" value="detailed">
+                            
+                            <div class="form-group">
+                                <label class="form-label">Produs</label>
+                                <select name="product" class="form-control">
+                                    <option value="">Toate produsele</option>
+                                    <?php foreach ($allProducts as $product): ?>
+                                        <option value="<?= $product['product_id'] ?>" <?= $productFilter == $product['product_id'] ? 'selected' : '' ?>>
+                                            <?= htmlspecialchars($product['name']) ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label class="form-label">Locație</label>
+                                <select name="location" class="form-control">
+                                    <option value="">Toate locațiile</option>
+                                    <?php foreach ($allLocations as $location): ?>
+                                        <option value="<?= $location['id'] ?>" <?= $locationFilter == $location['id'] ? 'selected' : '' ?>>
+                                            <?= htmlspecialchars($location['location_code']) ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" name="low_stock" value="1" <?= $lowStockOnly ? 'checked' : '' ?>>
+                                    Doar stoc scăzut
+                                </label>
+                            </div>
+                            
+                            <button type="submit" class="btn btn-secondary">
+                                <span class="material-symbols-outlined">filter_alt</span>
+                                Filtrează
+                            </button>
+                            
+                            <a href="?view=detailed" class="btn btn-secondary">
+                                <span class="material-symbols-outlined">refresh</span>
+                                Reset
+                            </a>
+                        </form>
+                    </div>
+                    <?php endif; ?>
                 </div>
-            <?php endif; ?>
+
+                <!-- Inventory Table -->
+                <div class="card">
+                    <div class="card-body">
+                        <?php if (!empty($inventory)): ?>
+                            <div class="table-container">
+                                <table class="table">
+                                    <thead>
+                                        <tr>
+                                            <?php if ($view === 'summary'): ?>
+                                                <th>SKU</th>
+                                                <th>Nume Produs</th>
+                                                <th>Categorie</th>
+                                                <th>Stoc Total</th>
+                                                <th>Locații</th>
+                                                <th>Status</th>
+                                                <th>Acțiuni</th>
+                                            <?php elseif ($view === 'low-stock'): ?>
+                                                <th>SKU</th>
+                                                <th>Nume Produs</th>
+                                                <th>Stoc Curent</th>
+                                                <th>Stoc Minim</th>
+                                                <th>Diferență</th>
+                                                <th>Locații</th>
+                                                <th>Acțiuni</th>
+                                            <?php else: ?>
+                                                <th>SKU</th>
+                                                <th>Produs</th>
+                                                <th>Locație</th>
+                                                <th>Cantitate</th>
+                                                <th>Batch/Lot</th>
+                                                <th>Primire</th>
+                                                <th>Expirare</th>
+                                                <th>Acțiuni</th>
+                                            <?php endif; ?>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <?php foreach ($inventory as $item): ?>
+                                            <tr>
+                                                <?php if ($view === 'summary'): ?>
+                                                    <td>
+                                                        <code class="sku-code"><?= htmlspecialchars($item['sku']) ?></code>
+                                                    </td>
+                                                    <td>
+                                                        <div class="product-info">
+                                                            <strong><?= htmlspecialchars($item['name']) ?></strong>
+                                                        </div>
+                                                    </td>
+                                                    <td>
+                                                        <span class="location-badge"><?= htmlspecialchars($item['category'] ?? 'N/A') ?></span>
+                                                    </td>
+                                                    <td>
+                                                        <span class="stock-info <?= ($item['total_stock'] ?? 0) <= ($item['min_stock_level'] ?? 0) ? 'stock-low' : 'stock-good' ?>">
+                                                            <?= number_format($item['total_stock'] ?? 0) ?>
+                                                        </span>
+                                                    </td>
+                                                    <td><?= $item['locations_count'] ?? 0 ?> locații</td>
+                                                    <td>
+                                                        <?php if (($item['total_stock'] ?? 0) <= ($item['min_stock_level'] ?? 0)): ?>
+                                                            <span class="badge badge-danger">Stoc Scăzut</span>
+                                                        <?php else: ?>
+                                                            <span class="badge badge-success">OK</span>
+                                                        <?php endif; ?>
+                                                    </td>
+                                                    <td>
+                                                        <div class="btn-group">
+                                                            <button class="btn btn-sm btn-outline-primary" onclick="addStockForProduct(<?= $item['product_id'] ?>)" title="Adaugă stoc">
+                                                                <span class="material-symbols-outlined">add</span>
+                                                            </button>
+                                                            <a href="?view=detailed&product=<?= $item['product_id'] ?>" class="btn btn-sm btn-outline-secondary" title="Vezi detalii">
+                                                                <span class="material-symbols-outlined">visibility</span>
+                                                            </a>
+                                                        </div>
+                                                    </td>
+                                                <?php elseif ($view === 'low-stock'): ?>
+                                                    <td>
+                                                        <code class="sku-code"><?= htmlspecialchars($item['sku']) ?></code>
+                                                    </td>
+                                                    <td>
+                                                        <div class="product-info">
+                                                            <strong><?= htmlspecialchars($item['name']) ?></strong>
+                                                        </div>
+                                                    </td>
+                                                    <td>
+                                                        <span class="stock-info stock-low"><?= number_format($item['current_stock'] ?? 0) ?></span>
+                                                    </td>
+                                                    <td>
+                                                        <span class="stock-info"><?= number_format($item['min_stock_level'] ?? 0) ?></span>
+                                                    </td>
+                                                    <td>
+                                                        <span class="stock-info stock-low">
+                                                            <?= number_format(($item['min_stock_level'] ?? 0) - ($item['current_stock'] ?? 0)) ?>
+                                                        </span>
+                                                    </td>
+                                                    <td><?= $item['locations_count'] ?? 0 ?> locații</td>
+                                                    <td>
+                                                        <div class="btn-group">
+                                                            <button class="btn btn-sm btn-outline-primary" onclick="addStockForProduct(<?= $item['product_id'] ?>)" title="Adaugă stoc">
+                                                                <span class="material-symbols-outlined">add</span>
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                <?php else: ?>
+                                                    <td>
+                                                        <code class="sku-code"><?= htmlspecialchars($item['sku']) ?></code>
+                                                    </td>
+                                                    <td>
+                                                        <div class="product-info">
+                                                            <strong><?= htmlspecialchars($item['product_name']) ?></strong>
+                                                        </div>
+                                                    </td>
+                                                    <td>
+                                                        <span class="location-badge"><?= htmlspecialchars($item['location_name']) ?></span>
+                                                    </td>
+                                                    <td>
+                                                        <span class="stock-info <?= $item['quantity'] <= ($item['min_stock_level'] ?? 0) ? 'stock-low' : 'stock-good' ?>">
+                                                            <?= number_format($item['quantity']) ?>
+                                                        </span>
+                                                    </td>
+                                                    <td>
+                                                        <div class="batch-lot-info">
+                                                            <?php if (!empty($item['batch_number'])): ?>
+                                                                <div><small>Batch: <code><?= htmlspecialchars($item['batch_number']) ?></code></small></div>
+                                                            <?php endif; ?>
+                                                            <?php if (!empty($item['lot_number'])): ?>
+                                                                <div><small>Lot: <code><?= htmlspecialchars($item['lot_number']) ?></code></small></div>
+                                                            <?php endif; ?>
+                                                            <?php if (empty($item['batch_number']) && empty($item['lot_number'])): ?>
+                                                                <span class="text-muted">-</span>
+                                                            <?php endif; ?>
+                                                        </div>
+                                                    </td>
+                                                    <td>
+                                                        <?php if (!empty($item['received_at'])): ?>
+                                                            <small><?= date('d.m.Y', strtotime($item['received_at'])) ?></small>
+                                                        <?php else: ?>
+                                                            <span class="text-muted">-</span>
+                                                        <?php endif; ?>
+                                                    </td>
+                                                    <td>
+                                                        <?php if (!empty($item['expiry_date'])): ?>
+                                                            <?php 
+                                                            $expiryDate = new DateTime($item['expiry_date']);
+                                                            $today = new DateTime();
+                                                            $diff = $today->diff($expiryDate);
+                                                            $isExpired = $expiryDate < $today;
+                                                            $isExpiringSoon = $diff->days <= 30 && !$isExpired;
+                                                            ?>
+                                                            <span class="expiry-date <?= $isExpired ? 'expired' : ($isExpiringSoon ? 'expiring-soon' : '') ?>">
+                                                                <?= $expiryDate->format('d.m.Y') ?>
+                                                                <?php if ($isExpired): ?>
+                                                                    <br><small>(Expirat)</small>
+                                                                <?php elseif ($isExpiringSoon): ?>
+                                                                    <br><small>(<?= $diff->days ?> zile)</small>
+                                                                <?php endif; ?>
+                                                            </span>
+                                                        <?php else: ?>
+                                                            <span class="text-muted">-</span>
+                                                        <?php endif; ?>
+                                                    </td>
+                                                    <td>
+                                                        <div class="btn-group">
+                                                            <button class="btn btn-sm btn-outline-primary" 
+                                                                    onclick="openMoveStockModal(<?= htmlspecialchars(json_encode($item)) ?>)"
+                                                                    title="Mută stoc">
+                                                                <span class="material-symbols-outlined">move_location</span>
+                                                            </button>
+                                                            <button class="btn btn-sm btn-outline-danger" 
+                                                                    onclick="openRemoveStockModal(<?= $item['product_id'] ?>, '<?= htmlspecialchars(addslashes($item['product_name'])) ?>')"
+                                                                    title="Reduce stoc">
+                                                                <span class="material-symbols-outlined">remove</span>
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                <?php endif; ?>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    </tbody>
+                                </table>
+                            </div>
+                            
+                            <!-- Pagination -->
+                            <?php if ($totalPages > 1): ?>
+                                <div class="pagination-container">
+                                    <div class="pagination-info">
+                                        Afișare <?= ($offset + 1) ?>-<?= min($offset + $pageSize, $totalCount) ?> din <?= number_format($totalCount) ?> elemente
+                                    </div>
+                                    <div class="pagination-controls">
+                                        <?php if ($page > 1): ?>
+                                            <a href="?view=<?= $view ?><?= $productFilter ? '&product=' . $productFilter : '' ?><?= $locationFilter ? '&location=' . $locationFilter : '' ?><?= $lowStockOnly ? '&low_stock=1' : '' ?>&page=<?= ($page - 1) ?>" 
+                                               class="pagination-btn">
+                                                <span class="material-symbols-outlined">chevron_left</span>
+                                                Anterior
+                                            </a>
+                                        <?php endif; ?>
+                                        
+                                        <span class="pagination-current">
+                                            Pagina <?= $page ?> din <?= $totalPages ?>
+                                        </span>
+                                        
+                                        <?php if ($page < $totalPages): ?>
+                                            <a href="?view=<?= $view ?><?= $productFilter ? '&product=' . $productFilter : '' ?><?= $locationFilter ? '&location=' . $locationFilter : '' ?><?= $lowStockOnly ? '&low_stock=1' : '' ?>&page=<?= ($page + 1) ?>" 
+                                               class="pagination-btn">
+                                                Următor
+                                                <span class="material-symbols-outlined">chevron_right</span>
+                                            </a>
+                                        <?php endif; ?>
+                                    </div>
+                                </div>
+                            <?php endif; ?>
+                        <?php else: ?>
+                            <div class="empty-state">
+                                <span class="material-symbols-outlined">inventory_2</span>
+                                <h3>Nu există produse în inventar</h3>
+                                <p>Adaugă primul produs în inventar folosind butonul de mai sus.</p>
+                            </div>
+                        <?php endif; ?>
+                    </div>
+                </div>
+            </div>
         </div>
-    </main>
+    </div>
 
     <!-- Add Stock Modal -->
-    <div id="addStockModal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2 class="modal-title">Adaugă Stoc</h2>
-                <button class="close" onclick="closeAddStockModal()">&times;</button>
+    <div class="modal" id="addStockModal">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 class="modal-title">Adaugă Stoc</h3>
+                    <button class="modal-close" onclick="closeAddStockModal()">
+                        <span class="material-symbols-outlined">close</span>
+                    </button>
+                </div>
+                <form method="POST" action="">
+                    <div class="modal-body">
+                        <input type="hidden" name="action" value="add_stock">
+                        
+                        <div class="form-group">
+                            <label for="add-product" class="form-label">Produs *</label>
+                            <select id="add-product" name="product_id" class="form-control" required>
+                                <option value="">Selectează produs</option>
+                                <?php foreach ($allProducts as $product): ?>
+                                    <option value="<?= $product['product_id'] ?>">
+                                        <?= htmlspecialchars($product['name']) ?> (<?= htmlspecialchars($product['sku']) ?>)
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="add-location" class="form-label">Locație *</label>
+                            <select id="add-location" name="location_id" class="form-control" required>
+                                <option value="">Selectează locația</option>
+                                <?php foreach ($allLocations as $location): ?>
+                                    <option value="<?= $location['id'] ?>">
+                                        <?= htmlspecialchars($location['name']) ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="form-group">
+                                <label for="add-quantity" class="form-label">Cantitate *</label>
+                                <input type="number" id="add-quantity" name="quantity" class="form-control" min="1" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="add-expiry" class="form-label">Data Expirării</label>
+                                <input type="date" id="add-expiry" name="expiry_date" class="form-control">
+                            </div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="form-group">
+                                <label for="add-batch" class="form-label">Număr Batch</label>
+                                <input type="text" id="add-batch" name="batch_number" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label for="add-lot" class="form-label">Număr Lot</label>
+                                <input type="text" id="add-lot" name="lot_number" class="form-control">
+                            </div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="add-received" class="form-label">Data Primirii</label>
+                            <input type="datetime-local" id="add-received" name="received_at" class="form-control" value="<?= date('Y-m-d\TH:i') ?>">
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" onclick="closeAddStockModal()">Anulează</button>
+                        <button type="submit" class="btn btn-primary">Adaugă Stoc</button>
+                    </div>
+                </form>
             </div>
-            <form method="POST">
-                <input type="hidden" name="action" value="add_stock">
-                
-                <div class="form-grid">
-                    <div class="form-group">
-                        <label for="add_product_id" class="form-label">Produs *</label>
-                        <select name="product_id" id="add_product_id" class="form-input" required>
-                            <option value="">Selectați produsul</option>
-                            <?php foreach ($products as $product): ?>
-                                <option value="<?= $product['product_id'] ?>">
-                                    <?= htmlspecialchars($product['sku']) ?> - <?= htmlspecialchars($product['name']) ?>
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="add_location_id" class="form-label">Locație *</label>
-                        <select name="location_id" id="add_location_id" class="form-input" required>
-                            <option value="">Selectați locația</option>
-                            <?php foreach ($locations as $location): ?>
-                                <option value="<?= $location['id'] ?>">
-                                    <?= htmlspecialchars($location['location_code']) ?> (<?= htmlspecialchars($location['zone']) ?>)
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="add_quantity" class="form-label">Cantitate *</label>
-                        <input type="number" name="quantity" id="add_quantity" class="form-input" min="1" required>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="add_received_at" class="form-label">Data Primirii</label>
-                        <input type="datetime-local" name="received_at" id="add_received_at" class="form-input" value="<?= date('Y-m-d\TH:i') ?>">
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="add_batch_number" class="form-label">Numărul Batch</label>
-                        <input type="text" name="batch_number" id="add_batch_number" class="form-input">
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="add_lot_number" class="form-label">Numărul Lot</label>
-                        <input type="text" name="lot_number" id="add_lot_number" class="form-input">
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="add_expiry_date" class="form-label">Data Expirării</label>
-                        <input type="date" name="expiry_date" id="add_expiry_date" class="form-input">
-                    </div>
-                </div>
-                
-                <div class="form-actions">
-                    <button type="button" class="btn btn-secondary" onclick="closeAddStockModal()">Anulează</button>
-                    <button type="submit" class="btn btn-success">Adaugă Stoc</button>
-                </div>
-            </form>
         </div>
     </div>
 
     <!-- Remove Stock Modal -->
-    <div id="removeStockModal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2 class="modal-title">Elimină Stoc (FIFO)</h2>
-                <button class="close" onclick="closeRemoveStockModal()">&times;</button>
+    <div class="modal" id="removeStockModal">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 class="modal-title">Reduce Stoc</h3>
+                    <button class="modal-close" onclick="closeRemoveStockModal()">
+                        <span class="material-symbols-outlined">close</span>
+                    </button>
+                </div>
+                <form method="POST" action="">
+                    <div class="modal-body">
+                        <input type="hidden" name="action" value="remove_stock">
+                        <input type="hidden" id="remove-product-id" name="product_id">
+                        
+                        <div class="alert alert-warning">
+                            <span class="material-symbols-outlined">warning</span>
+                            Vei reduce stocul pentru produsul: <strong id="remove-product-name"></strong>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="remove-quantity" class="form-label">Cantitate de redus *</label>
+                            <input type="number" id="remove-quantity" name="quantity" class="form-control" min="1" required>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="remove-location" class="form-label">Locație (opțional)</label>
+                            <select id="remove-location" name="location_id" class="form-control">
+                                <option value="">Din toate locațiile</option>
+                                <?php foreach ($allLocations as $location): ?>
+                                    <option value="<?= $location['id'] ?>">
+                                        <?= htmlspecialchars($location['name']) ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" onclick="closeRemoveStockModal()">Anulează</button>
+                        <button type="submit" class="btn btn-danger">Reduce Stoc</button>
+                    </div>
+                </form>
             </div>
-            <form method="POST">
-                <input type="hidden" name="action" value="remove_stock">
-                
-                <div class="form-group">
-                    <label for="remove_product_id" class="form-label">Produs *</label>
-                    <select name="product_id" id="remove_product_id" class="form-input" required>
-                        <option value="">Selectați produsul</option>
-                        <?php foreach ($products as $product): ?>
-                            <?php if ($product['current_stock'] > 0): ?>
-                                <option value="<?= $product['product_id'] ?>">
-                                    <?= htmlspecialchars($product['sku']) ?> - <?= htmlspecialchars($product['name']) ?> (Stoc: <?= $product['current_stock'] ?>)
-                                </option>
-                            <?php endif; ?>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-                
-                <div class="form-group">
-                    <label for="remove_location_id" class="form-label">Locație (opțional)</label>
-                    <select name="location_id" id="remove_location_id" class="form-input">
-                        <option value="">Toate locațiile (FIFO global)</option>
-                        <?php foreach ($locations as $location): ?>
-                            <option value="<?= $location['id'] ?>">
-                                <?= htmlspecialchars($location['location_code']) ?> (<?= htmlspecialchars($location['zone']) ?>)
-                            </option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-                
-                <div class="form-group">
-                    <label for="remove_quantity" class="form-label">Cantitate *</label>
-                    <input type="number" name="quantity" id="remove_quantity" class="form-input" min="1" required>
-                </div>
-                
-                <div class="form-help">
-                    <p><strong>FIFO:</strong> Stocul va fi eliminat automat din cele mai vechi loturi primul.</p>
-                </div>
-                
-                <div class="form-actions">
-                    <button type="button" class="btn btn-secondary" onclick="closeRemoveStockModal()">Anulează</button>
-                    <button type="submit" class="btn btn-warning">Elimină Stoc</button>
-                </div>
-            </form>
         </div>
     </div>
 
     <!-- Move Stock Modal -->
-    <div id="moveStockModal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2 class="modal-title">Mutare Stoc</h2>
-                <button class="close" onclick="closeMoveStockModal()">&times;</button>
+    <div class="modal" id="moveStockModal">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 class="modal-title">Mută Stoc</h3>
+                    <button class="modal-close" onclick="closeMoveStockModal()">
+                        <span class="material-symbols-outlined">close</span>
+                    </button>
+                </div>
+                <form method="POST" action="">
+                    <div class="modal-body">
+                        <input type="hidden" name="action" value="move_stock">
+                        <input type="hidden" id="move-inventory-id" name="inventory_id">
+                        
+                        <div class="alert alert-info">
+                            <span class="material-symbols-outlined">info</span>
+                            Mutare stoc pentru: <strong id="move-product-name"></strong>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="move-new-location" class="form-label">Locație nouă *</label>
+                            <select id="move-new-location" name="new_location_id" class="form-control" required>
+                                <option value="">Selectează locația</option>
+                                <?php foreach ($allLocations as $location): ?>
+                                    <option value="<?= $location['id'] ?>">
+                                        <?= htmlspecialchars($location['name']) ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="move-quantity" class="form-label">Cantitate de mutat *</label>
+                            <input type="number" id="move-quantity" name="move_quantity" class="form-control" min="1" required>
+                            <small class="form-text text-muted">Cantitate disponibilă: <span id="available-quantity"></span></small>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" onclick="closeMoveStockModal()">Anulează</button>
+                        <button type="submit" class="btn btn-primary">Mută Stoc</button>
+                    </div>
+                </form>
             </div>
-            <form method="POST">
-                <input type="hidden" name="action" value="move_stock">
-                <input type="hidden" name="inventory_id" id="move_inventory_id">
-                
-                <div id="move_stock_info" class="info-section"></div>
-                
-                <div class="form-group">
-                    <label for="new_location_id" class="form-label">Noua Locație *</label>
-                    <select name="new_location_id" id="new_location_id" class="form-input" required>
-                        <option value="">Selectați noua locație</option>
-                        <?php foreach ($locations as $location): ?>
-                            <option value="<?= $location['id'] ?>">
-                                <?= htmlspecialchars($location['location_code']) ?> (<?= htmlspecialchars($location['zone']) ?>)
-                            </option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-                
-                <div class="form-group">
-                    <label for="move_quantity" class="form-label">Cantitate (opțional - implicit tot stocul)</label>
-                    <input type="number" name="move_quantity" id="move_quantity" class="form-input" min="1">
-                </div>
-                
-                <div class="form-actions">
-                    <button type="button" class="btn btn-secondary" onclick="closeMoveStockModal()">Anulează</button>
-                    <button type="submit" class="btn btn-primary">Mută Stocul</button>
-                </div>
-            </form>
         </div>
     </div>
     <?php require_once __DIR__ . '/includes/footer.php'; ?>
-</body>
-</html>

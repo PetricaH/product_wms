@@ -1,340 +1,374 @@
 <?php
-/**
- * CORRECTED - Enhanced Order Model with AWB Support
- * File: models/Order.php
- */
 
+// File: models/Order.php - Updated for orders page functionality
 class Order {
     private $conn;
-    private $ordersTable = "orders";
-    private $orderItemsTable = "order_items";
-    private $productsTable = "products";
-
-    // Order statuses corrected to match database ENUM
-    public const STATUS_PENDING = 'Pending';
-    public const STATUS_PROCESSING = 'Processing';
-    public const STATUS_COMPLETED = 'Completed';
-    public const STATUS_CANCELLED = 'Cancelled';
-    public const STATUS_SHIPPED = 'Shipped';
-
+    private $table = "orders";
+    private $itemsTable = "order_items";
+    
     public function __construct($db) {
         $this->conn = $db;
     }
-
+    
     /**
-     * Create a new order.
-     * @param array $orderData Main order data
-     * @param array $items Array of order items
+     * Get total count of orders with filters
+     * @param string $statusFilter Filter by status
+     * @param string $priorityFilter Filter by priority
+     * @param string $search Search in order number, customer name
+     * @return int Total count
+     */
+    public function getTotalCount($statusFilter = '', $priorityFilter = '', $search = '') {
+        $query = "SELECT COUNT(*) as total FROM {$this->table} WHERE 1=1";
+        $params = [];
+        
+        if (!empty($statusFilter)) {
+            $query .= " AND status = :status";
+            $params[':status'] = $statusFilter;
+        }
+        
+        if (!empty($priorityFilter)) {
+            $query .= " AND priority = :priority";
+            $params[':priority'] = $priorityFilter;
+        }
+        
+        if (!empty($search)) {
+            $query .= " AND (order_number LIKE :search OR customer_name LIKE :search OR customer_email LIKE :search)";
+            $params[':search'] = '%' . $search . '%';
+        }
+        
+        try {
+            $stmt = $this->conn->prepare($query);
+            foreach ($params as $key => $value) {
+                $stmt->bindValue($key, $value);
+            }
+            $stmt->execute();
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            return (int)($result['total'] ?? 0);
+        } catch (PDOException $e) {
+            error_log("Error getting orders total count: " . $e->getMessage());
+            return 0;
+        }
+    }
+    
+    /**
+     * Get orders with pagination and filtering
+     * @param int $pageSize Number of orders per page
+     * @param int $offset Starting offset
+     * @param string $statusFilter Filter by status
+     * @param string $priorityFilter Filter by priority
+     * @param string $search Search term
+     * @return array
+     */
+    public function getOrdersPaginated($pageSize, $offset, $statusFilter = '', $priorityFilter = '', $search = '') {
+        $query = "SELECT o.*, 
+                         COALESCE((SELECT SUM(oi.quantity * oi.unit_price) FROM {$this->itemsTable} oi WHERE oi.order_id = o.id), 0) as total_value,
+                         COALESCE((SELECT COUNT(*) FROM {$this->itemsTable} oi WHERE oi.order_id = o.id), 0) as total_items
+                  FROM {$this->table} o
+                  WHERE 1=1";
+        
+        $params = [];
+        
+        if (!empty($statusFilter)) {
+            $query .= " AND o.status = :status";
+            $params[':status'] = $statusFilter;
+        }
+        
+        if (!empty($priorityFilter)) {
+            $query .= " AND o.priority = :priority";
+            $params[':priority'] = $priorityFilter;
+        }
+        
+        if (!empty($search)) {
+            $query .= " AND (o.order_number LIKE :search OR o.customer_name LIKE :search OR o.customer_email LIKE :search)";
+            $params[':search'] = '%' . $search . '%';
+        }
+        
+        $query .= " ORDER BY o.order_date DESC LIMIT :limit OFFSET :offset";
+        
+        try {
+            $stmt = $this->conn->prepare($query);
+            foreach ($params as $key => $value) {
+                $stmt->bindValue($key, $value);
+            }
+            $stmt->bindValue(':limit', $pageSize, PDO::PARAM_INT);
+            $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+            $stmt->execute();
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (PDOException $e) {
+            error_log("Error getting paginated orders: " . $e->getMessage());
+            return [];
+        }
+    }
+    
+    /**
+     * Get unique statuses
+     * @return array
+     */
+    public function getStatuses() {
+        $query = "SELECT DISTINCT status FROM {$this->table} WHERE status IS NOT NULL AND status != '' ORDER BY status";
+        
+        try {
+            $stmt = $this->conn->prepare($query);
+            $stmt->execute();
+            $result = $stmt->fetchAll(PDO::FETCH_COLUMN);
+            
+            // Add common statuses if not present
+            $commonStatuses = ['Pending', 'Processing', 'Shipped', 'Delivered', 'Cancelled'];
+            return array_unique(array_merge($result, $commonStatuses));
+        } catch (PDOException $e) {
+            error_log("Error getting statuses: " . $e->getMessage());
+            return ['Pending', 'Processing', 'Shipped', 'Delivered', 'Cancelled'];
+        }
+    }
+    
+    /**
+     * Get unique priorities
+     * @return array
+     */
+    public function getPriorities() {
+        $query = "SELECT DISTINCT priority FROM {$this->table} WHERE priority IS NOT NULL AND priority != '' ORDER BY priority";
+        
+        try {
+            $stmt = $this->conn->prepare($query);
+            $stmt->execute();
+            $result = $stmt->fetchAll(PDO::FETCH_COLUMN);
+            
+            // Add common priorities if not present
+            $commonPriorities = ['normal', 'high', 'urgent'];
+            return array_unique(array_merge($result, $commonPriorities));
+        } catch (PDOException $e) {
+            error_log("Error getting priorities: " . $e->getMessage());
+            return ['normal', 'high', 'urgent'];
+        }
+    }
+    
+    /**
+     * Create a new order with items
+     * @param array $orderData Order data
+     * @param array $items Order items
      * @return int|false Order ID on success, false on failure
      */
-    public function create(array $orderData, array $items = []): int|false {
-        if (empty($orderData['customer_name']) || empty($items)) {
-            error_log("Order creation failed: Customer name and items are required");
-            return false;
-        }
-
+    public function createOrder(array $orderData, array $items) {
         try {
             $this->conn->beginTransaction();
-
-            if (empty($orderData['order_number'])) {
-                $orderData['order_number'] = $this->generateOrderNumber();
-            }
-
-            // --- ALL FIELDS FOR INSERT ---
-            $allFields = [
-                'order_number', 'type', 'status', 'priority', 'customer_name', 'customer_email',
-                'shipping_address', 'order_date', 'required_date', 'shipped_date',
-                'total_value', 'notes', 'assigned_to', 'created_by', 'recipient_county_id',
-                'recipient_county_name', 'recipient_locality_id', 'recipient_locality_name',
-                'recipient_street_id', 'recipient_street_name', 'recipient_building_number',
-                'recipient_contact_person', 'recipient_phone', 'recipient_email', 'total_weight',
-                'declared_value', 'parcels_count', 'envelopes_count', 'cash_repayment',
-                'bank_repayment', 'saturday_delivery', 'morning_delivery', 'open_package',
-                'observations', 'package_content', 'sender_reference1', 'recipient_reference1',
-                'recipient_reference2', 'invoice_reference', 'sender_location_id'
+            
+            // Create order
+            $query = "INSERT INTO {$this->table} 
+                      (order_number, customer_name, customer_email, shipping_address, order_date, status, priority, notes, created_by, created_at) 
+                      VALUES (:order_number, :customer_name, :customer_email, :shipping_address, :order_date, :status, :priority, :notes, :created_by, NOW())";
+            
+            $stmt = $this->conn->prepare($query);
+            $params = [
+                ':order_number' => $orderData['order_number'],
+                ':customer_name' => $orderData['customer_name'],
+                ':customer_email' => $orderData['customer_email'] ?? '',
+                ':shipping_address' => $orderData['shipping_address'] ?? '',
+                ':order_date' => $orderData['order_date'] ?? date('Y-m-d H:i:s'),
+                ':status' => $orderData['status'] ?? 'Pending',
+                ':priority' => $orderData['priority'] ?? 'normal',
+                ':notes' => $orderData['notes'] ?? '',
+                ':created_by' => $orderData['created_by'] ?? null
             ];
-
-            // --- SET DEFAULTS ---
-            $orderData['type'] = $orderData['type'] ?? 'outbound';
-            $orderData['status'] = $orderData['status'] ?? self::STATUS_PENDING;
-            $orderData['order_date'] = $orderData['order_date'] ?? date('Y-m-d H:i:s');
-            // Assuming created_by is the logged-in user
-            $orderData['created_by'] = $orderData['created_by'] ?? $_SESSION['user_id'] ?? 1;
-
-
-            $providedFields = [];
-            $placeholders = [];
-            $values = [];
-
-            foreach ($allFields as $field) {
-                if (array_key_exists($field, $orderData) && $orderData[$field] !== '') {
-                    $providedFields[] = "`$field`";
-                    $placeholders[] = ":$field";
-                    $values[":$field"] = $orderData[$field];
+            
+            $stmt->execute($params);
+            $orderId = $this->conn->lastInsertId();
+            
+            // Create order items
+            if (!empty($items)) {
+                $itemQuery = "INSERT INTO {$this->itemsTable} 
+                              (order_id, product_id, quantity, unit_price, created_at) 
+                              VALUES (:order_id, :product_id, :quantity, :unit_price, NOW())";
+                
+                $itemStmt = $this->conn->prepare($itemQuery);
+                
+                foreach ($items as $item) {
+                    $itemParams = [
+                        ':order_id' => $orderId,
+                        ':product_id' => $item['product_id'],
+                        ':quantity' => $item['quantity'],
+                        ':unit_price' => $item['unit_price']
+                    ];
+                    $itemStmt->execute($itemParams);
                 }
             }
-
-            $orderQuery = "INSERT INTO {$this->ordersTable} (" . implode(', ', $providedFields) . ") VALUES (" . implode(', ', $placeholders) . ")";
-            $orderStmt = $this->conn->prepare($orderQuery);
-            $orderStmt->execute($values);
-
-            $orderId = $this->conn->lastInsertId();
-
-            // Insert order items
-            // CORRECTED: 'quantity' column is used instead of 'quantity_ordered'
-            $itemQuery = "INSERT INTO {$this->orderItemsTable} (order_id, product_id, quantity_ordered, unit_price, picked_quantity) VALUES (:order_id, :product_id, :quantity_ordered, :unit_price, 0)";
-            $itemStmt = $this->conn->prepare($itemQuery);
-
-            foreach ($items as $item) {
-                $itemStmt->execute([
-                    ':order_id' => $orderId,
-                    ':product_id' => $item['product_id'],
-                    ':quantity_ordered' => $item['quantity'], // CORRECTED
-                    ':unit_price' => $item['unit_price'] ?? 0
-                ]);
-            }
-
+            
             $this->conn->commit();
-            return (int)$orderId;
-
+            return $orderId;
         } catch (PDOException $e) {
-            $this->conn->rollback();
+            $this->conn->rollBack();
             error_log("Error creating order: " . $e->getMessage());
             return false;
         }
     }
-
+    
     /**
-     * Update an existing order.
-     * @param int $orderId The ID of the order to update.
-     * @param array $orderData The data to update.
-     * @return bool True on success, false on failure.
+     * Update order status
+     * @param int $orderId Order ID
+     * @param string $status New status
+     * @return bool
      */
-    public function update(int $orderId, array $orderData): bool {
-        if (empty($orderData)) {
-            return false;
-        }
-
-        // Map front-end names to DB columns if necessary
-        if(isset($orderData['tracking_number'])) {
-            $orderData['awb_barcode'] = $orderData['tracking_number'];
-            unset($orderData['tracking_number']);
-        }
-
-        $fields = [];
-        $params = [':order_id' => $orderId];
-
-        foreach ($orderData as $field => $value) {
-            $fields[] = "`$field` = :$field";
-            $params[":$field"] = $value;
-        }
-
+    public function updateStatus($orderId, $status) {
+        $query = "UPDATE {$this->table} SET status = :status, updated_at = NOW() WHERE id = :id";
+        
         try {
-            $query = "UPDATE {$this->ordersTable} SET " . implode(', ', $fields) . " WHERE id = :order_id";
             $stmt = $this->conn->prepare($query);
-            return $stmt->execute($params);
+            $stmt->bindValue(':id', $orderId, PDO::PARAM_INT);
+            $stmt->bindValue(':status', $status);
+            
+            return $stmt->execute();
         } catch (PDOException $e) {
-            error_log("Error updating order: " . $e->getMessage());
+            error_log("Error updating order status: " . $e->getMessage());
             return false;
         }
     }
     
     /**
-     * Delete an order.
-     * @param int $orderId The ID of the order to delete.
-     * @return bool True on success, false on failure.
+     * Delete an order and its items
+     * @param int $orderId Order ID
+     * @return bool
      */
-    public function delete(int $orderId): bool {
+    public function deleteOrder($orderId) {
         try {
-            // Because of `ON DELETE CASCADE` in the order_items table,
-            // we only need to delete the order itself.
-            $query = "DELETE FROM {$this->ordersTable} WHERE id = :order_id";
-            $stmt = $this->conn->prepare($query);
-            $stmt->bindValue(':order_id', $orderId, PDO::PARAM_INT);
-            return $stmt->execute();
+            $this->conn->beginTransaction();
+            
+            // Delete order items first
+            $itemQuery = "DELETE FROM {$this->itemsTable} WHERE order_id = :order_id";
+            $itemStmt = $this->conn->prepare($itemQuery);
+            $itemStmt->bindValue(':order_id', $orderId, PDO::PARAM_INT);
+            $itemStmt->execute();
+            
+            // Delete order
+            $orderQuery = "DELETE FROM {$this->table} WHERE id = :id";
+            $orderStmt = $this->conn->prepare($orderQuery);
+            $orderStmt->bindValue(':id', $orderId, PDO::PARAM_INT);
+            $result = $orderStmt->execute();
+            
+            $this->conn->commit();
+            return $result;
         } catch (PDOException $e) {
+            $this->conn->rollBack();
             error_log("Error deleting order: " . $e->getMessage());
             return false;
         }
     }
-
-
+    
     /**
-     * Get order by ID with full details.
+     * Get order by ID with items
      * @param int $orderId Order ID
-     * @return array|null Order data with items
+     * @return array|false
      */
-    /**
-     * Get order by ID with full details.
-     * @param int $orderId Order ID
-     * @return array|null Order data with items
-     */
-    public function getOrderById(int $orderId): ?array {
-        try {
-            // Get main order data
-            $orderQuery = "SELECT o.*, COALESCE(o.awb_barcode, '') AS tracking_number
-                        FROM {$this->ordersTable} o
-                        WHERE o.id = :order_id";
-
-            $orderStmt = $this->conn->prepare($orderQuery);
-            $orderStmt->execute([':order_id' => $orderId]);
-            $order = $orderStmt->fetch(PDO::FETCH_ASSOC);
-
-            if (!$order) {
-                return null;
-            }
-
-            // Get order items with correct aliases for the front-end
-            $itemsQuery = "SELECT
-                            oi.quantity AS quantity_ordered,
-                            oi.picked_quantity,
-                            oi.unit_price,
-                            (oi.quantity_ordered * oi.unit_price) AS line_total,
-                            p.name AS product_name,
-                            p.sku
-                        FROM {$this->orderItemsTable} oi
-                        JOIN {$this->productsTable} p ON oi.product_id = p.product_id
-                        WHERE oi.order_id = :order_id";
-
-            $itemsStmt = $this->conn->prepare($itemsQuery);
-            $itemsStmt->execute([':order_id' => $orderId]);
-            $order['items'] = $itemsStmt->fetchAll(PDO::FETCH_ASSOC);
-
-            return $order;
-
-        } catch (PDOException $e) {
-            error_log("Error fetching order by ID: " . $e->getMessage());
-            return null;
-        }
-    }
-
-    /**
-     * Get all orders with optional filters.
-     * @param array $filters Optional filters
-     * @return array Array of orders
-     */
-    public function getAllOrders(array $filters = []): array {
-        $query = "SELECT
-                    o.id, o.order_number, o.customer_name, o.customer_email, o.order_date,
-                    o.status, o.total_value, 
-                    COALESCE(o.awb_barcode, '') AS tracking_number,
-                    COALESCE((
-                        SELECT COUNT(*)
-                        FROM order_items oi
-                        WHERE oi.order_id = o.id
-                    ), 0) as item_count,
-                    COALESCE((
-                        SELECT SUM(oi.quantity)
-                        FROM order_items oi
-                        WHERE oi.order_id = o.id
-                    ), 0) as total_items,
-                    COALESCE((
-                        SELECT SUM(COALESCE(oi.picked_quantity, 0))
-                        FROM order_items oi
-                        WHERE oi.order_id = o.id
-                    ), 0) as picked_items,
-                    COALESCE((
-                        SELECT SUM(oi.quantity)
-                        FROM order_items oi
-                        WHERE oi.order_id = o.id
-                    ), 0) as total_quantity,
-                    COALESCE((
-                        SELECT SUM(COALESCE(oi.picked_quantity, 0))
-                        FROM order_items oi
-                        WHERE oi.order_id = o.id
-                    ), 0) as picked_quantity
-                FROM {$this->ordersTable} o
-                WHERE o.type = 'outbound'";
-    
-        $params = [];
-    
-        if (!empty($filters['status'])) {
-            $query .= " AND o.status = :status";
-            $params[':status'] = $filters['status'];
-        }
-        if (!empty($filters['date_from'])) {
-            $query .= " AND DATE(o.order_date) >= :date_from";
-            $params[':date_from'] = $filters['date_from'];
-        }
-        if (!empty($filters['date_to'])) {
-            $query .= " AND DATE(o.order_date) <= :date_to";
-            $params[':date_to'] = $filters['date_to'];
-        }
-        if (!empty($filters['customer_name'])) {
-            $query .= " AND o.customer_name LIKE :customer_name";
-            $params[':customer_name'] = '%' . $filters['customer_name'] . '%';
-        }
-    
-        $query .= " ORDER BY o.order_date DESC";
-    
+    public function getOrderById($orderId) {
+        $query = "SELECT * FROM {$this->table} WHERE id = :id";
+        
         try {
             $stmt = $this->conn->prepare($query);
-            $stmt->execute($params);
-            $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            $stmt->bindValue(':id', $orderId, PDO::PARAM_INT);
+            $stmt->execute();
+            $order = $stmt->fetch(PDO::FETCH_ASSOC);
             
-            // Ensure all numeric fields are properly set to prevent null errors
-            return array_map(function($order) {
-                return array_merge($order, [
-                    'item_count' => (int)($order['item_count'] ?? 0),
-                    'total_items' => (int)($order['total_items'] ?? 0),
-                    'picked_items' => (int)($order['picked_items'] ?? 0),
-                    'total_quantity' => (int)($order['total_quantity'] ?? 0),
-                    'picked_quantity' => (int)($order['picked_quantity'] ?? 0),
-                    'total_value' => (float)($order['total_value'] ?? 0)
-                ]);
-            }, $results);
+            if ($order) {
+                $order['items'] = $this->getOrderItems($orderId);
+            }
             
+            return $order;
         } catch (PDOException $e) {
-            error_log("Error fetching all orders: " . $e->getMessage());
+            error_log("Error getting order by ID: " . $e->getMessage());
+            return false;
+        }
+    }
+    
+    /**
+     * Get order items
+     * @param int $orderId Order ID
+     * @return array
+     */
+    public function getOrderItems($orderId) {
+        $query = "SELECT oi.*, p.name as product_name, p.sku 
+                  FROM {$this->itemsTable} oi
+                  LEFT JOIN products p ON oi.product_id = p.product_id
+                  WHERE oi.order_id = :order_id
+                  ORDER BY oi.id";
+        
+        try {
+            $stmt = $this->conn->prepare($query);
+            $stmt->bindValue(':order_id', $orderId, PDO::PARAM_INT);
+            $stmt->execute();
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (PDOException $e) {
+            error_log("Error getting order items: " . $e->getMessage());
             return [];
         }
     }
-
+    
     /**
-     * Get available order statuses with Romanian translations.
-     * @return array Array of status options
+     * Get all orders with basic info
+     * @return array
      */
-    public function getStatuses(): array {
-        return [
-            self::STATUS_PENDING => 'În Așteptare',
-            self::STATUS_PROCESSING => 'În Procesare',
-            self::STATUS_SHIPPED => 'Expediat',
-            self::STATUS_COMPLETED => 'Finalizat',
-            self::STATUS_CANCELLED => 'Anulat',
-        ];
+    public function getAllOrders() {
+        $query = "SELECT * FROM {$this->table} ORDER BY order_date DESC";
+        
+        try {
+            $stmt = $this->conn->prepare($query);
+            $stmt->execute();
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (PDOException $e) {
+            error_log("Error getting all orders: " . $e->getMessage());
+            return [];
+        }
     }
     
     /**
-     * Generate a unique order number.
-     * @return string Generated order number
+     * Get orders by status
+     * @param string $status Order status
+     * @return array
      */
-    private function generateOrderNumber(): string {
-        $prefix = 'CMD';
-        $date = date('Ymd');
-        $sequence = str_pad(rand(1, 9999), 4, '0', STR_PAD_LEFT);
-        return "{$prefix}-{$date}-{$sequence}";
-    }
-
-    public function countActiveOrders(): int {
+    public function getOrdersByStatus($status) {
+        $query = "SELECT * FROM {$this->table} WHERE status = :status ORDER BY order_date DESC";
+        
         try {
-            $stmt = $this->conn->prepare("SELECT COUNT(*) FROM {$this->ordersTable} WHERE status IN ('pending', 'processing')");
+            $stmt = $this->conn->prepare($query);
+            $stmt->bindValue(':status', $status);
             $stmt->execute();
-            return (int)$stmt->fetchColumn();
-        } catch (Exception $e) {
-            error_log("Error counting active errors: " . $e->getMessage());
-            return 0;
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (PDOException $e) {
+            error_log("Error getting orders by status: " . $e->getMessage());
+            return [];
         }
     }
-
-    public function countShippedToday(): int {
+    
+    /**
+     * Update order
+     * @param int $orderId Order ID
+     * @param array $orderData Order data
+     * @return bool
+     */
+    public function updateOrder($orderId, array $orderData) {
+        $query = "UPDATE {$this->table} 
+                  SET customer_name = :customer_name, 
+                      customer_email = :customer_email, 
+                      shipping_address = :shipping_address, 
+                      status = :status, 
+                      priority = :priority, 
+                      notes = :notes, 
+                      updated_at = NOW()
+                  WHERE id = :id";
+        
         try {
-            $today = date('Y-m-d');
-            $stmt = $this->conn->prepare("SELECT COUNT(*) FROM {$this->ordersTable} WHERE status = 'shipped' AND DATE(shipped_date) = ?");
-            $stmt->execute([$today]);
-            return (int)$stmt->fetchColumn();
+            $stmt = $this->conn->prepare($query);
+            $params = [
+                ':id' => $orderId,
+                ':customer_name' => $orderData['customer_name'],
+                ':customer_email' => $orderData['customer_email'] ?? '',
+                ':shipping_address' => $orderData['shipping_address'] ?? '',
+                ':status' => $orderData['status'] ?? 'Pending',
+                ':priority' => $orderData['priority'] ?? 'normal',
+                ':notes' => $orderData['notes'] ?? ''
+            ];
+            
+            return $stmt->execute($params);
         } catch (PDOException $e) {
-            error_log("Error counting shipped orders today: " . $e->getMessage());
-            return 0;
+            error_log("Error updating order: " . $e->getMessage());
+            return false;
         }
     }
 }

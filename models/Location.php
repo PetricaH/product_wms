@@ -1,282 +1,467 @@
 <?php
-/**
- * Enhanced Location Model with full CRUD operations
- * Manages warehouse locations with zone/type hierarchy
- */
 
+// File: models/Location.php - Updated for locations page functionality
 class Location {
     private $conn;
-    private $locationsTable = "locations";
-    private $inventoryTable = "inventory";
-
+    private $table = "locations";
+    
     public function __construct($db) {
         $this->conn = $db;
     }
-
+    
     /**
-     * Get all locations with inventory occupancy data
-     * @return array Array of location records with occupancy info
+     * Get total count of locations with filters
+     * @param string $zoneFilter Filter by zone
+     * @param string $typeFilter Filter by type  
+     * @param string $search Search in location codes
+     * @return int Total count
      */
-    public function getAllLocations(): array {
+    public function getTotalCount($zoneFilter = '', $typeFilter = '', $search = '') {
+        $query = "SELECT COUNT(*) as total FROM {$this->table} WHERE 1=1";
+        $params = [];
+        
+        if (!empty($zoneFilter)) {
+            $query .= " AND zone = :zone";
+            $params[':zone'] = $zoneFilter;
+        }
+        
+        if (!empty($typeFilter)) {
+            $query .= " AND type = :type";
+            $params[':type'] = $typeFilter;
+        }
+        
+        if (!empty($search)) {
+            $query .= " AND location_code LIKE :search";
+            $params[':search'] = '%' . $search . '%';
+        }
+        
+        try {
+            $stmt = $this->conn->prepare($query);
+            foreach ($params as $key => $value) {
+                $stmt->bindValue($key, $value);
+            }
+            $stmt->execute();
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            return (int)($result['total'] ?? 0);
+        } catch (PDOException $e) {
+            error_log("Error getting total count: " . $e->getMessage());
+            return 0;
+        }
+    }
+    
+    /**
+     * Get locations with pagination and filtering
+     * @param int $pageSize Number of locations per page
+     * @param int $offset Starting offset
+     * @param string $zoneFilter Filter by zone
+     * @param string $typeFilter Filter by type
+     * @param string $search Search in location codes
+     * @return array
+     */
+    public function getLocationsPaginated($pageSize, $offset, $zoneFilter = '', $typeFilter = '', $search = '') {
         $query = "SELECT l.*, 
-                         COUNT(DISTINCT i.product_id) as product_count,
                          COALESCE(SUM(i.quantity), 0) as total_items
-                  FROM {$this->locationsTable} l
-                  LEFT JOIN {$this->inventoryTable} i ON l.id = i.location_id AND i.quantity > 0
-                  GROUP BY l.id
-                  ORDER BY l.zone ASC, l.location_code ASC";
+                  FROM {$this->table} l
+                  LEFT JOIN inventory i ON l.id = i.location_id
+                  WHERE 1=1";
+        
+        $params = [];
+        
+        if (!empty($zoneFilter)) {
+            $query .= " AND l.zone = :zone";
+            $params[':zone'] = $zoneFilter;
+        }
+        
+        if (!empty($typeFilter)) {
+            $query .= " AND l.type = :type";
+            $params[':type'] = $typeFilter;
+        }
+        
+        if (!empty($search)) {
+            $query .= " AND l.location_code LIKE :search";
+            $params[':search'] = '%' . $search . '%';
+        }
+        
+        $query .= " GROUP BY l.id ORDER BY l.zone, l.location_code LIMIT :limit OFFSET :offset";
+        
+        try {
+            $stmt = $this->conn->prepare($query);
+            foreach ($params as $key => $value) {
+                $stmt->bindValue($key, $value);
+            }
+            $stmt->bindValue(':limit', $pageSize, PDO::PARAM_INT);
+            $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+            $stmt->execute();
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (PDOException $e) {
+            error_log("Error getting paginated locations: " . $e->getMessage());
+            return [];
+        }
+    }
+    
+    /**
+     * Get all locations with inventory information and filtering
+     * @param string $zoneFilter Filter by zone
+     * @param string $typeFilter Filter by type
+     * @param string $search Search in location codes
+     * @return array
+     */
+    public function getLocationsWithInventory($zoneFilter = '', $typeFilter = '', $search = '') {
+        $query = "SELECT l.*, 
+                         COALESCE(SUM(i.quantity), 0) as total_items
+                  FROM {$this->table} l
+                  LEFT JOIN inventory i ON l.id = i.location_id
+                  WHERE 1=1";
+        
+        $params = [];
+        
+        if (!empty($zoneFilter)) {
+            $query .= " AND l.zone = :zone";
+            $params[':zone'] = $zoneFilter;
+        }
+        
+        if (!empty($typeFilter)) {
+            $query .= " AND l.type = :type";
+            $params[':type'] = $typeFilter;
+        }
+        
+        if (!empty($search)) {
+            $query .= " AND l.location_code LIKE :search";
+            $params[':search'] = '%' . $search . '%';
+        }
+        
+        $query .= " GROUP BY l.id ORDER BY l.zone, l.location_code";
+        
+        try {
+            $stmt = $this->conn->prepare($query);
+            foreach ($params as $key => $value) {
+                $stmt->bindValue($key, $value);
+            }
+            $stmt->execute();
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (PDOException $e) {
+            error_log("Error getting locations with inventory: " . $e->getMessage());
+            return [];
+        }
+    }
+    
+    /**
+     * Get all locations
+     * @return array
+     */
+    public function getAllLocations() {
+        $query = "SELECT * FROM {$this->table} ORDER BY zone, location_code";
         
         try {
             $stmt = $this->conn->prepare($query);
             $stmt->execute();
             return $stmt->fetchAll(PDO::FETCH_ASSOC);
         } catch (PDOException $e) {
-            error_log("Error fetching all locations: " . $e->getMessage());
+            error_log("Error getting all locations: " . $e->getMessage());
             return [];
         }
     }
-
+    
     /**
-     * Get a single location by ID
-     * @param int $id Location ID
-     * @return array|false Location data or false if not found
+     * Get location by ID
+     * @param int $locationId
+     * @return array|false
      */
-    public function findById(int $id) {
-        $query = "SELECT l.*, 
-                         COUNT(DISTINCT i.product_id) as product_count,
-                         COALESCE(SUM(i.quantity), 0) as total_items
-                  FROM {$this->locationsTable} l
-                  LEFT JOIN {$this->inventoryTable} i ON l.id = i.location_id AND i.quantity > 0
-                  WHERE l.id = :id
-                  GROUP BY l.id";
+    public function getLocationById($locationId) {
+        $query = "SELECT * FROM {$this->table} WHERE id = :id";
         
         try {
             $stmt = $this->conn->prepare($query);
-            $stmt->bindParam(':id', $id, PDO::PARAM_INT);
+            $stmt->bindValue(':id', $locationId, PDO::PARAM_INT);
             $stmt->execute();
-            
-            $location = $stmt->fetch(PDO::FETCH_ASSOC);
-            return $location ?: false;
+            return $stmt->fetch(PDO::FETCH_ASSOC);
         } catch (PDOException $e) {
-            error_log("Error finding location by ID: " . $e->getMessage());
+            error_log("Error getting location by ID: " . $e->getMessage());
             return false;
         }
     }
-
+    
     /**
-     * Create a new location
-     * @param array $data Location data
-     * @return int|false Location ID on success, false on failure
+     * Get location by code
+     * @param string $locationCode
+     * @return array|false
      */
-    public function create(array $data): int|false {
-        if (empty($data['location_code']) || empty($data['zone']) || empty($data['type'])) {
-            error_log("Location creation failed: Required fields missing");
-            return false;
-        }
-
-        // Check if location code already exists
-        if ($this->locationCodeExists($data['location_code'])) {
-            error_log("Location creation failed: Location code already exists");
-            return false;
-        }
-
-        $query = "INSERT INTO {$this->locationsTable} (location_code, zone, type) 
-                  VALUES (:location_code, :zone, :type)";
+    public function getLocationByCode($locationCode) {
+        $query = "SELECT * FROM {$this->table} WHERE location_code = :code";
         
         try {
             $stmt = $this->conn->prepare($query);
-            $stmt->bindParam(':location_code', $data['location_code'], PDO::PARAM_STR);
-            $stmt->bindParam(':zone', $data['zone'], PDO::PARAM_STR);
-            $stmt->bindParam(':type', $data['type'], PDO::PARAM_STR);
+            $stmt->bindValue(':code', $locationCode);
             $stmt->execute();
+            return $stmt->fetch(PDO::FETCH_ASSOC);
+        } catch (PDOException $e) {
+            error_log("Error getting location by code: " . $e->getMessage());
+            return false;
+        }
+    }
+    
+    /**
+     * Create a new location
+     * @param array $locationData
+     * @return int|false Location ID on success, false on failure
+     */
+    public function createLocation(array $locationData) {
+        $query = "INSERT INTO {$this->table} 
+                  (location_code, zone, type, capacity, description, status, created_at) 
+                  VALUES (:location_code, :zone, :type, :capacity, :description, :status, NOW())";
+        
+        try {
+            // Check if location code already exists
+            if ($this->getLocationByCode($locationData['location_code'])) {
+                return false; // Location code already exists
+            }
             
-            return (int)$this->conn->lastInsertId();
+            $stmt = $this->conn->prepare($query);
+            $params = [
+                ':location_code' => $locationData['location_code'],
+                ':zone' => $locationData['zone'],
+                ':type' => $locationData['type'] ?? 'Standard',
+                ':capacity' => $locationData['capacity'] ?? null,
+                ':description' => $locationData['description'] ?? '',
+                ':status' => $locationData['status'] ?? 1
+            ];
+            
+            $success = $stmt->execute($params);
+            return $success ? $this->conn->lastInsertId() : false;
         } catch (PDOException $e) {
             error_log("Error creating location: " . $e->getMessage());
             return false;
         }
     }
-
+    
     /**
-     * Update a location
-     * @param int $id Location ID
-     * @param array $data Location data to update
-     * @return bool Success status
+     * Update an existing location
+     * @param int $locationId
+     * @param array $locationData
+     * @return bool
      */
-    public function update(int $id, array $data): bool {
-        if (empty($data)) {
-            return false;
-        }
-
-        // Check if location code is being changed and if it already exists
-        if (isset($data['location_code']) && $this->locationCodeExists($data['location_code'], $id)) {
-            error_log("Location update failed: Location code already exists");
-            return false;
-        }
-
-        $fields = [];
-        $params = [':id' => $id];
-
-        $allowedFields = ['location_code', 'zone', 'type'];
-        foreach ($allowedFields as $field) {
-            if (isset($data[$field])) {
-                $fields[] = "{$field} = :{$field}";
-                $params[":{$field}"] = $data[$field];
-            }
-        }
-
-        if (empty($fields)) {
-            return false;
-        }
-
-        $query = "UPDATE {$this->locationsTable} SET " . implode(', ', $fields) . " WHERE id = :id";
+    public function updateLocation($locationId, array $locationData) {
+        $query = "UPDATE {$this->table} 
+                  SET location_code = :location_code, 
+                      zone = :zone, 
+                      type = :type, 
+                      capacity = :capacity, 
+                      description = :description, 
+                      status = :status, 
+                      updated_at = NOW()
+                  WHERE id = :id";
         
         try {
+            // Check if location code already exists for different location
+            $existing = $this->getLocationByCode($locationData['location_code']);
+            if ($existing && $existing['id'] != $locationId) {
+                return false; // Location code already exists for different location
+            }
+            
             $stmt = $this->conn->prepare($query);
+            $params = [
+                ':id' => $locationId,
+                ':location_code' => $locationData['location_code'],
+                ':zone' => $locationData['zone'],
+                ':type' => $locationData['type'] ?? 'Standard',
+                ':capacity' => $locationData['capacity'] ?? null,
+                ':description' => $locationData['description'] ?? '',
+                ':status' => $locationData['status'] ?? 1
+            ];
+            
             return $stmt->execute($params);
         } catch (PDOException $e) {
             error_log("Error updating location: " . $e->getMessage());
             return false;
         }
     }
-
+    
     /**
-     * Delete a location (only if no inventory exists)
-     * @param int $id Location ID
-     * @return bool Success status
+     * Delete a location
+     * @param int $locationId
+     * @return bool
      */
-    public function delete(int $id): bool {
-        // Check if location has any inventory
-        if ($this->hasInventory($id)) {
-            error_log("Cannot delete location: Location has inventory");
-            return false;
-        }
-
-        $query = "DELETE FROM {$this->locationsTable} WHERE id = :id";
-        
+    public function deleteLocation($locationId) {
         try {
+            // Check if location has inventory
+            if ($this->hasInventory($locationId)) {
+                return false; // Cannot delete location with inventory
+            }
+            
+            $query = "DELETE FROM {$this->table} WHERE id = :id";
             $stmt = $this->conn->prepare($query);
-            $stmt->bindParam(':id', $id, PDO::PARAM_INT);
+            $stmt->bindValue(':id', $locationId, PDO::PARAM_INT);
+            
             return $stmt->execute();
         } catch (PDOException $e) {
             error_log("Error deleting location: " . $e->getMessage());
             return false;
         }
     }
-
+    
     /**
-     * Check if location code already exists
-     * @param string $locationCode Location code to check
-     * @param int|null $excludeId Location ID to exclude from check (for updates)
-     * @return bool True if exists, false otherwise
+     * Check if location has inventory
+     * @param int $locationId
+     * @return bool
      */
-    private function locationCodeExists(string $locationCode, int $excludeId = null): bool {
-        $query = "SELECT COUNT(*) FROM {$this->locationsTable} WHERE location_code = :location_code";
-        $params = [':location_code' => $locationCode];
-
-        if ($excludeId !== null) {
-            $query .= " AND id != :exclude_id";
-            $params[':exclude_id'] = $excludeId;
-        }
-
-        try {
-            $stmt = $this->conn->prepare($query);
-            $stmt->execute($params);
-            return $stmt->fetchColumn() > 0;
-        } catch (PDOException $e) {
-            error_log("Error checking location code existence: " . $e->getMessage());
-            return true; // Assume exists to prevent duplicates
-        }
-    }
-
-    /**
-     * Check if location has any inventory
-     * @param int $locationId Location ID
-     * @return bool True if has inventory, false otherwise
-     */
-    private function hasInventory(int $locationId): bool {
-        $query = "SELECT COUNT(*) FROM {$this->inventoryTable} WHERE location_id = :location_id AND quantity > 0";
+    public function hasInventory($locationId) {
+        $query = "SELECT COUNT(*) as count FROM inventory WHERE location_id = :location_id AND quantity > 0";
         
         try {
             $stmt = $this->conn->prepare($query);
-            $stmt->bindParam(':location_id', $locationId, PDO::PARAM_INT);
+            $stmt->bindValue(':location_id', $locationId, PDO::PARAM_INT);
             $stmt->execute();
-            return $stmt->fetchColumn() > 0;
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            return $result['count'] > 0;
         } catch (PDOException $e) {
             error_log("Error checking location inventory: " . $e->getMessage());
-            return true; // Assume has inventory to prevent deletion
+            return false;
         }
     }
-
+    
     /**
-     * Get unique zones for dropdown/filtering
-     * @return array Array of zone names
+     * Get unique zones
+     * @return array
      */
-    public function getZones(): array {
-        $query = "SELECT DISTINCT zone FROM {$this->locationsTable} ORDER BY zone ASC";
+    public function getZones() {
+        $query = "SELECT DISTINCT zone FROM {$this->table} WHERE zone IS NOT NULL AND zone != '' ORDER BY zone";
         
         try {
             $stmt = $this->conn->prepare($query);
             $stmt->execute();
             return $stmt->fetchAll(PDO::FETCH_COLUMN);
         } catch (PDOException $e) {
-            error_log("Error fetching zones: " . $e->getMessage());
+            error_log("Error getting zones: " . $e->getMessage());
             return [];
         }
     }
-
+    
     /**
-     * Get unique types for dropdown/filtering
-     * @return array Array of type names
+     * Get unique types
+     * @return array
      */
-    public function getTypes(): array {
-        $query = "SELECT DISTINCT type FROM {$this->locationsTable} ORDER BY type ASC";
+    public function getTypes() {
+        $query = "SELECT DISTINCT type FROM {$this->table} WHERE type IS NOT NULL AND type != '' ORDER BY type";
         
         try {
             $stmt = $this->conn->prepare($query);
             $stmt->execute();
             return $stmt->fetchAll(PDO::FETCH_COLUMN);
         } catch (PDOException $e) {
-            error_log("Error fetching types: " . $e->getMessage());
+            error_log("Error getting types: " . $e->getMessage());
             return [];
         }
     }
-
-    // Dashboard methods (existing)
-    public function countTotalLocations(): int {
-        $query = "SELECT COUNT(id) FROM " . $this->locationsTable;
+    
+    /**
+     * Get locations by zone
+     * @param string $zone
+     * @return array
+     */
+    public function getLocationsByZone($zone) {
+        $query = "SELECT * FROM {$this->table} WHERE zone = :zone ORDER BY location_code";
+        
+        try {
+            $stmt = $this->conn->prepare($query);
+            $stmt->bindValue(':zone', $zone);
+            $stmt->execute();
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (PDOException $e) {
+            error_log("Error getting locations by zone: " . $e->getMessage());
+            return [];
+        }
+    }
+    
+    /**
+     * Get active locations
+     * @return array
+     */
+    public function getActiveLocations() {
+        $query = "SELECT * FROM {$this->table} WHERE status = 1 ORDER BY zone, location_code";
+        
         try {
             $stmt = $this->conn->prepare($query);
             $stmt->execute();
-            return (int) $stmt->fetchColumn();
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
         } catch (PDOException $e) {
-            error_log("Error counting total locations: " . $e->getMessage());
-            return 0;
+            error_log("Error getting active locations: " . $e->getMessage());
+            return [];
         }
     }
-
-    public function countOccupiedLocations(): int {
-        $query = "SELECT COUNT(DISTINCT location_id)
-                    FROM " . $this->inventoryTable . "
-                    WHERE quantity > 0";
+    
+    /**
+     * Get location occupancy statistics
+     * @param int $locationId
+     * @return array
+     */
+    public function getLocationOccupancy($locationId) {
+        $query = "SELECT l.capacity, 
+                         COALESCE(SUM(i.quantity), 0) as current_items,
+                         COUNT(DISTINCT i.product_id) as unique_products
+                  FROM {$this->table} l
+                  LEFT JOIN inventory i ON l.id = i.location_id
+                  WHERE l.id = :location_id
+                  GROUP BY l.id, l.capacity";
+        
+        try {
+            $stmt = $this->conn->prepare($query);
+            $stmt->bindValue(':location_id', $locationId, PDO::PARAM_INT);
+            $stmt->execute();
+            return $stmt->fetch(PDO::FETCH_ASSOC);
+        } catch (PDOException $e) {
+            error_log("Error getting location occupancy: " . $e->getMessage());
+            return [];
+        }
+    }
+    
+    /**
+     * Update location status
+     * @param int $locationId
+     * @param int $status
+     * @return bool
+     */
+    public function updateStatus($locationId, $status) {
+        $query = "UPDATE {$this->table} SET status = :status, updated_at = NOW() WHERE id = :id";
+        
+        try {
+            $stmt = $this->conn->prepare($query);
+            $stmt->bindValue(':id', $locationId, PDO::PARAM_INT);
+            $stmt->bindValue(':status', $status, PDO::PARAM_INT);
+            
+            return $stmt->execute();
+        } catch (PDOException $e) {
+            error_log("Error updating location status: " . $e->getMessage());
+            return false;
+        }
+    }
+    
+    /**
+     * Get locations with low capacity (over 80% full)
+     * @return array
+     */
+    public function getHighOccupancyLocations() {
+        $query = "SELECT l.*, 
+                         l.capacity,
+                         COALESCE(SUM(i.quantity), 0) as current_items,
+                         CASE 
+                             WHEN l.capacity > 0 THEN (COALESCE(SUM(i.quantity), 0) / l.capacity) * 100
+                             ELSE 0
+                         END as occupancy_percentage
+                  FROM {$this->table} l
+                  LEFT JOIN inventory i ON l.id = i.location_id
+                  WHERE l.capacity > 0 AND l.status = 1
+                  GROUP BY l.id
+                  HAVING occupancy_percentage >= 80
+                  ORDER BY occupancy_percentage DESC";
+        
         try {
             $stmt = $this->conn->prepare($query);
             $stmt->execute();
-            return (int) $stmt->fetchColumn();
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
         } catch (PDOException $e) {
-            error_log("Error counting occupied locations: " . $e->getMessage());
-            return 0;
+            error_log("Error getting high occupancy locations: " . $e->getMessage());
+            return [];
         }
-    }
-
-    public function calculateOccupationPercentage(): float {
-        $totalLocations = $this->countTotalLocations();
-        if ($totalLocations === 0) {
-            return 0.0;
-        }
-        $occupiedLocations = $this->countOccupiedLocations();
-
-        $percentage = ((float)$occupiedLocations / $totalLocations) * 100;
-        return round($percentage, 2);
     }
 }

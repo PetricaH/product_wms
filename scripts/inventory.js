@@ -1,47 +1,35 @@
-// Modal functions
-        function openAddStockModal() {
-            document.getElementById('addStockModal').style.display = 'block';
+  function openAddStockModal() {
+            document.getElementById('addStockModal').classList.add('show');
         }
 
         function closeAddStockModal() {
-            document.getElementById('addStockModal').style.display = 'none';
+            document.getElementById('addStockModal').classList.remove('show');
         }
 
-        function openRemoveStockModal() {
-            document.getElementById('removeStockModal').style.display = 'block';
+        function openRemoveStockModal(productId, productName) {
+            document.getElementById('remove-product-id').value = productId;
+            document.getElementById('remove-product-name').textContent = productName;
+            document.getElementById('removeStockModal').classList.add('show');
         }
 
         function closeRemoveStockModal() {
-            document.getElementById('removeStockModal').style.display = 'none';
+            document.getElementById('removeStockModal').classList.remove('show');
         }
 
         function openMoveStockModal(item) {
-            document.getElementById('move_inventory_id').value = item.id;
-            document.getElementById('move_quantity').max = item.quantity;
-            
-            const infoHtml = `
-                <h4>Informații Stoc</h4>
-                <p><strong>Produs:</strong> ${item.sku} - ${item.product_name}</p>
-                <p><strong>Locația Curentă:</strong> ${item.location_code} (${item.zone})</p>
-                <p><strong>Cantitate Disponibilă:</strong> ${parseInt(item.quantity).toLocaleString()}</p>
-                ${item.batch_number ? `<p><strong>Batch:</strong> ${item.batch_number}</p>` : ''}
-                ${item.lot_number ? `<p><strong>Lot:</strong> ${item.lot_number}</p>` : ''}
-            `;
-            
-            document.getElementById('move_stock_info').innerHTML = infoHtml;
-            document.getElementById('moveStockModal').style.display = 'block';
+            document.getElementById('move-inventory-id').value = item.id;
+            document.getElementById('move-product-name').textContent = item.product_name;
+            document.getElementById('available-quantity').textContent = parseInt(item.quantity).toLocaleString();
+            document.getElementById('move-quantity').max = item.quantity;
+            document.getElementById('moveStockModal').classList.add('show');
         }
 
         function closeMoveStockModal() {
-            document.getElementById('moveStockModal').style.display = 'none';
+            document.getElementById('moveStockModal').classList.remove('show');
         }
 
-        function viewProductDetails(productId) {
-            window.location.href = `?view=detailed&product_id=${productId}`;
-        }
-
-        function quickAddStock(productId) {
-            document.getElementById('add_product_id').value = productId;
+        function addStockForProduct(productId) {
+            document.getElementById('add-product').value = productId;
             openAddStockModal();
         }
 
@@ -51,7 +39,7 @@
             modals.forEach(modalId => {
                 const modal = document.getElementById(modalId);
                 if (event.target === modal) {
-                    modal.style.display = 'none';
+                    modal.classList.remove('show');
                 }
             });
         }

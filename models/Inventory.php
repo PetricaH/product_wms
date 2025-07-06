@@ -1,7 +1,7 @@
 <?php
 /**
  * Complete Enhanced Inventory Model with FIFO support
- * Replaces the existing basic Inventory.php model
+ * Updated to include missing methods called by inventory.php
  * Maintains compatibility with existing dashboard methods
  */
 
@@ -13,6 +13,63 @@ class Inventory {
 
     public function __construct($db) {
         $this->conn = $db;
+    }
+
+    /**
+     * Get inventory with filters - Method called by inventory.php
+     * @param string $productFilter Product ID filter
+     * @param string $locationFilter Location ID filter  
+     * @param bool $lowStockOnly Show only low stock items
+     * @return array Array of inventory records
+     */
+    public function getInventoryWithFilters($productFilter = '', $locationFilter = '', $lowStockOnly = false): array {
+        $query = "SELECT i.*, 
+                         p.sku, p.name as product_name, p.description as product_description, 
+                         p.category, p.min_stock_level, p.price,
+                         l.name as location_name, l.description as location_description,
+                         l.location_code, l.zone, l.type as location_type
+                  FROM {$this->inventoryTable} i
+                  LEFT JOIN {$this->productsTable} p ON i.product_id = p.product_id
+                  LEFT JOIN {$this->locationsTable} l ON i.location_id = l.id
+                  WHERE i.quantity > 0";
+
+        $params = [];
+
+        // Apply product filter
+        if (!empty($productFilter)) {
+            $query .= " AND i.product_id = :product_id";
+            $params[':product_id'] = $productFilter;
+        }
+
+        // Apply location filter
+        if (!empty($locationFilter)) {
+            $query .= " AND i.location_id = :location_id";
+            $params[':location_id'] = $locationFilter;
+        }
+
+        // Apply low stock filter
+        if ($lowStockOnly) {
+            $query .= " AND i.quantity <= COALESCE(p.min_stock_level, 5)";
+        }
+
+        $query .= " ORDER BY p.name ASC, l.name ASC, i.received_at ASC";
+
+        try {
+            $stmt = $this->conn->prepare($query);
+            $stmt->execute($params);
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (PDOException $e) {
+            error_log("Error fetching inventory with filters: " . $e->getMessage());
+            return [];
+        }
+    }
+
+    /**
+     * Get low stock items - Method called by inventory.php
+     * @return array Array of products below minimum stock level
+     */
+    public function getLowStockItems(): array {
+        return $this->getLowStockProducts();
     }
 
     /**
@@ -115,7 +172,7 @@ class Inventory {
      * @return int|false Inventory record ID on success, false on failure
      */
     public function addStock(array $data): int|false {
-        // 1) Check required fields
+        // Check required fields
         $requiredFields = ['product_id', 'location_id', 'quantity'];
         foreach ($requiredFields as $field) {
             if (empty($data[$field]) && $data[$field] !== 0) {
@@ -123,55 +180,65 @@ class Inventory {
                 return false;
             }
         }
-    
-        // 2) Default received_at if not provided
+
+        // Default received_at if not provided
         if (empty($data['received_at'])) {
             $data['received_at'] = date('Y-m-d H:i:s');
         }
-    
-        // 3) Normalize nullable fields into actual variables
+
+        // Normalize nullable fields
         $batchNumber = $data['batch_number'] ?? null;
         $lotNumber   = $data['lot_number']   ?? null;
         $expiryDate  = $data['expiry_date']  ?? null;
-    
-        // 4) Prepare SQL
-        $query = "INSERT INTO {$this->inventoryTable} 
-                  (product_id, location_id, quantity, received_at, batch_number, lot_number, expiry_date)
-                  VALUES (:product_id, :location_id, :quantity, :received_at, :batch_number, :lot_number, :expiry_date)";
-    
+
+        // Handle empty strings as null for date fields
+        if (empty($expiryDate)) {
+            $expiryDate = null;
+        }
+
         try {
-            // Ensure PDO throws exceptions
-            $this->conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-    
+            $this->conn->beginTransaction();
+
+            // Insert inventory record
+            $query = "INSERT INTO {$this->inventoryTable} 
+                      (product_id, location_id, quantity, batch_number, lot_number, expiry_date, received_at) 
+                      VALUES (:product_id, :location_id, :quantity, :batch_number, :lot_number, :expiry_date, :received_at)";
+
             $stmt = $this->conn->prepare($query);
-    
-            // 5) Bind values
-            $stmt->bindValue(':product_id',   $data['product_id'], PDO::PARAM_INT);
-            $stmt->bindValue(':location_id',  $data['location_id'], PDO::PARAM_INT);
-            $stmt->bindValue(':quantity',     $data['quantity'],    PDO::PARAM_INT);
-            $stmt->bindValue(':received_at',  $data['received_at'], PDO::PARAM_STR);
-            $stmt->bindValue(':batch_number', $batchNumber,         PDO::PARAM_STR);
-            $stmt->bindValue(':lot_number',   $lotNumber,           PDO::PARAM_STR);
-            $stmt->bindValue(':expiry_date',  $expiryDate,          PDO::PARAM_STR);
-    
-            // 6) Execute and return new ID
-            $stmt->execute();
-            return (int)$this->conn->lastInsertId();
-    
+            $stmt->bindParam(':product_id', $data['product_id'], PDO::PARAM_INT);
+            $stmt->bindParam(':location_id', $data['location_id'], PDO::PARAM_INT);
+            $stmt->bindParam(':quantity', $data['quantity'], PDO::PARAM_INT);
+            $stmt->bindParam(':batch_number', $batchNumber, PDO::PARAM_STR);
+            $stmt->bindParam(':lot_number', $lotNumber, PDO::PARAM_STR);
+            $stmt->bindParam(':expiry_date', $expiryDate, PDO::PARAM_STR);
+            $stmt->bindParam(':received_at', $data['received_at'], PDO::PARAM_STR);
+
+            if (!$stmt->execute()) {
+                $this->conn->rollBack();
+                error_log("Add stock failed: Failed to insert inventory record");
+                return false;
+            }
+
+            $inventoryId = $this->conn->lastInsertId();
+
+            // Update product total quantity (if products table has quantity column)
+            $this->updateProductTotalQuantity($data['product_id']);
+
+            $this->conn->commit();
+            return (int) $inventoryId;
+
         } catch (PDOException $e) {
-            // Show the real error in-page for debugging
-            echo "<pre>Eroare la adăugarea stocului: " . htmlspecialchars($e->getMessage()) . "</pre>";
-            // Also log it
-            error_log("Error adding stock: " . $e->getMessage());
+            $this->conn->rollBack();
+            error_log("Add stock failed: " . $e->getMessage());
             return false;
         }
     }
 
     /**
-     * Remove stock from inventory using FIFO logic
+     * Remove stock from inventory using FIFO method
      * @param int $productId Product ID
      * @param int $quantity Quantity to remove
-     * @param int|null $locationId Specific location (optional)
+     * @param int|null $locationId Optional specific location
      * @return bool Success status
      */
     public function removeStock(int $productId, int $quantity, ?int $locationId = null): bool {
@@ -183,243 +250,118 @@ class Inventory {
         try {
             $this->conn->beginTransaction();
 
-            // Get available inventory using FIFO (oldest first)
-            $query = "SELECT id, location_id, quantity, received_at 
-                      FROM {$this->inventoryTable} 
-                      WHERE product_id = :product_id AND quantity > 0";
+            // Get available stock using FIFO (oldest first)
+            $query = "SELECT i.id, i.quantity, i.location_id
+                      FROM {$this->inventoryTable} i
+                      WHERE i.product_id = :product_id AND i.quantity > 0";
             
             $params = [':product_id' => $productId];
             
             if ($locationId !== null) {
-                $query .= " AND location_id = :location_id";
+                $query .= " AND i.location_id = :location_id";
                 $params[':location_id'] = $locationId;
             }
             
-            $query .= " ORDER BY received_at ASC, id ASC";
+            $query .= " ORDER BY i.received_at ASC, i.id ASC";
 
             $stmt = $this->conn->prepare($query);
             $stmt->execute($params);
             $inventoryRecords = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-            $remainingToRemove = $quantity;
-            $removedRecords = [];
+            if (empty($inventoryRecords)) {
+                $this->conn->rollBack();
+                error_log("Remove stock failed: No stock available");
+                return false;
+            }
 
+            // Check if enough stock is available
+            $totalAvailable = array_sum(array_column($inventoryRecords, 'quantity'));
+            if ($totalAvailable < $quantity) {
+                $this->conn->rollBack();
+                error_log("Remove stock failed: Insufficient stock (available: {$totalAvailable}, requested: {$quantity})");
+                return false;
+            }
+
+            // Remove stock using FIFO
+            $remainingToRemove = $quantity;
             foreach ($inventoryRecords as $record) {
-                if ($remainingToRemove <= 0) break;
+                if ($remainingToRemove <= 0) {
+                    break;
+                }
 
                 $inventoryId = $record['id'];
-                $availableQuantity = (int)$record['quantity'];
-                $quantityToRemove = min($remainingToRemove, $availableQuantity);
+                $availableQty = $record['quantity'];
 
-                // Update inventory record
-                $updateQuery = "UPDATE {$this->inventoryTable} 
-                               SET quantity = quantity - :quantity_to_remove 
-                               WHERE id = :inventory_id";
-                
-                $updateStmt = $this->conn->prepare($updateQuery);
-                $updateStmt->bindParam(':quantity_to_remove', $quantityToRemove, PDO::PARAM_INT);
-                $updateStmt->bindParam(':inventory_id', $inventoryId, PDO::PARAM_INT);
-                $updateStmt->execute();
+                if ($availableQty <= $remainingToRemove) {
+                    // Remove entire record
+                    $removeQuery = "DELETE FROM {$this->inventoryTable} WHERE id = :id";
+                    $removeStmt = $this->conn->prepare($removeQuery);
+                    $removeStmt->bindParam(':id', $inventoryId, PDO::PARAM_INT);
+                    $removeStmt->execute();
 
-                $remainingToRemove -= $quantityToRemove;
-                $removedRecords[] = [
-                    'inventory_id' => $inventoryId,
-                    'location_id' => $record['location_id'],
-                    'quantity_removed' => $quantityToRemove,
-                    'received_at' => $record['received_at']
-                ];
+                    $remainingToRemove -= $availableQty;
+                } else {
+                    // Partial removal - update quantity
+                    $newQty = $availableQty - $remainingToRemove;
+                    $updateQuery = "UPDATE {$this->inventoryTable} SET quantity = :quantity WHERE id = :id";
+                    $updateStmt = $this->conn->prepare($updateQuery);
+                    $updateStmt->bindParam(':quantity', $newQty, PDO::PARAM_INT);
+                    $updateStmt->bindParam(':id', $inventoryId, PDO::PARAM_INT);
+                    $updateStmt->execute();
+
+                    $remainingToRemove = 0;
+                }
             }
 
-            if ($remainingToRemove > 0) {
-                $this->conn->rollback();
-                error_log("Remove stock failed: Insufficient inventory. Remaining: {$remainingToRemove}");
-                return false;
-            }
+            // Update product total quantity
+            $this->updateProductTotalQuantity($productId);
 
             $this->conn->commit();
             return true;
 
         } catch (PDOException $e) {
-            $this->conn->rollback();
-            error_log("Error removing stock: " . $e->getMessage());
+            $this->conn->rollBack();
+            error_log("Remove stock failed: " . $e->getMessage());
             return false;
         }
     }
 
     /**
-     * Move stock from one location to another
-     * @param int $inventoryId Inventory record ID
-     * @param int $newLocationId New location ID
-     * @param int $quantity Quantity to move (optional, moves all if not specified)
-     * @return bool Success status
+     * Update product total quantity in products table
+     * @param int $productId Product ID
+     * @return void
      */
-    public function moveStock(int $inventoryId, int $newLocationId, ?int $quantity = null): bool {
+    private function updateProductTotalQuantity(int $productId): void {
         try {
-            $this->conn->beginTransaction();
-
-            // Get current inventory record
-            $query = "SELECT * FROM {$this->inventoryTable} WHERE id = :inventory_id";
-            $stmt = $this->conn->prepare($query);
-            $stmt->bindParam(':inventory_id', $inventoryId, PDO::PARAM_INT);
-            $stmt->execute();
-            $inventoryRecord = $stmt->fetch(PDO::FETCH_ASSOC);
-
-            if (!$inventoryRecord) {
-                $this->conn->rollback();
-                return false;
-            }
-
-            $availableQuantity = (int)$inventoryRecord['quantity'];
-            $moveQuantity = $quantity ?? $availableQuantity;
-
-            if ($moveQuantity > $availableQuantity || $moveQuantity <= 0) {
-                $this->conn->rollback();
-                return false;
-            }
-
-            // Create new inventory record at new location
-            $insertQuery = "INSERT INTO {$this->inventoryTable} 
-                           (product_id, location_id, quantity, received_at, batch_number, lot_number, expiry_date)
-                           VALUES (:product_id, :location_id, :quantity, :received_at, :batch_number, :lot_number, :expiry_date)";
+            // Check if products table has quantity column
+            $checkQuery = "SHOW COLUMNS FROM {$this->productsTable} LIKE 'quantity'";
+            $checkStmt = $this->conn->prepare($checkQuery);
+            $checkStmt->execute();
             
-            $insertStmt = $this->conn->prepare($insertQuery);
-            $insertStmt->bindParam(':product_id', $inventoryRecord['product_id'], PDO::PARAM_INT);
-            $insertStmt->bindParam(':location_id', $newLocationId, PDO::PARAM_INT);
-            $insertStmt->bindParam(':quantity', $moveQuantity, PDO::PARAM_INT);
-            $insertStmt->bindParam(':received_at', $inventoryRecord['received_at'], PDO::PARAM_STR);
-            $insertStmt->bindParam(':batch_number', $inventoryRecord['batch_number'], PDO::PARAM_STR);
-            $insertStmt->bindParam(':lot_number', $inventoryRecord['lot_number'], PDO::PARAM_STR);
-            $insertStmt->bindParam(':expiry_date', $inventoryRecord['expiry_date'], PDO::PARAM_STR);
-            $insertStmt->execute();
-
-            // Update original inventory record
-            if ($moveQuantity == $availableQuantity) {
-                // Remove the record if moving all quantity
-                $deleteQuery = "DELETE FROM {$this->inventoryTable} WHERE id = :inventory_id";
-                $deleteStmt = $this->conn->prepare($deleteQuery);
-                $deleteStmt->bindParam(':inventory_id', $inventoryId, PDO::PARAM_INT);
-                $deleteStmt->execute();
-            } else {
-                // Reduce quantity in original location
-                $updateQuery = "UPDATE {$this->inventoryTable} 
-                               SET quantity = quantity - :move_quantity 
-                               WHERE id = :inventory_id";
-                $updateStmt = $this->conn->prepare($updateQuery);
-                $updateStmt->bindParam(':move_quantity', $moveQuantity, PDO::PARAM_INT);
-                $updateStmt->bindParam(':inventory_id', $inventoryId, PDO::PARAM_INT);
-                $updateStmt->execute();
+            if ($checkStmt->rowCount() > 0) {
+                // Update total quantity in products table
+                $updateQuery = "UPDATE {$this->productsTable} p 
+                                SET quantity = (
+                                    SELECT COALESCE(SUM(i.quantity), 0) 
+                                    FROM {$this->inventoryTable} i 
+                                    WHERE i.product_id = p.product_id
+                                ) 
+                                WHERE p.product_id = :product_id";
+                
+                $stmt = $this->conn->prepare($updateQuery);
+                $stmt->bindParam(':product_id', $productId, PDO::PARAM_INT);
+                $stmt->execute();
             }
-
-            $this->conn->commit();
-            return true;
-
         } catch (PDOException $e) {
-            $this->conn->rollback();
-            error_log("Error moving stock: " . $e->getMessage());
-            return false;
+            error_log("Warning: Could not update product total quantity: " . $e->getMessage());
         }
     }
 
     /**
-     * Get products with low stock levels
-     * @return array Array of products below minimum stock level
+     * Get stock summary by SKU
+     * @param string $sku Product SKU
+     * @return array Stock summary data
      */
-    public function getLowStockProducts(): array {
-        $query = "SELECT p.product_id, p.sku, p.name, p.min_stock_level,
-                         COALESCE(SUM(i.quantity), 0) as current_stock,
-                         COUNT(DISTINCT i.location_id) as locations_count
-                  FROM {$this->productsTable} p
-                  LEFT JOIN {$this->inventoryTable} i ON p.product_id = i.product_id AND i.quantity > 0
-                  GROUP BY p.product_id
-                  HAVING current_stock <= p.min_stock_level OR current_stock = 0
-                  ORDER BY current_stock ASC, p.name ASC";
-
-        try {
-            $stmt = $this->conn->prepare($query);
-            $stmt->execute();
-            return $stmt->fetchAll(PDO::FETCH_ASSOC);
-        } catch (PDOException $e) {
-            error_log("Error fetching low stock products: " . $e->getMessage());
-            return [];
-        }
-    }
-
-    /**
-     * Get stock summary by product
-     * @return array Array of products with total stock levels
-     */
-    public function getStockSummary(): array {
-        $query = "SELECT p.product_id, p.sku, p.name, p.category, p.min_stock_level,
-                         COALESCE(SUM(i.quantity), 0) as total_stock,
-                         COUNT(DISTINCT i.location_id) as locations_count,
-                         MAX(i.received_at) as last_received
-                  FROM {$this->productsTable} p
-                  LEFT JOIN {$this->inventoryTable} i ON p.product_id = i.product_id AND i.quantity > 0
-                  GROUP BY p.product_id
-                  ORDER BY p.name ASC";
-
-        try {
-            $stmt = $this->conn->prepare($query);
-            $stmt->execute();
-            return $stmt->fetchAll(PDO::FETCH_ASSOC);
-        } catch (PDOException $e) {
-            error_log("Error fetching stock summary: " . $e->getMessage());
-            return [];
-        }
-    }
-
-    /**
-     * Get products that are expiring soon (within 30 days)
-     * @return array Array of products expiring soon
-     */
-    public function getExpiringProducts(): array {
-        $query = "SELECT i.*, p.sku, p.name as product_name, l.location_code,
-                         DATEDIFF(i.expiry_date, CURDATE()) as days_until_expiry
-                  FROM {$this->inventoryTable} i
-                  LEFT JOIN {$this->productsTable} p ON i.product_id = p.product_id
-                  LEFT JOIN {$this->locationsTable} l ON i.location_id = l.id
-                  WHERE i.expiry_date IS NOT NULL 
-                    AND i.quantity > 0
-                    AND DATEDIFF(i.expiry_date, CURDATE()) <= 30
-                  ORDER BY i.expiry_date ASC";
-
-        try {
-            $stmt = $this->conn->prepare($query);
-            $stmt->execute();
-            return $stmt->fetchAll(PDO::FETCH_ASSOC);
-        } catch (PDOException $e) {
-            error_log("Error fetching expiring products: " . $e->getMessage());
-            return [];
-        }
-    }
-
-    /**
-     * Get inventory movements history (for audit trail)
-     * @param int $limit Number of records to return
-     * @return array Array of recent inventory movements
-     */
-    public function getMovementHistory(int $limit = 100): array {
-        // This would require a separate movements table in a full implementation
-        // For now, we'll return recent inventory additions
-        $query = "SELECT i.*, p.sku, p.name as product_name, l.location_code,
-                         'RECEIVED' as movement_type
-                  FROM {$this->inventoryTable} i
-                  LEFT JOIN {$this->productsTable} p ON i.product_id = p.product_id
-                  LEFT JOIN {$this->locationsTable} l ON i.location_id = l.id
-                  ORDER BY i.created_at DESC
-                  LIMIT :limit";
-
-        try {
-            $stmt = $this->conn->prepare($query);
-            $stmt->bindParam(':limit', $limit, PDO::PARAM_INT);
-            $stmt->execute();
-            return $stmt->fetchAll(PDO::FETCH_ASSOC);
-        } catch (PDOException $e) {
-            error_log("Error fetching movement history: " . $e->getMessage());
-            return [];
-        }
-    }
-
     public function getStockSummaryBySku(string $sku): array {
         $query = "SELECT 
                     COALESCE(SUM(i.quantity), 0) as total_quantity,
@@ -489,51 +431,184 @@ class Inventory {
     }
 
     /**
-     * Get count of low stock products
-     * @return int Number of products below minimum stock level
+     * Get products with low stock levels
+     * @return array Array of products below minimum stock level
      */
-    public function getLowStockCount(): int {
-        $query = "SELECT COUNT(*) as low_stock_count
-                  FROM (
-                      SELECT p.product_id,
-                             COALESCE(SUM(i.quantity), 0) as current_stock,
-                             p.min_stock_level
-                      FROM {$this->productsTable} p
-                      LEFT JOIN {$this->inventoryTable} i ON p.product_id = i.product_id AND i.quantity > 0
-                      GROUP BY p.product_id
-                      HAVING current_stock <= p.min_stock_level
-                  ) as low_stock_products";
+    public function getLowStockProducts(): array {
+        $query = "SELECT p.product_id, p.sku, p.name, p.min_stock_level,
+                         COALESCE(SUM(i.quantity), 0) as current_stock,
+                         COUNT(DISTINCT i.location_id) as locations_count
+                  FROM {$this->productsTable} p
+                  LEFT JOIN {$this->inventoryTable} i ON p.product_id = i.product_id AND i.quantity > 0
+                  GROUP BY p.product_id
+                  HAVING current_stock <= COALESCE(p.min_stock_level, 5) OR current_stock = 0
+                  ORDER BY current_stock ASC, p.name ASC";
 
+        try {
+            $stmt = $this->conn->prepare($query);
+            $stmt->execute();
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (PDOException $e) {
+            error_log("Error fetching low stock products: " . $e->getMessage());
+            return [];
+        }
+    }
+
+    /**
+     * Get stock summary by product
+     * @return array Array of products with total stock levels
+     */
+    public function getStockSummary(): array {
+        $query = "SELECT p.product_id, p.sku, p.name, p.category, p.min_stock_level,
+                         COALESCE(SUM(i.quantity), 0) as total_stock,
+                         COUNT(DISTINCT i.location_id) as locations_count,
+                         MAX(i.received_at) as last_received
+                  FROM {$this->productsTable} p
+                  LEFT JOIN {$this->inventoryTable} i ON p.product_id = i.product_id AND i.quantity > 0
+                  GROUP BY p.product_id
+                  ORDER BY p.name ASC";
+
+        try {
+            $stmt = $this->conn->prepare($query);
+            $stmt->execute();
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (PDOException $e) {
+            error_log("Error fetching stock summary: " . $e->getMessage());
+            return [];
+        }
+    }
+
+    /**
+     * Get products that are expiring soon (within 30 days)
+     * @return array Array of products expiring soon
+     */
+    public function getExpiringProducts(): array {
+        $query = "SELECT i.*, p.sku, p.name as product_name, l.name as location_name,
+                         DATEDIFF(i.expiry_date, CURDATE()) as days_until_expiry
+                  FROM {$this->inventoryTable} i
+                  LEFT JOIN {$this->productsTable} p ON i.product_id = p.product_id
+                  LEFT JOIN {$this->locationsTable} l ON i.location_id = l.id
+                  WHERE i.expiry_date IS NOT NULL 
+                        AND i.expiry_date >= CURDATE()
+                        AND i.expiry_date <= DATE_ADD(CURDATE(), INTERVAL 30 DAY)
+                        AND i.quantity > 0
+                  ORDER BY i.expiry_date ASC";
+
+        try {
+            $stmt = $this->conn->prepare($query);
+            $stmt->execute();
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (PDOException $e) {
+            error_log("Error fetching expiring products: " . $e->getMessage());
+            return [];
+        }
+    }
+
+    /**
+     * Get expired products
+     * @return array Array of expired products
+     */
+    public function getExpiredProducts(): array {
+        $query = "SELECT i.*, p.sku, p.name as product_name, l.name as location_name,
+                         DATEDIFF(CURDATE(), i.expiry_date) as days_expired
+                  FROM {$this->inventoryTable} i
+                  LEFT JOIN {$this->productsTable} p ON i.product_id = p.product_id
+                  LEFT JOIN {$this->locationsTable} l ON i.location_id = l.id
+                  WHERE i.expiry_date IS NOT NULL 
+                        AND i.expiry_date < CURDATE()
+                        AND i.quantity > 0
+                  ORDER BY i.expiry_date ASC";
+
+        try {
+            $stmt = $this->conn->prepare($query);
+            $stmt->execute();
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (PDOException $e) {
+            error_log("Error fetching expired products: " . $e->getMessage());
+            return [];
+        }
+    }
+
+    /**
+     * Move stock from one location to another
+     * @param int $productId Product ID
+     * @param int $fromLocationId Source location ID
+     * @param int $toLocationId Destination location ID
+     * @param int $quantity Quantity to move
+     * @return bool Success status
+     */
+    public function moveStock(int $productId, int $fromLocationId, int $toLocationId, int $quantity): bool {
+        if ($quantity <= 0) {
+            error_log("Move stock failed: Invalid quantity");
+            return false;
+        }
+
+        try {
+            $this->conn->beginTransaction();
+
+            // Remove stock from source location
+            if (!$this->removeStock($productId, $quantity, $fromLocationId)) {
+                $this->conn->rollBack();
+                return false;
+            }
+
+            // Add stock to destination location
+            $addData = [
+                'product_id' => $productId,
+                'location_id' => $toLocationId,
+                'quantity' => $quantity,
+                'received_at' => date('Y-m-d H:i:s')
+            ];
+
+            if (!$this->addStock($addData)) {
+                $this->conn->rollBack();
+                return false;
+            }
+
+            $this->conn->commit();
+            return true;
+
+        } catch (Exception $e) {
+            $this->conn->rollBack();
+            error_log("Move stock failed: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Get total unique products count in inventory
+     * @return int Count of unique products
+     */
+    public function getUniqueProductsCount(): int {
+        $query = "SELECT COUNT(DISTINCT product_id) as unique_products 
+                  FROM {$this->inventoryTable} 
+                  WHERE quantity > 0";
+        
         try {
             $stmt = $this->conn->prepare($query);
             $stmt->execute();
             return (int) $stmt->fetchColumn();
         } catch (PDOException $e) {
-            error_log("Error counting low stock products: " . $e->getMessage());
+            error_log("Error counting unique products: " . $e->getMessage());
             return 0;
         }
     }
 
     /**
-     * Get count of products expiring within specified days
-     * @param int $days Number of days to check (default 30)
-     * @return int Number of products expiring
+     * Get total locations with stock
+     * @return int Count of locations with stock
      */
-    public function getExpiringCount(int $days = 30): int {
-        $query = "SELECT COUNT(DISTINCT i.product_id) as expiring_count
-                  FROM {$this->inventoryTable} i
-                  WHERE i.expiry_date IS NOT NULL 
-                    AND i.quantity > 0
-                    AND DATEDIFF(i.expiry_date, CURDATE()) <= :days
-                    AND DATEDIFF(i.expiry_date, CURDATE()) >= 0";
-
+    public function getLocationsWithStockCount(): int {
+        $query = "SELECT COUNT(DISTINCT location_id) as locations_with_stock 
+                  FROM {$this->inventoryTable} 
+                  WHERE quantity > 0";
+        
         try {
             $stmt = $this->conn->prepare($query);
-            $stmt->bindParam(':days', $days, PDO::PARAM_INT);
             $stmt->execute();
             return (int) $stmt->fetchColumn();
         } catch (PDOException $e) {
-            error_log("Error counting expiring products: " . $e->getMessage());
+            error_log("Error counting locations with stock: " . $e->getMessage());
             return 0;
         }
     }

@@ -1,0 +1,530 @@
+/* ===== SMARTBILL SYNC PAGE STYLES ===== */
+/* Compact design inspired by products page */
+
+/* ===== MAIN LAYOUT ===== */
+.sync-container {
+    background: var(--app-gradient);
+    min-height: 100vh;
+}
+
+.sync-container .container {
+    margin: 0 auto;
+}
+
+.page-container {
+    flex: 1;
+    padding: var(--base-padding);
+    background-color: var(--container-background);
+    margin: var(--base-padding);
+    border-radius: var(--border-radius);
+    box-shadow: var(--base-shadow);
+    border: 1px solid var(--border-color);
+    transition: var(--transition);
+}
+
+/* ===== COMPACT PAGE HEADER ===== */
+.page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 1rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--border-color);
+    gap: 1rem;
+}
+
+.header-left {
+    flex: 1;
+}
+
+.page-title {
+    font-size: 1.6rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.page-title .material-symbols-outlined {
+    font-size: 1.6rem;
+}
+
+.page-stats {
+    display: flex;
+    gap: 1rem;
+    margin-top: 0.25rem;
+}
+
+.stat-badge {
+    background-color: var(--surface-background);
+    color: var(--text-secondary);
+    padding: 0.25rem 0.75rem;
+    border-radius: 12px;
+    font-size: 0.8rem;
+    border: 1px solid var(--border-color);
+}
+
+.stat-badge strong {
+    color: var(--text-primary);
+}
+
+/* ===== COMPACT SYNC ACTIONS ===== */
+.header-actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+/* ===== COMPACT FILTERS/CONTROLS BAR ===== */
+.controls-bar {
+    background-color: var(--surface-background);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    padding: 0.75rem;
+    margin-bottom: 1rem;
+}
+
+.controls-form {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+/* ===== TAB NAVIGATION ===== */
+.content-tabs {
+    margin-bottom: 1rem;
+}
+
+.tab-buttons {
+    display: flex;
+    gap: 0.25rem;
+    margin-bottom: 1rem;
+    border-bottom: 1px solid var(--border-color);
+    overflow-x: auto;
+}
+
+.tab-button {
+    padding: 0.5rem 1rem;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-size: 0.85rem;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.tab-button:hover {
+    color: var(--text-primary);
+    background: var(--button-hover);
+}
+
+.tab-button.active {
+    border-bottom-color: var(--primary-color);
+    color: var(--primary-color);
+    font-weight: 600;
+}
+
+.tab-content {
+    display: none;
+}
+
+.tab-content.active {
+    display: block;
+}
+
+/* ===== COMPACT TABLE LAYOUT ===== */
+.table-container {
+    background-color: var(--container-background);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    overflow: hidden;
+    margin-bottom: 1rem;
+}
+
+.table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0;
+    font-size: 0.85rem;
+}
+
+.table th {
+    background-color: var(--surface-background);
+    color: var(--text-primary);
+    font-weight: 600;
+    padding: 0.75rem 0.5rem;
+    text-align: left;
+    border-bottom: 2px solid var(--border-color);
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.table td {
+    padding: 0.6rem 0.5rem;
+    border-bottom: 1px solid var(--border-color);
+    vertical-align: middle;
+}
+
+.table tbody tr {
+    transition: var(--transition);
+}
+
+.table tbody tr:hover {
+    background-color: var(--button-hover);
+}
+
+.table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+/* ===== SCHEDULE CARDS (Compact) ===== */
+.schedule-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+    gap: 1rem;
+}
+
+.schedule-card {
+    background: var(--container-background);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    overflow: hidden;
+}
+
+.schedule-header {
+    padding: 0.75rem 1rem;
+    background: var(--surface-background);
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.schedule-title {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.schedule-title .material-symbols-outlined {
+    font-size: 1.1rem;
+    color: var(--text-secondary);
+}
+
+.schedule-body {
+    padding: 1rem;
+}
+
+.schedule-form {
+    display: grid;
+    gap: 0.75rem;
+}
+
+.form-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 0.75rem;
+    align-items: end;
+}
+
+.form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.form-group label {
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.form-group input,
+.form-group select {
+    padding: 0.5rem;
+    border: 1px solid var(--input-border);
+    border-radius: 4px;
+    background: var(--input-background);
+    color: var(--text-primary);
+    font-size: 0.85rem;
+    transition: border-color 0.2s ease;
+}
+
+.form-group input:focus,
+.form-group select:focus {
+    outline: none;
+    border-color: var(--input-focus);
+}
+
+.checkbox-group {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.checkbox-group input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--primary-color);
+}
+
+.checkbox-group label {
+    font-size: 0.85rem;
+    color: var(--text-primary);
+    cursor: pointer;
+}
+
+.schedule-info {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-top: 0.5rem;
+}
+
+/* ===== CONFIG SECTION (Compact) ===== */
+.config-container {
+    background: var(--container-background);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    overflow: hidden;
+}
+
+.config-header {
+    padding: 0.75rem 1rem;
+    background: var(--surface-background);
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.config-header h3 {
+    margin: 0;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.config-header .material-symbols-outlined {
+    color: var(--text-secondary);
+    font-size: 1.1rem;
+}
+
+.config-body {
+    padding: 1rem;
+}
+
+.config-form {
+    display: grid;
+    gap: 1rem;
+}
+
+.config-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 0.75rem;
+}
+
+.config-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.config-item label {
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.config-item input {
+    padding: 0.5rem;
+    border: 1px solid var(--input-border);
+    border-radius: 4px;
+    background: var(--input-background);
+    color: var(--text-primary);
+    font-size: 0.85rem;
+}
+
+.config-item input:focus {
+    outline: none;
+    border-color: var(--input-focus);
+}
+
+.config-actions {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: flex-end;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--border-color);
+}
+
+/* ===== STATUS BADGES (Compact) ===== */
+.status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.2rem 0.5rem;
+    border-radius: 12px;
+    font-weight: 500;
+    font-size: 0.75rem;
+    white-space: nowrap;
+}
+
+.status-badge .material-symbols-outlined {
+    font-size: 0.8rem;
+}
+
+.status-success {
+    background: rgba(25, 135, 84, 0.1);
+    color: var(--success-color);
+    border: 1px solid rgba(25, 135, 84, 0.2);
+}
+
+.status-warning {
+    background: rgba(255, 193, 7, 0.1);
+    color: var(--warning-color);
+    border: 1px solid rgba(255, 193, 7, 0.2);
+}
+
+.status-danger {
+    background: rgba(220, 53, 69, 0.1);
+    color: var(--danger-color);
+    border: 1px solid rgba(220, 53, 69, 0.2);
+}
+
+.status-info {
+    background: rgba(13, 202, 240, 0.1);
+    color: var(--info-color);
+    border: 1px solid rgba(13, 202, 240, 0.2);
+}
+
+/* ===== MESSAGES (Compact) ===== */
+.message {
+    padding: 0.75rem;
+    border-radius: 4px;
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.85rem;
+}
+
+.message.success {
+    background: rgba(25, 135, 84, 0.1);
+    color: var(--success-color);
+    border: 1px solid rgba(25, 135, 84, 0.2);
+}
+
+.message.error {
+    background: rgba(220, 53, 69, 0.1);
+    color: var(--danger-color);
+    border: 1px solid rgba(220, 53, 69, 0.2);
+}
+
+.message .material-symbols-outlined {
+    font-size: 1.1rem;
+}
+
+/* ===== LOADING STATES ===== */
+.loading {
+    opacity: 0.6;
+    pointer-events: none;
+    position: relative;
+}
+
+.loading::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 16px;
+    height: 16px;
+    margin: -8px 0 0 -8px;
+    border: 2px solid var(--border-color);
+    border-top-color: var(--primary-color);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* ===== TEXT UTILITIES ===== */
+.text-muted {
+    color: var(--text-muted);
+    font-size: 0.8rem;
+}
+
+.text-center {
+    text-align: center;
+}
+
+/* ===== RESPONSIVE DESIGN ===== */
+@media (max-width: 768px) {
+    .sync-container .container {
+        padding: 0 1rem;
+    }
+    
+    .page-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.5rem;
+    }
+    
+    .page-stats {
+        flex-wrap: wrap;
+    }
+    
+    .header-actions {
+        width: 100%;
+        justify-content: stretch;
+    }
+    
+    .header-actions .btn {
+        flex: 1;
+        font-size: 0.8rem;
+        padding: 0.5rem;
+    }
+    
+    .tab-buttons {
+        flex-wrap: wrap;
+    }
+    
+    .schedule-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .form-row,
+    .config-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 480px) {
+    .page-title {
+        font-size: 1.4rem;
+    }
+    
+    .table th,
+    .table td {
+        padding: 0.5rem 0.25rem;
+        font-size: 0.8rem;
+    }
+    
+    .schedule-body,
+    .config-body {
+        padding: 0.75rem;
+    }
+}

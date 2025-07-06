@@ -55,7 +55,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
       'inventory' => 'inventory.css',
       'orders' => 'orders.css',
       'transactions' => 'transactions.css',
-      'smartbill-sync' => 'smartbill-sync.css',
+      'smartbill-sync' => 'smartbill_sync.css',
       'activities' => 'activities.css'
   ];
   

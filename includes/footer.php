@@ -16,7 +16,8 @@ $pageSpecificJS = [
     'users' => 'users.js',
     'transactions' => 'transactions.js',
     'theme-toggle' => 'theme-toggle.js',
-    'universal' => 'universal.js'
+    'universal' => 'universal.js',
+    'smartbill-sync' => 'smartbill_sync.js'
     // Add any other page-specific script mappings here.
 ];
 

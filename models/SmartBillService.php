@@ -1045,5 +1045,229 @@ class SmartBillService {
         $encrypted = substr($data, 16);
         return openssl_decrypt($encrypted, 'AES-256-CBC', $key, 0, $iv);
     }
+
+    /**
+ * Get sync statistics for dashboard
+ * @return array Statistics for the last 24 hours
+ */
+public function getSyncStats(): array {
+    try {
+        // Get stats for the last 24 hours
+        $query = "SELECT 
+                    COUNT(CASE WHEN status = 'success' THEN 1 END) as successful_syncs,
+                    COUNT(CASE WHEN status = 'failed' THEN 1 END) as failed_syncs,
+                    COUNT(CASE WHEN status = 'partial' THEN 1 END) as partial_syncs,
+                    MAX(created_at) as last_sync_time
+                  FROM smartbill_sync_log 
+                  WHERE created_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)";
+        
+        $stmt = $this->conn->prepare($query);
+        $stmt->execute();
+        $stats = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        return [
+            'successful_syncs' => (int)$stats['successful_syncs'],
+            'failed_syncs' => (int)$stats['failed_syncs'],
+            'partial_syncs' => (int)$stats['partial_syncs'],
+            'last_sync' => $stats['last_sync_time'] ? 
+                          date('d.m.Y H:i', strtotime($stats['last_sync_time'])) : '-'
+        ];
+        
+    } catch (PDOException $e) {
+        error_log("Error getting sync stats: " . $e->getMessage());
+        return [
+            'successful_syncs' => 0,
+            'failed_syncs' => 0,
+            'partial_syncs' => 0,
+            'last_sync' => '-'
+        ];
+    }
+}
+
+/**
+ * Enhanced connection test with detailed diagnostics
+ * @return array Detailed connection test results
+ */
+public function testConnectionDetailed(): array {
+    $results = [
+        'success' => false,
+        'message' => '',
+        'tests' => [],
+        'config_status' => 'incomplete'
+    ];
+    
+    try {
+        // Test 1: Configuration check
+        $configTest = [
+            'name' => 'Configuration Check',
+            'status' => 'failed',
+            'message' => ''
+        ];
+        
+        if (empty($this->username) || empty($this->token)) {
+            $configTest['message'] = 'Username or token not configured';
+        } else {
+            $configTest['status'] = 'passed';
+            $configTest['message'] = 'API credentials configured';
+            $results['config_status'] = 'complete';
+        }
+        $results['tests'][] = $configTest;
+        
+        // Test 2: API connectivity
+        $connectTest = [
+            'name' => 'API Connectivity',
+            'status' => 'failed',
+            'message' => ''
+        ];
+        
+        if ($results['config_status'] === 'complete') {
+            try {
+                // Simple API test - attempt to get stocks
+                $response = $this->makeApiCall('GET', '/stocks?warehouseName=Marfa');
+                $connectTest['status'] = 'passed';
+                $connectTest['message'] = 'Successfully connected to SmartBill API';
+            } catch (Exception $e) {
+                $connectTest['message'] = 'Connection failed: ' . $e->getMessage();
+            }
+        } else {
+            $connectTest['message'] = 'Cannot test - credentials not configured';
+        }
+        $results['tests'][] = $connectTest;
+        
+        // Test 3: Database tables
+        $dbTest = [
+            'name' => 'Database Tables',
+            'status' => 'failed',
+            'message' => ''
+        ];
+        
+        $requiredTables = [
+            'smartbill_config',
+            'smartbill_sync_schedule', 
+            'smartbill_sync_log',
+            'smartbill_invoices'
+        ];
+        
+        $missingTables = [];
+        foreach ($requiredTables as $table) {
+            if (!$this->tableExists($table)) {
+                $missingTables[] = $table;
+            }
+        }
+        
+        if (empty($missingTables)) {
+            $dbTest['status'] = 'passed';
+            $dbTest['message'] = 'All required database tables exist';
+        } else {
+            $dbTest['message'] = 'Missing tables: ' . implode(', ', $missingTables);
+        }
+        $results['tests'][] = $dbTest;
+        
+        // Overall result
+        $allPassed = true;
+        foreach ($results['tests'] as $test) {
+            if ($test['status'] !== 'passed') {
+                $allPassed = false;
+                break;
+            }
+        }
+        
+        $results['success'] = $allPassed;
+        $results['message'] = $allPassed ? 
+            'All tests passed - SmartBill integration ready' :
+            'Some tests failed - check configuration';
+            
+    } catch (Exception $e) {
+        $results['message'] = 'Test error: ' . $e->getMessage();
+        error_log("SmartBill connection test error: " . $e->getMessage());
+    }
+    
+    return $results;
+}
+
+/**
+ * Get recent sync activity for dashboard widgets
+ * @param int $limit Number of recent activities to return
+ * @return array Recent sync activities
+ */
+public function getRecentSyncActivity(int $limit = 10): array {
+    try {
+        $query = "SELECT 
+                    sync_type,
+                    status,
+                    processed_count,
+                    error_count,
+                    execution_time,
+                    created_at,
+                    CASE 
+                        WHEN status = 'success' THEN 'success'
+                        WHEN status = 'partial' THEN 'warning' 
+                        ELSE 'danger'
+                    END as badge_class
+                  FROM smartbill_sync_log 
+                  ORDER BY created_at DESC 
+                  LIMIT ?";
+        
+        $stmt = $this->conn->prepare($query);
+        $stmt->execute([$limit]);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+    } catch (PDOException $e) {
+        error_log("Error getting recent sync activity: " . $e->getMessage());
+        return [];
+    }
+}
+
+/**
+ * Create or update sync schedule
+ * @param string $syncType Type of synchronization
+ * @param array $settings Schedule settings
+ * @return bool Success status
+ */
+public function updateSyncSchedule(string $syncType, array $settings): bool {
+    try {
+        $query = "INSERT INTO smartbill_sync_schedule 
+                  (sync_type, is_enabled, interval_minutes, max_items_per_run) 
+                  VALUES (?, ?, ?, ?)
+                  ON DUPLICATE KEY UPDATE
+                  is_enabled = VALUES(is_enabled),
+                  interval_minutes = VALUES(interval_minutes),
+                  max_items_per_run = VALUES(max_items_per_run),
+                  updated_at = CURRENT_TIMESTAMP";
+        
+        $stmt = $this->conn->prepare($query);
+        return $stmt->execute([
+            $syncType,
+            $settings['is_enabled'] ?? 0,
+            $settings['interval_minutes'] ?? 15,
+            $settings['max_items_per_run'] ?? 50
+        ]);
+        
+    } catch (PDOException $e) {
+        error_log("Error updating sync schedule: " . $e->getMessage());
+        return false;
+    }
+}
+
+/**
+ * Clear old sync logs to maintain performance
+ * @param int $daysToKeep Number of days of logs to keep
+ * @return int Number of deleted records
+ */
+public function cleanupOldSyncLogs(int $daysToKeep = 30): int {
+    try {
+        $query = "DELETE FROM smartbill_sync_log 
+                  WHERE created_at < DATE_SUB(NOW(), INTERVAL ? DAY)";
+        
+        $stmt = $this->conn->prepare($query);
+        $stmt->execute([$daysToKeep]);
+        
+        return $stmt->rowCount();
+        
+    } catch (PDOException $e) {
+        error_log("Error cleaning up sync logs: " . $e->getMessage());
+        return 0;
+    }
+}
 }
 ?>

@@ -428,15 +428,13 @@ class Product {
      * @return array Distinct categories
      */
     public function getCategories() {
-        $query = "SELECT DISTINCT category as name, category as id 
-                  FROM {$this->table} 
-                  WHERE category IS NOT NULL AND category != '' 
-                  ORDER BY category";
+        $query = "SELECT DISTINCT category FROM {$this->table} WHERE category IS NOT NULL AND category != '' ORDER BY category ASC";
         
         try {
             $stmt = $this->conn->prepare($query);
             $stmt->execute();
-            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+            // **FIX**: Use FETCH_COLUMN to return a simple array of strings, which is what the view expects.
+            return $stmt->fetchAll(PDO::FETCH_COLUMN, 0);
         } catch (PDOException $e) {
             error_log("Error fetching categories: " . $e->getMessage());
             return [];
@@ -547,5 +545,160 @@ class Product {
         }
         
         return $conditions;
+    }
+
+    /**
+     * Get total count of products with filters
+     * @param string $search Search term
+     * @param string $category Category filter
+     * @return int Total count
+     */
+    public function getTotalCount(string $search = '', string $category = ''): int {
+        $query = "SELECT COUNT(*) as total FROM {$this->table} WHERE 1=1";
+        $params = [];
+        
+        if (!empty($search)) {
+            $query .= " AND (name LIKE :search OR sku LIKE :search OR description LIKE :search)";
+            $params[':search'] = '%' . $search . '%';
+        }
+        
+        if (!empty($category)) {
+            $query .= " AND category = :category";
+            $params[':category'] = $category;
+        }
+        
+        try {
+            $stmt = $this->conn->prepare($query);
+            $stmt->execute($params);
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            return (int)($result['total'] ?? 0);
+        } catch (PDOException $e) {
+            error_log("Error getting total count: " . $e->getMessage());
+            return 0;
+        }
+    }
+
+    /**
+     * Get products with pagination and filters
+     * @param int $pageSize Number of products per page
+     * @param int $offset Starting offset
+     * @param string $search Search term
+     * @param string $category Category filter
+     * @return array Array of products
+     */
+    public function getProductsPaginated(int $pageSize, int $offset, string $search = '', string $category = ''): array {
+        $query = "SELECT * FROM {$this->table} WHERE 1=1";
+        $params = [];
+        
+        if (!empty($search)) {
+            $query .= " AND (name LIKE :search OR sku LIKE :search OR description LIKE :search)";
+            $params[':search'] = '%' . $search . '%';
+        }
+        
+        if (!empty($category)) {
+            $query .= " AND category = :category";
+            $params[':category'] = $category;
+        }
+        
+        $query .= " ORDER BY name ASC LIMIT :limit OFFSET :offset";
+        
+        try {
+            $stmt = $this->conn->prepare($query);
+            
+            // Bind search parameters
+            foreach ($params as $key => $value) {
+                $stmt->bindValue($key, $value);
+            }
+            
+            // Bind pagination parameters
+            $stmt->bindValue(':limit', $pageSize, PDO::PARAM_INT);
+            $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+            
+            $stmt->execute();
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (PDOException $e) {
+            error_log("Error getting paginated products: " . $e->getMessage());
+            return [];
+        }
+    }
+
+    /**
+     * Create a new product
+     * @param array $productData Product data
+     * @return int|false Product ID on success, false on failure
+     */
+    public function createProduct(array $productData) {
+        $query = "INSERT INTO {$this->table} (name, sku, description, price, category, unit, status, created_at) 
+                VALUES (:name, :sku, :description, :price, :category, :unit, :status, NOW())";
+        
+        try {
+            $stmt = $this->conn->prepare($query);
+            $params = [
+                ':name' => $productData['name'],
+                ':sku' => $productData['sku'],
+                ':description' => $productData['description'] ?? '',
+                ':price' => $productData['price'] ?? 0,
+                ':category' => $productData['category'] ?? '',
+                ':unit' => $productData['unit'] ?? 'pcs',
+                ':status' => $productData['status'] ?? 1
+            ];
+            
+            $success = $stmt->execute($params);
+            return $success ? $this->conn->lastInsertId() : false;
+        } catch (PDOException $e) {
+            error_log("Error creating product: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Update an existing product
+     * @param int $productId Product ID
+     * @param array $productData Product data
+     * @return bool Success status
+     */
+    public function updateProduct(int $productId, array $productData): bool {
+        $query = "UPDATE {$this->table} 
+                SET name = :name, sku = :sku, description = :description, 
+                    price = :price, category = :category, unit = :unit, 
+                    status = :status, updated_at = NOW()
+                WHERE product_id = :id";
+        
+        try {
+            $stmt = $this->conn->prepare($query);
+            $params = [
+                ':id' => $productId,
+                ':name' => $productData['name'],
+                ':sku' => $productData['sku'],
+                ':description' => $productData['description'] ?? '',
+                ':price' => $productData['price'] ?? 0,
+                ':category' => $productData['category'] ?? '',
+                ':unit' => $productData['unit'] ?? 'pcs',
+                ':status' => $productData['status'] ?? 1
+            ];
+            
+            return $stmt->execute($params);
+        } catch (PDOException $e) {
+            error_log("Error updating product: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Delete a product
+     * @param int $productId Product ID
+     * @return bool Success status
+     */
+    public function deleteProduct(int $productId): bool {
+        $query = "DELETE FROM {$this->table} WHERE product_id = :id";
+        
+        try {
+            $stmt = $this->conn->prepare($query);
+            $stmt->bindParam(':id', $productId, PDO::PARAM_INT);
+            return $stmt->execute();
+        } catch (PDOException $e) {
+            error_log("Error deleting product: " . $e->getMessage());
+            return false;
+        }
     }
 }

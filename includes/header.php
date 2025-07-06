@@ -66,5 +66,5 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
   
   <!-- Universal Scripts -->
   <script src="/product_wms/scripts/universal.js" defer></script>
-  
+  <script src="<?= asset('scripts/theme-toggle.js') ?>" defer></script>
 <?php endif; ?>

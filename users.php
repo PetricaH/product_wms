@@ -137,224 +137,242 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
 <!DOCTYPE html>
 <html lang="ro">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <?php require_once __DIR__ . '/includes/header.php'; ?>
     <title>Gestionare Utilizatori - WMS</title>
 </head>
-<body class="app">
-    <?php require_once __DIR__ . '/includes/navbar.php'; ?>
-    
-    <main class="main-content">
-        <div class="users-container">
-            <div class="page-header">
-                <h1 class="page-title">Gestionare Utilizatori</h1>
-                <button class="btn btn-primary" onclick="openCreateModal()">
-                    <span class="material-symbols-outlined">person_add</span>
-                    Adaugă Utilizator
-                </button>
-            </div>
-            
-            <?php if (!empty($message)): ?>
-                <div class="message <?= $messageType ?>">
-                    <?= htmlspecialchars($message) ?>
-                </div>
-            <?php endif; ?>
-            
-            <?php if (!empty($allUsers)): ?>
-                <table class="users-table">
-                    <thead>
-                        <tr>
-                            <th>ID</th>
-                            <th>Nume Utilizator</th>
-                            <th>Email</th>
-                            <th>Rol</th>
-                            <th>Status</th>
-                            <th>Acțiuni</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php foreach ($allUsers as $user): ?>
-                            <tr>
-                                <td><?= htmlspecialchars($user['id']) ?></td>
-                                <td><?= htmlspecialchars($user['username']) ?></td>
-                                <td><?= htmlspecialchars($user['email']) ?></td>
-                                <td>
-                                    <span class="role-badge role-<?= $user['role'] ?>">
-                                        <?= $user['role'] === 'admin' ? 'Administrator' : 'Utilizator' ?>
-                                    </span>
-                                </td>
-                                <td>
-                                    <span class="status-badge status-<?= $user['status'] == 1 ? 'active' : 'inactive' ?>">
-                                        <span class="material-symbols-outlined" style="font-size: 1rem;">
-                                            <?= $user['status'] == 1 ? 'check_circle' : 'cancel' ?>
-                                        </span>
-                                        <?= $user['status'] == 1 ? 'Activ' : 'Inactiv' ?>
-                                    </span>
-                                </td>
-                                <td>
-                                    <div class="actions">
-                                        <button class="btn btn-secondary" onclick="openEditModal(<?= htmlspecialchars(json_encode($user)) ?>)">
-                                            <span class="material-symbols-outlined">edit</span>
-                                        </button>
-                                        <?php if ($user['id'] != $_SESSION['user_id']): ?>
-                                            <button class="btn btn-danger" onclick="confirmDelete(<?= $user['id'] ?>, '<?= htmlspecialchars($user['username']) ?>')">
-                                                <span class="material-symbols-outlined">delete</span>
-                                            </button>
-                                        <?php endif; ?>
-                                    </div>
-                                </td>
-                            </tr>
-                        <?php endforeach; ?>
-                    </tbody>
-                </table>
-            <?php else: ?>
-                <div class="empty-state">
-                    <span class="material-symbols-outlined">group</span>
-                    <h3>Nu există utilizatori înregistrați</h3>
-                    <p>Adăugați primul utilizator folosind butonul de mai sus.</p>
-                </div>
-            <?php endif; ?>
-        </div>
-    </main>
-
-    <!-- Create/Edit User Modal -->
-    <div id="userModal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2 class="modal-title" id="modalTitle">Adaugă Utilizator</h2>
-                <button class="close" onclick="closeModal()">&times;</button>
-            </div>
-            <form id="userForm" method="POST">
-                <input type="hidden" name="action" id="formAction" value="create">
-                <input type="hidden" name="user_id" id="userId" value="">
+<body>
+    <div class="app">
+        <?php require_once __DIR__ . '/includes/navbar.php'; ?>
+        
+        <div class="main-content">
+            <div class="page-container">
+                <!-- Page Header -->
+                <header class="page-header">
+                    <div class="page-header-content">
+                        <h1 class="page-title">
+                            <span class="material-symbols-outlined">group</span>
+                            Gestionare Utilizatori
+                        </h1>
+                        <button class="btn btn-primary" onclick="openCreateModal()">
+                            <span class="material-symbols-outlined">person_add</span>
+                            Adaugă Utilizator
+                        </button>
+                    </div>
+                </header>
                 
-                <div class="form-group">
-                    <label for="username" class="form-label">Nume Utilizator</label>
-                    <input type="text" class="form-control" id="username" name="username" required>
-                </div>
+                <!-- Alert Messages -->
+                <?php if (!empty($message)): ?>
+                    <div class="alert alert-<?= $messageType === 'success' ? 'success' : 'danger' ?>" role="alert">
+                        <span class="material-symbols-outlined">
+                            <?= $messageType === 'success' ? 'check_circle' : 'error' ?>
+                        </span>
+                        <?= htmlspecialchars($message) ?>
+                    </div>
+                <?php endif; ?>
                 
-                <div class="form-group">
-                    <label for="email" class="form-label">Email</label>
-                    <input type="email" class="form-control" id="email" name="email" required>
-                </div>
-                
-                <div class="form-group">
-                    <label for="password" class="form-label">Parolă</label>
-                    <input type="password" class="form-control" id="password" name="password">
-                    <small id="passwordHelp" style="color: #6c757d; font-size: 0.8rem; display: none;">
-                        Lăsați gol pentru a păstra parola existentă
-                    </small>
-                </div>
-                
-                <div class="form-group">
-                    <label for="role" class="form-label">Rol</label>
-                    <select class="form-control" id="role" name="role" required>
-                        <option value="user">Utilizator</option>
-                        <option value="admin">Administrator</option>
-                    </select>
-                </div>
-                
-                <div class="form-group">
-                    <div class="form-check">
-                        <input type="checkbox" class="form-check-input" id="status" name="status" checked>
-                        <label for="status" class="form-label">Cont activ</label>
+                <!-- Users Table Card -->
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">Lista Utilizatori</h3>
+                        <div class="card-actions">
+                            <input type="search" class="form-control" placeholder="Caută utilizatori..." id="search-users">
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <?php if (!empty($allUsers)): ?>
+                            <div class="table-responsive">
+                                <table class="table table-striped">
+                                    <thead>
+                                        <tr>
+                                            <th>ID</th>
+                                            <th>Nume Utilizator</th>
+                                            <th>Email</th>
+                                            <th>Rol</th>
+                                            <th>Status</th>
+                                            <th>Acțiuni</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <?php foreach ($allUsers as $user): ?>
+                                            <tr>
+                                                <td><?= htmlspecialchars($user['id']) ?></td>
+                                                <td><?= htmlspecialchars($user['username']) ?></td>
+                                                <td><?= htmlspecialchars($user['email']) ?></td>
+                                                <td>
+                                                    <span class="badge badge-<?= $user['role'] === 'admin' ? 'primary' : 'secondary' ?>">
+                                                        <?= $user['role'] === 'admin' ? 'Administrator' : 'Utilizator' ?>
+                                                    </span>
+                                                </td>
+                                                <td>
+                                                    <span class="badge badge-<?= $user['status'] == 1 ? 'success' : 'danger' ?>">
+                                                        <span class="material-symbols-outlined">
+                                                            <?= $user['status'] == 1 ? 'check_circle' : 'cancel' ?>
+                                                        </span>
+                                                        <?= $user['status'] == 1 ? 'Activ' : 'Inactiv' ?>
+                                                    </span>
+                                                </td>
+                                                <td>
+                                                    <div class="btn-group">
+                                                        <button class="btn btn-sm btn-secondary" 
+                                                                onclick="openEditModal(<?= htmlspecialchars(json_encode($user)) ?>)"
+                                                                title="Editează utilizatorul">
+                                                            <span class="material-symbols-outlined">edit</span>
+                                                        </button>
+                                                        <?php if ($user['id'] != $_SESSION['user_id']): ?>
+                                                            <button class="btn btn-sm btn-danger" 
+                                                                    onclick="confirmDelete(<?= $user['id'] ?>, '<?= htmlspecialchars($user['username']) ?>')"
+                                                                    title="Șterge utilizatorul">
+                                                                <span class="material-symbols-outlined">delete</span>
+                                                            </button>
+                                                        <?php endif; ?>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    </tbody>
+                                </table>
+                            </div>
+                        <?php else: ?>
+                            <div class="empty-state">
+                                <span class="material-symbols-outlined">group_off</span>
+                                <h3>Nu există utilizatori</h3>
+                                <p>Încă nu există utilizatori în sistem. Adaugă primul utilizator folosind butonul de mai sus.</p>
+                            </div>
+                        <?php endif; ?>
                     </div>
                 </div>
-                
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" onclick="closeModal()">Anulează</button>
-                    <button type="submit" class="btn btn-success" id="submitBtn">Salvează</button>
-                </div>
-            </form>
+            </div>
         </div>
     </div>
 
-    <!-- Delete Confirmation Modal -->
-    <div id="deleteModal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2 class="modal-title">Confirmare Ștergere</h2>
-                <button class="close" onclick="closeDeleteModal()">&times;</button>
-            </div>
-            <p>Sunteți sigur că doriți să ștergeți utilizatorul <strong id="deleteUsername"></strong>?</p>
-            <p style="color: #dc3545; font-weight: 500;">Această acțiune nu poate fi anulată.</p>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" onclick="closeDeleteModal()">Anulează</button>
-                <form method="POST" style="display: inline;">
-                    <input type="hidden" name="action" value="delete">
-                    <input type="hidden" name="user_id" id="deleteUserId" value="">
-                    <button type="submit" class="btn btn-danger">Șterge</button>
+    <!-- Create User Modal -->
+    <div class="modal" id="createUserModal">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 class="modal-title">Adaugă Utilizator Nou</h3>
+                    <button class="modal-close" onclick="closeCreateModal()">
+                        <span class="material-symbols-outlined">close</span>
+                    </button>
+                </div>
+                <form method="POST" action="">
+                    <div class="modal-body">
+                        <input type="hidden" name="action" value="create">
+                        
+                        <div class="form-group">
+                            <label for="create-username" class="form-label">Nume Utilizator *</label>
+                            <input type="text" id="create-username" name="username" class="form-control" required>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="create-email" class="form-label">Email *</label>
+                            <input type="email" id="create-email" name="email" class="form-control" required>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="create-password" class="form-label">Parolă *</label>
+                            <input type="password" id="create-password" name="password" class="form-control" required>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="create-role" class="form-label">Rol</label>
+                            <select id="create-role" name="role" class="form-control">
+                                <option value="user">Utilizator</option>
+                                <option value="admin">Administrator</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-check">
+                            <input type="checkbox" id="create-status" name="status" class="form-check-input" checked>
+                            <label for="create-status" class="form-check-label">Cont activ</label>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" onclick="closeCreateModal()">Anulează</button>
+                        <button type="submit" class="btn btn-primary">Creează Utilizator</button>
+                    </div>
                 </form>
             </div>
         </div>
     </div>
 
-    <script>
-        function openCreateModal() {
-            document.getElementById('modalTitle').textContent = 'Adaugă Utilizator';
-            document.getElementById('formAction').value = 'create';
-            document.getElementById('userId').value = '';
-            document.getElementById('username').value = '';
-            document.getElementById('email').value = '';
-            document.getElementById('password').value = '';
-            document.getElementById('password').required = true;
-            document.getElementById('role').value = 'user';
-            document.getElementById('status').checked = true;
-            document.getElementById('submitBtn').textContent = 'Adaugă';
-            document.getElementById('passwordHelp').style.display = 'none';
-            document.getElementById('userModal').style.display = 'block';
-        }
+    <!-- Edit User Modal -->
+    <div class="modal" id="editUserModal">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 class="modal-title">Editează Utilizator</h3>
+                    <button class="modal-close" onclick="closeEditModal()">
+                        <span class="material-symbols-outlined">close</span>
+                    </button>
+                </div>
+                <form method="POST" action="">
+                    <div class="modal-body">
+                        <input type="hidden" name="action" value="update">
+                        <input type="hidden" id="edit-user-id" name="user_id">
+                        
+                        <div class="form-group">
+                            <label for="edit-username" class="form-label">Nume Utilizator *</label>
+                            <input type="text" id="edit-username" name="username" class="form-control" required>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="edit-email" class="form-label">Email *</label>
+                            <input type="email" id="edit-email" name="email" class="form-control" required>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="edit-password" class="form-label">Parolă Nouă (lasă gol pentru a păstra actuala)</label>
+                            <input type="password" id="edit-password" name="password" class="form-control">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="edit-role" class="form-label">Rol</label>
+                            <select id="edit-role" name="role" class="form-control">
+                                <option value="user">Utilizator</option>
+                                <option value="admin">Administrator</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-check">
+                            <input type="checkbox" id="edit-status" name="status" class="form-check-input">
+                            <label for="edit-status" class="form-check-label">Cont activ</label>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" onclick="closeEditModal()">Anulează</button>
+                        <button type="submit" class="btn btn-primary">Actualizează Utilizator</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
 
-        function openEditModal(user) {
-            document.getElementById('modalTitle').textContent = 'Editează Utilizator';
-            document.getElementById('formAction').value = 'update';
-            document.getElementById('userId').value = user.id;
-            document.getElementById('username').value = user.username;
-            document.getElementById('email').value = user.email;
-            document.getElementById('password').value = '';
-            document.getElementById('password').required = false;
-            document.getElementById('role').value = user.role;
-            document.getElementById('status').checked = user.status == 1;
-            document.getElementById('submitBtn').textContent = 'Actualizează';
-            document.getElementById('passwordHelp').style.display = 'block';
-            document.getElementById('userModal').style.display = 'block';
-        }
-
-        function closeModal() {
-            document.getElementById('userModal').style.display = 'none';
-        }
-
-        function confirmDelete(userId, username) {
-            document.getElementById('deleteUserId').value = userId;
-            document.getElementById('deleteUsername').textContent = username;
-            document.getElementById('deleteModal').style.display = 'block';
-        }
-
-        function closeDeleteModal() {
-            document.getElementById('deleteModal').style.display = 'none';
-        }
-
-        // Close modal when clicking outside of it
-        window.onclick = function(event) {
-            const userModal = document.getElementById('userModal');
-            const deleteModal = document.getElementById('deleteModal');
-            if (event.target === userModal) {
-                closeModal();
-            }
-            if (event.target === deleteModal) {
-                closeDeleteModal();
-            }
-        }
-        
-        // Close modal with Escape key
-        document.addEventListener('keydown', function(event) {
-            if (event.key === 'Escape') {
-                closeModal();
-                closeDeleteModal();
-            }
-        });
-    </script>
+    <!-- Delete Confirmation Modal -->
+    <div class="modal" id="deleteUserModal">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 class="modal-title">Confirmă Ștergerea</h3>
+                    <button class="modal-close" onclick="closeDeleteModal()">
+                        <span class="material-symbols-outlined">close</span>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <p>Ești sigur că vrei să ștergi utilizatorul <strong id="delete-username"></strong>?</p>
+                    <p class="text-danger">Această acțiune nu poate fi anulată.</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="closeDeleteModal()">Anulează</button>
+                    <form method="POST" action="" style="display: inline;">
+                        <input type="hidden" name="action" value="delete">
+                        <input type="hidden" id="delete-user-id" name="user_id">
+                        <button type="submit" class="btn btn-danger">Șterge Utilizator</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <?php require_once __DIR__ . '/includes/footer.php'; ?>
 </body>

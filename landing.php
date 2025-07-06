@@ -718,7 +718,7 @@
                 <li><a href="#process">Proces</a></li>
                 <li><a href="#demo">Contact</a></li>
             </ul>
-            <a href="mailto:contact@notsowms.ro?subject=Demo%20Gratuit%20NOTSOWMS" class="cta-button">Demo Gratuit</a>
+            <a href="mailto:hello@notsomarketing.com?subject=Demo%20Gratuit%20NOTSOWMS" class="cta-button">Demo Gratuit</a>
             <button class="mobile-menu-toggle" aria-label="Toggle Menu">☰</button>
         </nav>
     </header>
@@ -907,7 +907,7 @@
             <div class="cta-content">
                 <h2>Gata să Optimizezi Depozitul?</h2>
                 <p>Începe cu o demonstrație personalizată și vezi cum NOTSOWMS poate transforma operațiunile tale.</p>
-                <a href="mailto:contact@notsowms.ro?subject=Demo%20Gratuit%20NOTSOWMS&body=Salut,%0A%0AAs%20dori%20să%20programez%20un%20demo%20gratuit%20pentru%20NOTSOWMS.%0A%0AInformații%20despre%20compania%20noastră:%0A-%20Nume%20companie:%20%0A-%20Persoană%20de%20contact:%20%0A-%20Telefon:%20%0A-%20Tipul%20afacerii:%20%0A-%20Mărimea%20depozitului:%20%0A-%20Numărul%20de%20produse%20gestionate:%20%0A-%20Sistemele%20actuale%20utilizate:%20%0A%0AMultumesc%20pentru%20timpul%20acordat!" class="btn-primary">Solicită Demo Gratuit</a>
+                <a href="mailto:hello@notsomarketing.com?subject=Demo%20Gratuit%20NOTSOWMS&body=Salut,%0A%0AAs%20dori%20să%20programez%20un%20demo%20gratuit%20pentru%20NOTSOWMS.%0A%0AInformații%20despre%20compania%20noastră:%0A-%20Nume%20companie:%20%0A-%20Persoană%20de%20contact:%20%0A-%20Telefon:%20%0A-%20Tipul%20afacerii:%20%0A-%20Mărimea%20depozitului:%20%0A-%20Numărul%20de%20produse%20gestionate:%20%0A-%20Sistemele%20actuale%20utilizate:%20%0A%0AMultumesc%20pentru%20timpul%20acordat!" class="btn-primary">Solicită Demo Gratuit</a>
             </div>
         </div>
     </section>

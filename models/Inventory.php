@@ -612,4 +612,82 @@ class Inventory {
             return 0;
         }
     }
+
+    /**
+ * Get count of products with low stock
+ * @return int Number of products below minimum stock level
+ */
+public function getLowStockCount(): int {
+    try {
+        $query = "SELECT COUNT(DISTINCT p.product_id) 
+                  FROM products p 
+                  LEFT JOIN (
+                      SELECT product_id, SUM(quantity) as total_qty 
+                      FROM inventory 
+                      GROUP BY product_id
+                  ) i ON p.product_id = i.product_id
+                  WHERE COALESCE(i.total_qty, 0) <= p.min_stock_level";
+        
+        $stmt = $this->conn->prepare($query);
+        $stmt->execute();
+        return (int)$stmt->fetchColumn();
+        
+    } catch (PDOException $e) {
+        error_log("Error getting low stock count: " . $e->getMessage());
+        return 0;
+    }
+}
+
+/**
+ * Get critical stock alerts
+ * @param int $limit Maximum number of alerts to return
+ * @return array Products with critical stock levels
+ */
+public function getCriticalStockAlerts(int $limit = 10): array {
+    try {
+        $query = "SELECT p.product_id, p.sku, p.name, p.min_stock_level,
+                         COALESCE(i.total_qty, 0) as quantity
+                  FROM products p 
+                  LEFT JOIN (
+                      SELECT product_id, SUM(quantity) as total_qty 
+                      FROM inventory 
+                      GROUP BY product_id
+                  ) i ON p.product_id = i.product_id
+                  WHERE COALESCE(i.total_qty, 0) <= p.min_stock_level
+                  ORDER BY (COALESCE(i.total_qty, 0) / GREATEST(p.min_stock_level, 1)) ASC
+                  LIMIT :limit";
+        
+        $stmt = $this->conn->prepare($query);
+        $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $stmt->execute();
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+    } catch (PDOException $e) {
+        error_log("Error getting critical stock alerts: " . $e->getMessage());
+        return [];
+    }
+}
+
+/**
+ * Get number of items moved today (transactions)
+ * @return int Number of inventory movements today
+ */
+public function getItemsMovedToday(): int {
+    try {
+        $query = "SELECT COALESCE(SUM(ABS(quantity_change)), 0) as items_moved
+                  FROM inventory_transactions 
+                  WHERE DATE(created_at) = CURDATE()";
+        
+        $stmt = $this->conn->prepare($query);
+        $stmt->execute();
+        $result = $stmt->fetchColumn();
+        return (int)($result ?? 0);
+        
+    } catch (PDOException $e) {
+        // If inventory_transactions table doesn't exist, return 0
+        error_log("Error getting items moved today: " . $e->getMessage());
+        return 0;
+    }
+}
+
 }

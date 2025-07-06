@@ -464,4 +464,62 @@ class Location {
             return [];
         }
     }
+
+    /**
+ * Calculate warehouse occupation percentage
+ * @return float Percentage of occupied locations
+ */
+public function calculateOccupationPercentage(): float {
+    try {
+        $totalLocations = $this->countTotalLocations();
+        $occupiedLocations = $this->countOccupiedLocations();
+        
+        if ($totalLocations == 0) {
+            return 0.0;
+        }
+        
+        return round(($occupiedLocations / $totalLocations) * 100, 1);
+        
+    } catch (PDOException $e) {
+        error_log("Error calculating occupation percentage: " . $e->getMessage());
+        return 0.0;
+    }
+}
+
+/**
+ * Count total locations
+ * @return int Total number of locations
+ */
+public function countTotalLocations(): int {
+    try {
+        $query = "SELECT COUNT(*) FROM {$this->table}";
+        $stmt = $this->conn->prepare($query);
+        $stmt->execute();
+        return (int)$stmt->fetchColumn();
+        
+    } catch (PDOException $e) {
+        error_log("Error counting total locations: " . $e->getMessage());
+        return 0;
+    }
+}
+
+/**
+ * Count occupied locations (locations with inventory)
+ * @return int Number of occupied locations
+ */
+public function countOccupiedLocations(): int {
+    try {
+        $query = "SELECT COUNT(DISTINCT i.location_id) 
+                  FROM inventory i 
+                  INNER JOIN {$this->table} l ON i.location_id = l.id 
+                  WHERE i.quantity > 0";
+        $stmt = $this->conn->prepare($query);
+        $stmt->execute();
+        return (int)$stmt->fetchColumn();
+        
+    } catch (PDOException $e) {
+        error_log("Error counting occupied locations: " . $e->getMessage());
+        return 0;
+    }
+}
 }

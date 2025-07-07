@@ -28,10 +28,14 @@ function openEditModal(location) {
     // Populate form
     document.getElementById('location_code').value = location.location_code;
     document.getElementById('zone').value = location.zone;
-    document.getElementById('type').value = location.type || 'Standard';
+    document.getElementById('type').value = location.type || 'shelf';
     document.getElementById('capacity').value = location.capacity || '';
-    document.getElementById('status').value = location.status;
-    document.getElementById('description').value = location.description || '';
+    
+    // Convert database enum to form value
+    const statusValue = location.status === 'active' ? '1' : '0';
+    document.getElementById('status').value = statusValue;
+    
+    document.getElementById('description').value = location.notes || ''; // Use 'notes' field
     
     // Show modal
     document.getElementById('locationModal').classList.add('show');

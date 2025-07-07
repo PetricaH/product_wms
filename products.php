@@ -111,62 +111,101 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             break;
 
-        case 'bulk_action':
-            $bulkAction = $_POST['bulk_action'] ?? '';
-            $selectedIds = $_POST['selected_products'] ?? [];
-            
-            if (empty($selectedIds)) {
-                $message = 'Niciun produs selectat.';
-                $messageType = 'error';
-            } else {
-                $successCount = 0;
-                $errorCount = 0;
+            case 'bulk_action':
+                $bulkAction = $_POST['bulk_action'] ?? '';
+                $selectedIds = $_POST['selected_products'] ?? [];
                 
-                foreach ($selectedIds as $productId) {
-                    $productId = intval($productId);
-                    if ($productId <= 0) continue;
-                    
-                    switch ($bulkAction) {
-                        case 'delete':
-                            if ($productModel->deleteProduct($productId)) {
-                                $successCount++;
-                            } else {
-                                $errorCount++;
-                            }
-                            break;
-                            
-                        case 'activate':
-                            if ($productModel->updateProduct($productId, ['status' => 'active'])) {
-                                $successCount++;
-                            } else {
-                                $errorCount++;
-                            }
-                            break;
-                            
-                        case 'deactivate':
-                            if ($productModel->updateProduct($productId, ['status' => 'inactive'])) {
-                                $successCount++;
-                            } else {
-                                $errorCount++;
-                            }
-                            break;
-                    }
-                }
+                // Debug logging
+                error_log("Bulk action: $bulkAction");
+                error_log("Selected IDs: " . implode(', ', $selectedIds));
                 
-                if ($successCount > 0) {
-                    $message = "Operațiune completă: {$successCount} produse procesate cu succes";
-                    if ($errorCount > 0) {
-                        $message .= ", {$errorCount} erori.";
-                    } else {
-                        $message .= ".";
-                    }
-                    $messageType = $errorCount > 0 ? 'warning' : 'success';
-                } else {
-                    $message = 'Nicio operațiune a fost finalizată cu succes.';
+                if (empty($selectedIds)) {
+                    $message = 'Niciun produs selectat.';
                     $messageType = 'error';
+                } else {
+                    $successCount = 0;
+                    $errorCount = 0;
+                    
+                    foreach ($selectedIds as $productId) {
+                        $productId = intval($productId);
+                        if ($productId <= 0) {
+                            error_log("Invalid product ID: $productId");
+                            continue;
+                        }
+                        
+                        try {
+                            switch ($bulkAction) {
+                                case 'delete':
+                                    error_log("Attempting to delete product ID: $productId");
+                                    if ($productModel->deleteProduct($productId)) {
+                                        $successCount++;
+                                        error_log("Successfully deleted product ID: $productId");
+                                    } else {
+                                        $errorCount++;
+                                        error_log("Failed to delete product ID: $productId");
+                                    }
+                                    break;
+                                    
+                                case 'activate':
+                                    // Use quantity > 0 as "active" status
+                                    error_log("Attempting to activate product ID: $productId");
+                                    $product = $productModel->findById($productId);
+                                    if ($product) {
+                                        // If quantity is 0, set it to 1 to "activate"
+                                        $newQuantity = max(1, $product['quantity']);
+                                        if ($productModel->updateProduct($productId, ['quantity' => $newQuantity])) {
+                                            $successCount++;
+                                            error_log("Successfully activated product ID: $productId");
+                                        } else {
+                                            $errorCount++;
+                                            error_log("Failed to activate product ID: $productId");
+                                        }
+                                    } else {
+                                        $errorCount++;
+                                        error_log("Product not found for activation: $productId");
+                                    }
+                                    break;
+                                    
+                                case 'deactivate':
+                                    // Set quantity to 0 to "deactivate"
+                                    error_log("Attempting to deactivate product ID: $productId");
+                                    if ($productModel->updateProduct($productId, ['quantity' => 0])) {
+                                        $successCount++;
+                                        error_log("Successfully deactivated product ID: $productId");
+                                    } else {
+                                        $errorCount++;
+                                        error_log("Failed to deactivate product ID: $productId");
+                                    }
+                                    break;
+                                    
+                                default:
+                                    $errorCount++;
+                                    error_log("Unknown bulk action: $bulkAction");
+                                    break;
+                            }
+                        } catch (Exception $e) {
+                            $errorCount++;
+                            error_log("Exception in bulk operation: " . $e->getMessage());
+                        }
+                    }
+                    
+                    // Log final results
+                    error_log("Bulk operation completed - Success: $successCount, Errors: $errorCount");
+                    
+                    if ($successCount > 0) {
+                        $message = "Operațiune completă: {$successCount} produse procesate cu succes";
+                        if ($errorCount > 0) {
+                            $message .= ", {$errorCount} erori.";
+                        } else {
+                            $message .= ".";
+                        }
+                        $messageType = $errorCount > 0 ? 'warning' : 'success';
+                    } else {
+                        $message = 'Nicio operațiune a fost finalizată cu succes.';
+                        $messageType = 'error';
+                    }
                 }
-            }
-            break;
+                break;
     }
 }
 
@@ -353,18 +392,16 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                 </span>
                                             </td>
                                             <td>
-                                                <div class="actions-group">
-                                                    <button class="action-btn edit-btn" 
-                                                            onclick="openEditModal(<?= htmlspecialchars(json_encode($product)) ?>)"
-                                                            title="Editează">
-                                                        <span class="material-symbols-outlined">edit</span>
-                                                    </button>
-                                                    <button class="action-btn delete-btn" 
-                                                            onclick="confirmDelete(<?= $product['product_id'] ?? 0 ?>, '<?= htmlspecialchars(addslashes($product['name'] ?? 'Produs')) ?>')"
-                                                            title="Șterge">
-                                                        <span class="material-symbols-outlined">delete</span>
-                                                    </button>
-                                                </div>
+                                            <div class="actions-group">
+                                                <button type="button" class="action-btn edit-btn" onclick="openEditModal(<?= htmlspecialchars(json_encode($product)) ?>)"
+                                                        title="Editează">
+                                                    <span class="material-symbols-outlined">edit</span>
+                                                </button>
+                                                <button type="button" class="action-btn delete-btn" onclick="confirmDelete(<?= $product['product_id'] ?? 0 ?>, '<?= htmlspecialchars(addslashes($product['name'] ?? 'Produs')) ?>')"
+                                                        title="Șterge">
+                                                    <span class="material-symbols-outlined">delete</span>
+                                                </button>
+                                            </div>
                                             </td>
                                         </tr>
                                     <?php endforeach; ?>

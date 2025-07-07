@@ -539,7 +539,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                 <option value="">Selectează locația</option>
                                 <?php foreach ($allLocations as $location): ?>
                                     <option value="<?= $location['id'] ?>">
-                                        <?= htmlspecialchars($location['name']) ?>
+                                        <?= htmlspecialchars($location['location_code']) ?>
                                     </option>
                                 <?php endforeach; ?>
                             </select>

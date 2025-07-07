@@ -207,23 +207,27 @@ class Location {
      */
     public function createLocation(array $locationData) {
         $query = "INSERT INTO {$this->table} 
-                  (location_code, zone, type, capacity, description, status, created_at) 
-                  VALUES (:location_code, :zone, :type, :capacity, :description, :status, NOW())";
+                  (location_code, zone, type, capacity, notes, status, created_at) 
+                  VALUES (:location_code, :zone, :type, :capacity, :notes, :status, NOW())";
         
         try {
             // Check if location code already exists
             if ($this->getLocationByCode($locationData['location_code'])) {
-                return false; // Location code already exists
+                return false;
             }
+            
+            // Convert status to enum string
+            $statusMap = [0 => 'inactive', 1 => 'active', 2 => 'maintenance'];
+            $status = $statusMap[$locationData['status'] ?? 1] ?? 'active';
             
             $stmt = $this->conn->prepare($query);
             $params = [
                 ':location_code' => $locationData['location_code'],
                 ':zone' => $locationData['zone'],
-                ':type' => $locationData['type'] ?? 'Standard',
-                ':capacity' => $locationData['capacity'] ?? null,
-                ':description' => $locationData['description'] ?? '',
-                ':status' => $locationData['status'] ?? 1
+                ':type' => $locationData['type'] ?: 'shelf',
+                ':capacity' => $locationData['capacity'] ?: 0,
+                ':notes' => $locationData['description'] ?? '',
+                ':status' => $status
             ];
             
             $success = $stmt->execute($params);
@@ -241,35 +245,59 @@ class Location {
      * @return bool
      */
     public function updateLocation($locationId, array $locationData) {
-        $query = "UPDATE {$this->table} 
-                  SET location_code = :location_code, 
-                      zone = :zone, 
-                      type = :type, 
-                      capacity = :capacity, 
-                      description = :description, 
-                      status = :status, 
-                      updated_at = NOW()
-                  WHERE id = :id";
+        // Get current location first
+        $currentLocation = $this->getLocationById($locationId);
+        if (!$currentLocation) {
+            error_log("DEBUG: Location $locationId not found");
+            return false;
+        }
         
-        try {
-            // Check if location code already exists for different location
+        // Only check for duplicates if location code is actually changing
+        if ($currentLocation['location_code'] !== $locationData['location_code']) {
             $existing = $this->getLocationByCode($locationData['location_code']);
             if ($existing && $existing['id'] != $locationId) {
-                return false; // Location code already exists for different location
+                error_log("DEBUG: Duplicate location code detected");
+                return false;
             }
+        }
+        
+        try {
+            // Convert status from integer to enum string
+            $statusMap = [0 => 'inactive', 1 => 'active', 2 => 'maintenance'];
+            $status = $statusMap[$locationData['status'] ?? 1] ?? 'active';
+            
+            $query = "UPDATE {$this->table} 
+                      SET location_code = :location_code, 
+                          zone = :zone, 
+                          type = :type, 
+                          capacity = :capacity, 
+                          notes = :notes, 
+                          status = :status, 
+                          updated_at = NOW()
+                      WHERE id = :id";
             
             $stmt = $this->conn->prepare($query);
             $params = [
                 ':id' => $locationId,
                 ':location_code' => $locationData['location_code'],
                 ':zone' => $locationData['zone'],
-                ':type' => $locationData['type'] ?? 'Standard',
-                ':capacity' => $locationData['capacity'] ?? null,
-                ':description' => $locationData['description'] ?? '',
-                ':status' => $locationData['status'] ?? 1
+                ':type' => $locationData['type'] ?: 'shelf',
+                ':capacity' => $locationData['capacity'] ?: 0,
+                ':notes' => $locationData['description'] ?? '',
+                ':status' => $status
             ];
             
-            return $stmt->execute($params);
+            error_log("DEBUG: Query: $query");
+            error_log("DEBUG: Params: " . print_r($params, true));
+            
+            $result = $stmt->execute($params);
+            $rowCount = $stmt->rowCount();
+            
+            error_log("DEBUG: Execute result: " . ($result ? 'true' : 'false'));
+            error_log("DEBUG: Rows affected: $rowCount");
+            
+            // Return true only if at least 1 row was affected
+            return $result && $rowCount > 0;
         } catch (PDOException $e) {
             error_log("Error updating location: " . $e->getMessage());
             return false;
@@ -378,7 +406,7 @@ class Location {
      * @return array
      */
     public function getActiveLocations() {
-        $query = "SELECT * FROM {$this->table} WHERE status = 1 ORDER BY zone, location_code";
+        $query = "SELECT * FROM {$this->table} WHERE status = 'active' ORDER BY zone, location_code";
         
         try {
             $stmt = $this->conn->prepare($query);

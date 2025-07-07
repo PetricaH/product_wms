@@ -694,12 +694,16 @@ class Product {
      */
     public function updateProduct(int $productId, array $productData): bool {
         if (empty($productData)) {
+            error_log("updateProduct: No data provided for product ID: " . $productId);
             return false;
         }
         
+        // Debug logging
+        error_log("updateProduct: Updating product ID $productId with data: " . json_encode($productData));
+        
         // Check if SKU is being changed and already exists
         if (isset($productData['sku']) && $this->skuExists($productData['sku'], $productId)) {
-            error_log("Product update failed: SKU already exists - " . $productData['sku']);
+            error_log("updateProduct: SKU already exists - " . $productData['sku']);
             return false;
         }
         
@@ -714,7 +718,8 @@ class Product {
             'description' => ':description',
             'category' => ':category',
             'quantity' => ':quantity',
-            'price' => ':price'
+            'price' => ':price',
+            'min_stock_level' => ':min_stock_level'
         ];
         
         // Only update fields that are actually provided and exist in database
@@ -723,7 +728,7 @@ class Product {
                 $fields[] = "{$field} = {$param}";
                 
                 // Handle different data types
-                if ($field === 'quantity') {
+                if (in_array($field, ['quantity', 'min_stock_level'])) {
                     $params[$param] = intval($productData[$field]);
                 } elseif ($field === 'price') {
                     $params[$param] = floatval($productData[$field]);
@@ -735,7 +740,7 @@ class Product {
         
         // If no valid fields to update, return false
         if (empty($fields)) {
-            error_log("No valid fields to update for product ID: " . $productId);
+            error_log("updateProduct: No valid fields to update for product ID: " . $productId);
             return false;
         }
         
@@ -745,14 +750,23 @@ class Product {
         $query = "UPDATE {$this->table} SET " . implode(', ', $fields) . " WHERE product_id = :id";
         
         try {
+            error_log("updateProduct: Executing query: " . $query);
+            error_log("updateProduct: With params: " . json_encode($params));
+            
             $stmt = $this->conn->prepare($query);
             $success = $stmt->execute($params);
+            
             if (!$success) {
-                error_log("Product update failed for ID: " . $productId . " - Execute returned false");
+                error_log("updateProduct: Execute returned false for product ID: " . $productId);
+                $errorInfo = $stmt->errorInfo();
+                error_log("updateProduct: SQL Error: " . implode(' - ', $errorInfo));
+            } else {
+                error_log("updateProduct: Successfully updated product ID: " . $productId);
             }
+            
             return $success;
         } catch (PDOException $e) {
-            error_log("Error updating product ID " . $productId . ": " . $e->getMessage());
+            error_log("updateProduct: PDO Exception for product ID " . $productId . ": " . $e->getMessage());
             return false;
         }
     }

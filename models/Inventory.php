@@ -436,10 +436,17 @@ class Inventory {
      */
     public function getLowStockProducts(): array {
         $query = "SELECT p.product_id, p.sku, p.name, p.min_stock_level,
-                         COALESCE(SUM(i.quantity), 0) as current_stock,
-                         COUNT(DISTINCT i.location_id) as locations_count
+                         COALESCE(SUM(i.quantity), p.quantity, 0) as current_stock,
+                         COALESCE(COUNT(DISTINCT CASE WHEN i.quantity > 0 THEN i.location_id END), 
+                                  CASE WHEN p.quantity > 0 THEN 1 ELSE 0 END) as locations_count,
+                         p.quantity as product_base_quantity,
+                         CASE 
+                            WHEN COUNT(i.id) > 0 THEN 'inventory_tracked'
+                            WHEN p.quantity > 0 THEN 'product_quantity'
+                            ELSE 'no_stock'
+                         END as stock_source
                   FROM {$this->productsTable} p
-                  LEFT JOIN {$this->inventoryTable} i ON p.product_id = i.product_id AND i.quantity > 0
+                  LEFT JOIN {$this->inventoryTable} i ON p.product_id = i.product_id
                   GROUP BY p.product_id
                   HAVING current_stock <= COALESCE(p.min_stock_level, 5) OR current_stock = 0
                   ORDER BY current_stock ASC, p.name ASC";
@@ -460,11 +467,18 @@ class Inventory {
      */
     public function getStockSummary(): array {
         $query = "SELECT p.product_id, p.sku, p.name, p.category, p.min_stock_level,
-                         COALESCE(SUM(i.quantity), 0) as total_stock,
-                         COUNT(DISTINCT i.location_id) as locations_count,
-                         MAX(i.received_at) as last_received
+                         COALESCE(SUM(i.quantity), p.quantity, 0) as total_stock,
+                         COALESCE(COUNT(DISTINCT CASE WHEN i.quantity > 0 THEN i.location_id END), 
+                                  CASE WHEN p.quantity > 0 THEN 1 ELSE 0 END) as locations_count,
+                         MAX(i.received_at) as last_received,
+                         p.quantity as product_base_quantity,
+                         CASE 
+                            WHEN COUNT(i.id) > 0 THEN 'inventory_tracked'
+                            WHEN p.quantity > 0 THEN 'product_quantity'
+                            ELSE 'no_stock'
+                         END as stock_source
                   FROM {$this->productsTable} p
-                  LEFT JOIN {$this->inventoryTable} i ON p.product_id = i.product_id AND i.quantity > 0
+                  LEFT JOIN {$this->inventoryTable} i ON p.product_id = i.product_id
                   GROUP BY p.product_id
                   ORDER BY p.name ASC";
 

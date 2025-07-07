@@ -165,10 +165,10 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                             <span class="material-symbols-outlined">shopping_cart</span>
                             Gestionare Comenzi
                         </h1>
-                        <button class="btn btn-primary" onclick="openCreateModal()">
+                        <!-- <button class="btn btn-primary" onclick="openCreateModal()">
                             <span class="material-symbols-outlined">add_shopping_cart</span>
                             Comandă Nouă
-                        </button>
+                        </button> -->
                     </div>
                 </header>
                 

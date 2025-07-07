@@ -306,6 +306,7 @@ body {
 
 /* ===== CARDS ===== */
 .card {
+    margin-top: 10px;
     background-color: var(--container-background);
     border-radius: var(--border-radius);
     box-shadow: var(--base-shadow);

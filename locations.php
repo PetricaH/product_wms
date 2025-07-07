@@ -276,17 +276,17 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                     </div>
                                                 </td>
                                                 <td>
-                                                    <?php if (($location['status'] ?? 1) == 1): ?>
-                                                        <span class="status-badge status-active">
-                                                            <span class="material-symbols-outlined">check_circle</span>
-                                                            Activ
-                                                        </span>
-                                                    <?php else: ?>
-                                                        <span class="status-badge status-inactive">
-                                                            <span class="material-symbols-outlined">cancel</span>
-                                                            Inactiv
-                                                        </span>
-                                                    <?php endif; ?>
+                                                <?php if (($location['status'] ?? 'active') === 'active'): ?>
+                                                    <span class="status-badge status-active">
+                                                        <span class="material-symbols-outlined">check_circle</span>
+                                                        Activ
+                                                    </span>
+                                                <?php else: ?>
+                                                    <span class="status-badge status-inactive">
+                                                        <span class="material-symbols-outlined">cancel</span>
+                                                        Inactiv
+                                                    </span>
+                                                <?php endif; ?>
                                                 </td>
                                                 <td>
                                                     <?php if (!empty($location['description'])): ?>
@@ -393,12 +393,11 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                             <div class="form-group">
                                 <label for="type" class="form-label">Tip</label>
                                 <select name="type" id="type" class="form-control">
-                                    <option value="Standard">Standard</option>
-                                    <option value="Refrigerat">Refrigerat</option>
-                                    <option value="Fragil">Fragil</option>
-                                    <option value="Greutăți">Greutăți</option>
-                                    <option value="Expediere">Expediere</option>
-                                    <option value="Recepție">Recepție</option>
+                                    <option value="warehouse">Warehouse</option>
+                                    <option value="zone">Zone</option>
+                                    <option value="rack">Rack</option>
+                                    <option value="shelf">Shelf</option>
+                                    <option value="bin">Bin</option>
                                 </select>
                             </div>
                         </div>
@@ -464,7 +463,4 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
         </div>
     </div>
 
-    <script src="scripts/locations.js"></script>
     <?php require_once __DIR__ . '/includes/footer.php'; ?>
-</body>
-</html>

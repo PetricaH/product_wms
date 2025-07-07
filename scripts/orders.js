@@ -124,8 +124,104 @@ function getProductOptions() {
 }
 
 function viewOrderDetails(orderId) {
-    // Redirect to order details page or open details modal
-    window.location.href = `order_details.php?id=${orderId}`;
+    // Create modal if it doesn't exist
+    let modal = document.getElementById('orderDetailsModal');
+    if (!modal) {
+        modal = createOrderDetailsModal();
+        document.body.appendChild(modal);
+    }
+    
+    // Fetch order details via AJAX
+    fetch(`order_details.php?id=${orderId}`)
+        .then(response => response.json())
+        .then(order => {
+            displayOrderDetails(order);
+            modal.style.display = 'block';
+        })
+        .catch(error => {
+            console.error('Error loading order details:', error);
+            alert('Error loading order details');
+        });
+}
+
+function createOrderDetailsModal() {
+    const modal = document.createElement('div');
+    modal.id = 'orderDetailsModal';
+    modal.className = 'modal';
+    modal.innerHTML = `
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Detalii Comandă</h2>
+                <span class="close" onclick="closeOrderDetailsModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div id="orderDetailsContent"></div>
+            </div>
+        </div>
+    `;
+    return modal;
+}
+
+function displayOrderDetails(order) {
+    const content = `
+        <div class="order-details">
+            <div class="details-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">
+                <div class="detail-section">
+                    <h4>Informații Comandă</h4>
+                    <p><strong>Număr:</strong> ${order.order_number}</p>
+                    <p><strong>Data:</strong> ${order.order_date}</p>
+                    <p><strong>Status:</strong> ${order.status}</p>
+                    <p><strong>Prioritate:</strong> ${order.priority}</p>
+                    <p><strong>Valoare:</strong> ${order.total_value} RON</p>
+                </div>
+                <div class="detail-section">
+                    <h4>Informații Client</h4>
+                    <p><strong>Nume:</strong> ${order.customer_name}</p>
+                    <p><strong>Email:</strong> ${order.customer_email}</p>
+                    <p><strong>Adresă:</strong> ${order.shipping_address || 'Nu este specificată'}</p>
+                </div>
+            </div>
+            
+            <div class="items-section" style="margin-top: 2rem;">
+                <h4>Produse comandate</h4>
+                <table style="width: 100%; border-collapse: collapse;">
+                    <thead>
+                        <tr style="background-color: #f5f5f5;">
+                            <th style="padding: 8px; border: 1px solid #ddd;">Produs</th>
+                            <th style="padding: 8px; border: 1px solid #ddd;">SKU</th>
+                            <th style="padding: 8px; border: 1px solid #ddd;">Cantitate</th>
+                            <th style="padding: 8px; border: 1px solid #ddd;">Preț unitar</th>
+                            <th style="padding: 8px; border: 1px solid #ddd;">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${order.items.map(item => `
+                            <tr>
+                                <td style="padding: 8px; border: 1px solid #ddd;">${item.product_name}</td>
+                                <td style="padding: 8px; border: 1px solid #ddd;">${item.sku}</td>
+                                <td style="padding: 8px; border: 1px solid #ddd;">${item.quantity}</td>
+                                <td style="padding: 8px; border: 1px solid #ddd;">${item.unit_price} RON</td>
+                                <td style="padding: 8px; border: 1px solid #ddd;">${(item.quantity * item.unit_price).toFixed(2)} RON</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+            
+            ${order.notes ? `
+                <div class="notes-section" style="margin-top: 2rem;">
+                    <h4>Notițe</h4>
+                    <p>${order.notes}</p>
+                </div>
+            ` : ''}
+        </div>
+    `;
+    
+    document.getElementById('orderDetailsContent').innerHTML = content;
+}
+
+function closeOrderDetailsModal() {
+    document.getElementById('orderDetailsModal').style.display = 'none';
 }
 
 // Product selection auto-price fill

@@ -394,3 +394,107 @@
     margin-bottom: 0.5rem;
     color: var(--text-primary);
 }
+
+/* Order Details Modal */
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.8);
+}
+
+.modal-content {
+    background-color: var(--black, #0F1013);
+    color: var(--white, #FEFFFF);
+    margin: 5% auto;
+    padding: 0;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    width: 90%;
+    max-width: 1000px;
+    max-height: 85vh;
+    overflow-y: auto;
+}
+
+.modal-header {
+    padding: 1.5rem 2rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background-color: var(--dark-gray, #1A1A1D);
+}
+
+.modal-header h2 {
+    margin: 0;
+    color: var(--white, #FEFFFF);
+    font-size: 1.5rem;
+    font-weight: 500;
+}
+
+.close {
+    color: var(--light-gray, #94A1B2);
+    font-size: 28px;
+    font-weight: bold;
+    cursor: pointer;
+    line-height: 1;
+    padding: 0;
+    background: none;
+    border: none;
+}
+
+.close:hover,
+.close:focus {
+    color: var(--white, #FEFFFF);
+}
+
+.modal-body {
+    padding: 2rem;
+}
+
+.order-details h4 {
+    color: var(--white, #FEFFFF);
+    font-size: 1.1rem;
+    margin-bottom: 1rem;
+    font-weight: 500;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    padding-bottom: 0.5rem;
+}
+
+.order-details p {
+    margin: 0.5rem 0;
+    color: var(--light-gray, #94A1B2);
+    line-height: 1.5;
+}
+
+.order-details strong {
+    color: var(--white, #FEFFFF);
+    margin-right: 0.5rem;
+}
+
+.order-details table {
+    background-color: var(--darker-gray, #16161A);
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.order-details table th {
+    background-color: var(--dark-gray, #1A1A1D);
+    color: var(--white, #FEFFFF);
+    font-weight: 500;
+    text-align: left;
+}
+
+.order-details table td,
+.order-details table th {
+    padding: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.order-details table td {
+    color: var(--light-gray, #94A1B2);
+}

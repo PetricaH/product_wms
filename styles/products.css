@@ -581,3 +581,407 @@
         padding: 0.1rem 0.3rem;
     }
 }
+
+/* ===== BULK OPERATIONS STYLING (ADDED) ===== */
+.bulk-actions-bar {
+    background: linear-gradient(135deg, var(--surface-background) 0%, var(--container-background) 100%);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    padding: 0.75rem 1rem;
+    margin-bottom: 1rem;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    position: sticky;
+    top: 80px;
+    z-index: 100;
+}
+
+.bulk-actions-content {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.bulk-selection-count {
+    font-weight: 600;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.85rem;
+}
+
+.bulk-selection-count::before {
+    content: "✓";
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    background-color: var(--primary-color);
+    color: white;
+    border-radius: 50%;
+    font-size: 11px;
+    font-weight: bold;
+}
+
+.bulk-actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.bulk-actions .btn {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.4rem 0.75rem;
+    font-size: 0.8rem;
+    border-radius: 4px;
+    transition: var(--transition);
+}
+
+.bulk-actions .btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+}
+
+/* Enhanced table styling for bulk selection */
+.table thead th:first-child {
+    width: 30px;
+    text-align: center;
+}
+
+.table tbody td:first-child {
+    text-align: center;
+    vertical-align: middle;
+}
+
+.product-checkbox,
+#selectAll {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+    accent-color: var(--primary-color);
+}
+
+/* Row highlighting for selected items */
+.table tbody tr:has(.product-checkbox:checked) {
+    background-color: rgba(var(--primary-color-rgb), 0.05);
+    border-left: 3px solid var(--primary-color);
+}
+
+.table tbody tr:has(.product-checkbox:checked) td {
+    border-color: rgba(var(--primary-color-rgb), 0.2);
+}
+
+/* Responsive design for bulk operations */
+@media (max-width: 768px) {
+    .bulk-actions-content {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .bulk-actions {
+        justify-content: center;
+    }
+    
+    .bulk-actions .btn {
+        font-size: 0.75rem;
+        padding: 0.35rem 0.6rem;
+    }
+}
+
+/* ===== IMPORT MODAL STYLES ===== */
+
+/* Header actions */
+.header-actions {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+}
+
+/* Import modal content */
+.import-step {
+    min-height: 300px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+/* Upload area */
+.upload-area {
+    border: 2px dashed var(--border-color);
+    border-radius: var(--border-radius);
+    padding: 3rem 2rem;
+    text-align: center;
+    background-color: var(--surface-background);
+    transition: var(--transition);
+}
+
+.upload-area:hover,
+.upload-area.dragover {
+    border-color: var(--primary-color);
+    background-color: rgba(var(--primary-color-rgb), 0.05);
+}
+
+.upload-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+}
+
+.upload-icon {
+    font-size: 3rem;
+    color: var(--text-muted);
+    margin-bottom: 0.5rem;
+}
+
+.upload-content h4 {
+    color: var(--text-primary);
+    margin: 0;
+    font-size: 1.2rem;
+}
+
+.upload-content p {
+    color: var(--text-secondary);
+    margin: 0;
+    font-size: 0.9rem;
+}
+
+/* File info */
+.file-info {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem;
+    background-color: var(--surface-background);
+    border-radius: var(--border-radius);
+    border: 1px solid var(--border-color);
+    margin-top: 1rem;
+}
+
+.file-details {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.file-details span {
+    color: var(--primary-color);
+    font-size: 1.5rem;
+}
+
+.file-details div strong {
+    display: block;
+    color: var(--text-primary);
+    font-size: 0.9rem;
+}
+
+.file-details div small {
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+}
+
+/* Processing content */
+.processing-content {
+    text-align: center;
+    padding: 2rem;
+}
+
+.processing-animation {
+    margin-bottom: 2rem;
+}
+
+.spinner {
+    width: 50px;
+    height: 50px;
+    border: 4px solid var(--surface-background);
+    border-top: 4px solid var(--primary-color);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin: 0 auto;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.processing-content h4 {
+    color: var(--text-primary);
+    margin: 0 0 0.5rem 0;
+    font-size: 1.2rem;
+}
+
+.processing-content p {
+    color: var(--text-secondary);
+    margin: 0 0 2rem 0;
+    font-size: 0.9rem;
+}
+
+/* Progress bar */
+.progress-bar {
+    width: 100%;
+    height: 8px;
+    background-color: var(--surface-background);
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 1.5rem;
+}
+
+.progress-fill {
+    height: 100%;
+    background-color: var(--primary-color);
+    transition: width 0.3s ease;
+    border-radius: 4px;
+}
+
+/* Processing logs */
+.processing-logs {
+    max-height: 200px;
+    overflow-y: auto;
+    text-align: left;
+    background-color: var(--container-background);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    padding: 1rem;
+    font-family: 'Courier New', monospace;
+    font-size: 0.8rem;
+    line-height: 1.4;
+}
+
+.processing-logs .log-entry {
+    margin-bottom: 0.25rem;
+    color: var(--text-secondary);
+}
+
+.processing-logs .log-success {
+    color: var(--success-color);
+}
+
+.processing-logs .log-error {
+    color: var(--danger-color);
+}
+
+.processing-logs .log-warning {
+    color: #f39c12;
+}
+
+/* Results content */
+.results-content {
+    text-align: center;
+    padding: 2rem;
+}
+
+.results-header {
+    margin-bottom: 2rem;
+}
+
+.success-icon {
+    font-size: 3rem;
+    color: var(--success-color);
+    margin-bottom: 1rem;
+}
+
+.results-header h4 {
+    color: var(--text-primary);
+    margin: 0;
+    font-size: 1.3rem;
+}
+
+/* Results stats */
+.results-stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1rem;
+    margin-bottom: 2rem;
+}
+
+.stat-item {
+    background-color: var(--surface-background);
+    padding: 1rem;
+    border-radius: var(--border-radius);
+    border: 1px solid var(--border-color);
+}
+
+.stat-item strong {
+    display: block;
+    font-size: 1.5rem;
+    color: var(--primary-color);
+    margin-bottom: 0.25rem;
+}
+
+.stat-item span {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+}
+
+/* Import errors */
+.import-errors {
+    text-align: left;
+    background-color: rgba(var(--danger-color-rgb), 0.1);
+    border: 1px solid rgba(var(--danger-color-rgb), 0.3);
+    border-radius: var(--border-radius);
+    padding: 1rem;
+}
+
+.import-errors h5 {
+    color: var(--danger-color);
+    margin: 0 0 0.75rem 0;
+    font-size: 0.9rem;
+}
+
+.import-errors ul {
+    margin: 0;
+    padding-left: 1.25rem;
+}
+
+.import-errors li {
+    color: var(--danger-color);
+    font-size: 0.8rem;
+    margin-bottom: 0.25rem;
+}
+
+/* Responsive design for import modal */
+@media (max-width: 768px) {
+    .header-actions {
+        flex-direction: column;
+        gap: 0.5rem;
+        align-items: stretch;
+    }
+    
+    .upload-area {
+        padding: 2rem 1rem;
+    }
+    
+    .upload-icon {
+        font-size: 2.5rem;
+    }
+    
+    .results-stats {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    
+    .file-info {
+        flex-direction: column;
+        gap: 1rem;
+        align-items: stretch;
+    }
+    
+    .processing-content {
+        padding: 1rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .results-stats {
+        grid-template-columns: 1fr;
+    }
+    
+    .stat-item strong {
+        font-size: 1.2rem;
+    }
+}

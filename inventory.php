@@ -147,7 +147,7 @@ switch ($view) {
 
 $totalPages = ceil($totalCount / $pageSize);
 
-$allProducts = $productModel->getAllProducts();
+$allProducts = $productModel->getAllProductsForDropdown();
 $allLocations = $locationModel->getAllLocations();
 $lowStockItems = $inventoryModel->getLowStockItems();
 $expiringProducts = $inventoryModel->getExpiringProducts();

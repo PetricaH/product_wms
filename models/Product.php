@@ -11,7 +11,8 @@ class Product {
     // Configurable fields for modular display (adapted to your schema)
     private $defaultFields = [
         'product_id', 'sku', 'name', 'description', 'category', 'quantity',
-        'min_stock_level', 'price', 'created_at', 'updated_at'
+        'min_stock_level', 'price', 'weight', 'dimensions', 'barcode', 
+        'image_url', 'status', 'created_at', 'updated_at', 'smartbill_product_id'
     ];
     
     // Essential fields that should always be included
@@ -75,6 +76,23 @@ class Product {
         } catch (PDOException $e) {
             error_log("Error fetching products: " . $e->getMessage());
             return false;
+        }
+    }
+
+    /**
+     * Get all products for dropdown (no limit)
+     * @return array Array of all products
+     */
+    public function getAllProductsForDropdown(): array {
+        $query = "SELECT product_id, sku, name FROM {$this->table} ORDER BY name ASC";
+        
+        try {
+            $stmt = $this->conn->prepare($query);
+            $stmt->execute();
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (PDOException $e) {
+            error_log("Error getting all products for dropdown: " . $e->getMessage());
+            return [];
         }
     }
 
@@ -628,25 +646,42 @@ class Product {
      * @return int|false Product ID on success, false on failure
      */
     public function createProduct(array $productData) {
-        $query = "INSERT INTO {$this->table} (name, sku, description, price, category, unit, status, created_at) 
-                VALUES (:name, :sku, :description, :price, :category, :unit, :status, NOW())";
+        // Validate required fields
+        if (empty($productData['name']) || empty($productData['sku'])) {
+            error_log("Product creation failed: SKU and name are required");
+            return false;
+        }
+        
+        // Check if SKU already exists
+        if ($this->skuExists($productData['sku'])) {
+            error_log("Product creation failed: SKU already exists - " . $productData['sku']);
+            return false;
+        }
+        
+        // Only use fields that actually exist in your database
+        $query = "INSERT INTO {$this->table} (sku, name, description, category, quantity, price, created_at) 
+                VALUES (:sku, :name, :description, :category, :quantity, :price, NOW())";
         
         try {
             $stmt = $this->conn->prepare($query);
             $params = [
-                ':name' => $productData['name'],
                 ':sku' => $productData['sku'],
+                ':name' => $productData['name'],
                 ':description' => $productData['description'] ?? '',
-                ':price' => $productData['price'] ?? 0,
                 ':category' => $productData['category'] ?? '',
-                ':unit' => $productData['unit'] ?? 'pcs',
-                ':status' => $productData['status'] ?? 1
+                ':quantity' => intval($productData['quantity'] ?? 0),
+                ':price' => floatval($productData['price'] ?? 0)
             ];
             
             $success = $stmt->execute($params);
-            return $success ? $this->conn->lastInsertId() : false;
+            if ($success) {
+                return $this->conn->lastInsertId();
+            } else {
+                error_log("Product creation failed for SKU: " . $productData['sku'] . " - Execute returned false");
+                return false;
+            }
         } catch (PDOException $e) {
-            error_log("Error creating product: " . $e->getMessage());
+            error_log("Error creating product " . $productData['sku'] . ": " . $e->getMessage());
             return false;
         }
     }
@@ -658,28 +693,66 @@ class Product {
      * @return bool Success status
      */
     public function updateProduct(int $productId, array $productData): bool {
-        $query = "UPDATE {$this->table} 
-                SET name = :name, sku = :sku, description = :description, 
-                    price = :price, category = :category, unit = :unit, 
-                    status = :status, updated_at = NOW()
-                WHERE product_id = :id";
+        if (empty($productData)) {
+            return false;
+        }
+        
+        // Check if SKU is being changed and already exists
+        if (isset($productData['sku']) && $this->skuExists($productData['sku'], $productId)) {
+            error_log("Product update failed: SKU already exists - " . $productData['sku']);
+            return false;
+        }
+        
+        // Build dynamic UPDATE query based on provided fields only
+        $fields = [];
+        $params = [':id' => $productId];
+        
+        // Map of allowed fields that exist in your database
+        $allowedFields = [
+            'sku' => ':sku',
+            'name' => ':name', 
+            'description' => ':description',
+            'category' => ':category',
+            'quantity' => ':quantity',
+            'price' => ':price'
+        ];
+        
+        // Only update fields that are actually provided and exist in database
+        foreach ($allowedFields as $field => $param) {
+            if (array_key_exists($field, $productData)) {
+                $fields[] = "{$field} = {$param}";
+                
+                // Handle different data types
+                if ($field === 'quantity') {
+                    $params[$param] = intval($productData[$field]);
+                } elseif ($field === 'price') {
+                    $params[$param] = floatval($productData[$field]);
+                } else {
+                    $params[$param] = $productData[$field];
+                }
+            }
+        }
+        
+        // If no valid fields to update, return false
+        if (empty($fields)) {
+            error_log("No valid fields to update for product ID: " . $productId);
+            return false;
+        }
+        
+        // Add updated_at timestamp
+        $fields[] = "updated_at = NOW()";
+        
+        $query = "UPDATE {$this->table} SET " . implode(', ', $fields) . " WHERE product_id = :id";
         
         try {
             $stmt = $this->conn->prepare($query);
-            $params = [
-                ':id' => $productId,
-                ':name' => $productData['name'],
-                ':sku' => $productData['sku'],
-                ':description' => $productData['description'] ?? '',
-                ':price' => $productData['price'] ?? 0,
-                ':category' => $productData['category'] ?? '',
-                ':unit' => $productData['unit'] ?? 'pcs',
-                ':status' => $productData['status'] ?? 1
-            ];
-            
-            return $stmt->execute($params);
+            $success = $stmt->execute($params);
+            if (!$success) {
+                error_log("Product update failed for ID: " . $productId . " - Execute returned false");
+            }
+            return $success;
         } catch (PDOException $e) {
-            error_log("Error updating product: " . $e->getMessage());
+            error_log("Error updating product ID " . $productId . ": " . $e->getMessage());
             return false;
         }
     }
@@ -690,8 +763,18 @@ class Product {
      * @return bool Success status
      */
     public function deleteProduct(int $productId): bool {
-        $query = "DELETE FROM {$this->table} WHERE product_id = :id";
-        
+        // chekc for order references
+        $checkQuery = "SELECT COUNT(*) FROM order_items WHERE product_id = :id";
+        $checkStmt = $this->conn->prepare($checkQuery);
+        $checkStmt->bindParam(':id', $productId, PDO::PARAM_INT);
+        $checkStmt->execute();
+
+        if($checkStmt->fetchColumn() > 0) {
+            $query = "UPDATE {$this->table} SET status = 'inactive' WHERE product_id = :id";
+        } else {
+            $query = "DELETE FROM {$this->table} WHERE product_id = :id";
+        }
+
         try {
             $stmt = $this->conn->prepare($query);
             $stmt->bindParam(':id', $productId, PDO::PARAM_INT);

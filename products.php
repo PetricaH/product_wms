@@ -49,7 +49,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'price' => floatval($_POST['price'] ?? 0),
                 'category' => trim($_POST['category'] ?? ''),
                 'unit' => trim($_POST['unit'] ?? 'pcs'),
-                'status' => isset($_POST['status']) ? 1 : 0
+                'status' => isset($_POST['status']) ? 'active' : 'inactive'
             ];
             
             if (empty($productData['name']) || empty($productData['sku'])) {
@@ -76,7 +76,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'price' => floatval($_POST['price'] ?? 0),
                 'category' => trim($_POST['category'] ?? ''),
                 'unit' => trim($_POST['unit'] ?? 'pcs'),
-                'status' => isset($_POST['status']) ? 1 : 0
+                'status' => isset($_POST['status']) ? 'active' : 'inactive'
             ];
             
             if ($productId <= 0 || empty($productData['name']) || empty($productData['sku'])) {
@@ -106,6 +106,63 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $messageType = 'success';
                 } else {
                     $message = 'Eroare la ștergerea produsului.';
+                    $messageType = 'error';
+                }
+            }
+            break;
+
+        case 'bulk_action':
+            $bulkAction = $_POST['bulk_action'] ?? '';
+            $selectedIds = $_POST['selected_products'] ?? [];
+            
+            if (empty($selectedIds)) {
+                $message = 'Niciun produs selectat.';
+                $messageType = 'error';
+            } else {
+                $successCount = 0;
+                $errorCount = 0;
+                
+                foreach ($selectedIds as $productId) {
+                    $productId = intval($productId);
+                    if ($productId <= 0) continue;
+                    
+                    switch ($bulkAction) {
+                        case 'delete':
+                            if ($productModel->deleteProduct($productId)) {
+                                $successCount++;
+                            } else {
+                                $errorCount++;
+                            }
+                            break;
+                            
+                        case 'activate':
+                            if ($productModel->updateProduct($productId, ['status' => 'active'])) {
+                                $successCount++;
+                            } else {
+                                $errorCount++;
+                            }
+                            break;
+                            
+                        case 'deactivate':
+                            if ($productModel->updateProduct($productId, ['status' => 'inactive'])) {
+                                $successCount++;
+                            } else {
+                                $errorCount++;
+                            }
+                            break;
+                    }
+                }
+                
+                if ($successCount > 0) {
+                    $message = "Operațiune completă: {$successCount} produse procesate cu succes";
+                    if ($errorCount > 0) {
+                        $message .= ", {$errorCount} erori.";
+                    } else {
+                        $message .= ".";
+                    }
+                    $messageType = $errorCount > 0 ? 'warning' : 'success';
+                } else {
+                    $message = 'Nicio operațiune a fost finalizată cu succes.';
                     $messageType = 'error';
                 }
             }
@@ -158,10 +215,16 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                             </span>
                         </div>
                     </div>
-                    <button class="btn btn-primary" onclick="openCreateModal()">
-                        <span class="material-symbols-outlined">add</span>
-                        Nou Produs
-                    </button>
+                    <div class="header-actions">
+                        <button class="btn btn-secondary" onclick="openImportModal()">
+                            <span class="material-symbols-outlined">upload</span>
+                            Import Produse
+                        </button>
+                        <button class="btn btn-primary" onclick="openCreateModal()">
+                            <span class="material-symbols-outlined">add</span>
+                            Nou Produs
+                        </button>
+                    </div>
                 </div>
                 
                 <!-- Compact Search and Filters -->
@@ -195,82 +258,119 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                 
                 <!-- Alert Messages -->
                 <?php if (!empty($message)): ?>
-                    <div class="alert alert-<?= $messageType === 'success' ? 'success' : 'danger' ?>">
+                    <div class="alert alert-<?= $messageType === 'success' ? 'success' : ($messageType === 'warning' ? 'warning' : 'danger') ?>">
                         <span class="material-symbols-outlined">
-                            <?= $messageType === 'success' ? 'check_circle' : 'error' ?>
+                            <?= $messageType === 'success' ? 'check_circle' : ($messageType === 'warning' ? 'warning' : 'error') ?>
                         </span>
                         <?= htmlspecialchars($message) ?>
                     </div>
                 <?php endif; ?>
+
+                <!-- Bulk Actions Bar -->
+                <div class="bulk-actions-bar" id="bulkActionsBar" style="display: none;">
+                    <div class="bulk-actions-content">
+                        <span class="bulk-selection-count">
+                            <span id="selectedCount">0</span> produse selectate
+                        </span>
+                        <div class="bulk-actions">
+                            <button type="button" class="btn btn-sm btn-success" onclick="performBulkAction('activate')">
+                                <span class="material-symbols-outlined">check_circle</span>
+                                Activează
+                            </button>
+                            <button type="button" class="btn btn-sm btn-warning" onclick="performBulkAction('deactivate')">
+                                <span class="material-symbols-outlined">block</span>
+                                Dezactivează
+                            </button>
+                            <button type="button" class="btn btn-sm btn-danger" onclick="performBulkAction('delete')">
+                                <span class="material-symbols-outlined">delete</span>
+                                Șterge
+                            </button>
+                        </div>
+                    </div>
+                </div>
                 
                 <!-- Compact Products Table -->
                 <div class="table-container">
                     <?php if (!empty($allProducts)): ?>
-                        <table class="table">
-                            <thead>
-                                <tr>
-                                    <th>SKU</th>
-                                    <th>Nume Produs</th>
-                                    <th>Categorie</th>
-                                    <th>Preț</th>
-                                    <th>Stoc</th>
-                                    <th>Status</th>
-                                    <th width="100">Acțiuni</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <?php foreach ($allProducts as $product): ?>
+                        <form id="bulkForm" method="POST" action="">
+                            <input type="hidden" name="action" value="bulk_action">
+                            <input type="hidden" name="bulk_action" id="bulkActionInput">
+                            
+                            <table class="table">
+                                <thead>
                                     <tr>
-                                        <td>
-                                            <code class="sku-code"><?= htmlspecialchars($product['sku'] ?? 'N/A') ?></code>
-                                        </td>
-                                        <td>
-                                            <div class="product-info">
-                                                <strong><?= htmlspecialchars($product['name'] ?? 'Produs fără nume') ?></strong>
-                                                <?php if (!empty($product['description'])): ?>
-                                                    <small><?= htmlspecialchars(substr($product['description'], 0, 60)) ?><?= strlen($product['description'] ?? '') > 60 ? '...' : '' ?></small>
-                                                <?php endif; ?>
-                                            </div>
-                                        </td>
-                                        <td>
-                                            <?php if (!empty($product['category'])): ?>
-                                                <span class="category-tag"><?= htmlspecialchars($product['category']) ?></span>
-                                            <?php else: ?>
-                                                <span class="text-muted">-</span>
-                                            <?php endif; ?>
-                                        </td>
-                                        <td>
-                                            <strong><?= number_format($product['price'] ?? 0, 2) ?> RON</strong>
-                                        </td>
-                                        <td>
-                                            <span class="stock-info">
-                                                <?= number_format($product['quantity'] ?? 0) ?> 
-                                                <small><?= htmlspecialchars($product['unit'] ?? 'pcs') ?></small>
-                                            </span>
-                                        </td>
-                                        <td>
-                                            <span class="status-badge status-<?= ($product['status'] ?? 1) == 1 ? 'active' : 'inactive' ?>">
-                                                <?= ($product['status'] ?? 1) == 1 ? 'Activ' : 'Inactiv' ?>
-                                            </span>
-                                        </td>
-                                        <td>
-                                            <div class="actions-group">
-                                                <button class="action-btn edit-btn" 
-                                                        onclick="openEditModal(<?= htmlspecialchars(json_encode($product)) ?>)"
-                                                        title="Editează">
-                                                    <span class="material-symbols-outlined">edit</span>
-                                                </button>
-                                                <button class="action-btn delete-btn" 
-                                                        onclick="confirmDelete(<?= $product['id'] ?? 0 ?>, '<?= htmlspecialchars(addslashes($product['name'] ?? 'Produs')) ?>')"
-                                                        title="Șterge">
-                                                    <span class="material-symbols-outlined">delete</span>
-                                                </button>
-                                            </div>
-                                        </td>
+                                        <th width="30">
+                                            <input type="checkbox" id="selectAll" onchange="toggleSelectAll()">
+                                        </th>
+                                        <th>SKU</th>
+                                        <th>Nume Produs</th>
+                                        <th>Categorie</th>
+                                        <th>Preț</th>
+                                        <th>Stoc</th>
+                                        <th>Status</th>
+                                        <th width="100">Acțiuni</th>
                                     </tr>
-                                <?php endforeach; ?>
-                            </tbody>
-                        </table>
+                                </thead>
+                                <tbody>
+                                    <?php foreach ($allProducts as $product): ?>
+                                        <tr>
+                                            <td>
+                                                <input type="checkbox" name="selected_products[]" 
+                                                       value="<?= $product['product_id'] ?>" 
+                                                       class="product-checkbox" 
+                                                       onchange="updateBulkActions()">
+                                            </td>
+                                            <td>
+                                                <code class="sku-code"><?= htmlspecialchars($product['sku'] ?? 'N/A') ?></code>
+                                            </td>
+                                            <td>
+                                                <div class="product-info">
+                                                    <strong><?= htmlspecialchars($product['name'] ?? 'Produs fără nume') ?></strong>
+                                                    <?php if (!empty($product['description'])): ?>
+                                                        <small><?= htmlspecialchars(substr($product['description'], 0, 60)) ?><?= strlen($product['description'] ?? '') > 60 ? '...' : '' ?></small>
+                                                    <?php endif; ?>
+                                                </div>
+                                            </td>
+                                            <td>
+                                                <?php if (!empty($product['category'])): ?>
+                                                    <span class="category-tag"><?= htmlspecialchars($product['category']) ?></span>
+                                                <?php else: ?>
+                                                    <span class="text-muted">-</span>
+                                                <?php endif; ?>
+                                            </td>
+                                            <td>
+                                                <strong><?= number_format($product['price'] ?? 0, 2) ?> RON</strong>
+                                            </td>
+                                            <td>
+                                                <span class="stock-info">
+                                                    <?= number_format($product['quantity'] ?? 0) ?> 
+                                                    <small><?= htmlspecialchars($product['unit'] ?? 'pcs') ?></small>
+                                                </span>
+                                            </td>
+                                            <td>
+                                                <span class="status-badge status-<?= ($product['status'] ?? 1) == 1 ? 'active' : 'inactive' ?>">
+                                                    <?= ($product['status'] ?? 1) == 1 ? 'Activ' : 'Inactiv' ?>
+                                                </span>
+                                            </td>
+                                            <td>
+                                                <div class="actions-group">
+                                                    <button class="action-btn edit-btn" 
+                                                            onclick="openEditModal(<?= htmlspecialchars(json_encode($product)) ?>)"
+                                                            title="Editează">
+                                                        <span class="material-symbols-outlined">edit</span>
+                                                    </button>
+                                                    <button class="action-btn delete-btn" 
+                                                            onclick="confirmDelete(<?= $product['product_id'] ?? 0 ?>, '<?= htmlspecialchars(addslashes($product['name'] ?? 'Produs')) ?>')"
+                                                            title="Șterge">
+                                                        <span class="material-symbols-outlined">delete</span>
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        </form>
                         
                         <!-- Compact Pagination -->
                         <?php if ($totalPages > 1): ?>
@@ -318,6 +418,102 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                             </p>
                         </div>
                     <?php endif; ?>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Import Products Modal -->
+    <div class="modal" id="importProductModal" style="display: none;">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>Import Produse din Excel</h3>
+                    <button class="modal-close" onclick="closeImportModal()">
+                        <span class="material-symbols-outlined">close</span>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <!-- Step 1: File Upload -->
+                    <div id="step-upload" class="import-step">
+                        <div class="upload-area" id="uploadArea">
+                            <div class="upload-content">
+                                <span class="material-symbols-outlined upload-icon">cloud_upload</span>
+                                <h4>Încarcă fișierul Excel</h4>
+                                <p>Selectează fișierul .xls sau .xlsx cu produsele</p>
+                                <input type="file" id="excelFile" accept=".xls,.xlsx" style="display: none;">
+                                <button type="button" class="btn btn-primary" onclick="document.getElementById('excelFile').click()">
+                                    Selectează Fișier
+                                </button>
+                            </div>
+                        </div>
+                        <div id="fileInfo" class="file-info" style="display: none;">
+                            <div class="file-details">
+                                <span class="material-symbols-outlined">description</span>
+                                <div>
+                                    <strong id="fileName"></strong>
+                                    <small id="fileSize"></small>
+                                </div>
+                            </div>
+                            <button type="button" class="btn btn-success" onclick="startProcessing()">
+                                <span class="material-symbols-outlined">play_arrow</span>
+                                Start Import
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Step 2: Processing -->
+                    <div id="step-processing" class="import-step" style="display: none;">
+                        <div class="processing-content">
+                            <div class="processing-animation">
+                                <div class="spinner"></div>
+                            </div>
+                            <h4>Se procesează fișierul...</h4>
+                            <p id="processingStatus">Citire date Excel...</p>
+                            <div class="progress-bar">
+                                <div class="progress-fill" id="progressFill" style="width: 0%"></div>
+                            </div>
+                            <div id="processingLogs" class="processing-logs"></div>
+                        </div>
+                    </div>
+                    
+                    <!-- Step 3: Results -->
+                    <div id="step-results" class="import-step" style="display: none;">
+                        <div class="results-content">
+                            <div class="results-header">
+                                <span class="material-symbols-outlined success-icon">check_circle</span>
+                                <h4>Import Finalizat!</h4>
+                            </div>
+                            <div class="results-stats">
+                                <div class="stat-item">
+                                    <strong id="createdCount">0</strong>
+                                    <span>Produse noi</span>
+                                </div>
+                                <div class="stat-item">
+                                    <strong id="updatedCount">0</strong>
+                                    <span>Actualizate</span>
+                                </div>
+                                <div class="stat-item">
+                                    <strong id="skippedCount">0</strong>
+                                    <span>Omise</span>
+                                </div>
+                                <div class="stat-item">
+                                    <strong id="errorCount">0</strong>
+                                    <span>Erori</span>
+                                </div>
+                            </div>
+                            <div id="importErrors" class="import-errors" style="display: none;">
+                                <h5>Erori detectate:</h5>
+                                <ul id="errorList"></ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="closeImportModal()">Închide</button>
+                    <button type="button" class="btn btn-primary" id="viewProductsBtn" onclick="window.location.reload()" style="display: none;">
+                        Vezi Produsele
+                    </button>
                 </div>
             </div>
         </div>

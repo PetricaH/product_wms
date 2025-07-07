@@ -85,7 +85,7 @@ if (isset($_SESSION['username'])) {
                class="sidebar__link <?= getActiveClass('locations.php') ?>"
                data-tooltip="Depozite">
                 <span class="material-symbols-outlined">warehouse</span>
-                <span class="link-text">Depozite</span>
+                <span class="link-text">Locații</span>
             </a>
         </li>
         

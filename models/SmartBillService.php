@@ -514,33 +514,30 @@ class SmartBillService {
     private function createProductFromSmartBill(array $productData): ?int {
         try {
             $query = "INSERT INTO products (
-                        sku, 
-                        name, 
-                        description,
-                        category, 
-                        quantity,
-                        min_stock_level,
-                        price, 
-                        smartbill_product_id,
-                        smartbill_synced_at,
-                        created_at,
-                        updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), NOW())";
-            
+                sku,
+                name,
+                description,
+                category,
+                quantity,
+                min_stock_level,
+                price,
+                smartbill_product_id,
+                status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active')";
+
             $stmt = $this->conn->prepare($query);
             $stmt->execute([
                 $productData['code'],
                 $productData['name'],
                 'Imported from SmartBill - ' . ($productData['warehouse'] ?? 'Unknown warehouse'),
-                'SmartBill', 
-                $productData['quantity'] ?? 0, // Set the actual stock quantity
-                5, // Default min stock level
-                0.00, // Price will be updated separately
+                'SmartBill',
+                $productData['quantity'] ?? 0,
+                5,
+                0.00,
                 $productData['code']
             ]);
-            
+
             return (int)$this->conn->lastInsertId();
-            
         } catch (PDOException $e) {
             error_log("Error creating product from SmartBill: " . $e->getMessage());
             return null;

@@ -42,8 +42,8 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
   
 <?php else: ?>
   <!-- Development CSS -->
-  <link rel="stylesheet" href="/product_wms/styles/global.css">
-  <link rel="stylesheet" href="/product_wms/styles/sidebar.css">
+  <link rel="stylesheet" href="<?= BASE_URL ?>styles/global.css">
+  <link rel="stylesheet" href="<?= BASE_URL ?>styles/sidebar.css">
   
   <?php
   // Load page-specific CSS in development
@@ -55,17 +55,17 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
       'inventory' => 'inventory.css',
       'orders' => 'orders.css',
       'transactions' => 'transactions.css',
-      'smartbill-sync' => 'smartbill_sync.css',
+      'smartbill-sync' => 'smartbill-sync.css',
       'activities' => 'activities.css'
   ];
   
   if (isset($pageSpecificCSS[$currentPage])) {
-      echo '<link rel="stylesheet" href="/product_wms/styles/' . $pageSpecificCSS[$currentPage] . '">';
+      echo '<link rel="stylesheet" href="' . BASE_URL . 'styles/' . $pageSpecificCSS[$currentPage] . '">';
   }
   ?>
   
   <!-- Universal Scripts -->
-  <script src="/product_wms/scripts/universal.js" defer></script>
+  <script src="<?= BASE_URL ?>scripts/universal.js" defer></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-  <script src="<?= asset('scripts/theme-toggle.js') ?>" defer></script>
+  <script src="<?= BASE_URL ?>scripts/theme-toggle.js" defer></script>
 <?php endif; ?>

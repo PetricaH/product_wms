@@ -37,7 +37,7 @@ if (isset($pageSpecificJS[$currentPage])) {
             }
         } else {
             // Development environment path.
-            $jsUrl = '/product_wms/scripts/' . $jsFileName;
+            $jsUrl = BASE_URL . 'scripts/' . $jsFileName;
         }
         
         // If a URL was successfully generated, output the script tag.

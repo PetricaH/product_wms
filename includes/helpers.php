@@ -17,7 +17,7 @@ function asset(string $path): string {
     }
 
     // Get the base URL for the project
-    $baseUrl = '/product_wms';  // Add this line
+    $baseUrl = rtrim(BASE_URL, '/');  // Add this line
     
     // In production, return revved if available
     if (getenv('NODE_ENV') === 'production' && isset($manifest[$path])) {

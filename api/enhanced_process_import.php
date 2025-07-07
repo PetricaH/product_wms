@@ -1,4 +1,74 @@
-<?php
+/**
+     * Process a single import record
+     */
+    public function processImport($importId) {
+        try {
+            $this->db->beginTransaction();
+            
+            // Get the import record
+            $import = $this->getImportRecord($importId);
+            if (!$import) {
+                throw new Exception("Import record not found or already processed");
+            }
+
+            // Update status to processing
+            $this->updateImportStatus($importId, 'processing');
+
+            // Parse and validate JSON data
+            $jsonData = $this->parseAndValidateJSON($import['json_data']);
+            
+            // Extract and validate required data
+            $clientInfo = $this->validateClientInfo($jsonData['client_info'] ?? []);
+            $invoiceInfo = $this->validateInvoiceInfo($jsonData['invoice_info'] ?? []);
+            
+            // Handle missing products scenario
+            $products = $this->validateAndProcessProducts($invoiceInfo['ordered_products'] ?? []);
+            
+            if (empty($products)) {
+                throw new Exception("No products found in order");
+            }
+
+            // Generate unique order number
+            $orderNumber = $this->generateOrderNumber();
+            
+            // Determine priority based on invoice value or customer
+            $priority = $this->determinePriority($import['total_value'], $import['contact_person_name']);
+            
+            // Create the main order
+            $orderId = $this->createOrder($orderNumber, $import, $clientInfo, $priority);
+            
+            // Process order items
+            $itemResults = $this->processOrderItems($orderId, $products);
+            
+            // Update import with success
+            $this->updateImportSuccess($importId, $orderId, $itemResults);
+            
+            $this->db->commit();
+            
+            return [
+                'success' => true,
+                'order_id' => $orderId,
+                'order_number' => $orderNumber,
+                'items_processed' => $itemResults['processed'],
+                'items_skipped' => $itemResults['skipped'],
+                'errors' => $this->errors,
+                'warnings' => $this->warnings,
+                'debug_info' => $this->debugInfo
+            ];
+
+        } catch (Exception $e) {
+            $this->db->rollback();
+            $this->updateImportFailure($importId, $e->getMessage());
+            
+            return [
+                'success' => false,
+                'error' => $e->getMessage(),
+                'errors' => $this->errors,
+                'warnings' => $this->warnings,
+                'debug_info' => $this->debugInfo
+            ];
+        }
+    }<?php
 // File: api/enhanced_process_import.php
 header('Content-Type: application/json');
 error_reporting(E_ALL);
@@ -49,16 +119,22 @@ class ImportProcessor {
             $products = $this->validateAndProcessProducts($invoiceInfo['ordered_products'] ?? []);
             
             if (empty($products)) {
-                throw new Exception("No valid products found in invoice");
+                throw new Exception("No products found in order");
             }
 
-            // Create the WMS order
-            $orderId = $this->createWMSOrder($import, $clientInfo, $invoiceInfo);
+            // Generate unique order number
+            $orderNumber = $this->generateOrderNumber();
             
-            // Process each product
+            // Determine priority based on invoice value or customer
+            $priority = $this->determinePriority($import['total_value'], $import['contact_person_name']);
+            
+            // Create the main order
+            $orderId = $this->createOrder($orderNumber, $import, $clientInfo, $priority);
+            
+            // Process order items
             $itemResults = $this->processOrderItems($orderId, $products);
             
-            // Update import record with success
+            // Update import with success
             $this->updateImportSuccess($importId, $orderId, $itemResults);
             
             $this->db->commit();
@@ -66,8 +142,10 @@ class ImportProcessor {
             return [
                 'success' => true,
                 'order_id' => $orderId,
+                'order_number' => $orderNumber,
                 'items_processed' => $itemResults['processed'],
                 'items_skipped' => $itemResults['skipped'],
+                'errors' => $this->errors,
                 'warnings' => $this->warnings,
                 'debug_info' => $this->debugInfo
             ];
@@ -87,213 +165,109 @@ class ImportProcessor {
     }
 
     /**
-     * Get import record from database
+     * Get import record
      */
     private function getImportRecord($importId) {
         $query = "SELECT * FROM order_imports WHERE id = :import_id AND processing_status = 'pending'";
         $stmt = $this->db->prepare($query);
-        $stmt->execute([':import_id' => $importId]);
+        $stmt->bindParam(':import_id', $importId, PDO::PARAM_INT);
+        $stmt->execute();
         return $stmt->fetch(PDO::FETCH_ASSOC);
     }
 
     /**
-     * Parse and validate JSON data with error handling
+     * Parse and validate JSON data
      */
     private function parseAndValidateJSON($jsonString) {
-        if (empty($jsonString)) {
-            throw new Exception("JSON data is empty");
-        }
-
         $data = json_decode($jsonString, true);
         if (json_last_error() !== JSON_ERROR_NONE) {
-            throw new Exception("Invalid JSON: " . json_last_error_msg());
+            throw new Exception('Invalid JSON data in import record');
         }
-
-        // Log the structure for debugging
-        $this->debugInfo['json_structure'] = array_keys($data);
         
+        $this->debugInfo['json_structure'] = array_keys($data);
         return $data;
     }
 
     /**
-     * Validate client information with fallbacks
+     * Validate client information
      */
     private function validateClientInfo($clientInfo) {
-        $validated = [];
-
-        // Required: contact person name
-        if (empty($clientInfo['contact_person_name'])) {
-            throw new Exception("Missing required field: contact_person_name");
-        }
-        $validated['contact_person_name'] = trim($clientInfo['contact_person_name']);
-
-        // Optional fields with fallbacks
-        $validated['company_name'] = trim($clientInfo['company_name'] ?? '');
-        $validated['contact_email'] = $this->validateEmail($clientInfo['contact_email'] ?? '');
-        $validated['contact_phone'] = trim($clientInfo['contact_phone'] ?? '');
-        $validated['county'] = trim($clientInfo['county'] ?? '');
-        $validated['city'] = trim($clientInfo['city'] ?? '');
-        $validated['address'] = trim($clientInfo['address'] ?? '');
-        $validated['postal_code'] = trim($clientInfo['postal_code'] ?? '');
-        $validated['seller_name'] = trim($clientInfo['seller_name'] ?? '');
-
-        // Build full customer name
-        $validated['full_customer_name'] = $validated['contact_person_name'];
-        if (!empty($validated['company_name'])) {
-            $validated['full_customer_name'] .= ' (' . $validated['company_name'] . ')';
-        }
-
-        // Build shipping address
-        $addressParts = array_filter([
-            $validated['address'],
-            $validated['city'],
-            $validated['county'],
-            $validated['postal_code']
-        ]);
-        $validated['shipping_address'] = implode(', ', $addressParts);
-
-        return $validated;
+        return [
+            'name' => $clientInfo['name'] ?? '',
+            'email' => $this->validateEmail($clientInfo['email'] ?? ''),
+            'phone' => $clientInfo['phone'] ?? '',
+            'address' => $clientInfo['address'] ?? ''
+        ];
     }
 
     /**
      * Validate invoice information
      */
     private function validateInvoiceInfo($invoiceInfo) {
-        $validated = [];
-
-        // Required fields
-        if (empty($invoiceInfo['invoice_number'])) {
-            throw new Exception("Missing required field: invoice_number");
-        }
-        $validated['invoice_number'] = trim($invoiceInfo['invoice_number']);
-
-        if (!isset($invoiceInfo['total_value']) || !is_numeric($invoiceInfo['total_value'])) {
-            throw new Exception("Missing or invalid total_value");
-        }
-        $validated['total_value'] = floatval($invoiceInfo['total_value']);
-
-        // Optional fields
-        $validated['client_cui'] = trim($invoiceInfo['client_cui'] ?? '');
-        $validated['payment_method'] = trim($invoiceInfo['payment_method'] ?? '');
-
-        return $validated;
+        return [
+            'number' => $invoiceInfo['number'] ?? '',
+            'date' => $invoiceInfo['date'] ?? '',
+            'total' => floatval($invoiceInfo['total'] ?? 0),
+            'ordered_products' => $invoiceInfo['ordered_products'] ?? []
+        ];
     }
 
     /**
-     * Validate and process products with multiple scenarios
+     * Validate and process products
      */
     private function validateAndProcessProducts($products) {
-        if (!is_array($products)) {
-            throw new Exception("Products must be an array");
-        }
-
-        if (empty($products)) {
-            throw new Exception("No products found in order");
+        if (empty($products) || !is_array($products)) {
+            return [];
         }
 
         $validProducts = [];
-        $invalidCount = 0;
-
-        foreach ($products as $index => $product) {
-            try {
-                $validProduct = $this->validateSingleProduct($product, $index);
-                if ($validProduct) {
-                    $validProducts[] = $validProduct;
-                }
-            } catch (Exception $e) {
-                $invalidCount++;
-                $this->warnings[] = "Product at index $index skipped: " . $e->getMessage();
-                continue;
+        foreach ($products as $product) {
+            if (isset($product['name']) && isset($product['quantity'])) {
+                $validProducts[] = [
+                    'name' => $product['name'],
+                    'code' => $product['code'] ?? $product['sku'] ?? $product['product_code'] ?? '', // Try multiple possible SKU fields
+                    'quantity' => floatval($product['quantity']),
+                    'unit_price' => floatval($product['unit_price'] ?? $product['price'] ?? 0),
+                    'total_price' => floatval($product['total_price'] ?? 0)
+                ];
             }
-        }
-
-        $this->debugInfo['total_products'] = count($products);
-        $this->debugInfo['valid_products'] = count($validProducts);
-        $this->debugInfo['invalid_products'] = $invalidCount;
-
-        if (empty($validProducts)) {
-            throw new Exception("No valid products could be processed");
         }
 
         return $validProducts;
     }
 
     /**
-     * Validate a single product
+     * Create order in database
      */
-    private function validateSingleProduct($product, $index) {
-        $validated = [];
-
-        // Required: product name
-        if (empty($product['name'])) {
-            throw new Exception("Product name is required");
-        }
-        $validated['name'] = trim($product['name']);
-
-        // Required: quantity
-        if (!isset($product['quantity']) || !is_numeric($product['quantity']) || floatval($product['quantity']) <= 0) {
-            throw new Exception("Valid quantity is required");
-        }
-        $validated['quantity'] = floatval($product['quantity']);
-
-        // Price (can be 0)
-        $validated['price'] = floatval($product['price'] ?? 0);
-        $validated['total_price'] = floatval($product['total_price'] ?? $validated['price'] * $validated['quantity']);
-
-        // Optional fields
-        $validated['code'] = trim($product['code'] ?? '');
-        $validated['unit'] = trim($product['unit'] ?? 'bucata');
-
-        // Generate SKU if missing
-        if (empty($validated['code'])) {
-            $validated['code'] = $this->generateSKUFromName($validated['name']);
-            $this->warnings[] = "Generated SKU '{$validated['code']}' for product: {$validated['name']}";
-        }
-
-        return $validated;
-    }
-
-    /**
-     * Create WMS order
-     */
-    private function createWMSOrder($import, $clientInfo, $invoiceInfo) {
-        $orderNumber = $this->generateOrderNumber();
-        
-        $priority = $this->determinePriority($invoiceInfo['total_value'], $clientInfo['contact_person_name']);
-        
-        $notes = 'Import automat din factură: ' . $invoiceInfo['invoice_number'];
-        if (!empty($clientInfo['seller_name'])) {
-            $notes .= ' - Vânzător: ' . $clientInfo['seller_name'];
-        }
-
+    private function createOrder($orderNumber, $import, $clientInfo, $priority) {
         $query = "
             INSERT INTO orders (
                 order_number, customer_name, customer_email, 
                 shipping_address, order_date, status, priority, 
-                total_value, notes, source, created_by, type
+                total_value, notes, created_by, type
             ) VALUES (
                 :order_number, :customer_name, :customer_email,
                 :shipping_address, CURRENT_TIMESTAMP, 'pending', :priority,
-                :total_value, :notes, 'email', 1, 'outbound'
+                :total_value, :notes, 1, 'inbound'
             )
         ";
         
         $stmt = $this->db->prepare($query);
         $stmt->execute([
             ':order_number' => $orderNumber,
-            ':customer_name' => $clientInfo['full_customer_name'],
-            ':customer_email' => $clientInfo['contact_email'],
-            ':shipping_address' => $clientInfo['shipping_address'],
+            ':customer_name' => $import['contact_person_name'] . ($import['company_name'] ? ' (' . $import['company_name'] . ')' : ''),
+            ':customer_email' => $this->validateEmail($import['contact_email']),
+            ':shipping_address' => $this->buildShippingAddress($import),
             ':priority' => $priority,
-            ':total_value' => $invoiceInfo['total_value'],
-            ':notes' => $notes
+            ':total_value' => $import['total_value'],
+            ':notes' => 'Import automat din factură: ' . $import['invoice_number']
         ]);
         
         return $this->db->lastInsertId();
     }
 
     /**
-     * Process order items with product mapping
+     * Process order items
      */
     private function processOrderItems($orderId, $products) {
         $processed = 0;
@@ -301,18 +275,20 @@ class ImportProcessor {
 
         foreach ($products as $product) {
             try {
-                $productId = $this->ensureProductExists($product);
+                // Try to find matching product in warehouse by SKU first, then name
+                $warehouseProduct = $this->findWarehouseProduct($product['code'], $product['name']);
                 
-                if ($productId) {
-                    $this->addOrderItem($orderId, $productId, $product);
+                if ($warehouseProduct) {
+                    $this->addOrderItem($orderId, $warehouseProduct, $product);
                     $processed++;
                 } else {
+                    $this->warnings[] = "Product not found in warehouse: " . $product['name'] . 
+                                       ($product['code'] ? " (SKU: " . $product['code'] . ")" : "");
                     $skipped++;
-                    $this->warnings[] = "Could not create/find product: " . $product['name'];
                 }
             } catch (Exception $e) {
+                $this->errors[] = "Error processing product {$product['name']}: " . $e->getMessage();
                 $skipped++;
-                $this->warnings[] = "Error processing product '{$product['name']}': " . $e->getMessage();
             }
         }
 
@@ -320,69 +296,87 @@ class ImportProcessor {
     }
 
     /**
-     * Ensure product exists or create it
+     * Find product in warehouse by SKU
      */
-    private function ensureProductExists($productData) {
-        // Try to find existing product by SKU
-        $query = "SELECT product_id FROM products WHERE sku = :sku LIMIT 1";
-        $stmt = $this->db->prepare($query);
-        $stmt->execute([':sku' => $productData['code']]);
-        $existing = $stmt->fetch(PDO::FETCH_ASSOC);
-
-        if ($existing) {
-            return $existing['product_id'];
+    private function findWarehouseProduct($productCode, $productName = '') {
+        // Primary match: exact SKU match
+        if (!empty($productCode)) {
+            $query = "SELECT * FROM products WHERE sku = :sku LIMIT 1";
+            $stmt = $this->db->prepare($query);
+            $stmt->execute([':sku' => $productCode]);
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($result) return $result;
         }
 
-        // Create new product
-        $query = "INSERT INTO products (name, sku, price, category, description) 
-                  VALUES (:name, :sku, :price, 'Email Import', 'Produs importat automat din email')";
-        $stmt = $this->db->prepare($query);
-        $stmt->execute([
-            ':name' => $productData['name'],
-            ':sku' => $productData['code'],
-            ':price' => $productData['price']
-        ]);
+        // Fallback: try partial SKU match (in case of prefix differences)
+        if (!empty($productCode)) {
+            $query = "SELECT * FROM products WHERE sku LIKE :sku LIMIT 1";
+            $stmt = $this->db->prepare($query);
+            $stmt->execute([':sku' => '%' . $productCode . '%']);
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($result) return $result;
+        }
 
-        return $this->db->lastInsertId();
+        // Last resort: name matching (if no SKU provided)
+        if (!empty($productName)) {
+            $query = "SELECT * FROM products WHERE LOWER(name) LIKE LOWER(:name) LIMIT 1";
+            $stmt = $this->db->prepare($query);
+            $stmt->execute([':name' => '%' . $productName . '%']);
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($result) return $result;
+        }
+        
+        return null;
     }
 
     /**
      * Add order item
      */
-    private function addOrderItem($orderId, $productId, $productData) {
-        $query = "INSERT INTO order_items (order_id, product_id, quantity, unit_price) 
-                  VALUES (:order_id, :product_id, :quantity, :unit_price)";
+    private function addOrderItem($orderId, $warehouseProduct, $orderProduct) {
+        $query = "
+            INSERT INTO order_items (
+                order_id, product_id, quantity_ordered, unit_price, notes
+            ) VALUES (
+                :order_id, :product_id, :quantity_ordered, :unit_price, :notes
+            )
+        ";
+        
         $stmt = $this->db->prepare($query);
         $stmt->execute([
             ':order_id' => $orderId,
-            ':product_id' => $productId,
-            ':quantity' => $productData['quantity'],
-            ':unit_price' => $productData['price']
+            ':product_id' => $warehouseProduct['product_id'],
+            ':quantity_ordered' => $orderProduct['quantity'],
+            ':unit_price' => $orderProduct['unit_price'],
+            ':notes' => 'Matched SKU: ' . ($orderProduct['code'] ?: 'N/A')
         ]);
     }
 
     /**
-     * Generate order number
+     * Build shipping address from import data
      */
-    private function generateOrderNumber() {
-        $prefix = 'ORD';
-        $date = date('Ymd');
-        
-        $query = "SELECT COUNT(*) + 1 as next_num FROM orders WHERE DATE(order_date) = CURDATE()";
-        $stmt = $this->db->prepare($query);
-        $stmt->execute();
-        $result = $stmt->fetch(PDO::FETCH_ASSOC);
-        $sequence = str_pad($result['next_num'], 4, '0', STR_PAD_LEFT);
-        
-        return "{$prefix}-{$date}-{$sequence}";
+    private function buildShippingAddress($import) {
+        $parts = array_filter([
+            $import['shipping_address'] ?? '',
+            $import['shipping_city'] ?? '',
+            $import['shipping_county'] ?? '',
+            $import['shipping_postal_code'] ?? ''
+        ]);
+        return implode(', ', $parts);
     }
 
     /**
-     * Generate SKU from product name
+     * Generate unique order number
      */
-    private function generateSKUFromName($name) {
-        $clean = preg_replace('/[^a-zA-Z0-9]/', '', strtoupper($name));
-        return substr($clean, 0, 10) . '-' . substr(md5($name), 0, 4);
+    private function generateOrderNumber() {
+        $prefix = 'ORD-' . date('Y');
+        $query = "SELECT MAX(CAST(SUBSTRING(order_number, 10) AS UNSIGNED)) as max_num 
+                  FROM orders WHERE order_number LIKE :prefix";
+        $stmt = $this->db->prepare($query);
+        $stmt->execute([':prefix' => $prefix . '-%']);
+        $result = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        $nextNum = ($result['max_num'] ?? 0) + 1;
+        return $prefix . '-' . str_pad($nextNum, 6, '0', STR_PAD_LEFT);
     }
 
     /**
@@ -471,25 +465,28 @@ class ImportProcessor {
     }
 }
 
-// Main execution
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    http_response_code(405);
-    echo json_encode(['success' => false, 'error' => 'Method not allowed']);
-    exit;
+// Only run main execution if called directly, not when included
+if (basename(__FILE__) == basename($_SERVER['SCRIPT_NAME'])) {
+    // Main execution
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        http_response_code(405);
+        echo json_encode(['success' => false, 'error' => 'Method not allowed']);
+        exit;
+    }
+
+    $dbFactory = $config['connection_factory'];
+    $db = $dbFactory();
+
+    $importId = $_GET['import_id'] ?? null;
+    if (!$importId || !is_numeric($importId)) {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'error' => 'import_id is required and must be numeric']);
+        exit;
+    }
+
+    $processor = new ImportProcessor($db);
+    $result = $processor->processImport($importId);
+
+    echo json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
 }
-
-$dbFactory = $config['connection_factory'];
-$db = $dbFactory();
-
-$importId = $_GET['import_id'] ?? null;
-if (!$importId || !is_numeric($importId)) {
-    http_response_code(400);
-    echo json_encode(['success' => false, 'error' => 'import_id is required and must be numeric']);
-    exit;
-}
-
-$processor = new ImportProcessor($db);
-$result = $processor->processImport($importId);
-
-echo json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
 ?>

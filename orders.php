@@ -418,6 +418,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                 <select name="status" id="status" class="form-control">
                                     <option value="Pending">Pending</option>
                                     <option value="Processing">Processing</option>
+                                    <option value="Picked">Picked</option>
                                     <option value="Shipped">Shipped</option>
                                     <option value="Delivered">Delivered</option>
                                     <option value="Cancelled">Cancelled</option>
@@ -506,6 +507,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                             <select name="status" id="updateStatus" class="form-control" required>
                                 <option value="Pending">Pending</option>
                                 <option value="Processing">Processing</option>
+                                <option value="Picked">Picked</option>
                                 <option value="Shipped">Shipped</option>
                                 <option value="Delivered">Delivered</option>
                                 <option value="Cancelled">Cancelled</option>

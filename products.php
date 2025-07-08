@@ -255,9 +255,9 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                         </div>
                     </div>
                     <div class="header-actions">
-                        <button class="btn btn-secondary" onclick="openImportModal()">
-                            <span class="material-symbols-outlined">upload</span>
-                            Import Produse
+                        <button class="btn btn-secondary" onclick="syncSmartBillStock()">
+                            <span class="material-symbols-outlined">sync</span>
+                            Sincronizează Stoc
                         </button>
                         <button class="btn btn-primary" onclick="openCreateModal()">
                             <span class="material-symbols-outlined">add</span>

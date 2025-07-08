@@ -212,7 +212,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 updateOrderStatus(trimmedOrderId, 'picking');
                 showLocationScanPrompt(result.data);
             } else if (result.status === 'complete') {
-                updateOrderStatus(trimmedOrderId, 'completed');
+                updateOrderStatus(trimmedOrderId, 'picked');
                 showCompletionScreen(result.message);
             } else {
                 throw new Error(result.message || 'API returned an unknown error.');

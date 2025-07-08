@@ -169,7 +169,7 @@ try {
     if ($isOrderComplete) {
         $updateOrderQuery = "
             UPDATE orders 
-            SET status = 'Completed',
+            SET status = 'Picked',
                 updated_at = NOW()
             WHERE id = :order_id
         ";

@@ -113,11 +113,11 @@ class Order {
             $result = $stmt->fetchAll(PDO::FETCH_COLUMN);
             
             // Add common statuses if not present
-            $commonStatuses = ['Pending', 'Processing', 'Shipped', 'Delivered', 'Cancelled'];
+            $commonStatuses = ['Pending', 'Processing', 'Picked', 'Shipped', 'Delivered', 'Cancelled'];
             return array_unique(array_merge($result, $commonStatuses));
         } catch (PDOException $e) {
             error_log("Error getting statuses: " . $e->getMessage());
-            return ['Pending', 'Processing', 'Shipped', 'Delivered', 'Cancelled'];
+            return ['Pending', 'Processing', 'Picked', 'Shipped', 'Delivered', 'Cancelled'];
         }
     }
     

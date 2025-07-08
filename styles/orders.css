@@ -209,6 +209,12 @@
     border: 1px solid rgba(13, 202, 240, 0.2);
 }
 
+.status-picked {
+    background-color: rgba(13, 202, 240, 0.1);
+    color: #0dcaf0;
+    border: 1px solid rgba(13, 202, 240, 0.2);
+}
+
 .status-shipped {
     background-color: rgba(25, 135, 84, 0.1);
     color: #198754;

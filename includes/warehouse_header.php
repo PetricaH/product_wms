@@ -1,10 +1,13 @@
 <?php
-// includes/warehouse_header.php - Respects existing monochrome design language
+// includes/warehouse_header.php - FIXED: Production-ready API base URL
 require_once __DIR__ . '/helpers.php';
 require_once __DIR__ . '/../bootstrap.php';
 
 // Get current page name for conditional loading
 $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
+
+// FIXED: Properly construct API base URL for all environments
+$apiBase = rtrim(BASE_URL, '/') . '/api';
 ?>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -40,7 +43,7 @@ if (isset($warehousePageCSS[$currentPage])) {
 <!-- Warehouse Configuration -->
 <script>
     window.WMS_CONFIG = {
-        apiBase: '<?= BASE_URL ?>api',
+        apiBase: '<?= $apiBase ?>', // FIXED: Now works in both dev and production
         warehouseMode: true,
         currentUser: <?= json_encode([
             'id' => $_SESSION['user_id'] ?? 1,
@@ -48,4 +51,8 @@ if (isset($warehousePageCSS[$currentPage])) {
             'role' => $_SESSION['role'] ?? 'warehouse'
         ]) ?>
     };
+    
+    // DEBUG: Verify the API base is correct
+    console.log('🔧 API Base URL:', '<?= $apiBase ?>');
+    console.log('🔧 BASE_URL:', '<?= BASE_URL ?>');
 </script>

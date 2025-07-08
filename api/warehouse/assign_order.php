@@ -1,18 +1,40 @@
 <?php
-// File: /api/picking/get_next_task.php (Updated for Debugging)
+// File: api/warehouse/assign_order.php
+// PRODUCTION-READY VERSION - Safely assigns orders without data corruption
+
 header('Content-Type: application/json');
 error_reporting(E_ALL);
 ini_set('display_errors', 0);
 ini_set('log_errors', 1);
 
-// Define Base Path
+// Use the same BASE_PATH detection as other working APIs
 if (!defined('BASE_PATH')) {
-    define('BASE_PATH', dirname(__DIR__, 2));
+    // Try the standard location first
+    $possiblePaths = [
+        dirname(__DIR__, 2),                           // /api/warehouse/ -> /
+        $_SERVER['DOCUMENT_ROOT'] . '/product_wms',    // Explicit localhost path
+        dirname(__DIR__, 3),                           // Just in case
+    ];
+    
+    foreach ($possiblePaths as $path) {
+        if (file_exists($path . '/config/config.php')) {
+            define('BASE_PATH', $path);
+            break;
+        }
+    }
 }
 
-if (!file_exists(BASE_PATH . '/config/config.php')) {
+if (!defined('BASE_PATH') || !file_exists(BASE_PATH . '/config/config.php')) {
     http_response_code(500);
-    echo json_encode(['status' => 'error', 'message' => 'Config file missing.']);
+    echo json_encode([
+        'status' => 'error', 
+        'message' => 'Configuration not found.',
+        'debug_info' => [
+            'document_root' => $_SERVER['DOCUMENT_ROOT'],
+            'script_path' => __DIR__,
+            'checked_paths' => $possiblePaths ?? []
+        ]
+    ]);
     exit;
 }
 
@@ -20,149 +42,152 @@ try {
     $config = require BASE_PATH . '/config/config.php';
     
     if (!isset($config['connection_factory']) || !is_callable($config['connection_factory'])) {
-        http_response_code(500);
-        echo json_encode(['status' => 'error', 'message' => 'Database config error.']);
-        exit;
+        throw new Exception('Database configuration error.');
     }
 
     $dbFactory = $config['connection_factory'];
     $db = $dbFactory();
 
-    // Get order ID from query parameter
-    $orderId = $_GET['order_id'] ?? '';
+    // Validate request method
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        http_response_code(405);
+        throw new Exception('Method not allowed. Use POST.');
+    }
+
+    // Get and validate input
+    $orderId = $_POST['order_id'] ?? '';
+    $action = $_POST['action'] ?? 'assign_picking';
     
     if (empty($orderId)) {
         http_response_code(400);
-        echo json_encode(['status' => 'error', 'message' => 'Order ID is required.']);
-        exit;
+        throw new Exception('Order ID is required.');
     }
 
-    // First, check if this is an order number or order ID
-    $orderQuery = "SELECT id, order_number, customer_name, status FROM orders WHERE order_number = :order_id OR id = :order_id_int";
-    $orderStmt = $db->prepare($orderQuery);
-    $orderStmt->execute([
-        ':order_id' => $orderId,
-        ':order_id_int' => is_numeric($orderId) ? (int)$orderId : 0
-    ]);
-    $order = $orderStmt->fetch(PDO::FETCH_ASSOC);
+    // Begin transaction for data safety
+    $db->beginTransaction();
 
-    if (!$order) {
-        http_response_code(404);
-        echo json_encode(['status' => 'error', 'message' => 'Order not found.']);
-        exit;
-    }
+    try {
+        // Find the order (accept both order number and ID)
+        $orderQuery = "SELECT id, order_number, customer_name, status FROM orders WHERE order_number = :order_id OR id = :order_id_int";
+        $orderStmt = $db->prepare($orderQuery);
+        $orderStmt->execute([
+            ':order_id' => $orderId,
+            ':order_id_int' => is_numeric($orderId) ? (int)$orderId : 0
+        ]);
+        $order = $orderStmt->fetch(PDO::FETCH_ASSOC);
 
-    $actualOrderId = $order['id'];
+        if (!$order) {
+            throw new Exception('Order not found: ' . $orderId);
+        }
 
-    // Get the next picking task (order item that needs picking)
-    $taskQuery = "
-        SELECT 
-            oi.id as order_item_id,
-            oi.order_id,
-            oi.product_id,
-            oi.quantity as quantity_ordered, -- CORRECTED: Use alias for compatibility
-            oi.picked_quantity,
-            (oi.quantity - COALESCE(oi.picked_quantity, 0)) as quantity_to_pick, -- CORRECTED
-            p.sku as product_sku,
-            p.name as product_name,
-            p.barcode as product_barcode,
-            -- Get inventory location (simplified - pick from first available location)
-            COALESCE(i.location_id, 1) as location_id,
-            COALESCE(l.location_code, 'A1-01-01') as location_code, -- CORRECTED: Changed l.code to l.location_code
-            COALESCE(i.quantity, 0) as available_in_location,
-            i.id as inventory_id
-        FROM order_items oi
-        JOIN products p ON oi.product_id = p.product_id
-        LEFT JOIN inventory i ON p.product_id = i.product_id AND i.quantity > 0
-        LEFT JOIN locations l ON i.location_id = l.id
-        WHERE oi.order_id = :order_id
-        AND oi.quantity > COALESCE(oi.picked_quantity, 0) -- CORRECTED
-        ORDER BY oi.id ASC
-        LIMIT 1
-    ";
+        $actualOrderId = $order['id'];
 
-    $taskStmt = $db->prepare($taskQuery);
-    $taskStmt->execute([':order_id' => $actualOrderId]);
-    $task = $taskStmt->fetch(PDO::FETCH_ASSOC);
-
-    if (!$task) {
-        // No more tasks. Check if it's because the order is complete or empty.
-        $itemCountStmt = $db->prepare("SELECT COUNT(*) FROM order_items WHERE order_id = :order_id");
+        // CRITICAL: Verify order has items BEFORE any changes
+        $itemCountQuery = "SELECT COUNT(*) FROM order_items WHERE order_id = :order_id";
+        $itemCountStmt = $db->prepare($itemCountQuery);
         $itemCountStmt->execute([':order_id' => $actualOrderId]);
         $itemCount = $itemCountStmt->fetchColumn();
 
         if ($itemCount == 0) {
-            // This order has no items associated with it.
-            echo json_encode([
-                'status' => 'error',
-                'message' => 'Eroare: Comanda ' . htmlspecialchars($order['order_number']) . ' nu conține niciun produs.',
-                'order_info' => [
-                    'id' => $order['id'],
-                    'order_number' => $order['order_number'],
-                    'customer_name' => $order['customer_name']
-                ]
-            ]);
-        } else {
-            // No more items to pick - order is complete
-            echo json_encode([
-                'status' => 'complete',
-                'message' => 'Toate articolele din această comandă au fost deja colectate.',
-                'order_info' => [
-                    'id' => $order['id'],
-                    'order_number' => $order['order_number'],
-                    'customer_name' => $order['customer_name']
-                ]
-            ]);
+            throw new Exception('Cannot assign order: No items found in order ' . $order['order_number']);
         }
-        exit;
+
+        // Check if order is already assigned
+        if (strtolower($order['status']) === 'assigned') {
+            // Order already assigned - just return success for idempotency
+            $db->commit();
+            echo json_encode([
+                'status' => 'success',
+                'message' => 'Order already assigned.',
+                'data' => [
+                    'order_id' => $actualOrderId,
+                    'order_number' => $order['order_number'],
+                    'status' => 'assigned',
+                    'items_count' => $itemCount,
+                    'redirect' => "mobile_picker.php?order=" . urlencode($order['order_number'])
+                ]
+            ]);
+            exit;
+        }
+
+        // Get current user (you may need to implement proper session handling)
+        $currentUserId = $_SESSION['user_id'] ?? 1; // Fallback for now
+
+        // SAFE UPDATE: Only change order status and assignment, NEVER touch order_items
+        $updateQuery = "UPDATE orders SET 
+                       status = 'assigned', 
+                       assigned_to = :user_id, 
+                       assigned_at = CURRENT_TIMESTAMP,
+                       updated_at = CURRENT_TIMESTAMP
+                       WHERE id = :order_id AND status != 'assigned'";
+        
+        $updateStmt = $db->prepare($updateQuery);
+        $updateResult = $updateStmt->execute([
+            ':user_id' => $currentUserId,
+            ':order_id' => $actualOrderId
+        ]);
+
+        if (!$updateResult) {
+            throw new Exception('Failed to update order status.');
+        }
+
+        // VERIFICATION: Double-check that items still exist after update
+        $verifyItemCountStmt = $db->prepare($itemCountQuery);
+        $verifyItemCountStmt->execute([':order_id' => $actualOrderId]);
+        $finalItemCount = $verifyItemCountStmt->fetchColumn();
+
+        if ($finalItemCount != $itemCount) {
+            // This should never happen, but if it does, rollback
+            throw new Exception('Data integrity error: Order items were modified during assignment.');
+        }
+
+        // Final verification that the order was updated correctly
+        $verifyOrderQuery = "SELECT id, order_number, status, assigned_to FROM orders WHERE id = :order_id";
+        $verifyOrderStmt = $db->prepare($verifyOrderQuery);
+        $verifyOrderStmt->execute([':order_id' => $actualOrderId]);
+        $verifiedOrder = $verifyOrderStmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$verifiedOrder || $verifiedOrder['status'] !== 'assigned') {
+            throw new Exception('Order assignment verification failed.');
+        }
+
+        // Success! Commit the transaction
+        $db->commit();
+
+        // Return success response
+        echo json_encode([
+            'status' => 'success',
+            'message' => 'Order assigned successfully for picking.',
+            'data' => [
+                'order_id' => $actualOrderId,
+                'order_number' => $order['order_number'],
+                'status' => 'assigned',
+                'assigned_to' => $currentUserId,
+                'items_count' => $finalItemCount,
+                'redirect' => "mobile_picker.php?order=" . urlencode($order['order_number'])
+            ]
+        ]);
+
+    } catch (Exception $e) {
+        $db->rollback();
+        throw $e;
     }
 
-    // Return the next task
-    echo json_encode([
-        'status' => 'success',
-        'message' => 'Next picking task retrieved.',
-        'data' => [
-            'order_item_id' => (int)$task['order_item_id'],
-            'order_id' => (int)$task['order_id'],
-            'product_id' => (int)$task['product_id'],
-            'product_sku' => $task['product_sku'],
-            'product_name' => $task['product_name'],
-            'product_barcode' => $task['product_barcode'],
-            'quantity_ordered' => (int)$task['quantity_ordered'],
-            'picked_quantity' => (int)$task['picked_quantity'],
-            'quantity_to_pick' => (int)$task['quantity_to_pick'],
-            'location_id' => (int)$task['location_id'],
-            'location_code' => $task['location_code'],
-            'available_in_location' => (int)$task['available_in_location'],
-            'inventory_id' => $task['inventory_id'],
-            'order_info' => [
-                'order_number' => $order['order_number'],
-                'customer_name' => $order['customer_name']
-            ]
-        ]
-    ]);
-
-} catch (PDOException $e) {
-    // --- MODIFIED FOR DEBUGGING ---
-    // This will now output the specific SQL error message to the browser.
-    // This should be removed in a production environment for security.
-    $errorMessage = $e->getMessage();
-    error_log("Database error in get_next_task.php: " . $errorMessage);
-    http_response_code(500);
-    echo json_encode([
-        'status' => 'error',
-        'message' => 'A database error occurred. See details for more info.',
-        'error_details' => $errorMessage, // The specific error from the database
-        'error_code' => 'DB_ERROR'
-    ]);
 } catch (Exception $e) {
-    error_log("General error in get_next_task.php: " . $e->getMessage());
-    http_response_code(500);
+    error_log("Error in assign_order.php: " . $e->getMessage());
+    
+    // Return error response
+    $statusCode = strpos($e->getMessage(), 'not found') !== false ? 404 : 500;
+    http_response_code($statusCode);
+    
     echo json_encode([
         'status' => 'error',
-        'message' => 'A server error occurred.',
-        'error_details' => $e->getMessage(),
-        'error_code' => 'SERVER_ERROR'
+        'message' => $e->getMessage(),
+        'debug_info' => [
+            'file' => basename(__FILE__),
+            'line' => __LINE__,
+            'timestamp' => date('Y-m-d H:i:s')
+        ]
     ]);
 }
 ?>

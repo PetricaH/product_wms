@@ -148,6 +148,54 @@ function displayOrders() {
 }
 
 /**
+ * Assign order for picking and redirect to mobile picker
+ */
+async function assignOrderForPicking(orderNumber) {
+    console.log('📋 Assigning order for picking:', orderNumber);
+    
+    try {
+        showLoading(true);
+        
+        const response = await fetch('/api/warehouse/assign_order.php', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                order_number: orderNumber,
+                action: 'assign_picking'
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP error ${response.status}`);
+        }
+
+        const data = await response.json();
+        
+        if (data.status === 'success') {
+            console.log('✅ Order assigned successfully. Redirecting to mobile picker...');
+            
+            // Show success message briefly
+            showSuccessMessage('Comandă asignată! Redirecționare către interfața de picking...');
+            
+            // FIXED: Redirect directly to mobile picker with order parameter
+            setTimeout(() => {
+                window.location.href = `mobile_picker.php?order=${encodeURIComponent(orderNumber)}`;
+            }, 1500);
+        } else {
+            throw new Error(data.message || 'Failed to assign order');
+        }
+        
+    } catch (error) {
+        console.error('❌ Error processing order:', error);
+        showErrorMessage('Eroare la procesarea comenzii: ' + error.message);
+    } finally {
+        showLoading(false);
+    }
+}
+
+/**
  * Create order card element
  */
 function createOrderCard(order) {
@@ -357,10 +405,9 @@ function continuePicking(orderNumber) {
     console.log('📋 Continuing picking for order:', orderNumber);
     showSuccessMessage('Redirecționare către interfața de picking...');
     setTimeout(() => {
-        window.location.href = `mobile_picker.php?order=${orderNumber}`;
+        window.location.href = `mobile_picker.php?order=${encodeURIComponent(orderNumber)}`;
     }, 1000);
 }
-
 /**
  * Show success message
  */

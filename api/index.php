@@ -207,8 +207,23 @@ class ProductionWMSAPI {
     }
     
     private function getEndpoint() {
-        $endpoint = $_GET['endpoint'] ?? '';
-        return trim($endpoint, '/');
+        if (isset($_GET['endpoint'])) {
+            return trim($_GET['endpoint'], '/');
+        }
+
+        if (!empty($_SERVER['PATH_INFO'])) {
+            return trim($_SERVER['PATH_INFO'], '/');
+        }
+
+        $uri = $_SERVER['REQUEST_URI'] ?? '';
+        $scriptDir = dirname($_SERVER['SCRIPT_NAME'] ?? '') ?: '';
+        if (strpos($uri, $scriptDir) === 0) {
+            $uri = substr($uri, strlen($scriptDir));
+        }
+        if (false !== ($pos = strpos($uri, '?'))) {
+            $uri = substr($uri, 0, $pos);
+        }
+        return trim($uri, '/');
     }
     
     // === API ENDPOINTS ===

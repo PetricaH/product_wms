@@ -164,7 +164,7 @@ class Order {
                 ':customer_email' => $orderData['customer_email'] ?? '',
                 ':shipping_address' => $orderData['shipping_address'] ?? '',
                 ':order_date' => $orderData['order_date'] ?? date('Y-m-d H:i:s'),
-                ':status' => $orderData['status'] ?? 'Pending',
+                ':status' => strtolower($orderData['status'] ?? 'pending'),
                 ':priority' => $orderData['priority'] ?? 'normal',
                 ':notes' => $orderData['notes'] ?? '',
                 ':created_by' => $orderData['created_by'] ?? null
@@ -208,6 +208,7 @@ class Order {
      * @return bool
      */
     public function updateStatus($orderId, $status) {
+        $status = strtolower($status);
         $query = "UPDATE {$this->table} SET status = :status, updated_at = NOW() WHERE id = :id";
         
         try {
@@ -218,6 +219,35 @@ class Order {
             return $stmt->execute();
         } catch (PDOException $e) {
             error_log("Error updating order status: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Update AWB related fields for an order
+     * @param int $orderId Order ID
+     * @param array $awbData Key/value pairs to update
+     * @return bool
+     */
+    public function updateAWBInfo(int $orderId, array $awbData): bool {
+        if (empty($awbData)) {
+            return false;
+        }
+
+        $fields = [];
+        $params = [':id' => $orderId];
+        foreach ($awbData as $key => $value) {
+            $fields[] = "$key = :$key";
+            $params[":$key"] = $value;
+        }
+
+        $query = "UPDATE {$this->table} SET " . implode(',', $fields) . ", updated_at = NOW() WHERE id = :id";
+
+        try {
+            $stmt = $this->conn->prepare($query);
+            return $stmt->execute($params);
+        } catch (PDOException $e) {
+            error_log('Error updating AWB info: ' . $e->getMessage());
             return false;
         }
     }

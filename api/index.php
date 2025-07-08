@@ -378,31 +378,38 @@ class ProductionWMSAPI {
     }
     
     private function generateAWB($orderId) {
-        // This would integrate with the Cargus API
-        // For now, just update the order with AWB placeholder
         $order = $this->orderModel->getOrderById($orderId);
         
         if (!$order) {
             throw new Exception('Order not found', 404);
         }
-        
+
+        if (strtolower($order['status']) !== 'picked') {
+            throw new Exception('AWB can only be generated for picked orders', 400);
+        }
+
         if (empty($order['recipient_county_id'])) {
             throw new Exception('Order missing AWB data', 400);
         }
-        
-        // TODO: Implement Cargus API integration here
-        $awbBarcode = 'AWB' . time() . rand(1000, 9999);
-        
+
+        require_once BASE_PATH . '/models/CargusService.php';
+        $cargus = new CargusService();
+        $result = $cargus->generateAWB($order);
+
+        if (!$result['success']) {
+            throw new Exception('Cargus API error: ' . $result['error'], 500);
+        }
+
         $this->orderModel->updateAWBInfo($orderId, [
-            'awb_barcode' => $awbBarcode,
+            'awb_barcode' => $result['barcode'],
             'awb_created_at' => date('Y-m-d H:i:s'),
-            'cargus_order_id' => 'CRG' . $orderId . time()
+            'cargus_order_id' => $result['parcelCodes'][0] ?? ''
         ]);
-        
+
         $this->sendResponse([
             'success' => true,
             'order_id' => $orderId,
-            'awb_barcode' => $awbBarcode,
+            'awb_barcode' => $result['barcode'],
             'message' => 'AWB generated successfully'
         ]);
     }

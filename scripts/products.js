@@ -907,3 +907,32 @@ function addLog(message, type = 'info') {
     logsContainer.appendChild(logEntry);
     logsContainer.scrollTop = logsContainer.scrollHeight;
 }
+/**
+ * Synchronize stock using SmartBill API
+ */
+async function syncSmartBillStock() {
+    const button = event.target.closest('button');
+    const original = button.innerHTML;
+    button.disabled = true;
+    button.innerHTML = '<span class="material-symbols-outlined">sync</span> Sincronizare...';
+
+    try {
+        const response = await fetch('smartbill-sync.php?action=ajax', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: 'ajax_action=manual_sync&sync_type=product_sync'
+        });
+        const result = await response.json();
+        if (result.success) {
+            showNotification('Stoc actualizat: ' + result.message, 'success');
+            setTimeout(() => location.reload(), 1500);
+        } else {
+            showNotification('Eroare SmartBill: ' + result.message, 'error');
+        }
+    } catch (err) {
+        showNotification('Eroare conexiune: ' + err.message, 'error');
+    } finally {
+        button.disabled = false;
+        button.innerHTML = original;
+    }
+}

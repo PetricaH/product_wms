@@ -10,3 +10,4 @@ RewriteCond %{REQUEST_FILENAME} !-d
 
 # Route everything else to index.php for API routing
 RewriteRule ^ index.php [QSA,L]
+

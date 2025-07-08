@@ -10,6 +10,9 @@ class CargusService {
         $config = require BASE_PATH . '/config/config.php';
         $this->username = $config['cargus']['username'] ?? '';
         $this->password = $config['cargus']['password'] ?? '';
+        if (!empty($config['cargus']['api_url'])) {
+            $this->apiUrl = rtrim($config['cargus']['api_url'], '/') . '/';
+        }
     }
 
     private function authenticate() {

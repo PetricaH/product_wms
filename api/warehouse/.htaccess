@@ -1,0 +1,13 @@
+RewriteEngine On
+
+# Don't rewrite existing PHP files - let them execute directly  
+RewriteCond %{REQUEST_FILENAME} -f
+RewriteRule \.(php)$ - [L]
+
+# Don't rewrite existing files and directories
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+
+# Route everything else to index.php for API routing
+RewriteRule ^ index.php [QSA,L]
+

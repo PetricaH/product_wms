@@ -378,7 +378,7 @@ async function processOrder(orderId) {
             
             // Redirect to mobile picker interface after short delay
             setTimeout(() => {
-                window.location.href = data.redirect;
+                window.location.href = `mobile_picker.php?order=${encodeURIComponent(data.data.order_number)}`;
             }, 1500);
         } else {
             throw new Error(data.message || 'Failed to assign order');

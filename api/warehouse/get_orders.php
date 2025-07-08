@@ -2,7 +2,7 @@
 // File: /api/warehouse/get_orders.php - PRODUCTION READY
 header('Content-Type: application/json');
 error_reporting(E_ALL);
-ini_set('display_errors', 0);
+ini_set('display_errors', 1);
 ini_set('log_errors', 1);
 
 // FIXED: Robust BASE_PATH detection for both development and production
@@ -103,7 +103,7 @@ try {
                 WHERE oi.order_id = o.id
             ), 0) as remaining_items
         FROM orders o
-        WHERE o.type = 'outbound'
+        WHERE o.type = 'inbound'
         AND o.status IN ('Pending', 'Processing', 'pending', 'processing')
         ORDER BY
             CASE LOWER(o.priority)

@@ -18,7 +18,8 @@ $pageSpecificJS = [
     'theme-toggle' => 'theme-toggle.js',
     'universal' => 'universal.js',
     'smartbill-sync' => 'smartbill_sync.js',
-    'locations' => 'locations.js'
+    'locations' => 'locations.js',
+    'orders' => 'orders.js'
     // Add any other page-specific script mappings here.
 ];
 

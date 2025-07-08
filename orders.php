@@ -542,7 +542,4 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
         </div>
     </div>
 
-    <script src="scripts/orders.js"></script>
     <?php require_once __DIR__ . '/includes/footer.php'; ?>
-</body>
-</html>

@@ -73,4 +73,11 @@ return [
     
     // call this to get your PDO instance:
     'connection_factory' => $connectionFactory,
+
+    // Cargus API credentials (set via environment variables or directly here)
+    'cargus' => [
+        'username' => getenv('CARGUS_USER') ?: '',
+        'password' => getenv('CARGUS_PASS') ?: '',
+        'api_url'  => getenv('CARGUS_API_URL') ?: 'https://urgentcargus.azure-api.net/api/'
+    ],
 ];

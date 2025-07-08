@@ -7,9 +7,12 @@ class CargusService {
     private $tokenExpiry;
 
     public function __construct() {
-        $config = require BASE_PATH. '/config/config.php';
+        $config = require BASE_PATH . '/config/config.php';
         $this->username = $config['cargus']['username'] ?? '';
-        $this->username = $config['cargus']['password'] ?? '';
+        $this->password = $config['cargus']['password'] ?? '';
+        if (!empty($config['cargus']['api_url'])) {
+            $this->apiUrl = rtrim($config['cargus']['api_url'], '/') . '/';
+        }
     }
 
     private function authenticate() {
@@ -81,5 +84,53 @@ class CargusService {
         }
 
         return ['success' => false, 'error' => $response['error']];
+    }
+
+    private function makeRequest($method, $endpoint, $data = null) {
+        $url = rtrim($this->apiUrl, '/') . '/' . ltrim($endpoint, '/');
+        $headers = [
+            'Accept: application/json',
+            'Content-Type: application/json'
+        ];
+        if ($this->token) {
+            $headers[] = 'Authorization: Bearer ' . $this->token;
+        }
+
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+
+        if ($method === 'POST') {
+            curl_setopt($ch, CURLOPT_POST, true);
+            if ($data !== null) {
+                curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+            }
+        } elseif ($method === 'PUT') {
+            curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'PUT');
+            if ($data !== null) {
+                curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+            }
+        } elseif ($method === 'GET' && $data !== null) {
+            $url .= '?' . http_build_query($data);
+            curl_setopt($ch, CURLOPT_URL, $url);
+        }
+
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $error = curl_error($ch);
+        curl_close($ch);
+
+        if ($error) {
+            return ['success' => false, 'error' => $error];
+        }
+
+        $decoded = json_decode($response, true);
+        if ($httpCode >= 200 && $httpCode < 300) {
+            return ['success' => true, 'data' => $decoded];
+        }
+
+        $errMsg = $decoded['error'] ?? $decoded['message'] ?? ('HTTP ' . $httpCode);
+        return ['success' => false, 'error' => $errMsg];
     }
 }

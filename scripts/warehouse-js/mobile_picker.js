@@ -4,10 +4,12 @@ console.log("✅ Mobile Picker Script Loaded!");
 document.addEventListener('DOMContentLoaded', () => {
     console.log("DOM Loaded. Initializing Mobile Picker script.");
 
+    const API_BASE = window.WMS_CONFIG?.apiBase || '/api';
+
     // --- Configuration & Constants ---
-    const GET_TASK_API_URL = '/api/picking/get_next_task.php';
-    const CONFIRM_PICK_API_URL = '/api/picking/confirm_pick.php';
-    const UPDATE_STATUS_API_URL = '/api/warehouse/update_order_status.php';
+    const GET_TASK_API_URL = `${API_BASE}/warehouse/get_orders.php`;
+    const CONFIRM_PICK_API_URL = `${API_BASE}/picking/confirm_pick.php`;
+    const UPDATE_STATUS_API_URL = `${API_BASE}/warehouse/update_order_status.php`;
 
     // --- DOM Elements ---
     const elements = {

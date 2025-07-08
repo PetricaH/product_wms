@@ -4,16 +4,8 @@ require_once __DIR__ . '/bootstrap.php';
 <!DOCTYPE html>
 <html lang="ro">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WMS - Recepție Mobilă</title>
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet">
     <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
-    
-    <!-- CSS Files -->
-    <link rel="stylesheet" href="styles/global.css">
-    <link rel="stylesheet" href="styles/mobile_receiving.css">
+    <?php require_once __DIR__ . '/includes/warehouse_header.php'; ?>
 </head>
 <body>
     <div class="mobile-receiving-container">
@@ -275,5 +267,5 @@ require_once __DIR__ . '/bootstrap.php';
             apiBase: '<?= htmlspecialchars(rtrim(BASE_URL, '/')) ?>/api'
         };
     </script>
-</body>
-</html>
+<!-- Include warehouse footer (loads page-specific JS automatically) -->
+    <?php require_once __DIR__ . '/includes/warehouse_footer.php'; ?>

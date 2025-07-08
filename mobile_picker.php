@@ -14,12 +14,7 @@ $orderNumber = htmlspecialchars($_GET['order'] ?? 'N/A');
 <!DOCTYPE html>
 <html lang="ro">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>WMS Picker - Comanda <?= $orderNumber ?></title>
-    <link rel="stylesheet" href="styles/mobile_picker.css?v=<?= filemtime('styles/mobile_picker.css') ?>">
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
+    <?php require_once __DIR__ . '/includes/warehouse_header.php'; ?>
     <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
     <style>
         .hidden {
@@ -176,7 +171,6 @@ $orderNumber = htmlspecialchars($_GET['order'] ?? 'N/A');
             <p>WMS Picker v1.0</p>
         </footer>
     </div>
-
-    <script src="scripts/mobile_picker.js?v=<?= filemtime('scripts/mobile_picker.js') ?>"></script>
+    <?php require_once __DIR__ . '/includes/warehouse_footer.php'; ?>
 </body>
 </html>

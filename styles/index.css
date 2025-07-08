@@ -149,10 +149,6 @@
     font-weight: 500;
 }
 
-.metric-details {
-    space-y: 0.75rem;
-}
-
 .detail-item {
     display: flex;
     justify-content: space-between;
@@ -272,11 +268,6 @@
     font-weight: 500;
 }
 
-/* ===== ORDER LIST ===== */
-.order-list {
-    space-y: 0.75rem;
-}
-
 .order-item {
     display: flex;
     justify-content: space-between;
@@ -308,10 +299,6 @@
     flex-shrink: 0;
 }
 
-/* ===== ALERT LIST ===== */
-.alert-list {
-    space-y: 0.5rem;
-}
 
 .alert-item {
     display: flex;

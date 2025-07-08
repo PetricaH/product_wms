@@ -372,29 +372,58 @@ class Order {
      * @param array $orderData Order data
      * @return bool
      */
-    public function updateOrder($orderId, array $orderData) {
-        $query = "UPDATE {$this->table} 
-                  SET customer_name = :customer_name, 
-                      customer_email = :customer_email, 
-                      shipping_address = :shipping_address, 
-                      status = :status, 
-                      priority = :priority, 
-                      notes = :notes, 
-                      updated_at = NOW()
-                  WHERE id = :id";
+     public function updateOrder($orderId, array $orderData) {
+        // Handle the case where only specific fields need updating (like status, assigned_to)
+        $fieldsToUpdate = [];
+        $params = [':id' => $orderId];
+        
+        // Only update fields that are provided
+        if (isset($orderData['customer_name'])) {
+            $fieldsToUpdate[] = 'customer_name = :customer_name';
+            $params[':customer_name'] = $orderData['customer_name'];
+        }
+        
+        if (isset($orderData['customer_email'])) {
+            $fieldsToUpdate[] = 'customer_email = :customer_email';
+            $params[':customer_email'] = $orderData['customer_email'];
+        }
+        
+        if (isset($orderData['shipping_address'])) {
+            $fieldsToUpdate[] = 'shipping_address = :shipping_address';
+            $params[':shipping_address'] = $orderData['shipping_address'];
+        }
+        
+        if (isset($orderData['status'])) {
+            $fieldsToUpdate[] = 'status = :status';
+            $params[':status'] = $orderData['status'];
+        }
+        
+        if (isset($orderData['priority'])) {
+            $fieldsToUpdate[] = 'priority = :priority';
+            $params[':priority'] = $orderData['priority'];
+        }
+        
+        if (isset($orderData['notes'])) {
+            $fieldsToUpdate[] = 'notes = :notes';
+            $params[':notes'] = $orderData['notes'];
+        }
+        
+        if (isset($orderData['assigned_to'])) {
+            $fieldsToUpdate[] = 'assigned_to = :assigned_to';
+            $params[':assigned_to'] = $orderData['assigned_to'];
+        }
+        
+        if (empty($fieldsToUpdate)) {
+            return false; // Nothing to update
+        }
+        
+        // Always update the updated_at timestamp
+        $fieldsToUpdate[] = 'updated_at = NOW()';
+        
+        $query = "UPDATE {$this->table} SET " . implode(', ', $fieldsToUpdate) . " WHERE id = :id";
         
         try {
             $stmt = $this->conn->prepare($query);
-            $params = [
-                ':id' => $orderId,
-                ':customer_name' => $orderData['customer_name'],
-                ':customer_email' => $orderData['customer_email'] ?? '',
-                ':shipping_address' => $orderData['shipping_address'] ?? '',
-                ':status' => $orderData['status'] ?? 'Pending',
-                ':priority' => $orderData['priority'] ?? 'normal',
-                ':notes' => $orderData['notes'] ?? ''
-            ];
-            
             return $stmt->execute($params);
         } catch (PDOException $e) {
             error_log("Error updating order: " . $e->getMessage());

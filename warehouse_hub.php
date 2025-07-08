@@ -11,7 +11,7 @@
     
     <!-- CSS Files -->
     <link rel="stylesheet" href="styles/global.css">
-    <link rel="stylesheet" href="styles/warehouse_hub.css">
+    <link rel="stylesheet" href="styles/warehouse-css/warehouse_hub.css">
 </head>
 <body>
     <!-- Header -->
@@ -126,6 +126,6 @@
     </div>
 
     <!-- JavaScript Files -->
-    <script src="scripts/warehouse_hub.js?v=<?= filemtime('scripts/warehouse_hub.js') ?>"></script>
+    <script src="scripts/warehouse-js/warehouse_hub.js?v=<?= filemtime('scripts/warehouse-js/warehouse_hub.js') ?>"></script>
 </body>
 </html>

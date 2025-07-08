@@ -1,18 +1,38 @@
 <?php
-// File: /api/warehouse/get_orders.php - Final working version
+// File: /api/warehouse/get_orders.php - Simple fix for localhost
 header('Content-Type: application/json');
 error_reporting(E_ALL);
 ini_set('display_errors', 0);
 ini_set('log_errors', 1);
 
-// Use absolute path
+// Simple BASE_PATH detection for localhost
 if (!defined('BASE_PATH')) {
-    define('BASE_PATH', '/var/www/notsowms.ro');
+    // For localhost/product_wms setup
+    define('BASE_PATH', $_SERVER['DOCUMENT_ROOT'] . '/product_wms');
+}
+
+// Fallback if the above doesn't work
+if (!file_exists(BASE_PATH . '/config/config.php')) {
+    // Try going up from current directory
+    $fallbackPath = dirname(__DIR__, 2);
+    if (file_exists($fallbackPath . '/config/config.php')) {
+        define('BASE_PATH', $fallbackPath);
+    }
 }
 
 if (!file_exists(BASE_PATH . '/config/config.php')) {
     http_response_code(500);
-    echo json_encode(['status' => 'error', 'message' => 'Config file missing.']);
+    echo json_encode([
+        'status' => 'error',
+        'message' => 'Config file missing.',
+        'debug' => [
+            'BASE_PATH' => BASE_PATH,
+            'config_path' => BASE_PATH . '/config/config.php',
+            'document_root' => $_SERVER['DOCUMENT_ROOT'],
+            'current_dir' => __DIR__,
+            'tried_path' => $_SERVER['DOCUMENT_ROOT'] . '/product_wms/config/config.php'
+        ]
+    ]);
     exit;
 }
 
@@ -28,6 +48,7 @@ try {
     $dbFactory = $config['connection_factory'];
     $db = $dbFactory();
 
+    // Query for warehouse orders (Pending + Processing only)
     $query = "
         SELECT
             o.id,

@@ -177,7 +177,7 @@ function generateAWB(orderId) {
 
     console.log(`Generating AWB for order ${orderId}...`);
 
-    fetch(`/api/orders/${orderId}/generate-awb`, {
+    fetch(`/api/orders/${orderId}/awb`, {
             method: 'POST'
         })
         .then(response => response.json())

@@ -180,7 +180,7 @@ function updateStats() {
     document.getElementById('total-orders').textContent = allOrders.length;
     document.getElementById('pending-orders').textContent = allOrders.filter(o => o.status === 'pending').length;
     document.getElementById('in-progress-orders').textContent = allOrders.filter(o => o.status === 'assigned').length;
-    document.getElementById('completed-orders').textContent = allOrders.filter(o => o.status === 'completed').length;
+    document.getElementById('completed-orders').textContent = allOrders.filter(o => o.status === 'picked').length;
 }
 
 /**
@@ -501,6 +501,7 @@ function getStatusLabel(status) {
         'pending': 'În Așteptare',
         'processing': 'În Procesare',
         'assigned': 'Asignat',
+        'picked': 'Colectat',
         'completed': 'Finalizat',
         'shipped': 'Expediat',
         'cancelled': 'Anulat'

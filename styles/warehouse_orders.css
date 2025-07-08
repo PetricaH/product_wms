@@ -256,6 +256,12 @@
     border: 1px solid #0dcaf0;
 }
 
+.status-picked {
+    background-color: rgba(13, 202, 240, 0.2);
+    color: #0dcaf0;
+    border: 1px solid #0dcaf0;
+}
+
 .status-completed {
     background-color: rgba(25, 135, 84, 0.2);
     color: #198754;

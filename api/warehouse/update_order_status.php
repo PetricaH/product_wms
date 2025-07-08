@@ -67,6 +67,9 @@ try {
         case 'processing':
             $dbStatus = 'Processing';
             break;
+        case 'picked':
+            $dbStatus = 'Picked';
+            break;
         case 'completed':
             $dbStatus = 'Completed';
             break;

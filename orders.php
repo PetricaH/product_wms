@@ -285,17 +285,27 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                 </td>
                                                 <td>
                                                     <div class="btn-group">
-                                                        <button class="btn btn-sm btn-outline-primary" 
+                                                        <button class="btn btn-sm btn-outline-primary"
                                                                 onclick="viewOrderDetails(<?= $order['id'] ?>)"
                                                                 title="Vezi detalii">
                                                             <span class="material-symbols-outlined">visibility</span>
                                                         </button>
-                                                        <button class="btn btn-sm btn-outline-secondary" 
+                                                        <button class="btn btn-sm btn-outline-secondary"
                                                                 onclick="openStatusModal(<?= $order['id'] ?>, '<?= htmlspecialchars($order['status']) ?>')"
                                                                 title="Schimbă status">
                                                             <span class="material-symbols-outlined">edit</span>
                                                         </button>
-                                                        <button class="btn btn-sm btn-outline-danger" 
+                                                        <?php $awbDisabled = strtolower($order['status']) !== 'picked'; ?>
+                                                        <?php if (!empty($order['awb_barcode'])): ?>
+                                                            <button class="btn btn-sm btn-outline-success" onclick="printAWB('<?= htmlspecialchars($order['awb_barcode']) ?>')" title="Printează AWB">
+                                                                <span class="material-symbols-outlined">local_shipping</span>
+                                                            </button>
+                                                        <?php else: ?>
+                                                            <button class="btn btn-sm btn-outline-warning" onclick="generateAWB(<?= $order['id'] ?>)" title="Generează AWB" <?= $awbDisabled ? 'disabled' : '' ?>>
+                                                                <span class="material-symbols-outlined">local_shipping</span>
+                                                            </button>
+                                                        <?php endif; ?>
+                                                        <button class="btn btn-sm btn-outline-danger"
                                                                 onclick="openDeleteModal(<?= $order['id'] ?>, '<?= htmlspecialchars(addslashes($order['order_number'])) ?>')"
                                                                 title="Șterge">
                                                             <span class="material-symbols-outlined">delete</span>

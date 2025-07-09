@@ -1,0 +1,14 @@
+{
+    "name": "product_wms/product_wms",
+    "require-dev": {
+        "phpunit/phpunit": "^10"
+    },
+    "scripts": {
+        "test": "phpunit"
+    },
+    "autoload": {
+        "psr-4": {
+            "": ""
+        }
+    }
+}

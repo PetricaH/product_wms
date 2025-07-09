@@ -13,3 +13,5 @@ node_modules/
 .DS_StoreThumbs.db
 # Ignore database backups
 database/backups/*.sql
+vendor/
+\.phpunit.result.cache

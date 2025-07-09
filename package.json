@@ -7,7 +7,8 @@
     "dev": "cross-env NODE_ENV=development gulp dev",
     "build": "cross-env NODE_ENV=production gulp build",
     "build:css": "sass src/scss:public/css --style=compressed",
-    "watch:css": "sass --watch src/scss:public/css --style=expanded"
+    "watch:css": "sass --watch src/scss:public/css --style=expanded",
+    "test": "composer test"
   },
   "repository": {
     "type": "git",

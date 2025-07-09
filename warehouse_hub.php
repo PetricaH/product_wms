@@ -31,6 +31,7 @@
         </div>
     </div>
 
+    <a href="biometric-setup.php">Setup Biometric Auth</a>
     <!-- Main Container -->
     <div class="main-container">
         <div class="page-header">

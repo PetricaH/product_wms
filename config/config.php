@@ -3,10 +3,16 @@ ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
 error_reporting(E_ALL);
 
+// Check if the script is being run from the command line (CLI)
+$isCli = (php_sapi_name() === 'cli');
+
 // Auto-detect environment based on server name
 $serverName = $_SERVER['SERVER_NAME'] ?? $_SERVER['HTTP_HOST'] ?? 'localhost';
-$isProduction = !in_array($serverName, ['localhost', '127.0.0.1', '::1']) && 
-                !preg_match('/\.(local|test|dev)$/', $serverName);
+$isWebHost = !in_array($serverName, ['localhost', '127.0.0.1', '::1']) && 
+             !preg_match('/\.(local|test|dev)$/', $serverName);
+
+// It's production if it's a non-dev web host OR if it's run from the command line
+$isProduction = $isWebHost || $isCli;
 
 $environment = $isProduction ? 'production' : 'development';
 

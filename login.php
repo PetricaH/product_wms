@@ -1,6 +1,6 @@
 <?php
 /**
- * Login Page with Backend Authentication
+ * Fast Login - No bullshit, just works
  * File: login.php
  */
 
@@ -25,7 +25,8 @@ if (isset($_SESSION['user_id']) && isset($_SESSION['role'])) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $username = trim($_POST['username'] ?? '');
     $password = $_POST['password'] ?? '';
-    $userType = $_POST['user_type'] ?? 'admin';
+    $remember = isset($_POST['remember']);
+    $extendedSession = isset($_POST['extended_session']);
 
     $error = '';
 
@@ -46,35 +47,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 require_once BASE_PATH . '/models/User.php';
                 $usersModel = new Users($db);
                 
-                // Find user by username or email
+                // Find user by username or email - AUTO DETECT TYPE
                 $user = $usersModel->findByUsernameOrEmail($username);
                 
                 if ($user && $user['status'] == 1 && password_verify($password, $user['password'])) {
-                    // Check user type matches
-                    if ($userType === 'admin' && $user['role'] !== 'admin') {
-                        $error = 'Credențiale invalide pentru administrator.';
-                    } elseif ($userType === 'worker' && $user['role'] === 'admin') {
-                        $error = 'Utilizați tipul de cont corect.';
-                    } else {
-                        // Successful login - set session variables
-                        $_SESSION['user_id'] = $user['id'];
-                        $_SESSION['username'] = $user['username'];
-                        $_SESSION['email'] = $user['email'];
-                        $_SESSION['role'] = $user['role'];
-                        $_SESSION['user_type'] = $userType;
-                        $_SESSION['login_time'] = time();
-                        
-                        // Update last login
-                        $usersModel->updateLastLogin($user['id']);
-                        
-                        // Redirect based on user type
-                        if ($userType === 'worker' || $user['role'] !== 'admin') {
-                            header('Location: ' . getNavUrl('warehouse_hub.html'));
-                        } else {
-                            header('Location: ' . getNavUrl('index.php'));
-                        }
-                        exit;
+                    // Successful login - set session variables
+                    $_SESSION['user_id'] = $user['id'];
+                    $_SESSION['username'] = $user['username'];
+                    $_SESSION['email'] = $user['email'];
+                    $_SESSION['role'] = $user['role'];
+                    $_SESSION['login_time'] = time();
+                    
+                    // Extended session for "Keep me logged in"
+                    if ($extendedSession) {
+                        $_SESSION['extended_session'] = true;
+                        ini_set('session.gc_maxlifetime', 30 * 24 * 60 * 60);
+                        session_set_cookie_params(30 * 24 * 60 * 60);
                     }
+                    
+                    // Update last login
+                    $usersModel->updateLastLogin($user['id']);
+                    
+                    // Redirect based on user role (AUTO-DETECT - NO SELECTION NEEDED)
+                    if ($user['role'] === 'admin') {
+                        header('Location: ' . getNavUrl('index.php'));
+                    } else {
+                        header('Location: ' . getNavUrl('warehouse_hub.php'));
+                    }
+                    exit;
                 } else {
                     $error = 'Credențiale invalide sau cont inactiv.';
                 }
@@ -83,13 +83,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $error = 'Eroare de sistem. Încercați din nou.';
             }
         }
-    }
-    
-    // If there's an error and this is an AJAX request, return JSON
-    if (!empty($error) && !empty($_SERVER['HTTP_X_REQUESTED_WITH'])) {
-        header('Content-Type: application/json');
-        echo json_encode(['success' => false, 'message' => $error]);
-        exit;
     }
 }
 ?>
@@ -106,16 +99,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     
+    <!-- Import global WMS styles -->
+    <link rel="stylesheet" href="styles/global.css">
+    
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
         body {
             font-family: 'Inter', sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: var(--app-background);
             min-height: 100vh;
             display: flex;
             align-items: center;
@@ -124,124 +114,86 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         .login-container {
-            background: white;
-            border-radius: 20px;
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            background: var(--container-background);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            box-shadow: var(--card-shadow);
             overflow: hidden;
             width: 100%;
-            max-width: 420px;
+            max-width: 400px;
             position: relative;
         }
 
         .login-header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 40px 30px 30px;
+            background: var(--surface-background);
+            border-bottom: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 32px 24px;
             text-align: center;
         }
 
         .login-header h1 {
-            font-size: 28px;
-            font-weight: 700;
+            font-size: 24px;
+            font-weight: 600;
             margin-bottom: 8px;
+            color: var(--text-primary);
         }
 
         .login-header p {
-            opacity: 0.9;
-            font-size: 16px;
+            color: var(--text-secondary);
+            font-size: 14px;
         }
 
         .login-body {
-            padding: 30px;
+            padding: 24px;
         }
 
-        .user-type-selection {
-            margin-bottom: 30px;
-        }
-
-        .user-type-label {
+        /* Error Message */
+        .status-message {
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-bottom: 20px;
             font-size: 14px;
-            font-weight: 600;
-            color: #374151;
-            margin-bottom: 12px;
-            display: block;
         }
 
-        .user-type-options {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 12px;
-        }
-
-        .user-type-card {
-            border: 2px solid #e5e7eb;
-            border-radius: 12px;
-            padding: 20px 16px;
-            text-align: center;
-            cursor: pointer;
-            transition: all 0.2s;
-            background: #f9fafb;
-        }
-
-        .user-type-card:hover {
-            border-color: #667eea;
-            background: #f0f4ff;
-        }
-
-        .user-type-card.selected {
-            border-color: #667eea;
-            background: #667eea;
-            color: white;
-        }
-
-        .user-type-card .material-symbols-outlined {
-            font-size: 32px;
-            margin-bottom: 8px;
-            display: block;
-        }
-
-        .user-type-card .type-title {
-            font-weight: 600;
-            font-size: 14px;
-            margin-bottom: 4px;
-        }
-
-        .user-type-card .type-desc {
-            font-size: 12px;
-            opacity: 0.8;
+        .status-message.error {
+            background: rgba(220, 53, 69, 0.1);
+            border: 1px solid var(--danger-color);
+            color: var(--danger-color);
         }
 
         .form-group {
             margin-bottom: 20px;
+            position: relative;
         }
 
         .form-label {
             display: block;
             font-weight: 500;
-            color: #374151;
+            color: var(--text-primary);
             margin-bottom: 8px;
             font-size: 14px;
         }
 
         .form-input {
             width: 100%;
-            padding: 16px 16px 16px 48px;
-            border: 2px solid #e5e7eb;
-            border-radius: 12px;
+            padding: 14px 16px 14px 48px;
+            border: 1px solid var(--input-border);
+            border-radius: 8px;
             font-size: 16px;
-            transition: all 0.2s;
-            background: #f9fafb;
+            transition: border-color 0.2s;
+            background: var(--input-background);
+            color: var(--text-primary);
+        }
+
+        .form-input::placeholder {
+            color: var(--text-muted);
         }
 
         .form-input:focus {
             outline: none;
-            border-color: #667eea;
-            background: white;
-            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-        }
-
-        .form-group {
-            position: relative;
+            border-color: var(--input-focus);
+            background: var(--container-background);
         }
 
         .input-icon {
@@ -249,27 +201,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             left: 16px;
             top: 50%;
             transform: translateY(-50%);
-            color: #6b7280;
+            color: var(--text-muted);
             font-size: 20px;
+            pointer-events: none;
         }
 
         .password-toggle {
             position: absolute;
-            right: 16px;
+            right: 12px;
             top: 50%;
             transform: translateY(-50%);
             background: none;
             border: none;
+            color: var(--text-muted);
             cursor: pointer;
-            color: #6b7280;
-            font-size: 20px;
+            padding: 4px;
+            border-radius: 4px;
+        }
+
+        .password-toggle:hover {
+            background: var(--button-hover);
+            color: var(--text-primary);
         }
 
         .remember-section {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 30px;
+            margin-bottom: 24px;
+            font-size: 14px;
         }
 
         .remember-checkbox {
@@ -281,17 +241,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         .remember-checkbox input[type="checkbox"] {
             width: 16px;
             height: 16px;
+            accent-color: var(--primary-color);
         }
 
         .remember-checkbox label {
-            font-size: 14px;
-            color: #6b7280;
+            color: var(--text-secondary);
+            cursor: pointer;
         }
 
         .forgot-password {
-            color: #667eea;
+            color: var(--primary-color);
             text-decoration: none;
-            font-size: 14px;
             font-weight: 500;
         }
 
@@ -299,111 +259,123 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             text-decoration: underline;
         }
 
+        .extended-session {
+            margin-bottom: 16px;
+        }
+
+        .extended-session label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+            color: var(--text-secondary);
+            cursor: pointer;
+        }
+
         .btn {
             width: 100%;
-            padding: 16px;
+            padding: 14px 20px;
             border: none;
-            border-radius: 12px;
+            border-radius: 8px;
             font-size: 16px;
             font-weight: 600;
             cursor: pointer;
-            transition: all 0.2s;
             display: flex;
             align-items: center;
             justify-content: center;
             gap: 8px;
+            transition: all 0.2s;
         }
 
         .btn-primary {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: var(--primary-color);
             color: white;
         }
 
-        .btn-primary:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        .btn-primary:hover:not(:disabled) {
+            background: #0b5ed7;
+            transform: translateY(-1px);
         }
 
-        .btn-primary:disabled {
+        .btn:disabled {
             opacity: 0.6;
             cursor: not-allowed;
-            transform: none;
-        }
-
-        .status-message {
-            padding: 12px 16px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            font-size: 14px;
-            font-weight: 500;
-        }
-
-        .status-message.error {
-            background: #fef2f2;
-            color: #dc2626;
-            border: 1px solid #fecaca;
-        }
-
-        .status-message.success {
-            background: #f0fdf4;
-            color: #16a34a;
-            border: 1px solid #bbf7d0;
-        }
-
-        .status-message.info {
-            background: #eff6ff;
-            color: #2563eb;
-            border: 1px solid #bfdbfe;
         }
 
         .login-footer {
-            background: #f9fafb;
-            padding: 20px 30px;
-            text-align: center;
-            border-top: 1px solid #e5e7eb;
+            padding: 20px 24px;
+            border-top: 1px solid var(--border-color);
+            background: var(--surface-background);
         }
 
         .footer-links {
+            display: flex;
+            justify-content: center;
+            gap: 16px;
             margin-bottom: 12px;
         }
 
         .footer-link {
-            color: #6b7280;
+            color: var(--text-muted);
             text-decoration: none;
-            font-size: 14px;
-            margin: 0 12px;
+            font-size: 13px;
         }
 
         .footer-link:hover {
-            color: #667eea;
+            color: var(--text-primary);
+            text-decoration: underline;
         }
 
         .footer-text {
-            color: #9ca3af;
+            text-align: center;
+            color: var(--text-muted);
             font-size: 12px;
         }
 
-        .loading-spinner {
-            display: none;
-            width: 20px;
-            height: 20px;
-            border: 2px solid transparent;
-            border-top: 2px solid currentColor;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
+        /* Biometric Login Section */
+        .biometric-section {
+            margin-top: 16px;
+            padding-top: 16px;
+            border-top: 1px solid var(--border-color);
+            display: none; /* Hidden by default, shown by JS if supported */
         }
 
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+        .btn-biometric {
+            background: var(--surface-background);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            margin-top: 12px;
         }
 
-        .btn-primary.loading .loading-spinner {
-            display: block;
+        .btn-biometric:hover:not(:disabled) {
+            background: var(--button-hover);
+            border-color: var(--border-color-strong);
         }
 
-        .btn-primary.loading .material-symbols-outlined {
-            display: none;
+        .or-divider {
+            text-align: center;
+            margin: 20px 0;
+            position: relative;
+            color: var(--text-muted);
+            font-size: 14px;
+        }
+
+        .or-divider::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: var(--border-color);
+            z-index: 1;
+        }
+
+        .or-divider span {
+            background: var(--container-background);
+            padding: 0 16px;
+            position: relative;
+            z-index: 2;
         }
     </style>
 </head>
@@ -411,74 +383,73 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <div class="login-container">
         <!-- Header -->
         <div class="login-header">
-            <h1>Bun venit înapoi</h1>
-            <p>Conectează-te la contul tău WMS</p>
+            <h1>WMS</h1>
+            <p>Conectează-te la contul tău</p>
         </div>
 
         <!-- Login Form -->
         <div class="login-body">
-            <!-- User Type Selection -->
-            <div class="user-type-selection">
-                <label class="user-type-label">Selectează tipul de cont</label>
-                <div class="user-type-options">
-                    <div class="user-type-card" data-type="worker">
-                        <span class="material-symbols-outlined">badge</span>
-                        <div class="type-title">Lucrător</div>
-                        <div class="type-desc">Personal depozit</div>
-                    </div>
-                    <div class="user-type-card" data-type="admin">
-                        <span class="material-symbols-outlined">admin_panel_settings</span>
-                        <div class="type-title">Administrator</div>
-                        <div class="type-desc">Acces complet</div>
-                    </div>
-                </div>
-            </div>
-
             <!-- Error Message -->
-            <?php if (!empty($error) && $_SERVER['REQUEST_METHOD'] === 'POST'): ?>
+            <?php if (!empty($error)): ?>
                 <div class="status-message error">
                     <?= htmlspecialchars($error) ?>
                 </div>
             <?php endif; ?>
 
-            <!-- Status Message Area (for JavaScript) -->
-            <div id="status-message" style="display: none;"></div>
-
-            <form id="login-form" method="POST" action="login.php">
-                <input type="hidden" name="user_type" id="user_type" value="worker">
-                
+            <form method="POST" action="login.php" autocomplete="on">
                 <div class="form-group">
-                    <label class="form-label" for="username">Nume utilizator sau email</label>
+                    <label class="form-label" for="username">Utilizator</label>
                     <span class="input-icon material-symbols-outlined">person</span>
                     <input type="text" class="form-input" id="username" name="username" 
-                           placeholder="Administrator username" autocomplete="username" 
-                           value="<?= htmlspecialchars($_POST['username'] ?? '') ?>" required>
+                           placeholder="Nume utilizator sau email" 
+                           autocomplete="username" 
+                           value="<?= htmlspecialchars($_POST['username'] ?? '') ?>" 
+                           required>
                 </div>
 
                 <div class="form-group">
                     <label class="form-label" for="password">Parolă</label>
                     <span class="input-icon material-symbols-outlined">lock</span>
                     <input type="password" class="form-input" id="password" name="password" 
-                           placeholder="Introduceți parola" autocomplete="current-password" required>
-                    <button type="button" class="password-toggle" id="password-toggle">
+                           placeholder="Introduceți parola" 
+                           autocomplete="current-password" 
+                           required>
+                    <button type="button" class="password-toggle" onclick="togglePassword()">
                         <span class="material-symbols-outlined">visibility</span>
                     </button>
+                </div>
+
+                <div class="extended-session">
+                    <label>
+                        <input type="checkbox" name="extended_session">
+                        Ține-mă conectat 30 de zile
+                    </label>
                 </div>
 
                 <div class="remember-section">
                     <div class="remember-checkbox">
                         <input type="checkbox" id="remember-me" name="remember">
-                        <label for="remember-me">Ține-mă minte</label>
+                        <label for="remember-me">Reține utilizatorul</label>
                     </div>
-                    <a href="#" class="forgot-password" id="forgot-password-link">Parolă uitată?</a>
+                    <a href="#" class="forgot-password" onclick="alert('Contactați administratorul pentru resetarea parolei.'); return false;">Parolă uitată?</a>
                 </div>
 
-                <button type="submit" class="btn btn-primary" id="login-btn">
+                <button type="submit" class="btn btn-primary">
                     <span class="material-symbols-outlined">login</span>
-                    <div class="loading-spinner"></div>
                     Autentificare
                 </button>
             </form>
+
+            <!-- Biometric Login Section -->
+            <div class="biometric-section" id="biometric-section">
+                <div class="or-divider">
+                    <span>sau</span>
+                </div>
+                <button type="button" class="btn btn-biometric" id="biometric-login">
+                    <span class="material-symbols-outlined">fingerprint</span>
+                    Autentificare biometrică
+                </button>
+            </div>
         </div>
 
         <!-- Footer -->
@@ -495,115 +466,159 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </div>
 
     <script>
-        class LoginInterface {
-            constructor() {
-                this.selectedUserType = 'worker';
-                this.init();
-            }
-
-            init() {
-                this.initEventListeners();
-                this.loadRememberedCredentials();
-            }
-
-            initEventListeners() {
-                // User type selection
-                document.querySelectorAll('.user-type-card').forEach(card => {
-                    card.addEventListener('click', (e) => this.selectUserType(e.currentTarget.dataset.type));
-                });
-
-                // Form submission
-                document.getElementById('login-form').addEventListener('submit', (e) => this.handleLogin(e));
-
-                // Password toggle
-                document.getElementById('password-toggle').addEventListener('click', () => this.togglePassword());
-
-                // Forgot password
-                document.getElementById('forgot-password-link').addEventListener('click', (e) => {
-                    e.preventDefault();
-                    this.handleForgotPassword();
-                });
-
-                // Enter key handling
-                document.getElementById('username').addEventListener('keypress', (e) => {
-                    if (e.key === 'Enter') {
-                        document.getElementById('password').focus();
-                    }
-                });
-
-                document.getElementById('password').addEventListener('keypress', (e) => {
-                    if (e.key === 'Enter') {
-                        document.getElementById('login-form').dispatchEvent(new Event('submit'));
-                    }
-                });
-            }
-
-            selectUserType(type) {
-                this.selectedUserType = type;
-                
-                // Update UI
-                document.querySelectorAll('.user-type-card').forEach(card => {
-                    card.classList.remove('selected');
-                });
-                document.querySelector(`[data-type="${type}"]`).classList.add('selected');
-
-                // Update form
-                document.getElementById('user_type').value = type;
-
-                // Update form placeholder based on user type
-                const usernameInput = document.getElementById('username');
-                if (type === 'admin') {
-                    usernameInput.placeholder = 'Administrator username';
-                } else {
-                    usernameInput.placeholder = 'ID lucrător sau email';
-                }
-            }
-
-            handleLogin(e) {
-                // Let the form submit normally - PHP will handle it
-                const btn = document.getElementById('login-btn');
-                btn.classList.add('loading');
-                btn.disabled = true;
-            }
-
-            loadRememberedCredentials() {
-                const rememberedUser = localStorage.getItem('wms_remember_user');
-                const rememberedType = localStorage.getItem('wms_remember_type');
-
-                if (rememberedUser) {
-                    document.getElementById('username').value = rememberedUser;
-                    document.getElementById('remember-me').checked = true;
-                }
-
-                if (rememberedType) {
-                    this.selectUserType(rememberedType);
-                } else {
-                    this.selectUserType('worker'); // Default
-                }
-            }
-
-            togglePassword() {
-                const passwordInput = document.getElementById('password');
-                const toggleIcon = document.querySelector('.password-toggle .material-symbols-outlined');
-                
-                if (passwordInput.type === 'password') {
-                    passwordInput.type = 'text';
-                    toggleIcon.textContent = 'visibility_off';
-                } else {
-                    passwordInput.type = 'password';
-                    toggleIcon.textContent = 'visibility';
-                }
-            }
-
-            handleForgotPassword() {
-                alert('Funcția de recuperare a parolei va fi disponibilă în curând.\n\nContactați administratorul pentru resetarea parolei.');
+        // Minimal JavaScript - no interference with browser autocomplete
+        
+        function togglePassword() {
+            const passwordInput = document.getElementById('password');
+            const toggleIcon = document.querySelector('.password-toggle .material-symbols-outlined');
+            
+            if (passwordInput.type === 'password') {
+                passwordInput.type = 'text';
+                toggleIcon.textContent = 'visibility_off';
+            } else {
+                passwordInput.type = 'password';
+                toggleIcon.textContent = 'visibility';
             }
         }
 
-        // Initialize login interface
-        document.addEventListener('DOMContentLoaded', () => {
-            new LoginInterface();
+        // Load remembered credentials
+        window.addEventListener('DOMContentLoaded', function() {
+            const rememberedUser = localStorage.getItem('wms_remember_user');
+            if (rememberedUser) {
+                document.getElementById('username').value = rememberedUser;
+                document.getElementById('remember-me').checked = true;
+            }
+
+            // Check biometric support
+            checkBiometricSupport();
         });
+
+        // Save credentials on form submit
+        document.querySelector('form').addEventListener('submit', function() {
+            if (document.getElementById('remember-me').checked) {
+                localStorage.setItem('wms_remember_user', document.getElementById('username').value);
+            } else {
+                localStorage.removeItem('wms_remember_user');
+            }
+        });
+
+        // Biometric authentication
+        async function checkBiometricSupport() {
+            if (window.PublicKeyCredential) {
+                try {
+                    const available = await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
+                    if (available) {
+                        document.getElementById('biometric-section').style.display = 'block';
+                        document.getElementById('biometric-login').addEventListener('click', handleBiometricLogin);
+                    }
+                } catch (error) {
+                    console.log('Biometric check failed:', error);
+                }
+            }
+        }
+
+        async function handleBiometricLogin() {
+            const btn = document.getElementById('biometric-login');
+            const originalText = btn.innerHTML;
+            
+            try {
+                btn.innerHTML = '<span class="material-symbols-outlined">hourglass_empty</span> Autentificare...';
+                btn.disabled = true;
+
+                const username = document.getElementById('username').value.trim();
+
+                // Begin authentication
+                const beginResponse = await fetch('api/webauthn.php?action=authenticate-begin', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username }),
+                    credentials: 'same-origin'
+                });
+
+                const beginData = await beginResponse.json();
+                if (!beginData.success) {
+                    throw new Error(beginData.error || 'Authentication failed');
+                }
+
+                // Prepare options
+                const options = {
+                    ...beginData.options,
+                    challenge: base64urlToArrayBuffer(beginData.options.challenge)
+                };
+
+                if (beginData.options.allowCredentials) {
+                    options.allowCredentials = beginData.options.allowCredentials.map(cred => ({
+                        ...cred,
+                        id: base64urlToArrayBuffer(cred.id)
+                    }));
+                }
+
+                // Get credential
+                const credential = await navigator.credentials.get({ publicKey: options });
+                if (!credential) throw new Error('Authentication cancelled');
+
+                // Complete authentication
+                const authResponse = {
+                    id: credential.id,
+                    rawId: arrayBufferToBase64url(credential.rawId),
+                    response: {
+                        authenticatorData: arrayBufferToBase64url(credential.response.authenticatorData),
+                        clientDataJSON: arrayBufferToBase64url(credential.response.clientDataJSON),
+                        signature: arrayBufferToBase64url(credential.response.signature)
+                    },
+                    type: credential.type
+                };
+
+                const completeResponse = await fetch('api/webauthn.php?action=authenticate-complete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ response: authResponse, username }),
+                    credentials: 'same-origin'
+                });
+
+                const completeData = await completeResponse.json();
+                if (!completeData.success) {
+                    throw new Error(completeData.error || 'Authentication failed');
+                }
+
+                // Success - redirect
+                window.location.href = completeData.redirect;
+
+            } catch (error) {
+                let errorMessage = 'Eroare la autentificarea biometrică.';
+                if (error.name === 'NotAllowedError') {
+                    errorMessage = 'Autentificarea a fost anulată.';
+                } else if (error.message) {
+                    errorMessage = error.message;
+                }
+                alert(errorMessage);
+            } finally {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }
+        }
+
+        // Base64url helper functions
+        function base64urlToArrayBuffer(base64url) {
+            const padding = '='.repeat((4 - base64url.length % 4) % 4);
+            const base64 = (base64url + padding).replace(/-/g, '+').replace(/_/g, '/');
+            const rawData = window.atob(base64);
+            const outputArray = new Uint8Array(rawData.length);
+            for (let i = 0; i < rawData.length; ++i) {
+                outputArray[i] = rawData.charCodeAt(i);
+            }
+            return outputArray.buffer;
+        }
+
+        function arrayBufferToBase64url(buffer) {
+            const bytes = new Uint8Array(buffer);
+            let binary = '';
+            for (let i = 0; i < bytes.byteLength; i++) {
+                binary += String.fromCharCode(bytes[i]);
+            }
+            const base64 = window.btoa(binary);
+            return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+        }
     </script>
 </body>
 </html>

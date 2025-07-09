@@ -28,6 +28,53 @@ try {
     $dbFactory = $config['connection_factory'];
     $db = $dbFactory();
 
+    // Include inventory model for stock operations
+    require_once BASE_PATH . '/models/Inventory.php';
+
+    /**
+     * Remove stock without managing its own transaction. Returns false if
+     * insufficient stock is available.
+     */
+    function removeStockForPick(PDO $db, int $productId, int $quantity): bool {
+        $query = "SELECT id, quantity FROM inventory WHERE product_id = :pid AND quantity > 0 ORDER BY received_at ASC, id ASC";
+        $stmt = $db->prepare($query);
+        $stmt->execute([':pid' => $productId]);
+        $records = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        if (empty($records)) {
+            return false;
+        }
+
+        $totalAvailable = array_sum(array_column($records, 'quantity'));
+        if ($totalAvailable < $quantity) {
+            return false;
+        }
+
+        $remaining = $quantity;
+        foreach ($records as $rec) {
+            if ($remaining <= 0) break;
+
+            if ($rec['quantity'] <= $remaining) {
+                $del = $db->prepare('DELETE FROM inventory WHERE id = :id');
+                $del->execute([':id' => $rec['id']]);
+                $remaining -= $rec['quantity'];
+            } else {
+                $newQty = $rec['quantity'] - $remaining;
+                $upd = $db->prepare('UPDATE inventory SET quantity = :q WHERE id = :id');
+                $upd->execute([':q' => $newQty, ':id' => $rec['id']]);
+                $remaining = 0;
+            }
+        }
+
+        // Update product total quantity
+        $update = $db->prepare(
+            "UPDATE products p SET quantity = (SELECT COALESCE(SUM(i.quantity),0) FROM inventory i WHERE i.product_id = p.product_id) WHERE p.product_id = :pid"
+        );
+        $update->execute([':pid' => $productId]);
+
+        return true;
+    }
+
     // Only allow POST requests
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
         http_response_code(405);
@@ -93,6 +140,11 @@ try {
         // Validate that we don't exceed ordered quantity
         if ($newTotalPicked > $totalOrdered) {
             throw new Exception("Cannot pick more than ordered quantity. Ordered: {$totalOrdered}, Already picked: {$currentPicked}, Trying to pick: {$quantityPicked}");
+        }
+
+        // Deduct stock from inventory using FIFO
+        if (!removeStockForPick($db, (int)$orderItem['product_id'], $quantityPicked)) {
+            throw new Exception('Insufficient stock available for this product.');
         }
 
         // Update the order item with new picked quantity

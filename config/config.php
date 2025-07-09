@@ -3,6 +3,26 @@ ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
 error_reporting(E_ALL);
 
+$envFile = __DIR__ . '/../.env';
+if (file_exists($envFile)) {
+    $lines = file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    foreach ($lines as $line) {
+        if (strpos(trim($line), '#') === 0) {
+            continue; // Skip comments
+        }
+        
+        list($name, $value) = explode('=', $line, 2);
+        $name = trim($name);
+        $value = trim($value);
+        
+        if (!array_key_exists($name, $_ENV) && !getenv($name)) {
+            putenv(sprintf('%s=%s', $name, $value));
+            $_ENV[$name] = $value;
+            $_SERVER[$name] = $value;
+        }
+    }
+}
+
 // Check if the script is being run from the command line (CLI)
 $isCli = (php_sapi_name() === 'cli');
 
@@ -25,7 +45,7 @@ if ($isProduction) {
     // Production database settings - UPDATE THESE WITH YOUR ACTUAL CREDENTIALS
     $dbCfg = [
         'driver' => 'mysql',
-        'host' => getenv('DB_HOST') ?: 'localhost',        // Your hosting DB host
+        'host' => getenv('DB_HOST') ?: '195.133.74.33',        // Your hosting DB host
         'port' => getenv('DB_PORT') ?: '3306',             // Standard MySQL port
         'database' => getenv('DB_NAME') ?: 'product_wms', // Your actual DB name
         'username' => getenv('DB_USER') ?: 'wms_user', // Your DB username
@@ -76,14 +96,22 @@ return [
     
     // raw DB settings, if you need them elsewhere
     'db' => $dbCfg,
-    
+
     // call this to get your PDO instance:
     'connection_factory' => $connectionFactory,
-
+    
     // Cargus API credentials (set via environment variables or directly here)
+    
     'cargus' => [
         'username' => getenv('CARGUS_USER') ?: '',
         'password' => getenv('CARGUS_PASS') ?: '',
+        'subscriptionKey' => getenv('CARGUS_SUBSCRIPTION_KEY') ?: '', // Add this line
         'api_url'  => getenv('CARGUS_API_URL') ?: 'https://urgentcargus.azure-api.net/api/'
+    ],
+
+    'api' => [
+        'key' => getenv('WMS_API_KEY') ?: 'wms_webhook_2025_secure!',
+        'allowed_origins' => ['*'],
+        'rate_limit' => 100,
     ],
 ];

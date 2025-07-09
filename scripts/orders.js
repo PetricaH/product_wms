@@ -177,22 +177,51 @@ function generateAWB(orderId) {
 
     console.log(`Generating AWB for order ${orderId}...`);
 
-    fetch(`/api/orders/${orderId}/awb`, {
-            method: 'POST'
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                alert(`AWB ${data.awb_barcode} a fost generat cu succes! Pagina se va reîncărca.`);
-                location.reload();
-            } else {
-                alert(`Eroare la generarea AWB: ${data.message || 'Răspuns nevalid de la server.'}`);
-            }
-        })
-        .catch(error => {
-            console.error('Error generating AWB:', error);
-            alert('A apărut o eroare neașteptată în timpul comunicării cu serverul.');
-        });
+    // Get CSRF token from meta tag
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+    if (!csrfToken) {
+        alert('Eroare de securitate: CSRF token lipsește. Reîncărcați pagina și încercați din nou.');
+        return;
+    }
+
+    fetch(`/web/awb.php/orders/${orderId}/awb`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': csrfToken,
+        },
+        credentials: 'same-origin'
+    })
+    .then(response => {
+        if (!response.ok) {
+            return response.json().then(errorData => {
+                throw new Error(errorData.error || `HTTP ${response.status}`);
+            });
+        }
+        return response.json();
+    })
+    .then(data => {
+        if (data.success) {
+            alert(`AWB ${data.data.awb_barcode} a fost generat cu succes! Pagina se va reîncărca.`);
+            location.reload();
+        } else {
+            alert(`Eroare la generarea AWB: ${data.error || 'Răspuns nevalid de la server.'}`);
+        }
+    })
+    .catch(error => {
+        console.error('Error generating AWB:', error);
+        
+        let errorMessage = 'A apărut o eroare neașteptată în timpul comunicării cu serverul.';
+        if (error.message.includes('Authentication required')) {
+            errorMessage = 'Sesiunea a expirat. Vă rugăm să vă autentificați din nou.';
+        } else if (error.message.includes('CSRF')) {
+            errorMessage = 'Eroare de securitate. Reîncărcați pagina și încercați din nou.';
+        } else if (error.message) {
+            errorMessage = `Eroare: ${error.message}`;
+        }
+        
+        alert(`Eroare la generarea AWB: ${errorMessage}`);
+    });
 }
 
 /**

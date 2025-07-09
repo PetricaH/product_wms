@@ -1,4 +1,8 @@
 <?php
+session_start();
+if (!isset($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
 // File: orders.php - Updated with table layout and fixed modals
 ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
@@ -149,6 +153,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
 <html lang="ro">
 <head>
     <?php require_once __DIR__ . '/includes/header.php'; ?>
+    <meta name="csrf-token" content="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
     <title>Gestionare Comenzi - WMS</title>
     <link rel="stylesheet" href="styles/orders.css">
 </head>

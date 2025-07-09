@@ -1,5 +1,5 @@
 <?php
-// includes/warehouse_header.php - FIXED: Production-ready API base URL
+// includes/warehouse_header.php - FIXED: Production-ready API base URL & CSS Versioning
 require_once __DIR__ . '/helpers.php';
 require_once __DIR__ . '/../bootstrap.php';
 
@@ -13,15 +13,20 @@ $apiBase = rtrim(BASE_URL, '/') . '/api';
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>WMS Warehouse Interface</title>
 
-<!-- Fonts (matching existing warehouse files) -->
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet">
 
-<!-- CSS Files (using existing global.css + page-specific) -->
-<link rel="stylesheet" href="<?= in_prod() ? asset('styles/warehouse-css/warehouse_global.css') : BASE_URL . 'styles/warehouse-css/warehouse_global.css' ?>">
-
 <?php
-// Load page-specific CSS from warehouse-css folder
+// Load global CSS with cache busting
+$globalCssFile = 'warehouse_global.css';
+$globalCssPath = BASE_PATH . '/styles/warehouse-css/' . $globalCssFile;
+
+if (file_exists($globalCssPath)) {
+    $globalCssUrl = in_prod() ? asset('styles/warehouse-css/' . $globalCssFile) : BASE_URL . 'styles/warehouse-css/' . $globalCssFile;
+    echo '<link rel="stylesheet" href="' . $globalCssUrl . '?v=' . filemtime($globalCssPath) . '">';
+}
+
+// Load page-specific CSS from warehouse-css folder with cache busting
 $warehousePageCSS = [
     'warehouse_orders' => 'warehouse_orders.css',
     'warehouse_hub' => 'warehouse_hub.css',
@@ -31,16 +36,31 @@ $warehousePageCSS = [
 ];
 
 if (isset($warehousePageCSS[$currentPage])) {
-    $cssFile = $warehousePageCSS[$currentPage];
-    if (in_prod()) {
-        echo '<link rel="stylesheet" href="' . asset('styles/warehouse-css/' . $cssFile) . '">';
-    } else {
-        echo '<link rel="stylesheet" href="' . BASE_URL . 'styles/warehouse-css/' . $cssFile . '">';
+    $cssFileName = $warehousePageCSS[$currentPage];
+    $cssFilePath = BASE_PATH . '/styles/warehouse-css/' . $cssFileName;
+
+    // Check if the file physically exists
+    if (file_exists($cssFilePath)) {
+        $cssUrl = '';
+        
+        // Determine the correct URL based on the environment
+        if (function_exists('in_prod') && in_prod()) {
+            if (function_exists('asset')) {
+                $cssUrl = asset('styles/warehouse-css/' . $cssFileName);
+            }
+        } else {
+            // Development environment path
+            $cssUrl = BASE_URL . 'styles/warehouse-css/' . $cssFileName;
+        }
+        
+        // Output the link tag with cache busting
+        if ($cssUrl) {
+            echo '<link rel="stylesheet" href="' . $cssUrl . '?v=' . filemtime($cssFilePath) . '">';
+        }
     }
 }
 ?>
 
-<!-- Warehouse Configuration -->
 <script>
     window.WMS_CONFIG = {
         apiBase: '<?= $apiBase ?>', // FIXED: Now works in both dev and production

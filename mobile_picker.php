@@ -1,10 +1,6 @@
 <?php
-// File: mobile_picker.php
-// Interface for mobile picking tasks - FIXED VERSION
-
-// Basic configuration
-ini_set('display_errors', 1);
-error_reporting(E_ALL);
+// File: mobile_picker.php - Improved Picking Interface
+$currentPage = 'mobile_picker';
 
 // Get order from URL parameter if provided
 $orderNumber = htmlspecialchars($_GET['order'] ?? '');
@@ -14,172 +10,227 @@ $hasOrderFromUrl = !empty($orderNumber);
 <html lang="ro">
 <head>
     <?php require_once __DIR__ . '/includes/warehouse_header.php'; ?>
-    <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
-    <style>
-        .hidden {
-            display: none !important;
-        }
-    </style>
 </head>
 <body>
-    <div class="picker-container">
-        <!-- Loading Overlay -->
-        <div id="loading-overlay" class="hidden">
-            <div class="spinner"></div>
+    <!-- Simple Header (matching existing warehouse_orders.php style) -->
+    <div class="picker-header">
+        <div class="header-content">
+            <h1>
+                <span class="material-symbols-outlined">inventory</span>
+                Mobile Picker
+            </h1>
+            <div id="order-info" class="order-info <?= !$hasOrderFromUrl ? 'hidden' : '' ?>">
+                <div class="order-number">#<span id="current-order-number"><?= $orderNumber ?></span></div>
+                <div class="customer-name" id="customer-name">Loading...</div>
+            </div>
+        </div>
+    </div>
+
+        <!-- Order Input Section (shown when no order in URL) -->
+        <div id="order-input-section" class="content-section <?= $hasOrderFromUrl ? 'hidden' : '' ?>">
+            <div class="input-card">
+                <h2>Introduceți Comanda</h2>
+                <div class="input-group">
+                    <label for="order-input">Numărul comenzii:</label>
+                    <input type="text" id="order-input" placeholder="ORD-2025-000001" class="form-control">
+                    <button id="load-order-btn" class="btn btn-primary">
+                        <span class="material-symbols-outlined">search</span>
+                        Încarcă Comanda
+                    </button>
+                </div>
+            </div>
         </div>
 
-        <!-- Message Area -->
-        <div id="message-area" class="message-area"></div>
-
-        <header class="picker-header">
-            <h1>Colectare Comandă</h1>
-            <div id="order-number" class="order-number-display">
-                <?php if ($hasOrderFromUrl): ?>
-                    #<?= $orderNumber ?>
-                <?php else: ?>
-                    #N/A
-                <?php endif; ?>
+        <!-- Progress Section -->
+        <div id="progress-section" class="progress-section <?= !$hasOrderFromUrl ? 'hidden' : '' ?>">
+            <div class="progress-stats">
+                <span>Progres: <strong id="items-completed">0</strong> din <strong id="items-total">0</strong></span>
+                <span id="progress-percentage">0%</span>
             </div>
-        </header>
+            <div class="progress-bar">
+                <div class="progress-fill" id="progress-fill"></div>
+            </div>
+        </div>
 
-        <main id="task-container" class="task-container">
-            <!-- Order Input Section - Hidden if order provided in URL -->
-            <div id="scan-order-section" class="state-card <?= $hasOrderFromUrl ? 'hidden' : '' ?>">
-                <h2>Scanați Codul Comenzii</h2>
-                <button id="scan-order-btn" class="btn btn-primary">
-                    <span class="material-symbols-outlined">qr_code_scanner</span>
-                    Scanează Comandă
+        <!-- Picking List Section -->
+        <div id="picking-list-section" class="content-section <?= !$hasOrderFromUrl ? 'hidden' : '' ?>">
+            <div class="section-header">
+                <h2>Lista de Colectare</h2>
+                <button id="refresh-items-btn" class="btn btn-secondary btn-sm">
+                    <span class="material-symbols-outlined">refresh</span>
                 </button>
-                <button id="toggle-manual-input-btn" class="btn btn-secondary">
-                    Manual Input
-                </button>
-                <div id="scanned-order-id"></div>
             </div>
-
-            <div id="manual-order-section" class="state-card hidden">
-                <h2>Introduceți Numărul Comenzii</h2>
-                <input type="text" id="order-id-input" placeholder="ORD-XXXXXX-XX" value="<?= $orderNumber ?>">
-                <button id="load-manual-order-btn" class="btn btn-primary">Încărcare</button>
-                <button id="toggle-scan-input-btn" class="btn btn-secondary">Înapoi la Scanare</button>
+            
+            <div id="items-container" class="items-container">
+                <!-- Items will be loaded here -->
             </div>
+        </div>
 
-            <div id="scanner-container" class="scanner-container hidden">
-                <div id="reader"></div>
-                <button id="stop-scan-btn" class="btn btn-danger">Oprește Scanarea</button>
-            </div>
-
-            <div id="location-scan-prompt" class="state-card hidden">
-                <h2>Verificare Locație</h2>
-                <p>Locația țintă: <strong id="target-location-code">A1-01-01</strong></p>
+        <!-- Picking Workflow Sections -->
+        
+        <!-- Step 1: Location Verification -->
+        <div id="location-step" class="workflow-step hidden">
+            <div class="step-card">
+                <div class="step-header">
+                    <h3>Pas 1: Verificare Locație</h3>
+                    <div class="step-info">
+                        <span class="material-symbols-outlined">pin_drop</span>
+                        <span>Locația necesară: <strong id="target-location">A1-01</strong></span>
+                    </div>
+                </div>
                 
-                <div id="scan-location-section">
-                    <button id="scan-location-btn" class="btn btn-primary">
+                <div class="scan-section" id="location-scan-section">
+                    <button id="scan-location-btn" class="btn btn-primary btn-large">
                         <span class="material-symbols-outlined">qr_code_scanner</span>
                         Scanează Locația
                     </button>
-                    <button id="toggle-manual-location-btn" class="btn btn-secondary">Manual</button>
+                    <button id="manual-location-btn" class="btn btn-secondary">
+                        <span class="material-symbols-outlined">keyboard</span>
+                        Introdu Manual
+                    </button>
                 </div>
-
-                <div id="manual-location-section" class="hidden">
-                    <input type="text" id="location-code-input" placeholder="Introduceți codul locației">
-                    <button id="verify-manual-location-btn" class="btn btn-primary">Verifică</button>
-                    <button id="toggle-scan-location-btn" class="btn btn-secondary">Înapoi la Scanare</button>
+                
+                <div class="manual-section hidden" id="location-manual-section">
+                    <label for="location-input">Codul locației:</label>
+                    <input type="text" id="location-input" class="form-control" placeholder="A1-01">
+                    <button id="verify-location-btn" class="btn btn-primary">
+                        <span class="material-symbols-outlined">check</span>
+                        Verifică Locația
+                    </button>
+                    <button id="back-to-scan-location" class="btn btn-secondary">
+                        <span class="material-symbols-outlined">qr_code_scanner</span>
+                        Înapoi la Scanare
+                    </button>
                 </div>
             </div>
-
-            <div id="product-scan-prompt" class="state-card hidden">
-                <h2>Verificare Produs</h2>
-                <p>Produs țintă: <strong id="target-product-sku">SKU-123</strong></p>
-                <p id="target-product-name">(Nume Produs)</p>
+        </div>
+        
+        <!-- Step 2: Product Verification -->
+        <div id="product-step" class="workflow-step hidden">
+            <div class="step-card">
+                <div class="step-header">
+                    <h3>Pas 2: Verificare Produs</h3>
+                    <div class="step-info">
+                        <span class="material-symbols-outlined">inventory_2</span>
+                        <div>
+                            <div><strong id="target-product-name">Product Name</strong></div>
+                            <div>SKU: <span id="target-product-sku">SKU123</span></div>
+                        </div>
+                    </div>
+                </div>
                 
-                <div id="scan-product-section">
-                    <button id="scan-product-btn" class="btn btn-primary">
+                <div class="scan-section" id="product-scan-section">
+                    <button id="scan-product-btn" class="btn btn-primary btn-large">
                         <span class="material-symbols-outlined">qr_code_scanner</span>
                         Scanează Produsul
                     </button>
-                    <button id="toggle-manual-product-btn" class="btn btn-secondary">Manual</button>
-                </div>
-
-                <div id="manual-product-section" class="hidden">
-                    <input type="text" id="product-sku-input" placeholder="Introduceți SKU produsului">
-                    <button id="verify-manual-product-btn" class="btn btn-primary">Verifică</button>
-                    <button id="toggle-scan-product-btn" class="btn btn-secondary">Înapoi la Scanare</button>
-                </div>
-            </div>
-
-            <div id="loading-state" class="state-card hidden">
-                <div class="spinner"></div>
-                <p>Se încarcă următoarea sarcină...</p>
-            </div>
-
-            <!-- Task Display (separate from confirmation for better UX) -->
-            <div id="task-display" class="state-card hidden">
-                <div class="task-details" style="margin-bottom: 1.5rem; text-align: left;">
-                    <div class="icon-text">
-                        <span class="material-symbols-outlined">inventory_2</span>
-                        <strong id="product-name"></strong> 
-                    </div>
-                    <div class="icon-text">
-                        <span class="material-symbols-outlined">tag</span>
-                        <strong>SKU: <span id="product-sku"></span></strong>
-                    </div>
-                    <div class="icon-text">
-                        <span class="material-symbols-outlined">pin_drop</span>
-                        <strong>Locație: <span id="location-code"></span></strong>
-                    </div>
-                </div>
-            </div>
-
-            <div id="confirmation-area" class="state-card hidden">
-                <hr style="border-color: #444; margin: 1rem 0;">
-                
-                <h3>Confirmați Colectarea</h3>
-
-                <div class="picking-input">
-                    <label for="quantity-picked-input">Cantitate colectată:</label>
-                    <input type="number" id="quantity-picked-input" class="quantity-input" min="1">
-                    <p class="details-text" style="margin-top: 0.5rem;">
-                        Necesar: <strong id="quantity-to-pick">0</strong> / Disponibil: <strong id="available-in-location">0</strong>
-                    </p>
+                    <button id="manual-product-btn" class="btn btn-secondary">
+                        <span class="material-symbols-outlined">keyboard</span>
+                        Introdu Manual
+                    </button>
                 </div>
                 
-                <button id="confirm-pick-btn" class="btn btn-primary">
-                    <span class="material-symbols-outlined">check_circle</span>
-                    Confirmă Colectarea
+                <div class="manual-section hidden" id="product-manual-section">
+                    <label for="product-input">Codul produsului:</label>
+                    <input type="text" id="product-input" class="form-control" placeholder="SKU sau Barcode">
+                    <button id="verify-product-btn" class="btn btn-primary">
+                        <span class="material-symbols-outlined">check</span>
+                        Verifică Produsul
+                    </button>
+                    <button id="back-to-scan-product" class="btn btn-secondary">
+                        <span class="material-symbols-outlined">qr_code_scanner</span>
+                        Înapoi la Scanare
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Step 3: Quantity Input -->
+        <div id="quantity-step" class="workflow-step hidden">
+            <div class="step-card">
+                <div class="step-header">
+                    <h3>Pas 3: Cantitate Colectată</h3>
+                    <div class="step-info">
+                        <span class="material-symbols-outlined">scale</span>
+                        <span>Necesar: <strong id="required-quantity">0</strong></span>
+                    </div>
+                </div>
+                
+                <div class="quantity-section">
+                    <label for="picked-quantity-input">Cantitate colectată:</label>
+                    <div class="quantity-controls">
+                        <button class="qty-btn" id="qty-decrease">-</button>
+                        <input type="number" id="picked-quantity-input" min="0" value="0" class="qty-input">
+                        <button class="qty-btn" id="qty-increase">+</button>
+                    </div>
+                    <div class="quantity-actions">
+                        <button id="confirm-quantity-btn" class="btn btn-success btn-large">
+                            <span class="material-symbols-outlined">check_circle</span>
+                            Confirmă Colectarea
+                        </button>
+                        <button id="back-to-product" class="btn btn-secondary">
+                            <span class="material-symbols-outlined">arrow_back</span>
+                            Înapoi
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Scanner Container -->
+        <div id="scanner-container" class="scanner-container hidden">
+            <div class="scanner-header">
+                <h3 id="scanner-title">Scanare</h3>
+                <button id="close-scanner" class="btn btn-secondary">
+                    <span class="material-symbols-outlined">close</span>
+                    Închide
                 </button>
             </div>
-
-            <div id="completion-state" class="state-card hidden">
-                <span class="material-symbols-outlined icon-large">task_alt</span>
-                <h2 id="completion-message"></h2>
-                <a href="/warehouse_orders.php" class="btn btn-secondary">Înapoi la Comenzi</a>
+            <div id="scanner-reader"></div>
+            <div class="scanner-manual">
+                <button id="scanner-manual-input" class="btn btn-secondary">
+                    <span class="material-symbols-outlined">keyboard</span>
+                    Introdu Manual
+                </button>
             </div>
+        </div>
 
-            <div id="all-done-message" class="state-card hidden">
-                <span class="material-symbols-outlined icon-large">task_alt</span>
+        <!-- Loading Overlay -->
+        <div id="loading-overlay" class="loading-overlay hidden">
+            <div class="spinner"></div>
+            <p>Se încarcă...</p>
+        </div>
+
+        <!-- Messages -->
+        <div id="message-container" class="message-container"></div>
+
+        <!-- Completion Section -->
+        <div id="completion-section" class="content-section hidden">
+            <div class="completion-card">
+                <span class="material-symbols-outlined icon-large success">task_alt</span>
                 <h2>Comandă Finalizată!</h2>
                 <p>Toate articolele au fost colectate cu succes.</p>
-                <div class="actions">
-                    <a href="warehouse_orders.php" class="btn btn-secondary">Înapoi la Comenzi</a>
-                    <a href="mobile_picker.php" class="btn btn-primary">Comandă Nouă</a>
+                <div class="completion-actions">
+                    <a href="warehouse_orders.php" class="btn btn-secondary">
+                        <span class="material-symbols-outlined">arrow_back</span>
+                        Înapoi la Comenzi
+                    </a>
+                    <a href="mobile_picker.php" class="btn btn-primary">
+                        <span class="material-symbols-outlined">add</span>
+                        Comandă Nouă
+                    </a>
                 </div>
             </div>
-
-            <div id="error-state" class="state-card hidden">
-                <span class="material-symbols-outlined icon-large">error</span>
-                <h2>Eroare</h2>
-                <p id="error-message"></p>
-                <button onclick="location.reload()" class="btn btn-secondary">
-                    <span class="material-symbols-outlined">refresh</span>
-                    Reîncărcare
-                </button>
-            </div>
-        </main>
-
-        <footer class="picker-footer">
-            <p>WMS Picker v1.0</p>
-        </footer>
+        </div>
     </div>
+
+    <!-- Pass data to JavaScript -->
+    <script>
+        window.PICKER_CONFIG = {
+            orderFromUrl: <?= json_encode($hasOrderFromUrl ? $orderNumber : null) ?>,
+            hasOrderFromUrl: <?= json_encode($hasOrderFromUrl) ?>
+        };
+    </script>
 
     <?php require_once __DIR__ . '/includes/warehouse_footer.php'; ?>
 </body>

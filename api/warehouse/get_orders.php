@@ -104,7 +104,7 @@ try {
             ), 0) as remaining_items
         FROM orders o
         WHERE o.type = 'inbound'
-        AND o.status IN ('Pending', 'Processing', 'pending', 'processing')
+        AND o.status IN ('Pending', 'Processing', 'assigned', 'pending', 'processing')
         ORDER BY
             CASE LOWER(o.priority)
                 WHEN 'urgent' THEN 1

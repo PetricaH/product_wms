@@ -59,5 +59,40 @@ class ActivityLog {
             return [];
         }
     }
+
+    /**
+     * Get total number of log entries.
+     */
+    public function getTotalCount(): int {
+        try {
+            $stmt = $this->conn->query("SELECT COUNT(*) as total FROM {$this->table}");
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            return (int)($result['total'] ?? 0);
+        } catch (PDOException $e) {
+            error_log('ActivityLog count error: ' . $e->getMessage());
+            return 0;
+        }
+    }
+
+    /**
+     * Retrieve paginated activity log entries with usernames.
+     */
+    public function getLogsPaginated(int $limit, int $offset): array {
+        $query = "SELECT al.*, u.username
+                  FROM {$this->table} al
+                  LEFT JOIN users u ON al.user_id = u.id
+                  ORDER BY al.created_at DESC
+                  LIMIT :limit OFFSET :offset";
+        try {
+            $stmt = $this->conn->prepare($query);
+            $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+            $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+            $stmt->execute();
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (PDOException $e) {
+            error_log('ActivityLog getLogsPaginated error: ' . $e->getMessage());
+            return [];
+        }
+    }
 }
 ?>

@@ -64,4 +64,31 @@ function loadPageAsset($page, $type) {
     
     return '';
 }
-?>
+
+// ----------------------------------------------------------------------
+// Activity Log setup
+// ----------------------------------------------------------------------
+
+if (!isset($GLOBALS['config'])) {
+    $GLOBALS['config'] = require __DIR__ . '/config/config.php';
+}
+$config = $GLOBALS['config'];
+
+require_once __DIR__ . '/models/ActivityLog.php';
+
+try {
+    $dbFactory = $config['connection_factory'];
+    $logDb = $dbFactory();
+    $GLOBALS['activityLog'] = new ActivityLog($logDb);
+} catch (Exception $e) {
+    $GLOBALS['activityLog'] = null;
+    error_log('Activity log init failed: ' . $e->getMessage());
+}
+
+function logActivity($userId, $action, $resourceType, $resourceId, $description, $oldValues = null, $newValues = null) {
+    $logger = $GLOBALS['activityLog'] ?? null;
+    if ($logger instanceof ActivityLog) {
+        return $logger->log($userId, $action, $resourceType, $resourceId, $description, $oldValues, $newValues);
+    }
+    return false;
+}?>

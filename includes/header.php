@@ -1,5 +1,5 @@
 <?php
-// includes/header.php - Updated to include new CSS files with conditional loading
+// includes/header.php - Refactored with asset versioning
 require_once __DIR__ . '/helpers.php';
 require_once __DIR__ . '/../bootstrap.php';
 
@@ -13,59 +13,55 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <title>WMS Admin Dashboard</title>
 
-<?php if (in_prod()): ?>
-  <!-- Production CSS -->
-  <link rel="stylesheet" href="<?= asset('/styles/global.css') ?>">
-  <link rel="stylesheet" href="<?= asset('/styles/sidebar.css') ?>">
-  
-  <?php
-  // Load page-specific CSS in production
-  $pageSpecificCSS = [
-      'index' => 'index.css',
-      'users' => 'users.css', 
-      'products' => 'products.css',
-      'locations' => 'locations.css',
-      'inventory' => 'inventory.css',
-      'orders' => 'orders.css',
-      'transactions' => 'transactions.css',
-      'smartbill-sync' => 'smartbill-sync.css',
-      'activities' => 'activities.css'
-  ];
-  
-  if (isset($pageSpecificCSS[$currentPage])) {
-      echo '<link rel="stylesheet" href="' . asset('/styles/' . $pageSpecificCSS[$currentPage]) . '">';
-  }
-  ?>
-  
-  <!-- Universal Scripts -->
-  <script src="<?= asset('scripts/universal.js') ?>" defer></script>
-  
-<?php else: ?>
-  <!-- Development CSS -->
-  <link rel="stylesheet" href="<?= BASE_URL ?>styles/global.css">
-  <link rel="stylesheet" href="<?= BASE_URL ?>styles/sidebar.css">
-  
-  <?php
-  // Load page-specific CSS in development
-  $pageSpecificCSS = [
-      'index' => 'index.css',
-      'users' => 'users.css',
-      'products' => 'products.css', 
-      'locations' => 'locations.css',
-      'inventory' => 'inventory.css',
-      'orders' => 'orders.css',
-      'transactions' => 'transactions.css',
-      'smartbill-sync' => 'smartbill-sync.css',
-      'activities' => 'activities.css'
-  ];
-  
-  if (isset($pageSpecificCSS[$currentPage])) {
-      echo '<link rel="stylesheet" href="' . BASE_URL . 'styles/' . $pageSpecificCSS[$currentPage] . '">';
-  }
-  ?>
-  
-  <!-- Universal Scripts -->
-  <script src="<?= BASE_URL ?>scripts/universal.js" defer></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-  <script src="<?= BASE_URL ?>scripts/theme-toggle.js" defer></script>
-<?php endif; ?>
+<?php
+// --- Asset Loading with Cache-Busting Versioning ---
+
+// Define all potential CSS files
+$pageSpecificCSS = [
+    'index' => 'index.css',
+    'users' => 'users.css',
+    'products' => 'products.css',
+    'locations' => 'locations.css',
+    'inventory' => 'inventory.css',
+    'orders' => 'orders.css',
+    'transactions' => 'transactions.css',
+    'smartbill-sync' => 'smartbill-sync.css',
+    'activities' => 'activities.css'
+];
+
+// Create a list of CSS files to load: start with global ones
+$cssFilesToLoad = ['global.css', 'sidebar.css'];
+
+// Add page-specific CSS if it exists for the current page
+if (isset($pageSpecificCSS[$currentPage])) {
+    $cssFilesToLoad[] = $pageSpecificCSS[$currentPage];
+}
+
+// Loop through and output versioned CSS link tags
+foreach ($cssFilesToLoad as $cssFile) {
+    $cssFilePath = BASE_PATH . '/styles/' . $cssFile;
+    if (file_exists($cssFilePath)) {
+        $cssUrl = in_prod() ? asset('styles/' . $cssFile) : BASE_URL . 'styles/' . $cssFile;
+        echo '<link rel="stylesheet" href="' . $cssUrl . '?v=' . filemtime($cssFilePath) . '">';
+    }
+}
+
+// --- Script Loading with Cache-Busting Versioning ---
+
+// Load universal script with versioning
+$universalJsPath = BASE_PATH . '/scripts/universal.js';
+if (file_exists($universalJsPath)) {
+    $universalJsUrl = in_prod() ? asset('scripts/universal.js') : BASE_URL . 'scripts/universal.js';
+    echo '<script src="' . $universalJsUrl . '?v=' . filemtime($universalJsPath) . '" defer></script>';
+}
+
+// Load development-only scripts
+if (!in_prod()) {
+    echo '<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>';
+    
+    $themeToggleJsPath = BASE_PATH . '/scripts/theme-toggle.js';
+    if(file_exists($themeToggleJsPath)) {
+        echo '<script src="' . BASE_URL . 'scripts/theme-toggle.js?v=' . filemtime($themeToggleJsPath) . '" defer></script>';
+    }
+}
+?>

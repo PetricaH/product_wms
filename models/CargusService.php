@@ -3,6 +3,7 @@ class CargusService {
     private $apiUrl = 'https://urgentcargus.azure-api.net/api/';
     private $username;
     private $password;
+    private $subscriptionKey;
     private $token;
     private $tokenExpiry;
 
@@ -10,8 +11,27 @@ class CargusService {
         $config = require BASE_PATH . '/config/config.php';
         $this->username = $config['cargus']['username'] ?? '';
         $this->password = $config['cargus']['password'] ?? '';
+        $this->subscriptionKey = $config['cargus']['subscriptionKey'] ?? '';
         if (!empty($config['cargus']['api_url'])) {
             $this->apiUrl = rtrim($config['cargus']['api_url'], '/') . '/';
+        }
+        $this->validateConfiguration();
+    }
+
+    private function validateConfiguration() {
+        $missing = [];
+        if (empty($this->username)) {
+            $missing[] = 'username';
+        }
+        if (empty($this->password)) {
+            $missing[] = 'password';
+        }
+        if (empty($this->subscriptionKey)) {
+            $missing[] = 'subscriptionKey';
+        }
+
+        if (!empty($missing)) {
+            throw new Exception('Missing Cargus configuration: ' . implode(', ', $missing));
         }
     }
 
@@ -92,6 +112,9 @@ class CargusService {
             'Accept: application/json',
             'Content-Type: application/json'
         ];
+        if (!empty($this->subscriptionKey)) {
+            $headers[] = 'Ocp-Apim-Subscription-Key: ' . $this->subscriptionKey;
+        }
         if ($this->token) {
             $headers[] = 'Authorization: Bearer ' . $this->token;
         }

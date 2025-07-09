@@ -49,7 +49,7 @@ if ($isProduction) {
         'port' => getenv('DB_PORT') ?: '3306',             // Standard MySQL port
         'database' => getenv('DB_NAME') ?: 'product_wms', // Your actual DB name
         'username' => getenv('DB_USER') ?: 'wms_user', // Your DB username
-        'password' => getenv('DB_PASS') ?: 'Hr545389###', // Your DB password
+        'password' => getenv('DB_PASS') ?: '', // DB password from environment
         'charset' => 'utf8mb4',
     ];
 } else {
@@ -110,8 +110,7 @@ return [
     ],
 
     'api' => [
-        'key' => getenv('WMS_API_KEY') ?: 'wms_webhook_2025_secure!',
+        'key' => getenv('WMS_API_KEY') ?: '',
         'allowed_origins' => ['*'],
         'rate_limit' => 100,
-    ],
-];
+    ],];

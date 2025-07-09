@@ -443,9 +443,10 @@ try {
     
     $importId = $data['import_id'] ?? $_POST['import_id'] ?? $_GET['import_id'] ?? null;
     $token = $data['token'] ?? $_POST['token'] ?? '';
+    $expectedToken = $config['api']['key'] ?? '';
     
     // Simple validation
-    if ($token !== 'wms_webhook_2025_secure!') {
+    if ($token !== $expectedToken) {
         http_response_code(401);
         echo json_encode(['success' => false, 'error' => 'Invalid token']);
         exit;

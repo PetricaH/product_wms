@@ -396,7 +396,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                         </div>
                                                     </td>
                                                     <td>
-                                                        <span class="location-badge"><?= htmlspecialchars($item['location_name']) ?></span>
+                                                        <span class="location-badge"><?= htmlspecialchars($item['location_code']) ?></span>
                                                     </td>
                                                     <td>
                                                         <span class="stock-info <?= $item['quantity'] <= ($item['min_stock_level'] ?? 0) ? 'stock-low' : 'stock-good' ?>">
@@ -612,7 +612,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                 <option value="">Din toate locațiile</option>
                                 <?php foreach ($allLocations as $location): ?>
                                     <option value="<?= $location['id'] ?>">
-                                        <?= htmlspecialchars($location['name']) ?>
+                                        <?= htmlspecialchars($location['location_code']) ?>
                                     </option>
                                 <?php endforeach; ?>
                             </select>
@@ -653,7 +653,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                 <option value="">Selectează locația</option>
                                 <?php foreach ($allLocations as $location): ?>
                                     <option value="<?= $location['id'] ?>">
-                                        <?= htmlspecialchars($location['name']) ?>
+                                        <?= htmlspecialchars($location['location_code']) ?>
                                     </option>
                                 <?php endforeach; ?>
                             </select>

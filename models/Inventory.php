@@ -24,14 +24,14 @@ class Inventory {
      */
     public function getInventoryWithFilters($productFilter = '', $locationFilter = '', $lowStockOnly = false): array {
         $query = "SELECT i.*, 
-                         p.sku, p.name as product_name, p.description as product_description, 
-                         p.category, p.min_stock_level, p.price,
-                         l.name as location_name, l.description as location_description,
-                         l.location_code, l.zone, l.type as location_type
-                  FROM {$this->inventoryTable} i
-                  LEFT JOIN {$this->productsTable} p ON i.product_id = p.product_id
-                  LEFT JOIN {$this->locationsTable} l ON i.location_id = l.id
-                  WHERE i.quantity > 0";
+                        p.sku, p.name as product_name, p.description as product_description, 
+                        p.category, p.min_stock_level, p.price,
+                        l.location_code, l.notes as location_description,
+                        l.zone, l.type as location_type
+                FROM {$this->inventoryTable} i
+                LEFT JOIN {$this->productsTable} p ON i.product_id = p.product_id
+                LEFT JOIN {$this->locationsTable} l ON i.location_id = l.id
+                WHERE i.quantity > 0";
 
         $params = [];
 
@@ -52,7 +52,7 @@ class Inventory {
             $query .= " AND i.quantity <= COALESCE(p.min_stock_level, 5)";
         }
 
-        $query .= " ORDER BY p.name ASC, l.name ASC, i.received_at ASC";
+        $query .= " ORDER BY p.name ASC, l.location_code ASC, i.received_at ASC";
 
         try {
             $stmt = $this->conn->prepare($query);
@@ -521,7 +521,7 @@ class Inventory {
      * @return array Array of products expiring soon
      */
     public function getExpiringProducts(): array {
-        $query = "SELECT i.*, p.sku, p.name as product_name, l.name as location_name,
+        $query = "SELECT i.*, p.sku, p.name as product_name, l.name as location_code,
                          DATEDIFF(i.expiry_date, CURDATE()) as days_until_expiry
                   FROM {$this->inventoryTable} i
                   LEFT JOIN {$this->productsTable} p ON i.product_id = p.product_id
@@ -547,7 +547,7 @@ class Inventory {
      * @return array Array of expired products
      */
     public function getExpiredProducts(): array {
-        $query = "SELECT i.*, p.sku, p.name as product_name, l.name as location_name,
+        $query = "SELECT i.*, p.sku, p.name as product_name, l.name as location_code,
                          DATEDIFF(CURDATE(), i.expiry_date) as days_expired
                   FROM {$this->inventoryTable} i
                   LEFT JOIN {$this->productsTable} p ON i.product_id = p.product_id

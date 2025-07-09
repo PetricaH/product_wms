@@ -35,6 +35,10 @@ try {
     $dbFactory = $config['connection_factory'];
     $db = $dbFactory();
 
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+
     // Get JSON input
     $input = json_decode(file_get_contents('php://input'), true);
 
@@ -179,6 +183,17 @@ try {
     }
 
     $db->commit();
+
+    $userId = $_SESSION['user_id'] ?? 0;
+    logActivity(
+        $userId,
+        'pick',
+        'inventory',
+        $inventoryId ?? 0,
+        'Item picked',
+        ['picked_quantity' => $currentPicked],
+        ['picked_quantity' => $newPickedTotal]
+    );
 
     // Return success response
     echo json_encode([

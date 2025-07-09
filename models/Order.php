@@ -193,6 +193,19 @@ class Order {
             }
             
             $this->conn->commit();
+
+            // Log order creation
+            $userId = $orderData['created_by'] ?? ($_SESSION['user_id'] ?? 0);
+            logActivity(
+                $userId,
+                'create',
+                'order',
+                $orderId,
+                'Order created',
+                null,
+                $orderData
+            );
+
             return $orderId;
         } catch (PDOException $e) {
             $this->conn->rollBack();
@@ -210,13 +223,27 @@ class Order {
     public function updateStatus($orderId, $status) {
         $status = strtolower($status);
         $query = "UPDATE {$this->table} SET status = :status, updated_at = NOW() WHERE id = :id";
-        
+
         try {
+            $old = $this->getOrderById($orderId);
             $stmt = $this->conn->prepare($query);
             $stmt->bindValue(':id', $orderId, PDO::PARAM_INT);
             $stmt->bindValue(':status', $status);
-            
-            return $stmt->execute();
+            $result = $stmt->execute();
+            if ($result) {
+                $userId = $_SESSION['user_id'] ?? 0;
+                $oldStatus = $old['status'] ?? null;
+                logActivity(
+                    $userId,
+                    'update',
+                    'order',
+                    $orderId,
+                    'Order status updated',
+                    ['status' => $oldStatus],
+                    ['status' => $status]
+                );
+            }
+            return $result;
         } catch (PDOException $e) {
             error_log("Error updating order status: " . $e->getMessage());
             return false;
@@ -272,8 +299,20 @@ class Order {
             $orderStmt = $this->conn->prepare($orderQuery);
             $orderStmt->bindValue(':id', $orderId, PDO::PARAM_INT);
             $result = $orderStmt->execute();
-            
+
             $this->conn->commit();
+
+            if ($result) {
+                $userId = $_SESSION['user_id'] ?? 0;
+                logActivity(
+                    $userId,
+                    'delete',
+                    'order',
+                    $orderId,
+                    'Order deleted'
+                );
+            }
+
             return $result;
         } catch (PDOException $e) {
             $this->conn->rollBack();
@@ -423,8 +462,22 @@ class Order {
         $query = "UPDATE {$this->table} SET " . implode(', ', $fieldsToUpdate) . " WHERE id = :id";
         
         try {
+            $old = $this->getOrderById($orderId);
             $stmt = $this->conn->prepare($query);
-            return $stmt->execute($params);
+            $result = $stmt->execute($params);
+            if ($result) {
+                $userId = $_SESSION['user_id'] ?? 0;
+                logActivity(
+                    $userId,
+                    'update',
+                    'order',
+                    $orderId,
+                    'Order updated',
+                    $old,
+                    $orderData
+                );
+            }
+            return $result;
         } catch (PDOException $e) {
             error_log("Error updating order: " . $e->getMessage());
             return false;

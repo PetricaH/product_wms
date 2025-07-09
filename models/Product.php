@@ -675,7 +675,18 @@ class Product {
             
             $success = $stmt->execute($params);
             if ($success) {
-                return $this->conn->lastInsertId();
+                $productId = $this->conn->lastInsertId();
+                $userId = $_SESSION['user_id'] ?? 0;
+                logActivity(
+                    $userId,
+                    'create',
+                    'product',
+                    $productId,
+                    'Product created',
+                    null,
+                    $productData
+                );
+                return $productId;
             } else {
                 error_log("Product creation failed for SKU: " . $productData['sku'] . " - Execute returned false");
                 return false;
@@ -752,16 +763,27 @@ class Product {
         try {
             error_log("updateProduct: Executing query: " . $query);
             error_log("updateProduct: With params: " . json_encode($params));
-            
+
+            $old = $this->findById($productId);
             $stmt = $this->conn->prepare($query);
             $success = $stmt->execute($params);
-            
+
             if (!$success) {
                 error_log("updateProduct: Execute returned false for product ID: " . $productId);
                 $errorInfo = $stmt->errorInfo();
                 error_log("updateProduct: SQL Error: " . implode(' - ', $errorInfo));
             } else {
                 error_log("updateProduct: Successfully updated product ID: " . $productId);
+                $userId = $_SESSION['user_id'] ?? 0;
+                logActivity(
+                    $userId,
+                    'update',
+                    'product',
+                    $productId,
+                    'Product updated',
+                    $old,
+                    $productData
+                );
             }
             
             return $success;
@@ -792,7 +814,20 @@ class Product {
         try {
             $stmt = $this->conn->prepare($query);
             $stmt->bindParam(':id', $productId, PDO::PARAM_INT);
-            return $stmt->execute();
+            $result = $stmt->execute();
+
+            if ($result) {
+                $userId = $_SESSION['user_id'] ?? 0;
+                logActivity(
+                    $userId,
+                    'delete',
+                    'product',
+                    $productId,
+                    'Product deleted'
+                );
+            }
+
+            return $result;
         } catch (PDOException $e) {
             error_log("Error deleting product: " . $e->getMessage());
             return false;

@@ -1,7 +1,7 @@
 <?php
 class ActivityLog {
     private PDO $conn;
-    private string $table = 'activity_log';
+    private string $table = 'activity_logs';
 
     public function __construct(PDO $db) {
         $this->conn = $db;
@@ -17,11 +17,13 @@ class ActivityLog {
         int|string $resourceId,
         string $description,
         $oldValues = null,
-        $newValues = null
+        $newValues = null,
+        ?string $ipAddress = null,
+        ?string $userAgent = null
     ): bool {
         $query = "INSERT INTO {$this->table}
-                  (user_id, action, resource_type, resource_id, description, old_values, new_values, created_at)
-                  VALUES (:user_id, :action, :resource_type, :resource_id, :description, :old_values, :new_values, NOW())";
+                  (user_id, action, resource_type, resource_id, description, old_values, new_values, ip_address, user_agent, created_at)
+                  VALUES (:user_id, :action, :resource_type, :resource_id, :description, :old_values, :new_values, :ip_address, :user_agent, NOW())";
 
         try {
             $stmt = $this->conn->prepare($query);
@@ -32,6 +34,8 @@ class ActivityLog {
             $stmt->bindValue(':description', $description);
             $stmt->bindValue(':old_values', $oldValues !== null ? json_encode($oldValues) : null);
             $stmt->bindValue(':new_values', $newValues !== null ? json_encode($newValues) : null);
+            $stmt->bindValue(':ip_address', $ipAddress);
+            $stmt->bindValue(':user_agent', $userAgent);
             return $stmt->execute();
         } catch (PDOException $e) {
             error_log('ActivityLog error: ' . $e->getMessage());

@@ -28,6 +28,10 @@ try {
     $dbFactory = $config['connection_factory'];
     $db = $dbFactory();
 
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+
     // Include inventory model for stock operations
     require_once BASE_PATH . '/models/Inventory.php';
 
@@ -198,6 +202,17 @@ try {
 
         // Commit transaction
         $db->commit();
+
+        $userId = $_SESSION['user_id'] ?? 0;
+        logActivity(
+            $userId,
+            'pick',
+            'inventory',
+            0,
+            'Item picked',
+            ['picked_quantity' => $currentPicked],
+            ['picked_quantity' => $newTotalPicked]
+        );
 
         // Return success response
         echo json_encode([

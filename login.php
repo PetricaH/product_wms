@@ -67,6 +67,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     
                     // Update last login
                     $usersModel->updateLastLogin($user['id']);
+
+                    // Log login event
+                    logActivity(
+                        $user['id'],
+                        'login',
+                        'user',
+                        $user['id'],
+                        'User logged in'
+                    );
                     
                     // Redirect based on user role (AUTO-DETECT - NO SELECTION NEEDED)
                     if ($user['role'] === 'admin') {

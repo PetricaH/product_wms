@@ -225,6 +225,18 @@ class Inventory {
             $this->updateProductTotalQuantity($data['product_id']);
 
             $this->conn->commit();
+
+            $userId = $_SESSION['user_id'] ?? 0;
+            logActivity(
+                $userId,
+                'add',
+                'inventory',
+                $inventoryId,
+                'Stock added',
+                null,
+                $data
+            );
+
             return (int) $inventoryId;
 
         } catch (PDOException $e) {
@@ -317,6 +329,18 @@ class Inventory {
             $this->updateProductTotalQuantity($productId);
 
             $this->conn->commit();
+
+            $userId = $_SESSION['user_id'] ?? 0;
+            logActivity(
+                $userId,
+                'remove',
+                'inventory',
+                $productId,
+                'Stock removed',
+                ['quantity' => $totalAvailable],
+                ['quantity' => $totalAvailable - $quantity]
+            );
+
             return true;
 
         } catch (PDOException $e) {

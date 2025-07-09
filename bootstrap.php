@@ -88,7 +88,9 @@ try {
 function logActivity($userId, $action, $resourceType, $resourceId, $description, $oldValues = null, $newValues = null) {
     $logger = $GLOBALS['activityLog'] ?? null;
     if ($logger instanceof ActivityLog) {
-        return $logger->log($userId, $action, $resourceType, $resourceId, $description, $oldValues, $newValues);
+        $ip = $_SERVER['REMOTE_ADDR'] ?? null;
+        $agent = $_SERVER['HTTP_USER_AGENT'] ?? null;
+        return $logger->log($userId, $action, $resourceType, $resourceId, $description, $oldValues, $newValues, $ip, $agent);
     }
-    return false;
-}?>
+    return false;}
+?>

@@ -9,10 +9,8 @@ if (!defined('BASE_PATH')) {
     define('BASE_PATH', __DIR__);
 }
 require_once BASE_PATH . '/bootstrap.php';
-$fpdfPath = BASE_PATH . '/lib/fpdf.php';
-if (file_exists($fpdfPath)) {
-    require_once $fpdfPath;
-}
+require_once BASE_PATH . '/vendor/autoload.php';
+
 $config = require BASE_PATH . '/config/config.php';
 
 // Session and authentication check
@@ -47,11 +45,12 @@ $transactionModel = new Transaction($db);
  * Generate PDF for purchase order
  */
 function generatePurchaseOrderPdf(array $orderInfo, array $items): ?string {
+    // Use the standard FPDF class name
     if (!class_exists('FPDF')) {
         return null;
     }
 
-    $pdf = new FPDF();
+    $pdf = new FPDF();  // Keep this as FPDF, not namespaced
     $pdf->AddPage();
     $pdf->SetFont('Arial', 'B', 16);
     $pdf->Cell(0, 10, 'Comanda ' . $orderInfo['order_number'], 0, 1);
@@ -82,6 +81,13 @@ function generatePurchaseOrderPdf(array $orderInfo, array $items): ?string {
 
     $fileName = 'po_' . $orderInfo['order_number'] . '_' . time() . '.pdf';
     $path = BASE_PATH . '/storage/purchase_order_pdfs/' . $fileName;
+    
+    // Create directory if it doesn't exist
+    $dir = dirname($path);
+    if (!is_dir($dir)) {
+        mkdir($dir, 0755, true);
+    }
+    
     $pdf->Output('F', $path);
     return $fileName;
 }

@@ -10,5 +10,8 @@
         "psr-4": {
             "": ""
         }
+    },
+    "require": {
+        "setasign/fpdf": "^1.8"
     }
 }

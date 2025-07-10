@@ -193,34 +193,38 @@ require_once __DIR__ . '/includes/header.php';
                 $statsStmt->execute();
                 $stats = $statsStmt->fetch(PDO::FETCH_ASSOC);
                 ?>
+                
                 <div class="stat-card">
                     <div class="stat-icon">
                         <span class="material-symbols-outlined">store</span>
                     </div>
                     <div class="stat-info">
-                        <h3><?= number_format($stats['total_sellers']) ?></h3>
+                        <h3><?= number_format($stats['total_sellers'] ?? 0) ?></h3>
                         <p>Total Furnizori</p>
                     </div>
                 </div>
+                
                 <div class="stat-card">
                     <div class="stat-icon">
                         <span class="material-symbols-outlined">check_circle</span>
                     </div>
                     <div class="stat-info">
-                        <h3><?= number_format($stats['active_sellers']) ?></h3>
+                        <h3><?= number_format($stats['active_sellers'] ?? 0) ?></h3>
                         <p>Activi</p>
                     </div>
                 </div>
+                
                 <div class="stat-card">
                     <div class="stat-icon">
                         <span class="material-symbols-outlined">block</span>
                     </div>
                     <div class="stat-info">
-                        <h3><?= number_format($stats['inactive_sellers']) ?></h3>
+                        <h3><?= number_format($stats['inactive_sellers'] ?? 0) ?></h3>
                         <p>Inactivi</p>
                     </div>
                 </div>
             </div>
+
 
             <!-- Search -->
             <div class="search-section">

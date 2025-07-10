@@ -32,7 +32,7 @@ $isWebHost = !in_array($serverName, ['localhost', '127.0.0.1', '::1']) &&
              !preg_match('/\.(local|test|dev)$/', $serverName);
 
 // It's production if it's a non-dev web host OR if it's run from the command line
-$isProduction = $isWebHost || $isCli;
+$isProduction = $isWebHost;
 
 $environment = $isProduction ? 'production' : 'development';
 

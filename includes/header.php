@@ -25,8 +25,10 @@ $pageSpecificCSS = [
     'inventory' => 'inventory.css',
     'orders' => 'orders.css',
     'transactions' => 'transactions.css',
-    'smartbill-sync' => 'smartbill-sync.css',
-    'activities' => 'activities.css'
+    'smartbill-sync' => 'smartbill-s,ync.css',
+    'activities' => 'activities.css',
+    'sellers' => 'sellers.css',
+    'purchase_orders' => 'purchase_orders.css'
 ];
 
 // Create a list of CSS files to load: start with global ones

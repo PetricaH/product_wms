@@ -19,7 +19,9 @@ $pageSpecificJS = [
     'universal' => 'universal.js',
     'smartbill-sync' => 'smartbill_sync.js',
     'locations' => 'locations.js',
-    'orders' => 'orders.js'
+    'orders' => 'orders.js',
+    'sellers' => 'sellers.js',
+    'purchase_orders' => 'purchase_orders.js'
     // Add any other page-specific script mappings here.
 ];
 

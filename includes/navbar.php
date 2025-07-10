@@ -109,6 +109,26 @@ if (isset($_SESSION['username'])) {
             </a>
         </li>
 
+        <!-- Sellers -->
+        <li class="sidebar__item">
+            <a href="<?= getNavUrl('sellers.php') ?>" 
+               class="sidebar__link <?= getActiveClass('sellers.php') ?>"
+               data-tooltip="Furnizori">
+                <span class="material-symbols-outlined">store</span>
+                <span class="link-text">Furnizori</span>
+            </a>
+        </li>
+
+        <!-- Purchase Orders -->
+        <li class="sidebar__item">
+            <a href="<?= getNavUrl('purchase_orders.php') ?>" 
+               class="sidebar__link <?= getActiveClass('purchase_orders.php') ?>"
+               data-tooltip="Comenzi Achiziție">
+                <span class="material-symbols-outlined">shopping_basket</span>
+                <span class="link-text">Comenzi Stoc</span>
+            </a>
+        </li>
+
         <!-- SmartBill Sync -->
         <li class="sidebar__item">
             <a href="<?= getNavUrl('smartbill-sync.php') ?>" 

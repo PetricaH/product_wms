@@ -9,6 +9,10 @@ if (!defined('BASE_PATH')) {
     define('BASE_PATH', __DIR__);
 }
 require_once BASE_PATH . '/bootstrap.php';
+$fpdfPath = BASE_PATH . '/lib/fpdf.php';
+if (file_exists($fpdfPath)) {
+    require_once $fpdfPath;
+}
 $config = require BASE_PATH . '/config/config.php';
 
 // Session and authentication check
@@ -39,6 +43,76 @@ $sellerModel = new Seller($db);
 $purchasableProductModel = new PurchasableProduct($db);
 $transactionModel = new Transaction($db);
 
+/**
+ * Generate PDF for purchase order
+ */
+function generatePurchaseOrderPdf(array $orderInfo, array $items): ?string {
+    if (!class_exists('FPDF')) {
+        return null;
+    }
+
+    $pdf = new FPDF();
+    $pdf->AddPage();
+    $pdf->SetFont('Arial', 'B', 16);
+    $pdf->Cell(0, 10, 'Comanda ' . $orderInfo['order_number'], 0, 1);
+    $pdf->SetFont('Arial', '', 12);
+    $pdf->Cell(0, 8, 'Furnizor: ' . $orderInfo['supplier_name'], 0, 1);
+    $pdf->Ln(5);
+
+    $pdf->SetFont('Arial', 'B', 12);
+    $pdf->Cell(70, 8, 'Produs', 1);
+    $pdf->Cell(30, 8, 'Cod', 1);
+    $pdf->Cell(20, 8, 'Cant.', 1);
+    $pdf->Cell(30, 8, 'Pret', 1);
+    $pdf->Cell(30, 8, 'Total', 1, 1);
+    $pdf->SetFont('Arial', '', 12);
+
+    foreach ($items as $it) {
+        $name = $it['product_name'] ?? '';
+        $code = $it['product_code'] ?? '';
+        $qty = $it['quantity'] ?? 0;
+        $price = $it['unit_price'] ?? 0;
+        $total = $qty * $price;
+        $pdf->Cell(70, 8, $name, 1);
+        $pdf->Cell(30, 8, $code, 1);
+        $pdf->Cell(20, 8, $qty, 1);
+        $pdf->Cell(30, 8, number_format($price, 2), 1);
+        $pdf->Cell(30, 8, number_format($total, 2), 1, 1);
+    }
+
+    $fileName = 'po_' . $orderInfo['order_number'] . '_' . time() . '.pdf';
+    $path = BASE_PATH . '/storage/purchase_order_pdfs/' . $fileName;
+    $pdf->Output('F', $path);
+    return $fileName;
+}
+
+/**
+ * Send purchase order email with attachment
+ */
+function sendPurchaseOrderEmail(string $to, string $subject, string $body, string $attachmentPath): bool {
+    $uid = md5(uniqid((string)time()));
+    $filename = basename($attachmentPath);
+    $header = "From: no-reply@localhost\r\n";
+    $header .= "MIME-Version: 1.0\r\n";
+    $header .= "Content-Type: multipart/mixed; boundary=\"{$uid}\"\r\n\r\n";
+
+    $message = "--{$uid}\r\n";
+    $message .= "Content-Type: text/plain; charset=UTF-8\r\n\r\n";
+    $message .= $body . "\r\n\r\n";
+
+    if (is_file($attachmentPath)) {
+        $content = chunk_split(base64_encode(file_get_contents($attachmentPath)));
+        $message .= "--{$uid}\r\n";
+        $message .= "Content-Type: application/pdf; name=\"{$filename}\"\r\n";
+        $message .= "Content-Transfer-Encoding: base64\r\n";
+        $message .= "Content-Disposition: attachment; filename=\"{$filename}\"\r\n\r\n";
+        $message .= $content . "\r\n";
+    }
+    $message .= "--{$uid}--";
+
+    return mail($to, $subject, $message, $header);
+}
+
 // Handle operations
 $message = '';
 $messageType = '';
@@ -52,6 +126,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // Handle stock purchase order creation - MOVED FROM transactions.php
                 $sellerId = intval($_POST['seller_id'] ?? 0);
                 $customMessage = trim($_POST['custom_message'] ?? '');
+                $emailSubject = trim($_POST['email_subject'] ?? '');
                 $expectedDeliveryDate = $_POST['expected_delivery_date'] ?? null;
                 $items = $_POST['items'] ?? [];
                 
@@ -61,6 +136,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 
                 if (empty($items)) {
                     throw new Exception('Trebuie să adaugi cel puțin un produs.');
+                }
+                if ($emailSubject === '' || $customMessage === '') {
+                    throw new Exception('Subiectul și mesajul emailului sunt obligatorii.');
                 }
                 
                 // Process items and calculate total
@@ -120,6 +198,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'seller_id' => $sellerId,
                     'total_amount' => $totalAmount,
                     'custom_message' => $customMessage,
+                    'email_subject' => $emailSubject,
                     'expected_delivery_date' => $expectedDeliveryDate,
                     'email_recipient' => $emailRecipient,
                     'items' => $processedItems
@@ -143,8 +222,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ];
                     
                     $transactionModel->createTransaction($transactionData);
-                    
-                    $message = 'Comanda de stoc a fost creată cu succes. Numărul comenzii: ' . $purchaseOrderModel->getPurchaseOrderById($orderId)['order_number'];
+
+                    $orderInfo = $purchaseOrderModel->getPurchaseOrderById($orderId);
+                    $orderInfo['supplier_name'] = $seller['supplier_name'];
+                    $pdfFile = generatePurchaseOrderPdf($orderInfo, $items);
+                    if ($pdfFile) {
+                        $purchaseOrderModel->updatePdfPath($orderId, $pdfFile);
+                        $pdfPath = BASE_PATH . '/storage/purchase_order_pdfs/' . $pdfFile;
+                        sendPurchaseOrderEmail($emailRecipient, $emailSubject, $customMessage, $pdfPath);
+                        $purchaseOrderModel->markAsSent($orderId, $emailRecipient);
+                    }
+
+                    $message = 'Comanda de stoc a fost creată cu succes. Numărul comenzii: ' . $orderInfo['order_number'];
                     $messageType = 'success';
                 } else {
                     throw new Exception('Eroare la crearea comenzii de stoc.');
@@ -316,6 +405,7 @@ require_once __DIR__ . '/includes/header.php';
                             <th>Total</th>
                             <th>Status</th>
                             <th>Data Creării</th>
+                            <th>PDF</th>
                             <th>Data Livrării</th>
                             <th>Acțiuni</th>
                         </tr>
@@ -323,7 +413,7 @@ require_once __DIR__ . '/includes/header.php';
                     <tbody>
                         <?php if (empty($purchaseOrders)): ?>
                             <tr>
-                                <td colspan="7" class="text-center">Nu există comenzi de achiziție</td>
+                                <td colspan="8" class="text-center">Nu există comenzi de achiziție</td>
                             </tr>
                         <?php else: ?>
                             <?php foreach ($purchaseOrders as $order): ?>
@@ -337,6 +427,12 @@ require_once __DIR__ . '/includes/header.php';
                                         </span>
                                     </td>
                                     <td><?= date('d.m.Y H:i', strtotime($order['created_at'])) ?></td>
+                                    <td>
+                                        <?php if (!empty($order['pdf_path'])): ?>
+                                            <a href="storage/purchase_order_pdfs/<?= htmlspecialchars($order['pdf_path']) ?>" target="_blank">PDF</a>
+                                        <?php else: ?>-
+                                        <?php endif; ?>
+                                    </td>
                                     <td><?= $order['expected_delivery_date'] ? date('d.m.Y', strtotime($order['expected_delivery_date'])) : '-' ?></td>
                                     <td>
                                         <div class="action-buttons">
@@ -410,11 +506,17 @@ require_once __DIR__ . '/includes/header.php';
                             </div>
                         </div>
 
-                        <!-- Custom Message -->
+                        <!-- Email Subject -->
                         <div class="form-group">
-                            <label for="custom_message" class="form-label">Mesaj Personalizat</label>
-                            <textarea name="custom_message" id="custom_message" class="form-control" rows="3" 
-                                      placeholder="Mesaj opțional pentru furnizor..."></textarea>
+                            <label for="email_subject" class="form-label">Subiect Email *</label>
+                            <input type="text" name="email_subject" id="email_subject" class="form-control" required>
+                        </div>
+
+                        <!-- Email Body -->
+                        <div class="form-group">
+                            <label for="custom_message" class="form-label">Mesaj Email *</label>
+                            <textarea name="custom_message" id="custom_message" class="form-control" rows="3" required
+                                      placeholder="Scrie mesajul către furnizor..."></textarea>
                         </div>
 
                         <!-- Products Section -->

@@ -50,10 +50,12 @@ class PurchaseOrder {
             // Create purchase order
             $query = "INSERT INTO {$this->table} (
                 order_number, seller_id, total_amount, currency, custom_message,
-                status, expected_delivery_date, email_recipient, notes, created_by
+                email_subject, status, expected_delivery_date, email_recipient,
+                notes, pdf_path, created_by
             ) VALUES (
                 :order_number, :seller_id, :total_amount, :currency, :custom_message,
-                :status, :expected_delivery_date, :email_recipient, :notes, :created_by
+                :email_subject, :status, :expected_delivery_date, :email_recipient,
+                :notes, :pdf_path, :created_by
             )";
             
             $stmt = $this->conn->prepare($query);
@@ -62,10 +64,12 @@ class PurchaseOrder {
             $stmt->bindValue(':total_amount', $orderData['total_amount'] ?? 0.00);
             $stmt->bindValue(':currency', $orderData['currency'] ?? 'RON');
             $stmt->bindValue(':custom_message', $orderData['custom_message'] ?? null);
+            $stmt->bindValue(':email_subject', $orderData['email_subject'] ?? null);
             $stmt->bindValue(':status', $orderData['status'] ?? 'draft');
             $stmt->bindValue(':expected_delivery_date', $orderData['expected_delivery_date'] ?? null);
             $stmt->bindValue(':email_recipient', $orderData['email_recipient'] ?? null);
             $stmt->bindValue(':notes', $orderData['notes'] ?? null);
+            $stmt->bindValue(':pdf_path', $orderData['pdf_path'] ?? null);
             $stmt->bindValue(':created_by', $_SESSION['user_id'], PDO::PARAM_INT);
             
             if (!$stmt->execute()) {
@@ -298,8 +302,8 @@ class PurchaseOrder {
      * @return bool
      */
     public function markAsSent(int $orderId, string $emailRecipient): bool {
-        $query = "UPDATE {$this->table} 
-                  SET status = 'sent', email_sent_at = NOW(), email_recipient = :email 
+        $query = "UPDATE {$this->table}
+                  SET status = 'sent', email_sent_at = NOW(), email_recipient = :email
                   WHERE id = :id";
         
         try {
@@ -322,6 +326,23 @@ class PurchaseOrder {
             return $result;
         } catch (PDOException $e) {
             error_log("Error marking purchase order as sent: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Update PDF path for order
+     */
+    public function updatePdfPath(int $orderId, string $pdfPath): bool {
+        $query = "UPDATE {$this->table} SET pdf_path = :pdf_path WHERE id = :id";
+
+        try {
+            $stmt = $this->conn->prepare($query);
+            $stmt->bindValue(':id', $orderId, PDO::PARAM_INT);
+            $stmt->bindValue(':pdf_path', $pdfPath);
+            return $stmt->execute();
+        } catch (PDOException $e) {
+            error_log('Error updating pdf path: ' . $e->getMessage());
             return false;
         }
     }

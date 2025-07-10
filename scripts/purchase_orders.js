@@ -398,6 +398,20 @@ function validateStockPurchaseForm() {
         if (sellerSelect) sellerSelect.focus();
         return false;
     }
+
+    // Email subject and body required
+    const subjectField = modal.querySelector('#email_subject');
+    const messageField = modal.querySelector('#custom_message');
+    if (!subjectField || subjectField.value.trim() === '') {
+        alert('Subiectul emailului este obligatoriu.');
+        subjectField.focus();
+        return false;
+    }
+    if (!messageField || messageField.value.trim() === '') {
+        alert('Mesajul emailului este obligatoriu.');
+        messageField.focus();
+        return false;
+    }
     
     console.log('Seller validation passed, selected:', sellerSelect.value);
     

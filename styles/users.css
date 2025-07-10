@@ -77,7 +77,7 @@
 }
 
 .modal-dialog {
-    background-color: white;
+    background-color: var(--dark-gray);
     border-radius: 8px;
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
     width: 90%;
@@ -135,8 +135,9 @@
 .form-label {
     display: block;
     font-weight: 500;
-    margin-bottom: 0.5rem;
-    color: #495057;
+    margin-bottom: 0.3rem;
+    color: var(--text-primary);
+    font-size: 0.85rem;
 }
 
 .form-check {

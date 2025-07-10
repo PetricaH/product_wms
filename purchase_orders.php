@@ -10,6 +10,11 @@ if (!defined('BASE_PATH')) {
 }
 require_once BASE_PATH . '/bootstrap.php';
 require_once BASE_PATH . '/vendor/autoload.php';
+require_once BASE_PATH . '/lib/PHPMailer/PHPMailer.php';
+require_once BASE_PATH . '/lib/PHPMailer/SMTP.php';
+require_once BASE_PATH . '/lib/PHPMailer/Exception.php';
+use PHPMailer\PHPMailer\PHPMailer;
+use PHPMailer\PHPMailer\Exception;
 
 $config = require BASE_PATH . '/config/config.php';
 
@@ -35,11 +40,14 @@ require_once BASE_PATH . '/models/PurchaseOrder.php';
 require_once BASE_PATH . '/models/Seller.php';
 require_once BASE_PATH . '/models/PurchasableProduct.php';
 require_once BASE_PATH . '/models/Transaction.php';
+require_once BASE_PATH . '/models/User.php';
 
 $purchaseOrderModel = new PurchaseOrder($db);
 $sellerModel = new Seller($db);
 $purchasableProductModel = new PurchasableProduct($db);
 $transactionModel = new Transaction($db);
+$usersModel = new Users($db);
+$currentUser = $usersModel->findById($_SESSION['user_id']);
 
 /**
  * Generate PDF for purchase order
@@ -95,28 +103,33 @@ function generatePurchaseOrderPdf(array $orderInfo, array $items): ?string {
 /**
  * Send purchase order email with attachment
  */
-function sendPurchaseOrderEmail(string $to, string $subject, string $body, string $attachmentPath): bool {
-    $uid = md5(uniqid((string)time()));
-    $filename = basename($attachmentPath);
-    $header = "From: no-reply@localhost\r\n";
-    $header .= "MIME-Version: 1.0\r\n";
-    $header .= "Content-Type: multipart/mixed; boundary=\"{$uid}\"\r\n\r\n";
+function sendPurchaseOrderEmail(array $smtp, string $to, string $subject, string $body, string $attachmentPath): bool {
+    $mail = new PHPMailer(true);
+    try {
+        $mail->isSMTP();
+        $mail->Host = $smtp['smtp_host'] ?? 'localhost';
+        $mail->Port = $smtp['smtp_port'] ?? 25;
+        $mail->SMTPAuth = true;
+        $mail->Username = $smtp['smtp_user'] ?? '';
+        $mail->Password = $smtp['smtp_pass'] ?? '';
+        if (!empty($smtp['smtp_secure'])) {
+            $mail->SMTPSecure = $smtp['smtp_secure'];
+        }
 
-    $message = "--{$uid}\r\n";
-    $message .= "Content-Type: text/plain; charset=UTF-8\r\n\r\n";
-    $message .= $body . "\r\n\r\n";
-
-    if (is_file($attachmentPath)) {
-        $content = chunk_split(base64_encode(file_get_contents($attachmentPath)));
-        $message .= "--{$uid}\r\n";
-        $message .= "Content-Type: application/pdf; name=\"{$filename}\"\r\n";
-        $message .= "Content-Transfer-Encoding: base64\r\n";
-        $message .= "Content-Disposition: attachment; filename=\"{$filename}\"\r\n\r\n";
-        $message .= $content . "\r\n";
+        $from = $smtp['smtp_user'] ?? 'no-reply@localhost';
+        $mail->setFrom($from, 'WMS');
+        $mail->addAddress($to);
+        $mail->Subject = $subject;
+        $mail->Body = $body;
+        if (is_file($attachmentPath)) {
+            $mail->addAttachment($attachmentPath);
+        }
+        $mail->send();
+        return true;
+    } catch (Exception $e) {
+        error_log('Mail error: ' . $e->getMessage());
+        return false;
     }
-    $message .= "--{$uid}--";
-
-    return mail($to, $subject, $message, $header);
 }
 
 // Handle operations
@@ -235,7 +248,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if ($pdfFile) {
                         $purchaseOrderModel->updatePdfPath($orderId, $pdfFile);
                         $pdfPath = BASE_PATH . '/storage/purchase_order_pdfs/' . $pdfFile;
-                        sendPurchaseOrderEmail($emailRecipient, $emailSubject, $customMessage, $pdfPath);
+                        sendPurchaseOrderEmail($currentUser, $emailRecipient, $emailSubject, $customMessage, $pdfPath);
                         $purchaseOrderModel->markAsSent($orderId, $emailRecipient);
                     }
 

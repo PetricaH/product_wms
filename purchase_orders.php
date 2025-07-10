@@ -1,5 +1,5 @@
 <?php
-// File: purchase_orders.php - Purchase Orders Management
+// File: purchase_orders.php - Updated with complete stock purchase functionality from transactions.php
 ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
 error_reporting(E_ALL);
@@ -32,10 +32,12 @@ $db = $dbFactory();
 require_once BASE_PATH . '/models/PurchaseOrder.php';
 require_once BASE_PATH . '/models/Seller.php';
 require_once BASE_PATH . '/models/PurchasableProduct.php';
+require_once BASE_PATH . '/models/Transaction.php';
 
 $purchaseOrderModel = new PurchaseOrder($db);
 $sellerModel = new Seller($db);
 $purchasableProductModel = new PurchasableProduct($db);
+$transactionModel = new Transaction($db);
 
 // Handle operations
 $message = '';
@@ -46,6 +48,109 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
     try {
         switch ($action) {
+            case 'create_stock_purchase':
+                // Handle stock purchase order creation - MOVED FROM transactions.php
+                $sellerId = intval($_POST['seller_id'] ?? 0);
+                $customMessage = trim($_POST['custom_message'] ?? '');
+                $expectedDeliveryDate = $_POST['expected_delivery_date'] ?? null;
+                $items = $_POST['items'] ?? [];
+                
+                if ($sellerId <= 0) {
+                    throw new Exception('Trebuie să selectezi un furnizor.');
+                }
+                
+                if (empty($items)) {
+                    throw new Exception('Trebuie să adaugi cel puțin un produs.');
+                }
+                
+                // Process items and calculate total
+                $processedItems = [];
+                $totalAmount = 0;
+                
+                foreach ($items as $item) {
+                    if (empty($item['product_name']) || floatval($item['quantity']) <= 0 || floatval($item['unit_price']) <= 0) {
+                        continue;
+                    }
+                    
+                    // Check if product exists or create new purchasable product
+                    $purchasableProductId = null;
+                    if (!empty($item['purchasable_product_id'])) {
+                        $purchasableProductId = intval($item['purchasable_product_id']);
+                    } else {
+                        // Create new purchasable product
+                        $productData = [
+                            'supplier_product_name' => $item['product_name'],
+                            'supplier_product_code' => $item['product_code'] ?? '',
+                            'description' => $item['description'] ?? '',
+                            'unit_measure' => 'bucata',
+                            'last_purchase_price' => floatval($item['unit_price']),
+                            'preferred_seller_id' => $sellerId
+                        ];
+                        
+                        $purchasableProductId = $purchasableProductModel->createProduct($productData);
+                        if (!$purchasableProductId) {
+                            throw new Exception('Eroare la crearea produsului: ' . $item['product_name']);
+                        }
+                    }
+                    
+                    $quantity = floatval($item['quantity']);
+                    $unitPrice = floatval($item['unit_price']);
+                    $totalPrice = $quantity * $unitPrice;
+                    
+                    $processedItems[] = [
+                        'purchasable_product_id' => $purchasableProductId,
+                        'quantity' => $quantity,
+                        'unit_price' => $unitPrice,
+                        'notes' => $item['notes'] ?? ''
+                    ];
+                    
+                    $totalAmount += $totalPrice;
+                }
+                
+                if (empty($processedItems)) {
+                    throw new Exception('Nu s-au putut procesa produsele selectate.');
+                }
+                
+                // Get seller email for purchase order
+                $seller = $sellerModel->getSellerById($sellerId);
+                $emailRecipient = $_POST['email_recipient'] ?? $seller['email'] ?? '';
+                
+                // Create purchase order
+                $orderData = [
+                    'seller_id' => $sellerId,
+                    'total_amount' => $totalAmount,
+                    'custom_message' => $customMessage,
+                    'expected_delivery_date' => $expectedDeliveryDate,
+                    'email_recipient' => $emailRecipient,
+                    'items' => $processedItems
+                ];
+                
+                $orderId = $purchaseOrderModel->createPurchaseOrder($orderData);
+                
+                if ($orderId) {
+                    // Create transaction record
+                    $transactionData = [
+                        'transaction_type' => 'stock_purchase',
+                        'amount' => $totalAmount,
+                        'currency' => 'RON',
+                        'description' => 'Comandă stoc furnizor: ' . $seller['supplier_name'],
+                        'reference_type' => 'purchase_order',
+                        'reference_id' => $orderId,
+                        'purchase_order_id' => $orderId,
+                        'supplier_name' => $seller['supplier_name'],
+                        'status' => 'pending',
+                        'created_by' => $_SESSION['user_id']
+                    ];
+                    
+                    $transactionModel->createTransaction($transactionData);
+                    
+                    $message = 'Comanda de stoc a fost creată cu succes. Numărul comenzii: ' . $purchaseOrderModel->getPurchaseOrderById($orderId)['order_number'];
+                    $messageType = 'success';
+                } else {
+                    throw new Exception('Eroare la crearea comenzii de stoc.');
+                }
+                break;
+                
             case 'update_status':
                 $orderId = intval($_POST['order_id'] ?? 0);
                 $newStatus = $_POST['status'] ?? '';
@@ -136,6 +241,7 @@ if ($sellerFilter > 0) {
 
 $purchaseOrders = $purchaseOrderModel->getAllPurchaseOrders($filters);
 $sellers = $sellerModel->getAllSellers();
+$purchasableProducts = $purchasableProductModel->getAllProducts();
 
 // Include header
 $currentPage = 'purchase_orders';
@@ -152,10 +258,10 @@ require_once __DIR__ . '/includes/header.php';
                 <div class="page-header-content">
                     <h1 class="page-title">Comenzi de Achiziție</h1>
                     <div class="header-actions">
-                        <a href="transactions.php" class="btn btn-success">
-                            <span class="material-symbols-outlined">add_shopping_cart</span>
-                            Comandă Nouă
-                        </a>
+                        <button class="btn btn-success" onclick="openStockPurchaseModal()">
+                            <span class="material-symbols-outlined">shopping_cart</span>
+                            Cumparare Stoc
+                        </button>
                     </div>
                 </div>
             </div>
@@ -170,201 +276,242 @@ require_once __DIR__ . '/includes/header.php';
                 </div>
             <?php endif; ?>
 
-            <!-- Quick Stats -->
-            <div class="stats-grid">
-                <?php
-                $statsQuery = "SELECT 
-                    COUNT(*) as total_orders,
-                    SUM(CASE WHEN status = 'pending' OR status = 'sent' THEN 1 ELSE 0 END) as pending_orders,
-                    SUM(CASE WHEN status = 'delivered' THEN 1 ELSE 0 END) as delivered_orders,
-                    SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed_orders,
-                    SUM(total_amount) as total_value
-                    FROM purchase_orders";
-                $statsStmt = $db->prepare($statsQuery);
-                $statsStmt->execute();
-                $stats = $statsStmt->fetch(PDO::FETCH_ASSOC);
-                ?>
-                <div class="stat-card">
-                    <div class="stat-icon">
-                        <span class="material-symbols-outlined">shopping_cart</span>
-                    </div>
-                    <div class="stat-info">
-                        <h3><?= number_format($stats['total_orders']) ?></h3>
-                        <p>Total Comenzi</p>
-                    </div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-icon">
-                        <span class="material-symbols-outlined">pending</span>
-                    </div>
-                    <div class="stat-info">
-                        <h3><?= number_format($stats['pending_orders']) ?></h3>
-                        <p>În Așteptare</p>
-                    </div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-icon">
-                        <span class="material-symbols-outlined">local_shipping</span>
-                    </div>
-                    <div class="stat-info">
-                        <h3><?= number_format($stats['delivered_orders']) ?></h3>
-                        <p>Livrate</p>
-                    </div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-icon">
-                        <span class="material-symbols-outlined">payments</span>
-                    </div>
-                    <div class="stat-info">
-                        <h3><?= number_format($stats['total_value'], 0) ?> RON</h3>
-                        <p>Valoare Totală</p>
-                    </div>
-                </div>
-            </div>
-
             <!-- Filters -->
-            <div class="filters-section">
-                <form method="GET" class="filter-form">
-                    <div class="form-group">
-                        <label for="status">Status</label>
-                        <select name="status" id="status" class="form-control">
+            <div class="filters-container">
+                <form method="GET" class="filters-form">
+                    <div class="filter-group">
+                        <label for="status">Status:</label>
+                        <select name="status" id="status" onchange="this.form.submit()">
                             <option value="">Toate statusurile</option>
                             <option value="draft" <?= $statusFilter === 'draft' ? 'selected' : '' ?>>Draft</option>
-                            <option value="sent" <?= $statusFilter === 'sent' ? 'selected' : '' ?>>Trimisă</option>
-                            <option value="confirmed" <?= $statusFilter === 'confirmed' ? 'selected' : '' ?>>Confirmată</option>
-                            <option value="partial_delivery" <?= $statusFilter === 'partial_delivery' ? 'selected' : '' ?>>Livrare Parțială</option>
-                            <option value="delivered" <?= $statusFilter === 'delivered' ? 'selected' : '' ?>>Livrată</option>
-                            <option value="invoiced" <?= $statusFilter === 'invoiced' ? 'selected' : '' ?>>Facturată</option>
-                            <option value="completed" <?= $statusFilter === 'completed' ? 'selected' : '' ?>>Completă</option>
-                            <option value="cancelled" <?= $statusFilter === 'cancelled' ? 'selected' : '' ?>>Anulată</option>
+                            <option value="sent" <?= $statusFilter === 'sent' ? 'selected' : '' ?>>Trimis</option>
+                            <option value="confirmed" <?= $statusFilter === 'confirmed' ? 'selected' : '' ?>>Confirmat</option>
+                            <option value="delivered" <?= $statusFilter === 'delivered' ? 'selected' : '' ?>>Livrat</option>
+                            <option value="invoiced" <?= $statusFilter === 'invoiced' ? 'selected' : '' ?>>Facturat</option>
+                            <option value="completed" <?= $statusFilter === 'completed' ? 'selected' : '' ?>>Finalizat</option>
+                            <option value="cancelled" <?= $statusFilter === 'cancelled' ? 'selected' : '' ?>>Anulat</option>
                         </select>
                     </div>
-                    
-                    <div class="form-group">
-                        <label for="seller_id">Furnizor</label>
-                        <select name="seller_id" id="seller_id" class="form-control">
+                    <div class="filter-group">
+                        <label for="seller_id">Furnizor:</label>
+                        <select name="seller_id" id="seller_id" onchange="this.form.submit()">
                             <option value="">Toți furnizorii</option>
                             <?php foreach ($sellers as $seller): ?>
-                                <option value="<?= $seller['id'] ?>" 
-                                        <?= $sellerFilter === $seller['id'] ? 'selected' : '' ?>>
+                                <option value="<?= $seller['id'] ?>" <?= $sellerFilter === $seller['id'] ? 'selected' : '' ?>>
                                     <?= htmlspecialchars($seller['supplier_name']) ?>
                                 </option>
                             <?php endforeach; ?>
                         </select>
                     </div>
-                    
-                    <div class="filter-actions">
-                        <button type="submit" class="btn btn-primary">Filtrează</button>
-                        <a href="?" class="btn btn-secondary">Reset</a>
-                    </div>
                 </form>
             </div>
 
             <!-- Purchase Orders Table -->
-            <div class="orders-table-container">
-                <?php if (!empty($purchaseOrders)): ?>
-                    <table class="orders-table">
-                        <thead>
+            <div class="table-container">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Număr Comandă</th>
+                            <th>Furnizor</th>
+                            <th>Total</th>
+                            <th>Status</th>
+                            <th>Data Creării</th>
+                            <th>Data Livrării</th>
+                            <th>Acțiuni</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php if (empty($purchaseOrders)): ?>
                             <tr>
-                                <th>Număr Comandă</th>
-                                <th>Furnizor</th>
-                                <th>Total</th>
-                                <th>Status</th>
-                                <th>Data Creării</th>
-                                <th>Livrare Estimată</th>
-                                <th>Acțiuni</th>
+                                <td colspan="7" class="text-center">Nu există comenzi de achiziție</td>
                             </tr>
-                        </thead>
-                        <tbody>
+                        <?php else: ?>
                             <?php foreach ($purchaseOrders as $order): ?>
                                 <tr>
-                                    <td>
-                                        <strong><?= htmlspecialchars($order['order_number']) ?></strong>
-                                        <br>
-                                        <small class="text-muted"><?= $order['item_count'] ?> produse</small>
-                                    </td>
+                                    <td><?= htmlspecialchars($order['order_number']) ?></td>
                                     <td><?= htmlspecialchars($order['supplier_name']) ?></td>
                                     <td><?= number_format($order['total_amount'], 2) ?> <?= $order['currency'] ?></td>
                                     <td>
-                                        <span class="status-badge status-<?= $order['status'] ?>">
-                                            <?= ucfirst(str_replace('_', ' ', $order['status'])) ?>
+                                        <span class="status-badge status-<?= strtolower($order['status']) ?>">
+                                            <?= ucfirst($order['status']) ?>
                                         </span>
                                     </td>
                                     <td><?= date('d.m.Y H:i', strtotime($order['created_at'])) ?></td>
-                                    <td>
-                                        <?php if ($order['expected_delivery_date']): ?>
-                                            <?= date('d.m.Y', strtotime($order['expected_delivery_date'])) ?>
-                                        <?php else: ?>
-                                            <span class="text-muted">-</span>
-                                        <?php endif; ?>
-                                    </td>
+                                    <td><?= $order['expected_delivery_date'] ? date('d.m.Y', strtotime($order['expected_delivery_date'])) : '-' ?></td>
                                     <td>
                                         <div class="action-buttons">
-                                            <button class="btn btn-sm btn-outline-primary" 
-                                                    onclick="viewOrderDetails(<?= $order['id'] ?>)"
-                                                    title="Vezi detalii">
-                                                <span class="material-symbols-outlined">visibility</span>
-                                            </button>
-                                            
-                                            <?php if ($order['status'] === 'draft'): ?>
-                                                <button class="btn btn-sm btn-outline-success" 
-                                                        onclick="openSendEmailModal(<?= $order['id'] ?>, '<?= htmlspecialchars($order['supplier_name']) ?>')"
-                                                        title="Trimite prin email">
-                                                    <span class="material-symbols-outlined">email</span>
-                                                </button>
-                                            <?php endif; ?>
-                                            
-                                            <?php if (in_array($order['status'], ['sent', 'confirmed', 'partial_delivery'])): ?>
-                                                <button class="btn btn-sm btn-outline-info" 
-                                                        onclick="openDeliveryModal(<?= $order['id'] ?>)"
-                                                        title="Înregistrează livrare">
-                                                    <span class="material-symbols-outlined">local_shipping</span>
-                                                </button>
-                                                <button class="btn btn-sm btn-outline-warning" 
-                                                        onclick="openInvoiceModal(<?= $order['id'] ?>)"
-                                                        title="Înregistrează factură">
-                                                    <span class="material-symbols-outlined">receipt</span>
-                                                </button>
-                                            <?php endif; ?>
-                                            
-                                            <button class="btn btn-sm btn-outline-secondary" 
-                                                    onclick="openStatusModal(<?= $order['id'] ?>, '<?= htmlspecialchars($order['status']) ?>')"
-                                                    title="Schimbă status">
+                                            <button class="btn btn-sm btn-primary" onclick="openStatusModal(<?= $order['id'] ?>, '<?= $order['status'] ?>')">
                                                 <span class="material-symbols-outlined">edit</span>
+                                            </button>
+                                            <button class="btn btn-sm btn-info" onclick="openSendEmailModal(<?= $order['id'] ?>, '<?= htmlspecialchars($order['supplier_name']) ?>')">
+                                                <span class="material-symbols-outlined">email</span>
+                                            </button>
+                                            <button class="btn btn-sm btn-success" onclick="openDeliveryModal(<?= $order['id'] ?>)">
+                                                <span class="material-symbols-outlined">local_shipping</span>
+                                            </button>
+                                            <button class="btn btn-sm btn-warning" onclick="openInvoiceModal(<?= $order['id'] ?>)">
+                                                <span class="material-symbols-outlined">receipt</span>
                                             </button>
                                         </div>
                                     </td>
                                 </tr>
                             <?php endforeach; ?>
-                        </tbody>
-                    </table>
-                <?php else: ?>
-                    <div class="empty-state">
-                        <div class="empty-state-content">
-                            <span class="material-symbols-outlined">shopping_cart</span>
-                            <h3>Nu există comenzi de achiziție</h3>
-                            <p>
-                                <?php if (!empty($statusFilter) || $sellerFilter > 0): ?>
-                                    Nu s-au găsit comenzi care să corespundă criteriilor de filtrare.
-                                    <a href="?" class="btn btn-secondary">Șterge filtrele</a>
-                                <?php else: ?>
-                                    Creează prima comandă de achiziție din pagina de tranzacții.
-                                    <a href="transactions.php" class="btn btn-primary">Comandă Nouă</a>
-                                <?php endif; ?>
-                            </p>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Stock Purchase Modal - MOVED FROM transactions.php -->
+    <div class="modal" id="stockPurchaseModal">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 class="modal-title">Cumparare Stoc</h3>
+                    <button class="modal-close" onclick="closeStockPurchaseModal()">
+                        <span class="material-symbols-outlined">close</span>
+                    </button>
+                </div>
+                <form id="stockPurchaseForm" method="POST">
+                    <div class="modal-body">
+                        <input type="hidden" name="action" value="create_stock_purchase">
+                        
+                        <!-- Seller Selection -->
+                        <div class="form-group">
+                            <label for="seller_id" class="form-label">Furnizor *</label>
+                            <select name="seller_id" id="seller_id" class="form-control" required onchange="updateSellerContact()">
+                                <option value="">Selectează furnizor</option>
+                                <?php foreach ($sellers as $seller): ?>
+                                    <option value="<?= $seller['id'] ?>" 
+                                            data-email="<?= htmlspecialchars($seller['email']) ?>"
+                                            data-contact="<?= htmlspecialchars($seller['contact_person']) ?>"
+                                            data-phone="<?= htmlspecialchars($seller['phone']) ?>">
+                                        <?= htmlspecialchars($seller['supplier_name']) ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+
+                        <!-- Contact Information -->
+                        <div class="row">
+                            <div class="form-group">
+                                <label for="email_recipient" class="form-label">Email Destinatar</label>
+                                <input type="email" name="email_recipient" id="email_recipient" class="form-control" 
+                                       placeholder="Se va completa automat din furnizor">
+                            </div>
+                        </div>
+
+                        <!-- Delivery Information -->
+                        <div class="row">
+                            <div class="form-group">
+                                <label for="expected_delivery_date" class="form-label">Data Livrării Estimate</label>
+                                <input type="date" name="expected_delivery_date" id="expected_delivery_date" class="form-control">
+                            </div>
+                        </div>
+
+                        <!-- Custom Message -->
+                        <div class="form-group">
+                            <label for="custom_message" class="form-label">Mesaj Personalizat</label>
+                            <textarea name="custom_message" id="custom_message" class="form-control" rows="3" 
+                                      placeholder="Mesaj opțional pentru furnizor..."></textarea>
+                        </div>
+
+                        <!-- Products Section -->
+                        <div class="form-section">
+                            <h4>Produse</h4>
+                            <div id="product-items">
+                                <!-- Product Item Template -->
+                                <div class="product-item" data-index="0">
+                                    <div class="product-item-header">
+                                        <h5>Produs 1</h5>
+                                        <button type="button" class="btn btn-sm btn-danger" onclick="removeProductItem(0)" style="display: none;">
+                                            <span class="material-symbols-outlined">delete</span>
+                                        </button>
+                                    </div>
+                                    <div class="row">
+                                        <div class="form-group">
+                                            <label>Selectează Produs Existent</label>
+                                            <select class="form-control existing-product-select" onchange="selectExistingProduct(0, this)">
+                                                <option value="">Sau creează produs nou...</option>
+                                                <?php foreach ($purchasableProducts as $product): ?>
+                                                    <option value="<?= $product['id'] ?>" 
+                                                            data-name="<?= htmlspecialchars($product['supplier_product_name']) ?>"
+                                                            data-code="<?= htmlspecialchars($product['supplier_product_code']) ?>"
+                                                            data-price="<?= $product['last_purchase_price'] ?>">
+                                                        <?= htmlspecialchars($product['supplier_product_name']) ?>
+                                                        <?= $product['supplier_product_code'] ? ' (' . htmlspecialchars($product['supplier_product_code']) . ')' : '' ?>
+                                                    </option>
+                                                <?php endforeach; ?>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="row">
+                                        <div class="form-group">
+                                            <label>Nume Produs *</label>
+                                            <input type="text" name="items[0][product_name]" class="form-control product-name" required 
+                                                   placeholder="Nume produs de la furnizor">
+                                            <input type="hidden" name="items[0][purchasable_product_id]" class="purchasable-product-id">
+                                        </div>
+                                        <div class="form-group">
+                                            <label>Cod Produs</label>
+                                            <input type="text" name="items[0][product_code]" class="form-control product-code" 
+                                                   placeholder="Cod produs furnizor">
+                                        </div>
+                                    </div>
+                                    <div class="row">
+                                        <div class="form-group">
+                                            <label>Cantitate *</label>
+                                            <input type="number" name="items[0][quantity]" class="form-control quantity" 
+                                                   step="0.001" min="0.001" required onchange="calculateItemTotal(0)">
+                                        </div>
+                                        <div class="form-group">
+                                            <label>Preț Unitar (RON) *</label>
+                                            <input type="number" name="items[0][unit_price]" class="form-control unit-price" 
+                                                   step="0.01" min="0.01" required onchange="calculateItemTotal(0)">
+                                        </div>
+                                        <div class="form-group">
+                                            <label>Total</label>
+                                            <input type="text" class="form-control item-total" readonly>
+                                        </div>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Descriere</label>
+                                        <textarea name="items[0][description]" class="form-control" rows="2" 
+                                                  placeholder="Descriere suplimentară..."></textarea>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <button type="button" class="btn btn-outline-primary" onclick="addProductItem()">
+                                <span class="material-symbols-outlined">add</span>
+                                Adaugă Produs
+                            </button>
+                        </div>
+
+                        <!-- Order Total -->
+                        <div class="order-summary">
+                            <div class="total-row">
+                                <span>Total Comandă:</span>
+                                <span id="order-total">0.00 RON</span>
+                            </div>
                         </div>
                     </div>
-                <?php endif; ?>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" onclick="closeStockPurchaseModal()">Anulează</button>
+                        <button type="submit" class="btn btn-primary">Creează Comanda</button>
+                    </div>
+                </form>
             </div>
         </div>
     </div>
 
     <!-- Status Update Modal -->
     <div class="modal" id="statusModal">
-        <div class="modal-dialog modal-sm">
+        <div class="modal-dialog">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h3 class="modal-title">Actualizare Status</h3>
+                    <h3 class="modal-title">Actualizează Status</h3>
                     <button class="modal-close" onclick="closeModal('statusModal')">
                         <span class="material-symbols-outlined">close</span>
                     </button>
@@ -373,18 +520,16 @@ require_once __DIR__ . '/includes/header.php';
                     <div class="modal-body">
                         <input type="hidden" name="action" value="update_status">
                         <input type="hidden" name="order_id" id="statusOrderId">
-                        
                         <div class="form-group">
-                            <label for="updateStatus" class="form-label">Nou Status</label>
+                            <label for="updateStatus" class="form-label">Status</label>
                             <select name="status" id="updateStatus" class="form-control" required>
                                 <option value="draft">Draft</option>
-                                <option value="sent">Trimisă</option>
-                                <option value="confirmed">Confirmată</option>
-                                <option value="partial_delivery">Livrare Parțială</option>
-                                <option value="delivered">Livrată</option>
-                                <option value="invoiced">Facturată</option>
-                                <option value="completed">Completă</option>
-                                <option value="cancelled">Anulată</option>
+                                <option value="sent">Trimis</option>
+                                <option value="confirmed">Confirmat</option>
+                                <option value="delivered">Livrat</option>
+                                <option value="invoiced">Facturat</option>
+                                <option value="completed">Finalizat</option>
+                                <option value="cancelled">Anulat</option>
                             </select>
                         </div>
                     </div>
@@ -402,7 +547,7 @@ require_once __DIR__ . '/includes/header.php';
         <div class="modal-dialog">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h3 class="modal-title">Trimite Comandă prin Email</h3>
+                    <h3 class="modal-title">Trimite Email</h3>
                     <button class="modal-close" onclick="closeModal('sendEmailModal')">
                         <span class="material-symbols-outlined">close</span>
                     </button>
@@ -411,32 +556,26 @@ require_once __DIR__ . '/includes/header.php';
                     <div class="modal-body">
                         <input type="hidden" name="action" value="send_email">
                         <input type="hidden" name="order_id" id="emailOrderId">
-                        
                         <div class="form-group">
-                            <label for="email_recipient" class="form-label">Email Destinatar *</label>
-                            <input type="email" name="email_recipient" id="email_recipient" class="form-control" required>
-                        </div>
-                        
-                        <div class="alert alert-info">
-                            <span class="material-symbols-outlined">info</span>
-                            Comanda va fi trimisă prin email furnizorului și statusul va fi actualizat la "Trimisă".
+                            <label for="email_recipient_send" class="form-label">Email Destinatar</label>
+                            <input type="email" name="email_recipient" id="email_recipient_send" class="form-control" required>
                         </div>
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" onclick="closeModal('sendEmailModal')">Anulează</button>
-                        <button type="submit" class="btn btn-primary">Trimite Email</button>
+                        <button type="submit" class="btn btn-primary">Trimite</button>
                     </div>
                 </form>
             </div>
         </div>
     </div>
 
-    <!-- Delivery Recording Modal -->
+    <!-- Delivery Modal -->
     <div class="modal" id="deliveryModal">
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h3 class="modal-title">Înregistrează Livrare</h3>
+                    <h3 class="modal-title">Înregistrează Livrarea</h3>
                     <button class="modal-close" onclick="closeModal('deliveryModal')">
                         <span class="material-symbols-outlined">close</span>
                     </button>
@@ -447,49 +586,54 @@ require_once __DIR__ . '/includes/header.php';
                         <input type="hidden" name="order_id" id="deliveryOrderId">
                         
                         <div class="row">
-                            <div class="form-group">
-                                <label for="delivery_date" class="form-label">Data Livrării *</label>
-                                <input type="date" name="delivery_date" id="delivery_date" class="form-control" required>
+                            <div class="col-md-6">
+                                <div class="form-group">
+                                    <label for="delivery_date" class="form-label">Data Livrării *</label>
+                                    <input type="date" name="delivery_date" id="delivery_date" class="form-control" required>
+                                </div>
                             </div>
-                            <div class="form-group">
-                                <label for="delivery_note_number" class="form-label">Număr Aviz</label>
-                                <input type="text" name="delivery_note_number" id="delivery_note_number" class="form-control">
+                            <div class="col-md-6">
+                                <div class="form-group">
+                                    <label for="delivery_note_number" class="form-label">Număr Aviz</label>
+                                    <input type="text" name="delivery_note_number" id="delivery_note_number" class="form-control">
+                                </div>
                             </div>
                         </div>
                         
                         <div class="row">
-                            <div class="form-group">
-                                <label for="carrier" class="form-label">Transportator</label>
-                                <input type="text" name="carrier" id="carrier" class="form-control">
+                            <div class="col-md-6">
+                                <div class="form-group">
+                                    <label for="carrier" class="form-label">Transportator</label>
+                                    <input type="text" name="carrier" id="carrier" class="form-control">
+                                </div>
                             </div>
-                            <div class="form-group">
-                                <label for="received_by" class="form-label">Primit de</label>
-                                <input type="text" name="received_by" id="received_by" class="form-control">
+                            <div class="col-md-6">
+                                <div class="form-group">
+                                    <label for="received_by" class="form-label">Primit de</label>
+                                    <input type="text" name="received_by" id="received_by" class="form-control">
+                                </div>
                             </div>
                         </div>
                         
-                        <div class="form-section">
-                            <h4>Produse Livrate</h4>
-                            <div id="delivery-items">
-                                <!-- Will be populated by JavaScript -->
-                            </div>
+                        <div id="delivery-items">
+                            <!-- Delivery items will be populated here -->
                         </div>
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" onclick="closeModal('deliveryModal')">Anulează</button>
-                        <button type="submit" class="btn btn-primary">Înregistrează Livrarea</button>
+                        <button type="submit" class="btn btn-primary">Înregistrează</button>
                     </div>
                 </form>
             </div>
         </div>
     </div>
 
-    <!-- Invoice Recording Modal -->
+    <!-- Invoice Modal -->
     <div class="modal" id="invoiceModal">
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h3 class="modal-title">Înregistrează Factură</h3>
+                    <h3 class="modal-title">Înregistrează Factura</h3>
                     <button class="modal-close" onclick="closeModal('invoiceModal')">
                         <span class="material-symbols-outlined">close</span>
                     </button>
@@ -500,36 +644,42 @@ require_once __DIR__ . '/includes/header.php';
                         <input type="hidden" name="order_id" id="invoiceOrderId">
                         
                         <div class="row">
-                            <div class="form-group">
-                                <label for="invoice_number" class="form-label">Număr Factură *</label>
-                                <input type="text" name="invoice_number" id="invoice_number" class="form-control" required>
+                            <div class="col-md-6">
+                                <div class="form-group">
+                                    <label for="invoice_number" class="form-label">Număr Factură *</label>
+                                    <input type="text" name="invoice_number" id="invoice_number" class="form-control" required>
+                                </div>
                             </div>
-                            <div class="form-group">
-                                <label for="invoice_date" class="form-label">Data Facturii *</label>
-                                <input type="date" name="invoice_date" id="invoice_date" class="form-control" required>
+                            <div class="col-md-6">
+                                <div class="form-group">
+                                    <label for="invoice_date" class="form-label">Data Facturii *</label>
+                                    <input type="date" name="invoice_date" id="invoice_date" class="form-control" required>
+                                </div>
                             </div>
                         </div>
                         
                         <div class="form-group">
-                            <label for="total_amount" class="form-label">Suma Totală *</label>
-                            <input type="number" name="total_amount" id="total_amount" step="0.01" class="form-control" required>
+                            <label for="total_amount" class="form-label">Total Factură *</label>
+                            <input type="number" name="total_amount" id="total_amount" class="form-control" min="0.01" step="0.01" required>
                         </div>
                         
-                        <div class="form-section">
-                            <h4>Produse Facturate</h4>
-                            <div id="invoice-items">
-                                <!-- Will be populated by JavaScript -->
-                            </div>
+                        <div id="invoice-items">
+                            <!-- Invoice items will be populated here -->
                         </div>
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" onclick="closeModal('invoiceModal')">Anulează</button>
-                        <button type="submit" class="btn btn-primary">Înregistrează Factura</button>
+                        <button type="submit" class="btn btn-primary">Înregistrează</button>
                     </div>
                 </form>
             </div>
         </div>
     </div>
-
-    <?php require_once __DIR__ . '/includes/footer.php'; ?>
 </div>
+
+<script>
+// Make purchasable products available globally for JavaScript
+window.purchasableProducts = <?= json_encode($purchasableProducts) ?>;
+</script>
+
+<?php require_once __DIR__ . '/includes/footer.php'; ?>

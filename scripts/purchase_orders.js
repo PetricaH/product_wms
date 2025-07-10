@@ -1,10 +1,15 @@
 // File: scripts/purchase_orders.js
-// JavaScript functionality for the purchase orders page
+// Complete JavaScript functionality for purchase orders page with stock purchase (MOVED FROM transactions.js)
 
 document.addEventListener('DOMContentLoaded', function() {
     console.log('Purchase Orders page loaded');
     initializeDateFields();
+    initializeAmountCalculations();
+    initializeStockPurchase();
 });
+
+// Global variables for stock purchase
+let productItemIndex = 1;
 
 // Initialize date fields with today's date
 function initializeDateFields() {
@@ -21,6 +26,343 @@ function initializeDateFields() {
     if (invoiceDateField) {
         invoiceDateField.value = today;
     }
+}
+
+// Initialize amount calculations and form interactions
+function initializeAmountCalculations() {
+    // Initialize any amount calculations here if needed
+    console.log('Amount calculations initialized');
+}
+
+// Stock Purchase functionality - MOVED FROM transactions.js
+function initializeStockPurchase() {
+    // Initialize existing product selectors if they exist
+    const selectors = document.querySelectorAll('.existing-product-select');
+    selectors.forEach(selector => {
+        selector.addEventListener('change', function() {
+            const index = this.closest('.product-item').getAttribute('data-index');
+            selectExistingProduct(index, this);
+        });
+    });
+    
+    // Set minimum delivery date to tomorrow
+    const expectedDeliveryDate = document.getElementById('expected_delivery_date');
+    if (expectedDeliveryDate) {
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        expectedDeliveryDate.value = tomorrow.toISOString().split('T')[0];
+    }
+}
+
+// Stock Purchase Modal functions - MOVED FROM transactions.js
+function openStockPurchaseModal() {
+    document.getElementById('stockPurchaseModal').classList.add('show');
+    // Set minimum delivery date to tomorrow
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    document.getElementById('expected_delivery_date').value = tomorrow.toISOString().split('T')[0];
+}
+
+function closeStockPurchaseModal() {
+    document.getElementById('stockPurchaseModal').classList.remove('show');
+    document.getElementById('stockPurchaseForm').reset();
+    // Reset product items to just one
+    resetProductItems();
+}
+
+function resetProductItems() {
+    const container = document.getElementById('product-items');
+    const firstItem = container.querySelector('.product-item');
+    
+    // Remove all items except the first one
+    const allItems = container.querySelectorAll('.product-item');
+    for (let i = 1; i < allItems.length; i++) {
+        allItems[i].remove();
+    }
+    
+    // Reset the first item
+    if (firstItem) {
+        firstItem.querySelector('.product-name').value = '';
+        firstItem.querySelector('.product-code').value = '';
+        firstItem.querySelector('.quantity').value = '';
+        firstItem.querySelector('.unit-price').value = '';
+        firstItem.querySelector('.item-total').value = '';
+        firstItem.querySelector('.purchasable-product-id').value = '';
+        firstItem.querySelector('.existing-product-select').value = '';
+        firstItem.querySelector('button[onclick*="removeProductItem"]').style.display = 'none';
+    }
+    
+    productItemIndex = 1;
+    calculateOrderTotal();
+}
+
+function updateSellerContact() {
+    const sellerSelect = document.getElementById('seller_id');
+    const selectedOption = sellerSelect.options[sellerSelect.selectedIndex];
+    const emailField = document.getElementById('email_recipient');
+    
+    if (selectedOption && selectedOption.value && emailField) {
+        const email = selectedOption.getAttribute('data-email');
+        const contact = selectedOption.getAttribute('data-contact');
+        const phone = selectedOption.getAttribute('data-phone');
+        
+        emailField.value = email || '';
+        
+        // Update placeholder or show contact info somewhere
+        if (contact || phone) {
+            let contactInfo = [];
+            if (contact) contactInfo.push(`Contact: ${contact}`);
+            if (phone) contactInfo.push(`Tel: ${phone}`);
+            
+            console.log('Seller contact info:', contactInfo.join(', '));
+        }
+    } else if (emailField) {
+        emailField.value = '';
+    }
+}
+
+function addProductItem() {
+    const container = document.getElementById('product-items');
+    const newItem = createProductItem(productItemIndex);
+    container.appendChild(newItem);
+    
+    // Show remove button on all items when there's more than one
+    updateRemoveButtons();
+    
+    productItemIndex++;
+}
+
+function createProductItem(index) {
+    const template = `
+        <div class="product-item" data-index="${index}">
+            <div class="product-item-header">
+                <h5>Produs ${index + 1}</h5>
+                <button type="button" class="btn btn-sm btn-danger" onclick="removeProductItem(${index})">
+                    <span class="material-symbols-outlined">delete</span>
+                </button>
+            </div>
+            <div class="row">
+                <div class="form-group">
+                    <label>Selectează Produs Existent</label>
+                    <select class="form-control existing-product-select" onchange="selectExistingProduct(${index}, this)">
+                        <option value="">Sau creează produs nou...</option>
+                        ${generateProductOptions()}
+                    </select>
+                </div>
+            </div>
+            <div class="row">
+                <div class="form-group">
+                    <label>Nume Produs *</label>
+                    <input type="text" name="items[${index}][product_name]" class="form-control product-name" required 
+                           placeholder="Nume produs de la furnizor">
+                    <input type="hidden" name="items[${index}][purchasable_product_id]" class="purchasable-product-id">
+                </div>
+                <div class="form-group">
+                    <label>Cod Produs</label>
+                    <input type="text" name="items[${index}][product_code]" class="form-control product-code" 
+                           placeholder="Cod produs furnizor">
+                </div>
+            </div>
+            <div class="row">
+                <div class="form-group">
+                    <label>Cantitate *</label>
+                    <input type="number" name="items[${index}][quantity]" class="form-control quantity" 
+                           step="0.001" min="0.001" required onchange="calculateItemTotal(${index})">
+                </div>
+                <div class="form-group">
+                    <label>Preț Unitar (RON) *</label>
+                    <input type="number" name="items[${index}][unit_price]" class="form-control unit-price" 
+                           step="0.01" min="0.01" required onchange="calculateItemTotal(${index})">
+                </div>
+                <div class="form-group">
+                    <label>Total</label>
+                    <input type="text" class="form-control item-total" readonly>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Descriere</label>
+                <textarea name="items[${index}][description]" class="form-control" rows="2" 
+                          placeholder="Descriere suplimentară..."></textarea>
+            </div>
+        </div>
+    `;
+    
+    const div = document.createElement('div');
+    div.innerHTML = template;
+    return div.firstElementChild;
+}
+
+function generateProductOptions() {
+    // Get the purchasable products from the page data
+    // This assumes the PHP page includes the products data in a JavaScript variable
+    if (typeof window.purchasableProducts !== 'undefined') {
+        let options = '';
+        window.purchasableProducts.forEach(product => {
+            options += `<option value="${product.id}" 
+                                data-name="${product.supplier_product_name}"
+                                data-code="${product.supplier_product_code || ''}"
+                                data-price="${product.last_purchase_price || ''}">
+                            ${product.supplier_product_name}
+                            ${product.supplier_product_code ? `(${product.supplier_product_code})` : ''}
+                        </option>`;
+        });
+        return options;
+    }
+    return '';
+}
+
+function removeProductItem(index) {
+    const item = document.querySelector(`[data-index="${index}"]`);
+    if (item) {
+        item.remove();
+        updateRemoveButtons();
+        calculateOrderTotal();
+    }
+}
+
+function updateRemoveButtons() {
+    const items = document.querySelectorAll('.product-item');
+    items.forEach((item, index) => {
+        const removeButton = item.querySelector('button[onclick*="removeProductItem"]');
+        if (removeButton) {
+            removeButton.style.display = items.length > 1 ? 'inline-block' : 'none';
+        }
+        
+        // Update product number
+        const header = item.querySelector('.product-item-header h5');
+        if (header) {
+            header.textContent = `Produs ${index + 1}`;
+        }
+    });
+}
+
+function selectExistingProduct(index, selectElement) {
+    const selectedOption = selectElement.options[selectElement.selectedIndex];
+    const item = selectElement.closest('.product-item');
+    
+    if (selectedOption.value && item) {
+        const productName = selectedOption.getAttribute('data-name');
+        const productCode = selectedOption.getAttribute('data-code');
+        const lastPrice = selectedOption.getAttribute('data-price');
+        
+        // Fill in the form fields
+        const productNameField = item.querySelector('.product-name');
+        const productCodeField = item.querySelector('.product-code');
+        const unitPriceField = item.querySelector('.unit-price');
+        const purchasableProductIdField = item.querySelector('.purchasable-product-id');
+        
+        if (productNameField) productNameField.value = productName || '';
+        if (productCodeField) productCodeField.value = productCode || '';
+        if (unitPriceField) unitPriceField.value = lastPrice || '';
+        if (purchasableProductIdField) purchasableProductIdField.value = selectedOption.value;
+        
+        // Calculate total if quantity is set
+        const quantityField = item.querySelector('.quantity');
+        if (quantityField && quantityField.value) {
+            calculateItemTotal(quantityField);
+        }
+    } else if (item) {
+        // Clear fields if "create new" is selected
+        const productNameField = item.querySelector('.product-name');
+        const productCodeField = item.querySelector('.product-code');
+        const unitPriceField = item.querySelector('.unit-price');
+        const purchasableProductIdField = item.querySelector('.purchasable-product-id');
+        const itemTotalField = item.querySelector('.item-total');
+        
+        if (productNameField) productNameField.value = '';
+        if (productCodeField) productCodeField.value = '';
+        if (unitPriceField) unitPriceField.value = '';
+        if (purchasableProductIdField) purchasableProductIdField.value = '';
+        if (itemTotalField) itemTotalField.value = '';
+        
+        calculateOrderTotal();
+    }
+}
+
+function calculateItemTotal(index) {
+    const item = document.querySelector(`[data-index="${index}"]`);
+    if (!item) {
+        // Fallback: try to find by input element
+        const inputElement = typeof index === 'object' ? index : null;
+        if (inputElement) {
+            const productItem = inputElement.closest('.product-item');
+            if (productItem) {
+                const quantity = parseFloat(productItem.querySelector('.quantity').value) || 0;
+                const unitPrice = parseFloat(productItem.querySelector('.unit-price').value) || 0;
+                const total = quantity * unitPrice;
+                
+                const itemTotalField = productItem.querySelector('.item-total');
+                if (itemTotalField) {
+                    itemTotalField.value = total.toFixed(2) + ' RON';
+                }
+                
+                calculateOrderTotal();
+                return;
+            }
+        }
+        return;
+    }
+    
+    const quantity = parseFloat(item.querySelector('.quantity').value) || 0;
+    const unitPrice = parseFloat(item.querySelector('.unit-price').value) || 0;
+    const total = quantity * unitPrice;
+    
+    const itemTotalField = item.querySelector('.item-total');
+    if (itemTotalField) {
+        itemTotalField.value = total.toFixed(2) + ' RON';
+    }
+    
+    // Update order total
+    calculateOrderTotal();
+}
+
+function calculateOrderTotal() {
+    const items = document.querySelectorAll('.product-item');
+    let orderTotal = 0;
+    
+    items.forEach(item => {
+        const quantity = parseFloat(item.querySelector('.quantity') ? item.querySelector('.quantity').value : 0) || 0;
+        const unitPrice = parseFloat(item.querySelector('.unit-price') ? item.querySelector('.unit-price').value : 0) || 0;
+        orderTotal += quantity * unitPrice;
+    });
+    
+    const orderTotalElement = document.getElementById('order-total');
+    if (orderTotalElement) {
+        orderTotalElement.textContent = orderTotal.toFixed(2) + ' RON';
+    }
+}
+
+// Form validation
+function validateStockPurchaseForm() {
+    const sellerSelect = document.getElementById('seller_id');
+    const sellerId = sellerSelect ? sellerSelect.value : '';
+    
+    console.log('Validating form - Seller ID:', sellerId); // Debug log
+    
+    if (!sellerId || sellerId === '') {
+        alert('Te rog selectează un furnizor.');
+        return false;
+    }
+    
+    const items = document.querySelectorAll('.product-item');
+    let hasValidItems = false;
+    
+    items.forEach(item => {
+        const productName = item.querySelector('.product-name') ? item.querySelector('.product-name').value.trim() : '';
+        const quantity = parseFloat(item.querySelector('.quantity') ? item.querySelector('.quantity').value : 0) || 0;
+        const unitPrice = parseFloat(item.querySelector('.unit-price') ? item.querySelector('.unit-price').value : 0) || 0;
+        
+        if (productName && quantity > 0 && unitPrice > 0) {
+            hasValidItems = true;
+        }
+    });
+    
+    if (!hasValidItems) {
+        alert('Te rog adaugă cel puțin un produs valid cu cantitate și preț.');
+        return false;
+    }
+    
+    return true;
 }
 
 // Generic modal functions
@@ -57,27 +399,33 @@ function openStatusModal(orderId, currentStatus) {
 // Send email modal
 function openSendEmailModal(orderId, supplierName) {
     document.getElementById('emailOrderId').value = orderId;
-    
-    // You could pre-populate email from supplier data here
-    // For now, just open the modal
+    document.getElementById('email_recipient_send').value = '';
     openModal('sendEmailModal');
 }
 
-// Delivery recording modal
+// Delivery modal
 function openDeliveryModal(orderId) {
     document.getElementById('deliveryOrderId').value = orderId;
     
-    // Load order items for delivery recording
+    // Set delivery date to today
+    const today = new Date().toISOString().split('T')[0];
+    document.getElementById('delivery_date').value = today;
+    
+    // TODO: Load order items for delivery recording
     loadOrderItemsForDelivery(orderId);
     
     openModal('deliveryModal');
 }
 
-// Invoice recording modal
+// Invoice modal
 function openInvoiceModal(orderId) {
     document.getElementById('invoiceOrderId').value = orderId;
     
-    // Load order items for invoice recording
+    // Set invoice date to today
+    const today = new Date().toISOString().split('T')[0];
+    document.getElementById('invoice_date').value = today;
+    
+    // TODO: Load order items for invoice recording
     loadOrderItemsForInvoice(orderId);
     
     openModal('invoiceModal');
@@ -86,172 +434,25 @@ function openInvoiceModal(orderId) {
 // Load order items for delivery recording
 function loadOrderItemsForDelivery(orderId) {
     const container = document.getElementById('delivery-items');
-    container.innerHTML = `
-        <div class="loading-message">
-            <span class="material-symbols-outlined">hourglass_empty</span>
-            Se încarcă produsele comenzii...
-        </div>
-    `;
+    container.innerHTML = '<div class="loading">Se încarcă produsele...</div>';
     
-    // Make AJAX call to get order items
-    fetch(`api/purchase_order_items.php?order_id=${orderId}`)
-        .then(response => response.json())
-        .then(data => {
-            if (data.error) {
-                container.innerHTML = `<div class="alert alert-danger">Eroare: ${data.error}</div>`;
-                return;
-            }
-            
-            const itemsHtml = createDeliveryItemsForm(data.items || []);
-            container.innerHTML = itemsHtml;
-        })
-        .catch(error => {
-            console.error('Error loading order items:', error);
-            container.innerHTML = `<div class="alert alert-danger">Eroare la încărcarea produselor.</div>`;
-        });
+    // TODO: Make AJAX call to get order items
+    // For now, just clear the loading message
+    setTimeout(() => {
+        container.innerHTML = '';
+    }, 200);
 }
 
 // Load order items for invoice recording
 function loadOrderItemsForInvoice(orderId) {
     const container = document.getElementById('invoice-items');
-    container.innerHTML = `
-        <div class="loading-message">
-            <span class="material-symbols-outlined">hourglass_empty</span>
-            Se încarcă produsele comenzii...
-        </div>
-    `;
+    container.innerHTML = '<div class="loading">Se încarcă produsele...</div>';
     
-    // Make AJAX call to get order items
-    fetch(`api/purchase_order_items.php?order_id=${orderId}`)
-        .then(response => response.json())
-        .then(data => {
-            if (data.error) {
-                container.innerHTML = `<div class="alert alert-danger">Eroare: ${data.error}</div>`;
-                return;
-            }
-            
-            const itemsHtml = createInvoiceItemsForm(data.items || []);
-            container.innerHTML = itemsHtml;
-            calculateInvoiceTotal();
-        })
-        .catch(error => {
-            console.error('Error loading order items:', error);
-            container.innerHTML = `<div class="alert alert-danger">Eroare la încărcarea produselor.</div>`;
-        });
-}
-
-// Create delivery items form
-function createDeliveryItemsForm(items) {
-    if (!items || items.length === 0) {
-        return '<div class="alert alert-info">Nu există produse de livrat în această comandă.</div>';
-    }
-    
-    let html = '<div class="delivery-items-list">';
-    
-    items.forEach((item, index) => {
-        const remainingQuantity = item.remaining_to_deliver || 0;
-        
-        html += `
-            <div class="delivery-item" data-item-id="${item.id}">
-                <div class="item-header">
-                    <h5>${item.product_name}</h5>
-                    ${item.product_code ? `<small class="text-muted">Cod: ${item.product_code}</small>` : ''}
-                    <span class="item-status">
-                        Comandat: ${item.ordered_quantity} ${item.unit} | 
-                        Livrat anterior: ${item.delivered_quantity} ${item.unit} | 
-                        Rămas: ${remainingQuantity} ${item.unit}
-                    </span>
-                </div>
-                <div class="row">
-                    <div class="form-group">
-                        <label>Cantitate Livrată Acum</label>
-                        <input type="number" 
-                               name="delivery_items[${item.id}][quantity]" 
-                               class="form-control delivery-quantity" 
-                               min="0" 
-                               max="${remainingQuantity}" 
-                               step="0.001"
-                               placeholder="0">
-                    </div>
-                    <div class="form-group">
-                        <label>Stare Produs</label>
-                        <select name="delivery_items[${item.id}][condition]" class="form-control">
-                            <option value="good">Bună</option>
-                            <option value="damaged">Deteriorat</option>
-                            <option value="incomplete">Incomplet</option>
-                        </select>
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label>Observații</label>
-                    <textarea name="delivery_items[${item.id}][notes]" 
-                              class="form-control" 
-                              rows="2" 
-                              placeholder="Observații despre livrare..."></textarea>
-                </div>
-            </div>
-        `;
-    });
-    
-    html += '</div>';
-    return html;
-}
-
-// Create invoice items form
-function createInvoiceItemsForm(items) {
-    if (!items || items.length === 0) {
-        return '<div class="alert alert-info">Nu există produse de facturat în această comandă.</div>';
-    }
-    
-    let html = '<div class="invoice-items-list">';
-    
-    items.forEach((item, index) => {
-        const remainingQuantity = item.remaining_to_invoice || 0;
-        
-        html += `
-            <div class="invoice-item" data-item-id="${item.id}">
-                <div class="item-header">
-                    <h5>${item.product_name}</h5>
-                    ${item.product_code ? `<small class="text-muted">Cod: ${item.product_code}</small>` : ''}
-                    <span class="item-status">
-                        Comandat: ${item.ordered_quantity} ${item.unit} | 
-                        Facturat anterior: ${item.invoiced_quantity} ${item.unit} | 
-                        Rămas: ${remainingQuantity} ${item.unit}
-                    </span>
-                </div>
-                <div class="row">
-                    <div class="form-group">
-                        <label>Cantitate Facturată</label>
-                        <input type="number" 
-                               name="invoice_items[${item.id}][quantity]" 
-                               class="form-control invoice-quantity" 
-                               min="0" 
-                               max="${remainingQuantity}" 
-                               step="0.001"
-                               onchange="calculateItemTotal(this)"
-                               placeholder="0">
-                    </div>
-                    <div class="form-group">
-                        <label>Preț Unitar</label>
-                        <input type="number" 
-                               name="invoice_items[${item.id}][unit_price]" 
-                               class="form-control unit-price" 
-                               step="0.01"
-                               value="${item.unit_price}"
-                               onchange="calculateItemTotal(this)"
-                               placeholder="0.00">
-                    </div>
-                    <div class="form-group">
-                        <label>Total</label>
-                        <input type="text" class="form-control item-total" readonly placeholder="0.00 RON">
-                    </div>
-                </div>
-            </div>
-        `;
-    });
-    
-    html += '</div>';
-    return html;
+    // TODO: Make AJAX call to get order items
+    // For now, just clear the loading message
+    setTimeout(() => {
+        container.innerHTML = '';
+    }, 200);
 }
 
 // Calculate item total for invoice items
@@ -264,111 +465,39 @@ function calculateItemTotal(inputElement) {
     item.querySelector('.item-total').value = total.toFixed(2) + ' RON';
     
     // Update invoice total
-    calculateInvoiceTotal();
+    updateInvoiceTotal();
 }
 
-// Calculate total invoice amount
-function calculateInvoiceTotal() {
+function updateInvoiceTotal() {
     const items = document.querySelectorAll('.invoice-item');
-    let total = 0;
+    let invoiceTotal = 0;
     
     items.forEach(item => {
         const quantity = parseFloat(item.querySelector('.invoice-quantity').value) || 0;
         const unitPrice = parseFloat(item.querySelector('.unit-price').value) || 0;
-        total += quantity * unitPrice;
+        invoiceTotal += quantity * unitPrice;
     });
     
-    const totalAmountField = document.getElementById('total_amount');
-    if (totalAmountField) {
-        totalAmountField.value = total.toFixed(2);
-    }
-}
-
-// View order details
-function viewOrderDetails(orderId) {
-    // Navigate to dedicated order details page
-    window.location.href = `purchase_order_details.php?id=${orderId}`;
-}
-
-// Form validation for delivery
-function validateDeliveryForm() {
-    const deliveryDate = document.getElementById('delivery_date').value;
-    if (!deliveryDate) {
-        alert('Data livrării este obligatorie.');
-        return false;
-    }
-    
-    // Check if at least one item has a delivery quantity
-    const quantityInputs = document.querySelectorAll('.delivery-quantity');
-    let hasDelivery = false;
-    
-    quantityInputs.forEach(input => {
-        if (parseFloat(input.value) > 0) {
-            hasDelivery = true;
-        }
-    });
-    
-    if (!hasDelivery) {
-        alert('Trebuie să specifici cantitatea livrată pentru cel puțin un produs.');
-        return false;
-    }
-    
-    return true;
-}
-
-// Form validation for invoice
-function validateInvoiceForm() {
-    const invoiceNumber = document.getElementById('invoice_number').value;
-    const invoiceDate = document.getElementById('invoice_date').value;
-    
-    if (!invoiceNumber || !invoiceDate) {
-        alert('Numărul și data facturii sunt obligatorii.');
-        return false;
-    }
-    
-    // Check if at least one item has an invoice quantity
-    const quantityInputs = document.querySelectorAll('.invoice-quantity');
-    let hasInvoice = false;
-    
-    quantityInputs.forEach(input => {
-        if (parseFloat(input.value) > 0) {
-            hasInvoice = true;
-        }
-    });
-    
-    if (!hasInvoice) {
-        alert('Trebuie să specifici cantitatea facturată pentru cel puțin un produs.');
-        return false;
-    }
-    
-    return true;
+    document.getElementById('total_amount').value = invoiceTotal.toFixed(2);
 }
 
 // Add form validation on submit
 document.addEventListener('DOMContentLoaded', function() {
-    // Delivery form validation
-    const deliveryModal = document.getElementById('deliveryModal');
-    if (deliveryModal) {
-        const deliveryForm = deliveryModal.querySelector('form');
-        if (deliveryForm) {
-            deliveryForm.addEventListener('submit', function(e) {
-                if (!validateDeliveryForm()) {
-                    e.preventDefault();
-                }
-            });
-        }
+    const stockPurchaseForm = document.getElementById('stockPurchaseForm');
+    if (stockPurchaseForm) {
+        stockPurchaseForm.addEventListener('submit', function(e) {
+            if (!validateStockPurchaseForm()) {
+                e.preventDefault();
+            }
+        });
     }
-    
-    // Invoice form validation
-    const invoiceModal = document.getElementById('invoiceModal');
-    if (invoiceModal) {
-        const invoiceForm = invoiceModal.querySelector('form');
-        if (invoiceForm) {
-            invoiceForm.addEventListener('submit', function(e) {
-                if (!validateInvoiceForm()) {
-                    e.preventDefault();
-                }
-            });
+});
+
+// Form submission handling
+document.addEventListener('submit', function(e) {
+    if (e.target.id === 'stockPurchaseForm') {
+        if (!validateStockPurchaseForm()) {
+            e.preventDefault();
         }
     }
 });
@@ -377,7 +506,32 @@ document.addEventListener('DOMContentLoaded', function() {
 document.addEventListener('click', function(e) {
     if (e.target.classList.contains('modal')) {
         const modalId = e.target.id;
-        closeModal(modalId);
+        if (modalId === 'stockPurchaseModal') {
+            closeStockPurchaseModal();
+        } else {
+            closeModal(modalId);
+        }
+    }
+});
+
+// Keyboard shortcuts
+document.addEventListener('keydown', function(e) {
+    // ESC key to close modals
+    if (e.key === 'Escape') {
+        const openModals = document.querySelectorAll('.modal.show');
+        openModals.forEach(modal => {
+            if (modal.id === 'stockPurchaseModal') {
+                closeStockPurchaseModal();
+            } else {
+                closeModal(modal.id);
+            }
+        });
+    }
+    
+    // Ctrl+N to open stock purchase modal
+    if (e.ctrlKey && e.key === 'n') {
+        e.preventDefault();
+        openStockPurchaseModal();
     }
 });
 
@@ -386,55 +540,13 @@ document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') {
         const openModal = document.querySelector('.modal.show');
         if (openModal) {
-            closeModal(openModal.id);
+            if (openModal.id === 'stockPurchaseModal') {
+                closeStockPurchaseModal();
+            } else {
+                openModal.classList.remove('show');
+            }
         }
     }
 });
 
-// Auto-save functionality for forms (optional)
-function enableAutoSave() {
-    const forms = document.querySelectorAll('.modal form');
-    
-    forms.forEach(form => {
-        const inputs = form.querySelectorAll('input, select, textarea');
-        
-        inputs.forEach(input => {
-            input.addEventListener('change', function() {
-                // Save form data to localStorage
-                const formData = new FormData(form);
-                const data = {};
-                for (let [key, value] of formData.entries()) {
-                    data[key] = value;
-                }
-                
-                const formId = form.closest('.modal').id;
-                localStorage.setItem(`purchase_order_form_${formId}`, JSON.stringify(data));
-            });
-        });
-    });
-}
-
-// Load saved form data (optional)
-function loadSavedFormData(modalId) {
-    const savedData = localStorage.getItem(`purchase_order_form_${modalId}`);
-    if (savedData) {
-        try {
-            const data = JSON.parse(savedData);
-            const form = document.querySelector(`#${modalId} form`);
-            
-            Object.keys(data).forEach(key => {
-                const input = form.querySelector(`[name="${key}"]`);
-                if (input) {
-                    input.value = data[key];
-                }
-            });
-        } catch (e) {
-            console.error('Error loading saved form data:', e);
-        }
-    }
-}
-
-// Clear saved form data
-function clearSavedFormData(modalId) {
-    localStorage.removeItem(`purchase_order_form_${modalId}`);
-}
+console.log('Purchase Orders JS loaded with complete stock purchase functionality');

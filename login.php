@@ -1,6 +1,6 @@
 <?php
 /**
- * Fast Login - No bullshit, just works
+ * Enhanced Login with Debug - Complete Version
  * File: login.php
  */
 
@@ -21,6 +21,10 @@ if (isset($_SESSION['user_id']) && isset($_SESSION['role'])) {
     exit;
 }
 
+// Initialize variables
+$error = '';
+$debug = [];
+
 // Handle POST request (login processing)
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $username = trim($_POST['username'] ?? '');
@@ -28,66 +32,131 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $remember = isset($_POST['remember']);
     $extendedSession = isset($_POST['extended_session']);
 
-    $error = '';
-
     if (empty($username) || empty($password)) {
         $error = 'Completați toate câmpurile obligatorii.';
     } else {
+        $debug[] = "Input username: '$username'";
+        $debug[] = "Input password length: " . strlen($password);
+        
         // Get database connection
         $config = require BASE_PATH . '/config/config.php';
         
         if (!isset($config['connection_factory']) || !is_callable($config['connection_factory'])) {
             $error = 'Eroare de configurare a bazei de date.';
+            $debug[] = "❌ Database configuration error";
         } else {
             try {
                 $dbFactory = $config['connection_factory'];
                 $db = $dbFactory();
+                $debug[] = "✅ Database connection successful";
                 
                 // Include User model
                 require_once BASE_PATH . '/models/User.php';
                 $usersModel = new Users($db);
                 
-                // Find user by username or email - AUTO DETECT TYPE
+                // Find user by username or email
                 $user = $usersModel->findByUsernameOrEmail($username);
                 
-                if ($user && $user['status'] == 1 && password_verify($password, $user['password'])) {
-                    // Successful login - set session variables
-                    $_SESSION['user_id'] = $user['id'];
-                    $_SESSION['username'] = $user['username'];
-                    $_SESSION['email'] = $user['email'];
-                    $_SESSION['role'] = $user['role'];
-                    $_SESSION['login_time'] = time();
+                // Enhanced debugging
+                if ($user) {
+                    $debug[] = "✅ User found: ID={$user['id']}, Username={$user['username']}, Email={$user['email']}, Status={$user['status']}, Role={$user['role']}";
                     
-                    // Extended session for "Keep me logged in"
-                    if ($extendedSession) {
-                        $_SESSION['extended_session'] = true;
-                        ini_set('session.gc_maxlifetime', 30 * 24 * 60 * 60);
-                        session_set_cookie_params(30 * 24 * 60 * 60);
-                    }
-                    
-                    // Update last login
-                    $usersModel->updateLastLogin($user['id']);
-
-                    // Log login event
-                    logActivity(
-                        $user['id'],
-                        'login',
-                        'user',
-                        $user['id'],
-                        'User logged in'
-                    );
-                    
-                    // Redirect based on user role (AUTO-DETECT - NO SELECTION NEEDED)
-                    if ($user['role'] === 'admin') {
-                        header('Location: ' . getNavUrl('index.php'));
+                    // Check status
+                    if ($user['status'] != 1) {
+                        $debug[] = "❌ User status check failed: status = {$user['status']}";
+                        $error = 'Cont inactiv.';
                     } else {
-                        header('Location: ' . getNavUrl('warehouse_hub.php'));
+                        $debug[] = "✅ User status check passed";
+                        
+                        // Check password
+                        $passwordValid = password_verify($password, $user['password']);
+                        $debug[] = "Password verification: " . ($passwordValid ? "✅ VALID" : "❌ INVALID");
+                        
+                        if ($passwordValid) {
+                            $debug[] = "✅ All checks passed - should login successfully";
+                            
+                            // Successful login - set session variables
+                            $_SESSION['user_id'] = $user['id'];
+                            $_SESSION['username'] = $user['username'];
+                            $_SESSION['email'] = $user['email'];
+                            $_SESSION['role'] = $user['role'];
+                            $_SESSION['login_time'] = time();
+                            
+                            $debug[] = "Session variables set";
+                            
+                            // Extended session for "Keep me logged in"
+                            if ($extendedSession) {
+                                $_SESSION['extended_session'] = true;
+                                ini_set('session.gc_maxlifetime', 30 * 24 * 60 * 60);
+                                session_set_cookie_params(30 * 24 * 60 * 60);
+                                $debug[] = "Extended session enabled";
+                            }
+                            
+                            // Update last login
+                            $usersModel->updateLastLogin($user['id']);
+                            $debug[] = "Last login updated";
+
+                            // Log login event (if function exists)
+                            if (function_exists('logActivity')) {
+                                logActivity(
+                                    $user['id'],
+                                    'login',
+                                    'user',
+                                    $user['id'],
+                                    'User logged in'
+                                );
+                                $debug[] = "Activity logged";
+                            } else {
+                                $debug[] = "logActivity function not found - skipping";
+                            }
+                            
+                            // Log all debug info
+                            error_log("LOGIN SUCCESS DEBUG: " . implode(" | ", $debug));
+                            
+                            // Redirect based on user role
+                            $redirectUrl = '';
+                            if ($user['role'] === 'admin') {
+                                $redirectUrl = getNavUrl('index.php');
+                            } else {
+                                $redirectUrl = getNavUrl('warehouse_hub.php');
+                            }
+                            
+                            $debug[] = "Redirecting to: $redirectUrl";
+                            
+                            // Clear debug info from session before redirect
+                            unset($_SESSION['debug']);
+                            
+                            header('Location: ' . $redirectUrl);
+                            exit;
+                        } else {
+                            $error = 'Parolă incorectă.';
+                        }
                     }
-                    exit;
                 } else {
-                    $error = 'Credențiale invalide sau cont inactiv.';
+                    $debug[] = "❌ User NOT found in database";
+                    
+                    // Additional debug: show what users exist
+                    try {
+                        $stmt = $db->query("SELECT username, email FROM users WHERE status = 1 LIMIT 5");
+                        $existingUsers = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                        $userList = [];
+                        foreach ($existingUsers as $u) {
+                            $userList[] = $u['username'] . ' (' . $u['email'] . ')';
+                        }
+                        $debug[] = "Available users: " . implode(', ', $userList);
+                    } catch (Exception $e) {
+                        $debug[] = "Could not fetch available users: " . $e->getMessage();
+                    }
+                    
+                    $error = 'Utilizator inexistent.';
                 }
+                
+                // Log debug info for failed login
+                error_log("LOGIN FAILED DEBUG: " . implode(" | ", $debug));
+                
             } catch (Exception $e) {
+                $debug[] = "Exception: " . $e->getMessage();
+                error_log("LOGIN EXCEPTION DEBUG: " . implode(" | ", $debug));
                 error_log("Login error: " . $e->getMessage());
                 $error = 'Eroare de sistem. Încercați din nou.';
             }
@@ -171,6 +240,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             color: var(--danger-color);
         }
 
+        /* Debug Message */
+        .debug-message {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 20px;
+            font-size: 12px;
+            font-family: monospace;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .debug-message h4 {
+            margin: 0 0 8px 0;
+            color: #495057;
+            font-size: 14px;
+            font-family: 'Inter', sans-serif;
+        }
+
+        .debug-message div {
+            margin-bottom: 2px;
+            padding: 2px 0;
+        }
+
         .form-group {
             margin-bottom: 20px;
             position: relative;
@@ -193,6 +287,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             transition: border-color 0.2s;
             background: var(--input-background);
             color: var(--text-primary);
+            box-sizing: border-box;
         }
 
         .form-input::placeholder {
@@ -398,6 +493,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         <!-- Login Form -->
         <div class="login-body">
+            <!-- Debug Message (remove in production) -->
+            <?php if (!empty($debug)): ?>
+                <div class="debug-message">
+                    <h4>🔍 Debug Info:</h4>
+                    <?php foreach ($debug as $d): ?>
+                        <div><?= htmlspecialchars($d) ?></div>
+                    <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
+
             <!-- Error Message -->
             <?php if (!empty($error)): ?>
                 <div class="status-message error">

@@ -1,5 +1,5 @@
 <?php
-// File: sellers.php - Sellers Management Page
+// File: sellers.php - Sellers Management Page with Pagination (Complete Version)
 ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
 error_reporting(E_ALL);
@@ -97,10 +97,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'status' => $_POST['status'] ?? 'active'
                 ];
                 
-                if ($sellerId <= 0) {
-                    throw new Exception('ID furnizor invalid.');
-                }
-                
                 if (empty($sellerData['supplier_name'])) {
                     throw new Exception('Numele furnizorului este obligatoriu.');
                 }
@@ -110,7 +106,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 
                 if ($sellerModel->updateSeller($sellerId, $sellerData)) {
-                    $message = 'Informațiile furnizorului au fost actualizate cu succes.';
+                    $message = 'Furnizorul a fost actualizat cu succes.';
                     $messageType = 'success';
                 } else {
                     throw new Exception('Eroare la actualizarea furnizorului.');
@@ -119,13 +115,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 
             case 'delete':
                 $sellerId = intval($_POST['seller_id'] ?? 0);
-                
-                if ($sellerId <= 0) {
-                    throw new Exception('ID furnizor invalid.');
-                }
-                
                 if ($sellerModel->deleteSeller($sellerId)) {
-                    $message = 'Furnizorul a fost șters/dezactivat cu succes.';
+                    $message = 'Furnizorul a fost șters cu succes.';
                     $messageType = 'success';
                 } else {
                     throw new Exception('Eroare la ștergerea furnizorului.');
@@ -138,106 +129,78 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// Get search parameters
-$searchQuery = trim($_GET['search'] ?? '');
+// Pagination and filtering (same pattern as products.php)
+$page = max(1, intval($_GET['page'] ?? 1));
+$pageSize = 25; // Compact pagination
+$search = trim($_GET['search'] ?? '');
+$statusFilter = trim($_GET['status'] ?? '');
 
-// Get sellers
-if (!empty($searchQuery)) {
-    $sellers = $sellerModel->searchSellers($searchQuery);
-} else {
-    $sellers = $sellerModel->getAllSellers();
-}
+// Get total count
+$totalCount = $sellerModel->getTotalCount($search, $statusFilter);
+$totalPages = max(1, ceil($totalCount / $pageSize));
+$offset = ($page - 1) * $pageSize;
 
-// Include header
-$currentPage = 'sellers';
-require_once __DIR__ . '/includes/header.php';
+// Get sellers with pagination
+$sellers = $sellerModel->getSellersPaginated($pageSize, $offset, $search, $statusFilter);
+
+// Define current page for footer
+$currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
 ?>
-
-<div class="app">
-    <?php require_once __DIR__ . '/includes/navbar.php'; ?>
-    
-    <div class="main-content">
-        <div class="page-container">
-            <!-- Page Header -->
-            <div class="page-header">
-                <div class="page-header-content">
-                    <h1 class="page-title">Furnizori</h1>
-                    <div class="header-actions">
-                        <button class="btn btn-primary" onclick="openCreateModal()">
-                            <span class="material-symbols-outlined">add</span>
-                            Furnizor Nou
-                        </button>
-                    </div>
-                </div>
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+    <?php require_once __DIR__ . '/includes/header.php'; ?>
+    <title>Gestionare Furnizori - WMS</title>
+</head>
+<body>
+    <div class="app">
+        <?php require_once __DIR__ . '/includes/navbar.php'; ?>
+        
+        <main class="main-content">
+            <div class="content-header">
+                <h1>
+                    <span class="material-symbols-outlined">business</span>
+                    Gestionare Furnizori
+                </h1>
+                <button class="btn btn-primary" onclick="openCreateModal()">
+                    <span class="material-symbols-outlined">add</span>
+                    Furnizor Nou
+                </button>
             </div>
 
-            <!-- Messages -->
-            <?php if (!empty($message)): ?>
-                <div class="alert alert-<?= $messageType === 'success' ? 'success' : 'danger' ?>">
-                    <span class="material-symbols-outlined">
-                        <?= $messageType === 'success' ? 'check_circle' : 'error' ?>
-                    </span>
+            <?php if ($message): ?>
+                <div class="alert alert-<?= $messageType ?>">
                     <?= htmlspecialchars($message) ?>
                 </div>
             <?php endif; ?>
 
-            <!-- Search and Stats -->
-            <div class="stats-grid">
-                <?php
-                $statsQuery = "SELECT 
-                    COUNT(*) as total_sellers,
-                    SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) as active_sellers,
-                    SUM(CASE WHEN status = 'inactive' THEN 1 ELSE 0 END) as inactive_sellers
-                    FROM sellers";
-                $statsStmt = $db->prepare($statsQuery);
-                $statsStmt->execute();
-                $stats = $statsStmt->fetch(PDO::FETCH_ASSOC);
-                ?>
-                
-                <div class="stat-card">
-                    <div class="stat-icon">
-                        <span class="material-symbols-outlined">store</span>
+            <!-- Search and Filter Form -->
+            <div class="filter-container">
+                <form method="GET" class="filter-form">
+                    <div class="filter-group">
+                        <label for="search">Căutare:</label>
+                        <input type="text" 
+                               id="search" 
+                               name="search" 
+                               value="<?= htmlspecialchars($search) ?>" 
+                               placeholder="Nume, CIF, cod furnizor, email...">
                     </div>
-                    <div class="stat-info">
-                        <h3><?= number_format($stats['total_sellers'] ?? 0) ?></h3>
-                        <p>Total Furnizori</p>
+                    
+                    <div class="filter-group">
+                        <label for="status">Status:</label>
+                        <select id="status" name="status">
+                            <option value="">Toate</option>
+                            <option value="active" <?= $statusFilter === 'active' ? 'selected' : '' ?>>Activ</option>
+                            <option value="inactive" <?= $statusFilter === 'inactive' ? 'selected' : '' ?>>Inactiv</option>
+                        </select>
                     </div>
-                </div>
-                
-                <div class="stat-card">
-                    <div class="stat-icon">
-                        <span class="material-symbols-outlined">check_circle</span>
-                    </div>
-                    <div class="stat-info">
-                        <h3><?= number_format($stats['active_sellers'] ?? 0) ?></h3>
-                        <p>Activi</p>
-                    </div>
-                </div>
-                
-                <div class="stat-card">
-                    <div class="stat-icon">
-                        <span class="material-symbols-outlined">block</span>
-                    </div>
-                    <div class="stat-info">
-                        <h3><?= number_format($stats['inactive_sellers'] ?? 0) ?></h3>
-                        <p>Inactivi</p>
-                    </div>
-                </div>
-            </div>
-
-
-            <!-- Search -->
-            <div class="search-section">
-                <form method="GET" class="search-form">
-                    <div class="search-group">
-                        <input type="text" name="search" class="form-control" 
-                               value="<?= htmlspecialchars($searchQuery) ?>" 
-                               placeholder="Căutare după nume, CIF, email...">
+                    
+                    <div class="filter-actions">
                         <button type="submit" class="btn btn-primary">
                             <span class="material-symbols-outlined">search</span>
-                            Căutare
+                            Caută
                         </button>
-                        <?php if (!empty($searchQuery)): ?>
+                        <?php if ($search || $statusFilter): ?>
                             <a href="?" class="btn btn-secondary">
                                 <span class="material-symbols-outlined">clear</span>
                                 Reset
@@ -277,21 +240,27 @@ require_once __DIR__ . '/includes/header.php';
                                             <?php if ($seller['contact_person']): ?>
                                                 <div><strong><?= htmlspecialchars($seller['contact_person']) ?></strong></div>
                                             <?php endif; ?>
-                                            <?php if ($seller['email']): ?>
-                                                <div><a href="mailto:<?= htmlspecialchars($seller['email']) ?>"><?= htmlspecialchars($seller['email']) ?></a></div>
-                                            <?php endif; ?>
                                             <?php if ($seller['phone']): ?>
-                                                <div><a href="tel:<?= htmlspecialchars($seller['phone']) ?>"><?= htmlspecialchars($seller['phone']) ?></a></div>
+                                                <div><span class="material-symbols-outlined">phone</span> <?= htmlspecialchars($seller['phone']) ?></div>
+                                            <?php endif; ?>
+                                            <?php if ($seller['email']): ?>
+                                                <div><span class="material-symbols-outlined">email</span> <?= htmlspecialchars($seller['email']) ?></div>
                                             <?php endif; ?>
                                         </div>
                                     </td>
                                     <td>
                                         <div class="fiscal-info">
                                             <?php if ($seller['cif']): ?>
-                                                <div>CIF: <?= htmlspecialchars($seller['cif']) ?></div>
+                                                <div><strong>CIF:</strong> <?= htmlspecialchars($seller['cif']) ?></div>
                                             <?php endif; ?>
                                             <?php if ($seller['registration_number']): ?>
-                                                <div>Reg Com: <?= htmlspecialchars($seller['registration_number']) ?></div>
+                                                <div><strong>Reg:</strong> <?= htmlspecialchars($seller['registration_number']) ?></div>
+                                            <?php endif; ?>
+                                            <?php if ($seller['bank_name']): ?>
+                                                <div><strong>Bancă:</strong> <?= htmlspecialchars($seller['bank_name']) ?></div>
+                                            <?php endif; ?>
+                                            <?php if ($seller['iban']): ?>
+                                                <div><strong>IBAN:</strong> <?= htmlspecialchars($seller['iban']) ?></div>
                                             <?php endif; ?>
                                         </div>
                                     </td>
@@ -302,35 +271,35 @@ require_once __DIR__ . '/includes/header.php';
                                             <?php endif; ?>
                                             <?php if ($seller['city'] || $seller['county']): ?>
                                                 <div>
-                                                    <?= htmlspecialchars($seller['city']) ?>
-                                                    <?php if ($seller['city'] && $seller['county']): ?>, <?php endif; ?>
-                                                    <?= htmlspecialchars($seller['county']) ?>
+                                                    <?= htmlspecialchars($seller['city'] ?? '') ?>
+                                                    <?= $seller['city'] && $seller['county'] ? ', ' : '' ?>
+                                                    <?= htmlspecialchars($seller['county'] ?? '') ?>
                                                 </div>
                                             <?php endif; ?>
-                                            <?php if ($seller['country'] && $seller['country'] !== 'Romania'): ?>
+                                            <?php if ($seller['country']): ?>
                                                 <div><?= htmlspecialchars($seller['country']) ?></div>
                                             <?php endif; ?>
                                         </div>
                                     </td>
                                     <td>
                                         <span class="status-badge status-<?= $seller['status'] ?>">
-                                            <?= ucfirst($seller['status']) ?>
+                                            <?= $seller['status'] === 'active' ? 'Activ' : 'Inactiv' ?>
                                         </span>
                                     </td>
                                     <td>
-                                        <div class="action-buttons">
-                                            <button class="btn btn-sm btn-outline-primary" 
-                                                    onclick="viewSellerDetails(<?= $seller['id'] ?>)"
+                                        <div class="table-actions">
+                                            <button class="btn btn-sm btn-secondary" 
+                                                    onclick="viewSellerDetails(<?= $seller['id'] ?>)" 
                                                     title="Vezi detalii">
                                                 <span class="material-symbols-outlined">visibility</span>
                                             </button>
-                                            <button class="btn btn-sm btn-outline-secondary" 
-                                                    onclick="openEditModal(<?= $seller['id'] ?>)"
+                                            <button class="btn btn-sm btn-primary" 
+                                                    onclick="openEditModal(<?= $seller['id'] ?>)" 
                                                     title="Editează">
                                                 <span class="material-symbols-outlined">edit</span>
                                             </button>
-                                            <button class="btn btn-sm btn-outline-danger" 
-                                                    onclick="openDeleteModal(<?= $seller['id'] ?>, '<?= htmlspecialchars($seller['supplier_name']) ?>')"
+                                            <button class="btn btn-sm btn-danger" 
+                                                    onclick="openDeleteModal(<?= $seller['id'] ?>, '<?= htmlspecialchars($seller['supplier_name'], ENT_QUOTES) ?>')" 
                                                     title="Șterge">
                                                 <span class="material-symbols-outlined">delete</span>
                                             </button>
@@ -340,25 +309,56 @@ require_once __DIR__ . '/includes/header.php';
                             <?php endforeach; ?>
                         </tbody>
                     </table>
+                    
+                    <!-- Pagination (same pattern as products.php) -->
+                    <?php if ($totalPages > 1): ?>
+                        <div class="pagination-container">
+                            <div class="pagination-info">
+                                Afișare <?= ($offset + 1) ?>-<?= min($offset + $pageSize, $totalCount) ?> din <?= number_format($totalCount) ?> furnizori
+                            </div>
+                            <div class="pagination-controls">
+                                <?php if ($page > 1): ?>
+                                    <a href="?page=1&search=<?= urlencode($search) ?>&status=<?= urlencode($statusFilter) ?>" class="pagination-btn">Prima</a>
+                                    <a href="?page=<?= $page - 1 ?>&search=<?= urlencode($search) ?>&status=<?= urlencode($statusFilter) ?>" class="pagination-btn">‹</a>
+                                <?php endif; ?>
+                                
+                                <?php 
+                                $startPage = max(1, $page - 2);
+                                $endPage = min($totalPages, $page + 2);
+                                
+                                for ($i = $startPage; $i <= $endPage; $i++): ?>
+                                    <?php if ($i == $page): ?>
+                                        <span class="pagination-btn active"><?= $i ?></span>
+                                    <?php else: ?>
+                                        <a href="?page=<?= $i ?>&search=<?= urlencode($search) ?>&status=<?= urlencode($statusFilter) ?>" class="pagination-btn"><?= $i ?></a>
+                                    <?php endif; ?>
+                                <?php endfor; ?>
+                                
+                                <?php if ($page < $totalPages): ?>
+                                    <a href="?page=<?= $page + 1 ?>&search=<?= urlencode($search) ?>&status=<?= urlencode($statusFilter) ?>" class="pagination-btn">›</a>
+                                    <a href="?page=<?= $totalPages ?>&search=<?= urlencode($search) ?>&status=<?= urlencode($statusFilter) ?>" class="pagination-btn">Ultima</a>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                    <?php endif; ?>
+                    
                 <?php else: ?>
                     <div class="empty-state">
-                        <div class="empty-state-content">
-                            <span class="material-symbols-outlined">store</span>
-                            <h3>Nu există furnizori</h3>
-                            <p>
-                                <?php if (!empty($searchQuery)): ?>
-                                    Nu s-au găsit furnizori care să corespundă criteriilor de căutare.
-                                    <a href="?" class="btn btn-secondary">Șterge căutarea</a>
-                                <?php else: ?>
-                                    Adaugă primul furnizor pentru a putea crea comenzi de achiziție.
-                                    <button class="btn btn-primary" onclick="openCreateModal()">Adaugă Furnizor</button>
-                                <?php endif; ?>
-                            </p>
-                        </div>
+                        <span class="material-symbols-outlined">business</span>
+                        <h3>Nu există furnizori</h3>
+                        <p>
+                            <?php if ($search || $statusFilter): ?>
+                                Nu s-au găsit furnizori cu criteriile selectate.
+                                <a href="?" class="btn btn-secondary">Șterge filtrele</a>
+                            <?php else: ?>
+                                Adaugă primul furnizor pentru a putea crea comenzi de achiziție.
+                                <button class="btn btn-primary" onclick="openCreateModal()">Adaugă Furnizor</button>
+                            <?php endif; ?>
+                        </p>
                     </div>
                 <?php endif; ?>
             </div>
-        </div>
+        </main>
     </div>
 
     <!-- Create Seller Modal -->
@@ -416,35 +416,37 @@ require_once __DIR__ . '/includes/header.php';
 
                         <!-- Contact Information -->
                         <div class="form-section">
-                            <h4>Informații de Contact</h4>
+                            <h4>Informații Contact</h4>
                             <div class="row">
                                 <div class="form-group">
-                                    <label for="contact_person" class="form-label">Persoană de Contact</label>
+                                    <label for="contact_person" class="form-label">Persoană Contact</label>
                                     <input type="text" name="contact_person" id="contact_person" class="form-control">
                                 </div>
                                 <div class="form-group">
-                                    <label for="email" class="form-label">Email</label>
-                                    <input type="email" name="email" id="email" class="form-control">
+                                    <label for="phone" class="form-label">Telefon</label>
+                                    <input type="tel" name="phone" id="phone" class="form-control">
                                 </div>
                             </div>
                             <div class="row">
                                 <div class="form-group">
-                                    <label for="phone" class="form-label">Telefon</label>
-                                    <input type="tel" name="phone" id="phone" class="form-control">
+                                    <label for="email" class="form-label">Email</label>
+                                    <input type="email" name="email" id="email" class="form-control">
                                 </div>
                             </div>
                         </div>
 
                         <!-- Address Information -->
                         <div class="form-section">
-                            <h4>Adresă</h4>
-                            <div class="form-group">
-                                <label for="address" class="form-label">Adresă</label>
-                                <textarea name="address" id="address" class="form-control" rows="2"></textarea>
+                            <h4>Informații Adresă</h4>
+                            <div class="row">
+                                <div class="form-group">
+                                    <label for="address" class="form-label">Adresă</label>
+                                    <input type="text" name="address" id="address" class="form-control">
+                                </div>
                             </div>
                             <div class="row">
                                 <div class="form-group">
-                                    <label for="city" class="form-label">Localitate</label>
+                                    <label for="city" class="form-label">Oraș</label>
                                     <input type="text" name="city" id="city" class="form-control">
                                 </div>
                                 <div class="form-group">
@@ -583,4 +585,5 @@ require_once __DIR__ . '/includes/header.php';
     </div>
 
     <?php require_once __DIR__ . '/includes/footer.php'; ?>
-</div>
+</body>
+</html>

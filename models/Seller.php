@@ -26,6 +26,76 @@ class Seller {
     }
 
     /**
+     * Get total count of sellers with filters
+     * @param string $search Search term
+     * @param string $statusFilter Status filter
+     * @return int Total count
+     */
+    public function getTotalCount(string $search = '', string $statusFilter = ''): int {
+        $query = "SELECT COUNT(*) as total FROM {$this->table} WHERE 1=1";
+        $params = [];
+        
+        if (!empty($search)) {
+            $query .= " AND (supplier_name LIKE :search OR cif LIKE :search OR supplier_code LIKE :search OR email LIKE :search OR contact_person LIKE :search)";
+            $params[':search'] = '%' . $search . '%';
+        }
+        
+        if (!empty($statusFilter)) {
+            $query .= " AND status = :status";
+            $params[':status'] = $statusFilter;
+        }
+        
+        try {
+            $stmt = $this->conn->prepare($query);
+            $stmt->execute($params);
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            return (int)($result['total'] ?? 0);
+        } catch (PDOException $e) {
+            error_log("Error getting total count: " . $e->getMessage());
+            return 0;
+        }
+    }
+
+    /**
+     * Get sellers with pagination and filters
+     * @param int $pageSize Number of sellers per page
+     * @param int $offset Starting offset
+     * @param string $search Search term
+     * @param string $statusFilter Status filter
+     * @return array Array of sellers
+     */
+    public function getSellersPaginated(int $pageSize, int $offset, string $search = '', string $statusFilter = ''): array {
+        $query = "SELECT * FROM {$this->table} WHERE 1=1";
+        $params = [];
+        
+        if (!empty($search)) {
+            $query .= " AND (supplier_name LIKE :search OR cif LIKE :search OR supplier_code LIKE :search OR email LIKE :search OR contact_person LIKE :search)";
+            $params[':search'] = '%' . $search . '%';
+        }
+        
+        if (!empty($statusFilter)) {
+            $query .= " AND status = :status";
+            $params[':status'] = $statusFilter;
+        }
+        
+        $query .= " ORDER BY supplier_name ASC LIMIT :limit OFFSET :offset";
+        
+        try {
+            $stmt = $this->conn->prepare($query);
+            foreach ($params as $key => $value) {
+                $stmt->bindValue($key, $value);
+            }
+            $stmt->bindValue(':limit', $pageSize, PDO::PARAM_INT);
+            $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+            $stmt->execute();
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (PDOException $e) {
+            error_log("Error getting paginated sellers: " . $e->getMessage());
+            return [];
+        }
+    }
+
+    /**
      * Get seller by ID
      * @param int $sellerId
      * @return array|false
@@ -216,6 +286,51 @@ class Seller {
         } catch (PDOException $e) {
             error_log("Error searching sellers: " . $e->getMessage());
             return [];
+        }
+    }
+
+    /**
+     * Get active sellers (for dropdowns, etc.)
+     * @return array
+     */
+    public function getActiveSellers(): array {
+        return $this->getAllSellers();
+    }
+
+    /**
+     * Get seller statistics
+     * @param int $sellerId
+     * @return array
+     */
+    public function getSellerStatistics(int $sellerId): array {
+        $query = "SELECT 
+                    COUNT(po.id) as total_orders,
+                    COALESCE(SUM(po.total_amount), 0) as total_value,
+                    COUNT(CASE WHEN po.status = 'completed' THEN 1 END) as completed_orders,
+                    MAX(po.created_at) as last_order_date
+                  FROM purchase_orders po 
+                  WHERE po.seller_id = :seller_id";
+        
+        try {
+            $stmt = $this->conn->prepare($query);
+            $stmt->bindValue(':seller_id', $sellerId, PDO::PARAM_INT);
+            $stmt->execute();
+            $stats = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            return [
+                'total_orders' => (int)($stats['total_orders'] ?? 0),
+                'total_value' => (float)($stats['total_value'] ?? 0),
+                'completed_orders' => (int)($stats['completed_orders'] ?? 0),
+                'last_order_date' => $stats['last_order_date']
+            ];
+        } catch (PDOException $e) {
+            error_log("Error getting seller statistics: " . $e->getMessage());
+            return [
+                'total_orders' => 0,
+                'total_value' => 0.0,
+                'completed_orders' => 0,
+                'last_order_date' => null
+            ];
         }
     }
 }

@@ -1,11 +1,12 @@
 // File: scripts/purchase_orders.js
-// Complete JavaScript functionality for purchase orders page with stock purchase (MOVED FROM transactions.js)
+// Complete JavaScript functionality for purchase orders page with stock purchase
 
 document.addEventListener('DOMContentLoaded', function() {
     console.log('Purchase Orders page loaded');
     initializeDateFields();
     initializeAmountCalculations();
     initializeStockPurchase();
+    attachFormValidation();
 });
 
 // Global variables for stock purchase
@@ -26,24 +27,6 @@ function initializeDateFields() {
     if (invoiceDateField) {
         invoiceDateField.value = today;
     }
-}
-
-// Initialize amount calculations and form interactions
-function initializeAmountCalculations() {
-    // Initialize any amount calculations here if needed
-    console.log('Amount calculations initialized');
-}
-
-// Stock Purchase functionality - MOVED FROM transactions.js
-function initializeStockPurchase() {
-    // Initialize existing product selectors if they exist
-    const selectors = document.querySelectorAll('.existing-product-select');
-    selectors.forEach(selector => {
-        selector.addEventListener('change', function() {
-            const index = this.closest('.product-item').getAttribute('data-index');
-            selectExistingProduct(index, this);
-        });
-    });
     
     // Set minimum delivery date to tomorrow
     const expectedDeliveryDate = document.getElementById('expected_delivery_date');
@@ -54,13 +37,47 @@ function initializeStockPurchase() {
     }
 }
 
-// Stock Purchase Modal functions - MOVED FROM transactions.js
+// Initialize amount calculations and form interactions
+function initializeAmountCalculations() {
+    // Initialize any amount calculations here if needed
+    console.log('Amount calculations initialized');
+}
+
+// Stock Purchase functionality
+function initializeStockPurchase() {
+    // Initialize existing product selectors if they exist
+    const selectors = document.querySelectorAll('.existing-product-select');
+    selectors.forEach(selector => {
+        selector.addEventListener('change', function() {
+            const index = this.closest('.product-item').getAttribute('data-index');
+            selectExistingProduct(index, this);
+        });
+    });
+}
+
+// Attach form validation
+function attachFormValidation() {
+    const stockPurchaseForm = document.getElementById('stockPurchaseForm');
+    if (stockPurchaseForm) {
+        stockPurchaseForm.addEventListener('submit', function(e) {
+            if (!validateStockPurchaseForm()) {
+                e.preventDefault();
+            }
+        });
+        console.log('Form validation attached');
+    }
+}
+
+// Stock Purchase Modal functions
 function openStockPurchaseModal() {
     document.getElementById('stockPurchaseModal').classList.add('show');
     // Set minimum delivery date to tomorrow
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
-    document.getElementById('expected_delivery_date').value = tomorrow.toISOString().split('T')[0];
+    const expectedDeliveryDate = document.getElementById('expected_delivery_date');
+    if (expectedDeliveryDate) {
+        expectedDeliveryDate.value = tomorrow.toISOString().split('T')[0];
+    }
 }
 
 function closeStockPurchaseModal() {
@@ -82,41 +99,72 @@ function resetProductItems() {
     
     // Reset the first item
     if (firstItem) {
-        firstItem.querySelector('.product-name').value = '';
-        firstItem.querySelector('.product-code').value = '';
-        firstItem.querySelector('.quantity').value = '';
-        firstItem.querySelector('.unit-price').value = '';
-        firstItem.querySelector('.item-total').value = '';
-        firstItem.querySelector('.purchasable-product-id').value = '';
-        firstItem.querySelector('.existing-product-select').value = '';
-        firstItem.querySelector('button[onclick*="removeProductItem"]').style.display = 'none';
+        const productName = firstItem.querySelector('.product-name');
+        const productCode = firstItem.querySelector('.product-code');
+        const quantity = firstItem.querySelector('.quantity');
+        const unitPrice = firstItem.querySelector('.unit-price');
+        const itemTotal = firstItem.querySelector('.item-total');
+        const purchasableProductId = firstItem.querySelector('.purchasable-product-id');
+        const existingProductSelect = firstItem.querySelector('.existing-product-select');
+        const removeButton = firstItem.querySelector('button[onclick*="removeProductItem"]');
+        
+        if (productName) productName.value = '';
+        if (productCode) productCode.value = '';
+        if (quantity) quantity.value = '';
+        if (unitPrice) unitPrice.value = '';
+        if (itemTotal) itemTotal.value = '';
+        if (purchasableProductId) purchasableProductId.value = '';
+        if (existingProductSelect) existingProductSelect.value = '';
+        if (removeButton) removeButton.style.display = 'none';
     }
     
     productItemIndex = 1;
     calculateOrderTotal();
 }
 
+// FIXED: updateSellerContact function with proper null checks
+// Debug the actual function execution
 function updateSellerContact() {
-    const sellerSelect = document.getElementById('seller_id');
-    const selectedOption = sellerSelect.options[sellerSelect.selectedIndex];
-    const emailField = document.getElementById('email_recipient');
+    // Look specifically inside the modal, not the whole page
+    const modal = document.getElementById('stockPurchaseModal');
+    if (!modal) {
+        console.error('Modal not found');
+        return;
+    }
     
-    if (selectedOption && selectedOption.value && emailField) {
+    const sellerSelect = modal.querySelector('#seller_id');
+    const emailField = modal.querySelector('#email_recipient');
+    
+    if (!sellerSelect) {
+        console.error('Seller select element not found in modal');
+        return;
+    }
+    
+    if (!emailField) {
+        console.error('Email recipient field not found in modal');
+        return;
+    }
+    
+    const selectedOption = sellerSelect.options[sellerSelect.selectedIndex];
+    
+    if (selectedOption && selectedOption.value && selectedOption.value !== '') {
         const email = selectedOption.getAttribute('data-email');
         const contact = selectedOption.getAttribute('data-contact');
         const phone = selectedOption.getAttribute('data-phone');
         
+        console.log('Setting email to:', email); // Debug log
+        
+        // Set the email field value
         emailField.value = email || '';
         
-        // Update placeholder or show contact info somewhere
+        // Optional: Show contact info in console
         if (contact || phone) {
             let contactInfo = [];
             if (contact) contactInfo.push(`Contact: ${contact}`);
             if (phone) contactInfo.push(`Tel: ${phone}`);
-            
             console.log('Seller contact info:', contactInfo.join(', '));
         }
-    } else if (emailField) {
+    } else {
         emailField.value = '';
     }
 }
@@ -194,21 +242,26 @@ function createProductItem(index) {
 
 function generateProductOptions() {
     // Get the purchasable products from the page data
-    // This assumes the PHP page includes the products data in a JavaScript variable
     if (typeof window.purchasableProducts !== 'undefined') {
         let options = '';
         window.purchasableProducts.forEach(product => {
             options += `<option value="${product.id}" 
-                                data-name="${product.supplier_product_name}"
-                                data-code="${product.supplier_product_code || ''}"
+                                data-name="${escapeHtml(product.supplier_product_name)}"
+                                data-code="${escapeHtml(product.supplier_product_code || '')}"
                                 data-price="${product.last_purchase_price || ''}">
-                            ${product.supplier_product_name}
-                            ${product.supplier_product_code ? `(${product.supplier_product_code})` : ''}
+                            ${escapeHtml(product.supplier_product_name)}
+                            ${product.supplier_product_code ? `(${escapeHtml(product.supplier_product_code)})` : ''}
                         </option>`;
         });
         return options;
     }
     return '';
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
 }
 
 function removeProductItem(index) {
@@ -259,7 +312,7 @@ function selectExistingProduct(index, selectElement) {
         // Calculate total if quantity is set
         const quantityField = item.querySelector('.quantity');
         if (quantityField && quantityField.value) {
-            calculateItemTotal(quantityField);
+            calculateItemTotal(index);
         }
     } else if (item) {
         // Clear fields if "create new" is selected
@@ -280,35 +333,27 @@ function selectExistingProduct(index, selectElement) {
 }
 
 function calculateItemTotal(index) {
-    const item = document.querySelector(`[data-index="${index}"]`);
+    let item = document.querySelector(`[data-index="${index}"]`);
+    
     if (!item) {
         // Fallback: try to find by input element
         const inputElement = typeof index === 'object' ? index : null;
         if (inputElement) {
-            const productItem = inputElement.closest('.product-item');
-            if (productItem) {
-                const quantity = parseFloat(productItem.querySelector('.quantity').value) || 0;
-                const unitPrice = parseFloat(productItem.querySelector('.unit-price').value) || 0;
-                const total = quantity * unitPrice;
-                
-                const itemTotalField = productItem.querySelector('.item-total');
-                if (itemTotalField) {
-                    itemTotalField.value = total.toFixed(2) + ' RON';
-                }
-                
-                calculateOrderTotal();
-                return;
-            }
+            item = inputElement.closest('.product-item');
         }
-        return;
     }
     
-    const quantity = parseFloat(item.querySelector('.quantity').value) || 0;
-    const unitPrice = parseFloat(item.querySelector('.unit-price').value) || 0;
-    const total = quantity * unitPrice;
+    if (!item) return;
     
+    const quantityField = item.querySelector('.quantity');
+    const unitPriceField = item.querySelector('.unit-price');
     const itemTotalField = item.querySelector('.item-total');
-    if (itemTotalField) {
+    
+    if (quantityField && unitPriceField && itemTotalField) {
+        const quantity = parseFloat(quantityField.value) || 0;
+        const unitPrice = parseFloat(unitPriceField.value) || 0;
+        const total = quantity * unitPrice;
+        
         itemTotalField.value = total.toFixed(2) + ' RON';
     }
     
@@ -321,9 +366,14 @@ function calculateOrderTotal() {
     let orderTotal = 0;
     
     items.forEach(item => {
-        const quantity = parseFloat(item.querySelector('.quantity') ? item.querySelector('.quantity').value : 0) || 0;
-        const unitPrice = parseFloat(item.querySelector('.unit-price') ? item.querySelector('.unit-price').value : 0) || 0;
-        orderTotal += quantity * unitPrice;
+        const quantityField = item.querySelector('.quantity');
+        const unitPriceField = item.querySelector('.unit-price');
+        
+        if (quantityField && unitPriceField) {
+            const quantity = parseFloat(quantityField.value) || 0;
+            const unitPrice = parseFloat(unitPriceField.value) || 0;
+            orderTotal += quantity * unitPrice;
+        }
     });
     
     const orderTotalElement = document.getElementById('order-total');
@@ -332,28 +382,42 @@ function calculateOrderTotal() {
     }
 }
 
-// Form validation
+// FIXED: Form validation with proper checks
 function validateStockPurchaseForm() {
-    const sellerSelect = document.getElementById('seller_id');
-    const sellerId = sellerSelect ? sellerSelect.value : '';
-    
-    console.log('Validating form - Seller ID:', sellerId); // Debug log
-    
-    if (!sellerId || sellerId === '') {
-        alert('Te rog selectează un furnizor.');
+    // Look specifically inside the modal, not the whole page
+    const modal = document.getElementById('stockPurchaseModal');
+    if (!modal) {
+        console.error('Modal not found during validation');
         return false;
     }
     
-    const items = document.querySelectorAll('.product-item');
+    // Check if seller is selected (in the modal)
+    const sellerSelect = modal.querySelector('#seller_id');
+    if (!sellerSelect || !sellerSelect.value || sellerSelect.value === '') {
+        alert('Te rog selectează un furnizor.');
+        if (sellerSelect) sellerSelect.focus();
+        return false;
+    }
+    
+    console.log('Seller validation passed, selected:', sellerSelect.value);
+    
+    // Check if at least one product is added with valid data
+    const items = modal.querySelectorAll('.product-item'); // Also target modal specifically
     let hasValidItems = false;
     
-    items.forEach(item => {
-        const productName = item.querySelector('.product-name') ? item.querySelector('.product-name').value.trim() : '';
-        const quantity = parseFloat(item.querySelector('.quantity') ? item.querySelector('.quantity').value : 0) || 0;
-        const unitPrice = parseFloat(item.querySelector('.unit-price') ? item.querySelector('.unit-price').value : 0) || 0;
+    items.forEach((item) => {
+        const productNameField = item.querySelector('.product-name');
+        const quantityField = item.querySelector('.quantity');
+        const unitPriceField = item.querySelector('.unit-price');
         
-        if (productName && quantity > 0 && unitPrice > 0) {
-            hasValidItems = true;
+        if (productNameField && quantityField && unitPriceField) {
+            const name = productNameField.value.trim();
+            const qty = parseFloat(quantityField.value) || 0;
+            const price = parseFloat(unitPriceField.value) || 0;
+            
+            if (name && qty > 0 && price > 0) {
+                hasValidItems = true;
+            }
         }
     });
     
@@ -362,30 +426,38 @@ function validateStockPurchaseForm() {
         return false;
     }
     
+    console.log('All validation passed!');
     return true;
 }
 
 // Generic modal functions
 function openModal(modalId) {
-    document.getElementById(modalId).classList.add('show');
+    const modal = document.getElementById(modalId);
+    if (modal) {
+        modal.classList.add('show');
+    }
 }
 
 function closeModal(modalId) {
-    document.getElementById(modalId).classList.remove('show');
-    
-    // Reset forms when closing modals
     const modal = document.getElementById(modalId);
-    const form = modal.querySelector('form');
-    if (form) {
-        form.reset();
-    }
-    
-    // Clear any dynamic content
-    if (modalId === 'deliveryModal') {
-        document.getElementById('delivery-items').innerHTML = '';
-    }
-    if (modalId === 'invoiceModal') {
-        document.getElementById('invoice-items').innerHTML = '';
+    if (modal) {
+        modal.classList.remove('show');
+        
+        // Reset forms when closing modals
+        const form = modal.querySelector('form');
+        if (form) {
+            form.reset();
+        }
+        
+        // Clear any dynamic content
+        if (modalId === 'deliveryModal') {
+            const deliveryItems = document.getElementById('delivery-items');
+            if (deliveryItems) deliveryItems.innerHTML = '';
+        }
+        if (modalId === 'invoiceModal') {
+            const invoiceItems = document.getElementById('invoice-items');
+            if (invoiceItems) invoiceItems.innerHTML = '';
+        }
     }
 }
 
@@ -409,9 +481,12 @@ function openDeliveryModal(orderId) {
     
     // Set delivery date to today
     const today = new Date().toISOString().split('T')[0];
-    document.getElementById('delivery_date').value = today;
+    const deliveryDate = document.getElementById('delivery_date');
+    if (deliveryDate) {
+        deliveryDate.value = today;
+    }
     
-    // TODO: Load order items for delivery recording
+    // Load order items for delivery recording
     loadOrderItemsForDelivery(orderId);
     
     openModal('deliveryModal');
@@ -423,9 +498,12 @@ function openInvoiceModal(orderId) {
     
     // Set invoice date to today
     const today = new Date().toISOString().split('T')[0];
-    document.getElementById('invoice_date').value = today;
+    const invoiceDate = document.getElementById('invoice_date');
+    if (invoiceDate) {
+        invoiceDate.value = today;
+    }
     
-    // TODO: Load order items for invoice recording
+    // Load order items for invoice recording
     loadOrderItemsForInvoice(orderId);
     
     openModal('invoiceModal');
@@ -434,38 +512,50 @@ function openInvoiceModal(orderId) {
 // Load order items for delivery recording
 function loadOrderItemsForDelivery(orderId) {
     const container = document.getElementById('delivery-items');
-    container.innerHTML = '<div class="loading">Se încarcă produsele...</div>';
-    
-    // TODO: Make AJAX call to get order items
-    // For now, just clear the loading message
-    setTimeout(() => {
-        container.innerHTML = '';
-    }, 200);
+    if (container) {
+        container.innerHTML = '<div class="loading">Se încarcă produsele...</div>';
+        
+        // TODO: Make AJAX call to get order items
+        // For now, just clear the loading message
+        setTimeout(() => {
+            container.innerHTML = '';
+        }, 200);
+    }
 }
 
 // Load order items for invoice recording
 function loadOrderItemsForInvoice(orderId) {
     const container = document.getElementById('invoice-items');
-    container.innerHTML = '<div class="loading">Se încarcă produsele...</div>';
-    
-    // TODO: Make AJAX call to get order items
-    // For now, just clear the loading message
-    setTimeout(() => {
-        container.innerHTML = '';
-    }, 200);
+    if (container) {
+        container.innerHTML = '<div class="loading">Se încarcă produsele...</div>';
+        
+        // TODO: Make AJAX call to get order items
+        // For now, just clear the loading message
+        setTimeout(() => {
+            container.innerHTML = '';
+        }, 200);
+    }
 }
 
 // Calculate item total for invoice items
-function calculateItemTotal(inputElement) {
+function calculateInvoiceItemTotal(inputElement) {
     const item = inputElement.closest('.invoice-item');
-    const quantity = parseFloat(item.querySelector('.invoice-quantity').value) || 0;
-    const unitPrice = parseFloat(item.querySelector('.unit-price').value) || 0;
-    const total = quantity * unitPrice;
+    if (!item) return;
     
-    item.querySelector('.item-total').value = total.toFixed(2) + ' RON';
+    const quantityField = item.querySelector('.invoice-quantity');
+    const unitPriceField = item.querySelector('.unit-price');
+    const itemTotalField = item.querySelector('.item-total');
     
-    // Update invoice total
-    updateInvoiceTotal();
+    if (quantityField && unitPriceField && itemTotalField) {
+        const quantity = parseFloat(quantityField.value) || 0;
+        const unitPrice = parseFloat(unitPriceField.value) || 0;
+        const total = quantity * unitPrice;
+        
+        itemTotalField.value = total.toFixed(2) + ' RON';
+        
+        // Update invoice total
+        updateInvoiceTotal();
+    }
 }
 
 function updateInvoiceTotal() {
@@ -473,34 +563,21 @@ function updateInvoiceTotal() {
     let invoiceTotal = 0;
     
     items.forEach(item => {
-        const quantity = parseFloat(item.querySelector('.invoice-quantity').value) || 0;
-        const unitPrice = parseFloat(item.querySelector('.unit-price').value) || 0;
-        invoiceTotal += quantity * unitPrice;
+        const quantityField = item.querySelector('.invoice-quantity');
+        const unitPriceField = item.querySelector('.unit-price');
+        
+        if (quantityField && unitPriceField) {
+            const quantity = parseFloat(quantityField.value) || 0;
+            const unitPrice = parseFloat(unitPriceField.value) || 0;
+            invoiceTotal += quantity * unitPrice;
+        }
     });
     
-    document.getElementById('total_amount').value = invoiceTotal.toFixed(2);
+    const totalAmountField = document.getElementById('total_amount');
+    if (totalAmountField) {
+        totalAmountField.value = invoiceTotal.toFixed(2);
+    }
 }
-
-// Add form validation on submit
-document.addEventListener('DOMContentLoaded', function() {
-    const stockPurchaseForm = document.getElementById('stockPurchaseForm');
-    if (stockPurchaseForm) {
-        stockPurchaseForm.addEventListener('submit', function(e) {
-            if (!validateStockPurchaseForm()) {
-                e.preventDefault();
-            }
-        });
-    }
-});
-
-// Form submission handling
-document.addEventListener('submit', function(e) {
-    if (e.target.id === 'stockPurchaseForm') {
-        if (!validateStockPurchaseForm()) {
-            e.preventDefault();
-        }
-    }
-});
 
 // Close modals when clicking outside
 document.addEventListener('click', function(e) {
@@ -535,18 +612,21 @@ document.addEventListener('keydown', function(e) {
     }
 });
 
-// Handle Escape key to close modals
-document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape') {
-        const openModal = document.querySelector('.modal.show');
-        if (openModal) {
-            if (openModal.id === 'stockPurchaseModal') {
-                closeStockPurchaseModal();
-            } else {
-                openModal.classList.remove('show');
-            }
-        }
-    }
-});
+// Make functions globally accessible for HTML onclick attributes
+window.updateSellerContact = updateSellerContact;
+window.openStockPurchaseModal = openStockPurchaseModal;
+window.closeStockPurchaseModal = closeStockPurchaseModal;
+window.addProductItem = addProductItem;
+window.removeProductItem = removeProductItem;
+window.selectExistingProduct = selectExistingProduct;
+window.calculateItemTotal = calculateItemTotal;
+window.validateStockPurchaseForm = validateStockPurchaseForm;
+window.openModal = openModal;
+window.closeModal = closeModal;
+window.openStatusModal = openStatusModal;
+window.openSendEmailModal = openSendEmailModal;
+window.openDeliveryModal = openDeliveryModal;
+window.openInvoiceModal = openInvoiceModal;
+window.calculateInvoiceItemTotal = calculateInvoiceItemTotal;
 
 console.log('Purchase Orders JS loaded with complete stock purchase functionality');

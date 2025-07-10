@@ -103,7 +103,12 @@ class CargusService {
             ];
         }
 
-        return ['success' => false, 'error' => $response['error']];
+        return [
+            'success' => false,
+            'error' => $response['error'],
+            'code' => $response['code'] ?? 0,
+            'raw' => $response['raw'] ?? null
+        ];
     }
 
     private function makeRequest($method, $endpoint, $data = null) {
@@ -145,15 +150,30 @@ class CargusService {
         curl_close($ch);
 
         if ($error) {
-            return ['success' => false, 'error' => $error];
+            return [
+                'success' => false,
+                'error' => $error,
+                'code' => $httpCode,
+                'raw' => $response
+            ];
         }
 
         $decoded = json_decode($response, true);
         if ($httpCode >= 200 && $httpCode < 300) {
-            return ['success' => true, 'data' => $decoded];
+            return [
+                'success' => true,
+                'data' => $decoded,
+                'code' => $httpCode,
+                'raw' => $response
+            ];
         }
 
         $errMsg = $decoded['error'] ?? $decoded['message'] ?? ('HTTP ' . $httpCode);
-        return ['success' => false, 'error' => $errMsg];
+        return [
+            'success' => false,
+            'error' => $errMsg,
+            'code' => $httpCode,
+            'raw' => $response
+        ];
     }
 }

@@ -73,9 +73,10 @@ class AWBController {
             
             // Generate AWB via Cargus
             $result = $this->cargusService->generateAWB($order);
-            
+
             if (!$result['success']) {
-                throw new Exception('Cargus API error: ' . $result['error'], 500);
+                $code = $result['code'] ?? 500;
+                throw new Exception('Cargus API error: ' . $result['error'], $code);
             }
             
             // Update order with AWB info
@@ -96,7 +97,8 @@ class AWBController {
             ]);
             
         } catch (Exception $e) {
-            $this->logAction('awb_generation_failed', $orderId, $e->getMessage());
+            $raw = isset($result) && isset($result['raw']) ? $result['raw'] : '';
+            $this->logAction('awb_generation_failed', $orderId, $e->getMessage() . ($raw ? ' | ' . $raw : ''));
             $this->error($e->getMessage(), $e->getCode() ?: 500);
         }
     }

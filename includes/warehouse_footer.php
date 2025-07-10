@@ -6,6 +6,13 @@ if (!isset($currentPage)) {
     $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
 }
 
+// Load universal warehouse script
+$universalJsPath = BASE_PATH . '/scripts/warehouse-js/warehouse_universal.js';
+if (file_exists($universalJsPath)) {
+    $universalJsUrl = in_prod() ? asset('scripts/warehouse-js/warehouse_universal.js') : BASE_URL . 'scripts/warehouse-js/warehouse_universal.js';
+    echo '<script src="' . $universalJsUrl . '?v=' . filemtime($universalJsPath) . '"></script>';
+}
+
 // Define warehouse-specific JavaScript files mapping (from warehouse-js folder)
 $warehousePageJS = [
     'warehouse_orders' => 'warehouse_orders.js',

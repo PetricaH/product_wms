@@ -25,6 +25,11 @@ if (isset($_SESSION['username'])) {
 }
 ?>
 
+<!-- Mobile menu toggle button -->
+<button class="mobile-menu-btn" id="mobile-menu-btn" aria-label="Open Menu">
+    <span class="material-symbols-outlined">menu</span>
+</button>
+
 <aside class="sidebar" id="sidebar">
     <!-- Sidebar Header -->
     <div class="sidebar__header">
@@ -183,6 +188,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const sidebar = document.getElementById('sidebar');
     const sidebarToggle = document.getElementById('sidebar-toggle');
     const sidebarOverlay = document.getElementById('sidebar-overlay');
+    const mobileMenuBtn = document.getElementById('mobile-menu-btn');
     
     // Load saved sidebar state
     const isCollapsed = localStorage.getItem('sidebar-collapsed') === 'true';
@@ -199,11 +205,18 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Mobile functionality
     if (window.innerWidth <= 768) {
-        // Mobile menu toggle (you can add a mobile menu button)
+        // Mobile menu toggle
         function toggleMobileSidebar() {
             sidebar.classList.toggle('mobile-open');
             sidebarOverlay.classList.toggle('active');
             document.body.style.overflow = sidebar.classList.contains('mobile-open') ? 'hidden' : '';
+        }
+
+        // Open sidebar when clicking the mobile menu button
+        if (mobileMenuBtn) {
+            mobileMenuBtn.addEventListener('click', function() {
+                toggleMobileSidebar();
+            });
         }
         
         // Close sidebar when clicking overlay

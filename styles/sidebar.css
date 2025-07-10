@@ -341,9 +341,29 @@
     .sidebar {
         border-right: 2px solid var(--white);
     }
-    
+
     .sidebar__link--active {
         background-color: var(--white);
         color: var(--black);
+    }
+}
+
+/* ===== MOBILE MENU BUTTON ===== */
+.mobile-menu-btn {
+    display: none;
+    position: fixed;
+    top: 1rem;
+    left: 1rem;
+    background: var(--dark-gray);
+    color: var(--white);
+    border: none;
+    padding: 0.5rem;
+    border-radius: 4px;
+    z-index: 1100;
+}
+
+@media (max-width: 768px) {
+    .mobile-menu-btn {
+        display: block;
     }
 }

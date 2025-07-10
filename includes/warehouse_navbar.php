@@ -31,6 +31,9 @@ $pageTitle = $pageTitles[$currentPage] ?? 'WMS Warehouse';
             <span class="material-symbols-outlined">warehouse</span>
             <?= htmlspecialchars($pageTitle) ?>
         </div>
+        <button class="mobile-menu-toggle" id="mobile-menu-toggle" aria-label="Meniu">
+            <span class="material-symbols-outlined">menu</span>
+        </button>
         <div class="user-info">
             <div id="current-time"></div>
             <div class="user-badge">
@@ -38,6 +41,11 @@ $pageTitle = $pageTitles[$currentPage] ?? 'WMS Warehouse';
                 <span id="worker-name"><?= htmlspecialchars($userName) ?></span>
             </div>
         </div>
+        <ul class="nav-menu" id="nav-menu">
+            <li class="nav-item"><a href="warehouse_orders.php" class="nav-link">Comenzi</a></li>
+            <li class="nav-item"><a href="warehouse_inventory.php" class="nav-link">Stoc</a></li>
+            <li class="nav-item"><a href="warehouse_hub.php" class="nav-link">Hub</a></li>
+        </ul>
     </div>
 </div>
 

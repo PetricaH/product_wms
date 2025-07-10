@@ -44,6 +44,16 @@ Run pending migrations using the migration CLI:
 php migrate.php migrate
 ```
 
+After pulling the latest code, run migrations to add SMTP fields to the `users`
+table:
+
+```bash
+php migrate.php migrate
+```
+
+Then each user can configure their personal SMTP credentials from the profile
+page at `views/users/profile.php`.
+
 ## Running automated tests
 
 A simple test script is provided to verify the API endpoints:

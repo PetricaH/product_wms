@@ -16,10 +16,11 @@ class Users {
     public function findByUsernameOrEmail(string $identifier): ?array {
         try {
             $stmt = $this->db->prepare("
-                SELECT id, username, email, password, role, status, created_at 
-                FROM users 
-                WHERE (username = :identifier OR email = :identifier) 
-                AND status = 1 
+                SELECT id, username, email, password, role, status, created_at,
+                       smtp_host, smtp_port, smtp_user, smtp_pass, smtp_secure
+                FROM users
+                WHERE (username = :identifier OR email = :identifier)
+                AND status = 1
                 LIMIT 1
             ");
             $stmt->bindParam(':identifier', $identifier, PDO::PARAM_STR);
@@ -70,7 +71,7 @@ class Users {
      */
     public function findById(int $id): array|false {
         try {
-            $stmt = $this->db->prepare("SELECT id, username, email, role, status FROM users WHERE id = :id LIMIT 1");
+            $stmt = $this->db->prepare("SELECT id, username, email, role, status, smtp_host, smtp_port, smtp_user, smtp_pass, smtp_secure FROM users WHERE id = :id LIMIT 1");
             $stmt->bindParam(':id', $id, PDO::PARAM_INT);
             $stmt->execute();
             $user = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -97,7 +98,8 @@ class Users {
         $status = $data['status'] ?? 1;
         
         try {
-            $stmt = $this->db->prepare("INSERT INTO users (username, email, password, role, status) VALUES (:username, :email, :password, :role, :status)");
+            $stmt = $this->db->prepare("INSERT INTO users (username, email, password, role, status, smtp_host, smtp_port, smtp_user, smtp_pass, smtp_secure)
+                VALUES (:username, :email, :password, :role, :status, :smtp_host, :smtp_port, :smtp_user, :smtp_pass, :smtp_secure)");
             
             // Now bindParam works because we're passing variables by reference
             $stmt->bindParam(':username', $username, PDO::PARAM_STR);
@@ -105,6 +107,11 @@ class Users {
             $stmt->bindParam(':password', $hashedPassword, PDO::PARAM_STR);
             $stmt->bindParam(':role', $role, PDO::PARAM_STR);
             $stmt->bindParam(':status', $status, PDO::PARAM_INT);
+            $stmt->bindParam(':smtp_host', $data['smtp_host'] ?? null, PDO::PARAM_STR);
+            $stmt->bindParam(':smtp_port', $data['smtp_port'] ?? null, PDO::PARAM_INT);
+            $stmt->bindParam(':smtp_user', $data['smtp_user'] ?? null, PDO::PARAM_STR);
+            $stmt->bindParam(':smtp_pass', $data['smtp_pass'] ?? null, PDO::PARAM_STR);
+            $stmt->bindParam(':smtp_secure', $data['smtp_secure'] ?? null, PDO::PARAM_STR);
             
             $stmt->execute();
             return (int)$this->db->lastInsertId();
@@ -136,9 +143,29 @@ class Users {
             $fields[] = "role = :role"; 
             $params[':role'] = $data['role']; 
         }
-        if (isset($data['status'])) { 
-            $fields[] = "status = :status"; 
-            $params[':status'] = $data['status']; 
+        if (isset($data['status'])) {
+            $fields[] = "status = :status";
+            $params[':status'] = $data['status'];
+        }
+        if (array_key_exists('smtp_host', $data)) {
+            $fields[] = "smtp_host = :smtp_host";
+            $params[':smtp_host'] = $data['smtp_host'];
+        }
+        if (array_key_exists('smtp_port', $data)) {
+            $fields[] = "smtp_port = :smtp_port";
+            $params[':smtp_port'] = $data['smtp_port'];
+        }
+        if (array_key_exists('smtp_user', $data)) {
+            $fields[] = "smtp_user = :smtp_user";
+            $params[':smtp_user'] = $data['smtp_user'];
+        }
+        if (array_key_exists('smtp_pass', $data)) {
+            $fields[] = "smtp_pass = :smtp_pass";
+            $params[':smtp_pass'] = $data['smtp_pass'];
+        }
+        if (array_key_exists('smtp_secure', $data)) {
+            $fields[] = "smtp_secure = :smtp_secure";
+            $params[':smtp_secure'] = $data['smtp_secure'];
         }
         if (isset($data['password']) && !empty($data['password'])) {
             $fields[] = "password = :password";

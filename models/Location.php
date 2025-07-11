@@ -616,13 +616,6 @@ public function getWarehouseVisualizationData($zoneFilter = '', $typeFilter = ''
         $stmt->execute();
         $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-        $levelCapacity = $this->getLevelCapacity();
-
-        foreach ($results as &$location) {
-            $location['level_capacity'] = $levelCapacity;
-            $location['capacity'] = $levelCapacity * self::STANDARD_LEVELS;
-            $totalCapacity = $location['capacity'];
-
             $location['occupancy'] = [
                 'total' => $totalCapacity > 0 ? round(($location['total_items'] / $totalCapacity) * 100, 1) : 0,
                 'bottom' => $levelCapacity > 0 ? round(($location['bottom_items'] / $levelCapacity) * 100, 1) : 0,

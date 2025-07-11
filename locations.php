@@ -152,7 +152,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 if (!$locationDetails) {
                     throw new Exception('Locația nu a fost găsită.');
                 }
-                
+               
                 
                 echo json_encode([
                     'success' => true,
@@ -810,4 +810,3 @@ INSERT INTO locations (location_code, type, grid_row, grid_col, available_levels
 ('ENTRANCE', 'zone', 3, 1, ''),
 ('TOILET', 'zone', 4, 1, '');
 */
-?>

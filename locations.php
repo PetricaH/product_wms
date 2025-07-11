@@ -153,18 +153,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     throw new Exception('Locația nu a fost găsită.');
                 }
                 
-                // Calculate additional metrics
-                $levelCapacity = intval($locationDetails['capacity']) / 3;
+                // Calculate additional metrics using geometry constants
+                $levelCapacity = 36; // 2.98m x 1m shelf fits 36 x 25L barrels per level
+                $totalCapacity = $levelCapacity * 3;
                 $locationDetails['level_capacity'] = $levelCapacity;
-                
+
                 $locationDetails['occupancy'] = [
-                    'total' => $locationDetails['capacity'] > 0 ? 
-                        round(($locationDetails['total_items'] / $locationDetails['capacity']) * 100, 1) : 0,
-                    'bottom' => $levelCapacity > 0 ? 
+                    'total' => $totalCapacity > 0 ?
+                        round(($locationDetails['total_items'] / $totalCapacity) * 100, 1) : 0,
+                    'bottom' => $levelCapacity > 0 ?
                         round(($locationDetails['bottom_items'] / $levelCapacity) * 100, 1) : 0,
-                    'middle' => $levelCapacity > 0 ? 
+                    'middle' => $levelCapacity > 0 ?
                         round(($locationDetails['middle_items'] / $levelCapacity) * 100, 1) : 0,
-                    'top' => $levelCapacity > 0 ? 
+                    'top' => $levelCapacity > 0 ?
                         round(($locationDetails['top_items'] / $levelCapacity) * 100, 1) : 0
                 ];
                 
@@ -534,7 +535,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                 <div class="card">
                     <div class="card-body">
                         <?php if (!empty($locations)): ?>
-                            <div class="table-container">
+                            <div class="table-container table-responsive d-none">
                                 <table class="table">
                                     <thead>
                                         <tr>
@@ -807,3 +808,21 @@ window.currentFilters = {
 };
 </script>
     <?php require_once __DIR__ . '/includes/footer.php'; ?>
+
+<?php
+// SQL for updating warehouse layout
+/*
+DELETE FROM locations;
+
+INSERT INTO locations (location_code, type, grid_row, grid_col, available_levels) VALUES
+('S1', 'shelf', 1, 1, 'bottom,middle,top'),
+('S2', 'shelf', 1, 2, 'bottom,middle,top'),
+('S3', 'shelf', 2, 1, 'bottom,middle,top'),
+('PASS1', 'shelf', 2, 2, 'middle,top'),
+('STORAGE', 'zone', 1, 3, ''),
+('ADMIN', 'zone', 2, 3, ''),
+('PACK', 'zone', 3, 3, ''),
+('ENTRANCE', 'zone', 3, 1, ''),
+('TOILET', 'zone', 4, 1, '');
+*/
+?>

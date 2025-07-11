@@ -615,12 +615,13 @@ public function getWarehouseVisualizationData($zoneFilter = '', $typeFilter = ''
         }
         $stmt->execute();
         $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        
+
         $levelCapacity = $this->getLevelCapacity();
 
         foreach ($results as &$location) {
             $location['level_capacity'] = $levelCapacity;
-            $totalCapacity = $levelCapacity * self::STANDARD_LEVELS;
+            $location['capacity'] = $levelCapacity * self::STANDARD_LEVELS;
+            $totalCapacity = $location['capacity'];
 
             $location['occupancy'] = [
                 'total' => $totalCapacity > 0 ? round(($location['total_items'] / $totalCapacity) * 100, 1) : 0,
@@ -662,7 +663,24 @@ public function getLocationDetails($locationId) {
         $stmt = $this->conn->prepare($query);
         $stmt->bindValue(':id', $locationId, PDO::PARAM_INT);
         $stmt->execute();
-        return $stmt->fetch(PDO::FETCH_ASSOC);
+        $data = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$data) {
+            return false;
+        }
+
+        $levelCapacity = $this->getLevelCapacity();
+        $data['level_capacity'] = $levelCapacity;
+        $data['capacity'] = $levelCapacity * self::STANDARD_LEVELS;
+        $totalCapacity = $data['capacity'];
+
+        $data['occupancy'] = [
+            'total' => $totalCapacity > 0 ? round(($data['total_items'] / $totalCapacity) * 100, 1) : 0,
+            'bottom' => $levelCapacity > 0 ? round(($data['bottom_items'] / $levelCapacity) * 100, 1) : 0,
+            'middle' => $levelCapacity > 0 ? round(($data['middle_items'] / $levelCapacity) * 100, 1) : 0,
+            'top' => $levelCapacity > 0 ? round(($data['top_items'] / $levelCapacity) * 100, 1) : 0,
+        ];
+
+        return $data;
     } catch (PDOException $e) {
         error_log("Error getting location details: " . $e->getMessage());
         return false;

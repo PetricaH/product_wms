@@ -550,4 +550,143 @@ public function countOccupiedLocations(): int {
         return 0;
     }
 }
+
+/**
+ * Get warehouse visualization data with level breakdown
+ * @param string $zoneFilter
+ * @param string $typeFilter  
+ * @param string $search
+ * @return array
+ */
+public function getWarehouseVisualizationData($zoneFilter = '', $typeFilter = '', $search = '') {
+    $query = "SELECT 
+                l.id,
+                l.location_code,
+                l.zone,
+                l.type,
+                l.capacity,
+                l.status,
+                l.notes,
+                COALESCE(SUM(i.quantity), 0) as total_items,
+                COALESCE(SUM(CASE WHEN i.shelf_level = 'bottom' THEN i.quantity ELSE 0 END), 0) as bottom_items,
+                COALESCE(SUM(CASE WHEN i.shelf_level = 'middle' THEN i.quantity ELSE 0 END), 0) as middle_items,
+                COALESCE(SUM(CASE WHEN i.shelf_level = 'top' THEN i.quantity ELSE 0 END), 0) as top_items,
+                COUNT(DISTINCT i.product_id) as unique_products
+              FROM {$this->table} l
+              LEFT JOIN inventory i ON l.id = i.location_id
+              WHERE l.status = 'active'";
+    
+    $params = [];
+    
+    if (!empty($zoneFilter)) {
+        $query .= " AND l.zone = :zone";
+        $params[':zone'] = $zoneFilter;
+    }
+    
+    if (!empty($typeFilter)) {
+        $query .= " AND l.type = :type";
+        $params[':type'] = $typeFilter;
+    }
+    
+    if (!empty($search)) {
+        $query .= " AND l.location_code LIKE :search";
+        $params[':search'] = '%' . $search . '%';
+    }
+    
+    $query .= " GROUP BY l.id ORDER BY l.zone, l.location_code";
+    
+    try {
+        $stmt = $this->conn->prepare($query);
+        foreach ($params as $key => $value) {
+            $stmt->bindValue($key, $value);
+        }
+        $stmt->execute();
+        $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        // Calculate level percentages
+        foreach ($results as &$location) {
+            $levelCapacity = intval($location['capacity']) / 3; // Each level has 1/3 capacity
+            
+            $location['occupancy'] = [
+                'total' => $location['capacity'] > 0 ? round(($location['total_items'] / $location['capacity']) * 100, 1) : 0,
+                'bottom' => $levelCapacity > 0 ? round(($location['bottom_items'] / $levelCapacity) * 100, 1) : 0,
+                'middle' => $levelCapacity > 0 ? round(($location['middle_items'] / $levelCapacity) * 100, 1) : 0,
+                'top' => $levelCapacity > 0 ? round(($location['top_items'] / $levelCapacity) * 100, 1) : 0
+            ];
+            
+            $location['level_capacity'] = $levelCapacity;
+        }
+        
+        return $results;
+        
+    } catch (PDOException $e) {
+        error_log("Error getting warehouse visualization data: " . $e->getMessage());
+        return [];
+    }
+}
+
+/**
+ * Get detailed location information for modal
+ * @param int $locationId
+ * @return array
+ */
+public function getLocationDetails($locationId) {
+    $query = "SELECT 
+                l.*,
+                COALESCE(SUM(i.quantity), 0) as total_items,
+                COALESCE(SUM(CASE WHEN i.shelf_level = 'bottom' THEN i.quantity ELSE 0 END), 0) as bottom_items,
+                COALESCE(SUM(CASE WHEN i.shelf_level = 'middle' THEN i.quantity ELSE 0 END), 0) as middle_items,
+                COALESCE(SUM(CASE WHEN i.shelf_level = 'top' THEN i.quantity ELSE 0 END), 0) as top_items,
+                COUNT(DISTINCT i.product_id) as unique_products,
+                GROUP_CONCAT(DISTINCT p.name SEPARATOR ', ') as product_names
+              FROM {$this->table} l
+              LEFT JOIN inventory i ON l.id = i.location_id
+              LEFT JOIN products p ON i.product_id = p.product_id
+              WHERE l.id = :id
+              GROUP BY l.id";
+    
+    try {
+        $stmt = $this->conn->prepare($query);
+        $stmt->bindValue(':id', $locationId, PDO::PARAM_INT);
+        $stmt->execute();
+        return $stmt->fetch(PDO::FETCH_ASSOC);
+    } catch (PDOException $e) {
+        error_log("Error getting location details: " . $e->getMessage());
+        return false;
+    }
+}
+
+/**
+ * Update inventory level for a specific location and shelf level
+ * @param int $locationId
+ * @param string $level (bottom, middle, top)
+ * @param int $productId
+ * @param int $quantity
+ * @return bool
+ */
+public function updateShelfLevel($locationId, $level, $productId, $quantity) {
+    $validLevels = ['bottom', 'middle', 'top'];
+    if (!in_array($level, $validLevels)) {
+        return false;
+    }
+    
+    $query = "INSERT INTO inventory (location_id, product_id, shelf_level, quantity, updated_at) 
+              VALUES (:location_id, :product_id, :level, :quantity, NOW())
+              ON DUPLICATE KEY UPDATE 
+              quantity = :quantity, 
+              updated_at = NOW()";
+    
+    try {
+        $stmt = $this->conn->prepare($query);
+        $stmt->bindValue(':location_id', $locationId, PDO::PARAM_INT);
+        $stmt->bindValue(':product_id', $productId, PDO::PARAM_INT);
+        $stmt->bindValue(':level', $level);
+        $stmt->bindValue(':quantity', $quantity, PDO::PARAM_INT);
+        
+        return $stmt->execute();
+    } catch (PDOException $e) {
+        error_log("Error updating shelf level: " . $e->getMessage());
+        return false;
+    }
+}
 }

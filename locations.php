@@ -110,6 +110,186 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
+    header('Content-Type: application/json');
+    
+    switch ($_POST['action']) {
+        case 'get_warehouse_data':
+            try {
+                $zoneFilter = trim($_POST['zone'] ?? '');
+                $typeFilter = trim($_POST['type'] ?? '');
+                $search = trim($_POST['search'] ?? '');
+                
+                $warehouseData = $locationModel->getWarehouseVisualizationData($zoneFilter, $typeFilter, $search);
+                
+                echo json_encode([
+                    'success' => true,
+                    'locations' => $warehouseData,
+                    'timestamp' => time()
+                ]);
+                exit;
+                
+            } catch (Exception $e) {
+                error_log("Error fetching warehouse data: " . $e->getMessage());
+                echo json_encode([
+                    'success' => false,
+                    'message' => 'Eroare la încărcarea datelor depozitului.'
+                ]);
+                exit;
+            }
+            break;
+            
+        case 'get_location_details':
+            try {
+                $locationId = intval($_POST['id'] ?? 0);
+                
+                if ($locationId <= 0) {
+                    throw new InvalidArgumentException('ID locație invalid.');
+                }
+                
+                $locationDetails = $locationModel->getLocationDetails($locationId);
+                
+                if (!$locationDetails) {
+                    throw new Exception('Locația nu a fost găsită.');
+                }
+                
+                // Calculate additional metrics
+                $levelCapacity = intval($locationDetails['capacity']) / 3;
+                $locationDetails['level_capacity'] = $levelCapacity;
+                
+                $locationDetails['occupancy'] = [
+                    'total' => $locationDetails['capacity'] > 0 ? 
+                        round(($locationDetails['total_items'] / $locationDetails['capacity']) * 100, 1) : 0,
+                    'bottom' => $levelCapacity > 0 ? 
+                        round(($locationDetails['bottom_items'] / $levelCapacity) * 100, 1) : 0,
+                    'middle' => $levelCapacity > 0 ? 
+                        round(($locationDetails['middle_items'] / $levelCapacity) * 100, 1) : 0,
+                    'top' => $levelCapacity > 0 ? 
+                        round(($locationDetails['top_items'] / $levelCapacity) * 100, 1) : 0
+                ];
+                
+                echo json_encode([
+                    'success' => true,
+                    'location' => $locationDetails
+                ]);
+                exit;
+                
+            } catch (Exception $e) {
+                error_log("Error fetching location details: " . $e->getMessage());
+                echo json_encode([
+                    'success' => false,
+                    'message' => $e->getMessage()
+                ]);
+                exit;
+            }
+            break;
+            
+        case 'update_shelf_level':
+            try {
+                $locationId = intval($_POST['location_id'] ?? 0);
+                $level = trim($_POST['level'] ?? '');
+                $productId = intval($_POST['product_id'] ?? 0);
+                $quantity = intval($_POST['quantity'] ?? 0);
+                
+                if ($locationId <= 0 || !in_array($level, ['bottom', 'middle', 'top']) || $productId <= 0) {
+                    throw new InvalidArgumentException('Parametrii inválizi.');
+                }
+                
+                $success = $locationModel->updateShelfLevel($locationId, $level, $productId, $quantity);
+                
+                if ($success) {
+                    echo json_encode([
+                        'success' => true,
+                        'message' => 'Nivelul a fost actualizat cu succes.'
+                    ]);
+                } else {
+                    throw new Exception('Eroare la actualizarea nivelului.');
+                }
+                exit;
+                
+            } catch (Exception $e) {
+                error_log("Error updating shelf level: " . $e->getMessage());
+                echo json_encode([
+                    'success' => false,
+                    'message' => $e->getMessage()
+                ]);
+                exit;
+            }
+            break;
+            
+        default:
+            echo json_encode([
+                'success' => false,
+                'message' => 'Acțiune necunoscută.'
+            ]);
+            exit;
+    }
+}
+
+// Handle GET requests for AJAX
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action'])) {
+    header('Content-Type: application/json');
+    
+    switch ($_GET['action']) {
+        case 'get_warehouse_data':
+            try {
+                $zoneFilter = trim($_GET['zone'] ?? '');
+                $typeFilter = trim($_GET['type'] ?? '');
+                $search = trim($_GET['search'] ?? '');
+                
+                $warehouseData = $locationModel->getWarehouseVisualizationData($zoneFilter, $typeFilter, $search);
+                
+                echo json_encode([
+                    'success' => true,
+                    'locations' => $warehouseData,
+                    'timestamp' => time()
+                ]);
+                exit;
+                
+            } catch (Exception $e) {
+                error_log("Error fetching warehouse data: " . $e->getMessage());
+                echo json_encode([
+                    'success' => false,
+                    'message' => 'Eroare la încărcarea datelor depozitului.'
+                ]);
+                exit;
+            }
+            break;
+    }
+}
+
+$zoneFilter = trim($_GET['zone'] ?? $_POST['zone'] ?? '');
+$typeFilter = trim($_GET['type'] ?? $_POST['type'] ?? '');
+$search = trim($_GET['search'] ?? $_POST['search'] ?? '');
+
+try {
+    $warehouseData = $locationModel->getWarehouseVisualizationData($zoneFilter, $typeFilter, $search);
+    $warehouseStats = [
+        'total_locations' => count($warehouseData),
+        'occupied_locations' => count(array_filter($warehouseData, function($loc) { 
+            return isset($loc['total_items']) && $loc['total_items'] > 0; 
+        })),
+        'total_items' => array_sum(array_column($warehouseData, 'total_items')),
+        'high_occupancy_count' => count(array_filter($warehouseData, function($loc) { 
+            return isset($loc['occupancy']['total']) && $loc['occupancy']['total'] >= 80; 
+        }))
+    ];
+    
+    $overallOccupancy = $warehouseStats['total_locations'] > 0 
+        ? round(($warehouseStats['occupied_locations'] / $warehouseStats['total_locations']) * 100, 1) 
+        : 0;
+} catch (Exception $e) {
+    error_log("Warehouse visualization error: " . $e->getMessage());
+    $warehouseData = [];
+    $warehouseStats = [
+        'total_locations' => 0, 
+        'occupied_locations' => 0, 
+        'total_items' => 0, 
+        'high_occupancy_count' => 0
+    ];
+    $overallOccupancy = 0;
+}
+
 // Get filters
 $zoneFilter = $_GET['zone'] ?? '';
 $typeFilter = $_GET['type'] ?? '';
@@ -218,6 +398,137 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                         </form>
                     </div>
                 </div>
+
+                <!-- Warehouse Visualization Section -->
+                <div class="warehouse-visualization-section" id="warehouseVisualization">
+                <div class="visualization-header">
+                    <h3 class="section-title">
+                        <span class="material-symbols-outlined">warehouse</span>
+                        Vizualizare Depozit
+                    </h3>
+                    <div class="view-controls">
+                        <button class="view-btn active" data-view="total" title="Vizualizare generală">
+                            <span class="material-symbols-outlined">visibility</span>
+                            <span>Total</span>
+                        </button>
+                        <button class="view-btn" data-view="bottom" title="Nivel inferior">
+                            <span class="material-symbols-outlined">vertical_align_bottom</span>
+                            <span>Jos</span>
+                        </button>
+                        <button class="view-btn" data-view="middle" title="Nivel mijloc">
+                            <span class="material-symbols-outlined">horizontal_rule</span>
+                            <span>Mijloc</span>
+                        </button>
+                        <button class="view-btn" data-view="top" title="Nivel superior">
+                            <span class="material-symbols-outlined">vertical_align_top</span>
+                            <span>Sus</span>
+                        </button>
+                        <button class="view-btn" data-view="table" title="Comutare la vizualizarea tabel">
+                            <span class="material-symbols-outlined">table_view</span>
+                            <span>Tabel</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="warehouse-stats">
+                    <div class="stat-card">
+                        <div class="stat-icon">
+                            <span class="material-symbols-outlined">assessment</span>
+                        </div>
+                        <div class="stat-content">
+                            <div class="stat-value"><?= $overallOccupancy ?>%</div>
+                            <div class="stat-label">Ocupare Generală</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">
+                            <span class="material-symbols-outlined">shelves</span>
+                        </div>
+                        <div class="stat-content">
+                            <div class="stat-value"><?= $warehouseStats['occupied_locations'] ?>/<?= $warehouseStats['total_locations'] ?></div>
+                            <div class="stat-label">Locații Active</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">
+                            <span class="material-symbols-outlined">inventory_2</span>
+                        </div>
+                        <div class="stat-content">
+                            <div class="stat-value"><?= number_format($warehouseStats['total_items']) ?></div>
+                            <div class="stat-label">Total Articole</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon warning">
+                            <span class="material-symbols-outlined">warning</span>
+                        </div>
+                        <div class="stat-content">
+                            <div class="stat-value"><?= $warehouseStats['high_occupancy_count'] ?></div>
+                            <div class="stat-label">Ocupare Înaltă</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="warehouse-layout-container" id="warehouseLayoutContainer">
+                    <div class="warehouse-grid">
+                        <!-- Admin Area -->
+                        <div class="zone-area admin-zone">
+                            <span class="material-symbols-outlined">admin_panel_settings</span>
+                            <span class="zone-label">Admin<br>Area</span>
+                        </div>
+                        
+                        <!-- Main Shelves Grid -->
+                        <div class="shelves-grid" id="shelvesGrid">
+                            <!-- Shelves will be populated by JavaScript -->
+                        </div>
+                        
+                        <!-- Storage Area -->
+                        <div class="zone-area storage-zone">
+                            <span class="material-symbols-outlined">inventory</span>
+                            <span class="zone-label">Stocare</span>
+                        </div>
+                        
+                        <!-- Entrance -->
+                        <div class="zone-area entrance-zone">
+                            <span class="material-symbols-outlined">door_front</span>
+                            <span class="zone-label">Intrare</span>
+                        </div>
+                        
+                        <!-- Exit -->
+                        <div class="zone-area exit-zone">
+                            <span class="material-symbols-outlined">exit_to_app</span>
+                            <span class="zone-label">Ieșire</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="occupancy-legend">
+                    <div class="legend-title">Legenda ocupării:</div>
+                    <div class="legend-items">
+                        <div class="legend-item">
+                            <div class="legend-indicator occupancy-empty"></div>
+                            <span>Gol (0%)</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-indicator occupancy-low"></div>
+                            <span>Scăzut (1-50%)</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-indicator occupancy-medium"></div>
+                            <span>Mediu (51-79%)</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-indicator occupancy-high"></div>
+                            <span>Ridicat (80-94%)</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-indicator occupancy-full"></div>
+                            <span>Complet (95%+)</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
 
                 <!-- Locations Table -->
                 <div class="card">
@@ -362,6 +673,28 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
         </div>
     </div>
 
+    <!-- Location Details Modal -->
+    <div class="modal fade" id="locationDetailsModal" tabindex="-1" aria-labelledby="locationDetailsModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="locationDetailsModalLabel">
+                        <span class="material-symbols-outlined">location_on</span>
+                        Detalii Locație
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body" id="locationDetailsContent">
+                    <!-- Content populated by JavaScript -->
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Închide</button>
+                    <button type="button" class="btn btn-primary" id="editLocationBtn">Editează Locația</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Create/Edit Location Modal -->
     <div class="modal" id="locationModal">
         <div class="modal-dialog">
@@ -463,4 +796,14 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
         </div>
     </div>
 
+    <script>
+// Pass PHP data to JavaScript
+window.warehouseData = <?= json_encode($warehouseData) ?>;
+window.warehouseStats = <?= json_encode($warehouseStats) ?>;
+window.currentFilters = {
+    zone: '<?= htmlspecialchars($zoneFilter) ?>',
+    type: '<?= htmlspecialchars($typeFilter) ?>',
+    search: '<?= htmlspecialchars($search) ?>'
+};
+</script>
     <?php require_once __DIR__ . '/includes/footer.php'; ?>

@@ -359,3 +359,564 @@
     margin-bottom: 0.5rem;
     color: var(--text-primary);
 }
+
+.warehouse-visualization-section {
+    background-color: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+/* === HEADER === */
+.visualization-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.section-title {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: #1a202c;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.section-title .material-symbols-outlined {
+    font-size: 1.5rem;
+    color: #4a5568;
+}
+
+/* === VIEW CONTROLS === */
+.view-controls {
+    display: flex;
+    gap: 2px;
+    background-color: #f7fafc;
+    border-radius: 6px;
+    padding: 4px;
+    border: 1px solid #e2e8f0;
+}
+
+.view-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.5rem 0.75rem;
+    background-color: transparent;
+    border: none;
+    border-radius: 4px;
+    color: #4a5568;
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+}
+
+.view-btn:hover {
+    background-color: #edf2f7;
+    color: #2d3748;
+}
+
+.view-btn.active {
+    background-color: #ffffff;
+    color: #1a202c;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+    font-weight: 600;
+}
+
+.view-btn .material-symbols-outlined {
+    font-size: 1rem;
+}
+
+/* === WAREHOUSE STATS === */
+.warehouse-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.stat-card {
+    background-color: #f7fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    transition: all 0.2s ease;
+}
+
+.stat-card:hover {
+    background-color: #edf2f7;
+    border-color: #cbd5e0;
+}
+
+.stat-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    background-color: #e2e8f0;
+    border-radius: 6px;
+    flex-shrink: 0;
+}
+
+.stat-icon .material-symbols-outlined {
+    font-size: 1.25rem;
+    color: #4a5568;
+}
+
+.stat-icon.warning .material-symbols-outlined {
+    color: #e53e3e;
+}
+
+.stat-content {
+    flex: 1;
+}
+
+.stat-value {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #1a202c;
+    margin-bottom: 0.25rem;
+    line-height: 1.2;
+}
+
+.stat-label {
+    font-size: 0.85rem;
+    color: #4a5568;
+    font-weight: 500;
+}
+
+/* === WAREHOUSE LAYOUT === */
+.warehouse-layout-container {
+    background-color: #f7fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 2rem;
+    margin-bottom: 1rem;
+    min-height: 500px;
+}
+
+.warehouse-grid {
+    display: grid;
+    grid-template-areas: 
+        "admin shelves shelves storage"
+        "admin shelves shelves storage"
+        "entrance entrance exit exit";
+    grid-template-columns: 1fr 3fr 3fr 1fr;
+    grid-template-rows: 1fr 1fr auto;
+    gap: 1rem;
+    max-width: 1200px;
+    margin: 0 auto;
+    height: 450px;
+}
+
+.zone-area {
+    border-radius: 6px;
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    font-weight: 600;
+    text-align: center;
+    font-size: 0.9rem;
+    color: #1a202c;
+    background-color: #edf2f7;
+    border: 1px solid #cbd5e0;
+    transition: all 0.2s ease;
+}
+
+.zone-area:hover {
+    background-color: #e2e8f0;
+}
+
+.zone-area .material-symbols-outlined {
+    font-size: 1.5rem;
+    color: #4a5568;
+}
+
+.zone-label {
+    font-size: 0.85rem;
+    line-height: 1.2;
+    color: #4a5568;
+}
+
+.admin-zone { grid-area: admin; }
+.storage-zone { grid-area: storage; }
+.entrance-zone { grid-area: entrance; }
+.exit-zone { grid-area: exit; }
+
+/* === SHELVES GRID === */
+.shelves-grid {
+    grid-area: shelves;
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    grid-template-rows: repeat(3, 1fr);
+    gap: 0.75rem;
+    padding: 1rem;
+    background-color: #ffffff;
+    border-radius: 6px;
+    border: 1px solid #e2e8f0;
+}
+
+/* === SHELF STYLES === */
+.shelf-container {
+    background-color: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    padding: 0.75rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    position: relative;
+    min-height: 80px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+.shelf-container:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    border-color: #a0aec0;
+}
+
+.shelf-container:focus {
+    outline: 2px solid #4a5568;
+    outline-offset: 1px;
+}
+
+.shelf-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+}
+
+.shelf-code {
+    font-weight: 600;
+    font-size: 0.75rem;
+    color: #1a202c;
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    background: #f7fafc;
+    padding: 0.2rem 0.4rem;
+    border-radius: 3px;
+    border: 1px solid #e2e8f0;
+}
+
+.shelf-occupancy-badge {
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 0.2rem 0.4rem;
+    border-radius: 3px;
+    min-width: 35px;
+    text-align: center;
+    border: 1px solid transparent;
+}
+
+.shelf-levels {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    align-items: stretch;
+}
+
+.shelf-level {
+    height: 6px;
+    background-color: #edf2f7;
+    border-radius: 2px;
+    overflow: hidden;
+    position: relative;
+    border: 1px solid #e2e8f0;
+}
+
+.level-fill {
+    height: 100%;
+    border-radius: 1px;
+    transition: width 0.3s ease;
+    position: relative;
+}
+
+/* === OCCUPANCY COLORS - MONOCHROME === */
+.occupancy-empty { 
+    background-color: #f7fafc;
+    color: #4a5568;
+    border-color: #e2e8f0;
+}
+
+.occupancy-low { 
+    background-color: #edf2f7;
+    color: #2d3748;
+    border-color: #cbd5e0;
+}
+
+.occupancy-medium { 
+    background-color: #e2e8f0;
+    color: #1a202c;
+    border-color: #a0aec0;
+}
+
+.occupancy-high { 
+    background-color: #cbd5e0;
+    color: #1a202c;
+    border-color: #718096;
+}
+
+.occupancy-full { 
+    background-color: #a0aec0;
+    color: #ffffff;
+    border-color: #718096;
+}
+
+/* Level fills */
+.level-fill.occupancy-empty { background-color: #f7fafc; }
+.level-fill.occupancy-low { background-color: #edf2f7; }
+.level-fill.occupancy-medium { background-color: #e2e8f0; }
+.level-fill.occupancy-high { background-color: #cbd5e0; }
+.level-fill.occupancy-full { background-color: #a0aec0; }
+
+/* === VIEW MODES === */
+.view-mode-total .shelf-levels {
+    display: none;
+}
+
+.view-mode-total .shelf-occupancy-badge {
+    font-size: 0.85rem;
+    padding: 0.3rem 0.6rem;
+}
+
+.view-mode-level .shelf-level {
+    opacity: 0.3;
+    height: 4px;
+}
+
+.view-mode-level .shelf-level.active {
+    opacity: 1;
+    height: 12px;
+    border-width: 2px;
+    border-color: #4a5568;
+}
+
+/* === LEGEND === */
+.occupancy-legend {
+    background-color: #f7fafc;
+    border-radius: 6px;
+    padding: 1rem;
+    border: 1px solid #e2e8f0;
+}
+
+.legend-title {
+    font-weight: 600;
+    color: #1a202c;
+    margin-bottom: 0.75rem;
+    font-size: 0.9rem;
+}
+
+.legend-items {
+    display: flex;
+    justify-content: center;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.85rem;
+    color: #4a5568;
+    padding: 0.25rem 0.5rem;
+    border-radius: 3px;
+    transition: all 0.2s ease;
+}
+
+.legend-item:hover {
+    background-color: #edf2f7;
+    color: #2d3748;
+}
+
+.legend-indicator {
+    width: 12px;
+    height: 12px;
+    border-radius: 2px;
+    border: 1px solid #e2e8f0;
+}
+
+/* === LOADING & EMPTY STATES === */
+.warehouse-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 300px;
+    color: #4a5568;
+    font-size: 0.9rem;
+}
+
+.warehouse-loading .material-symbols-outlined {
+    animation: spin 1s linear infinite;
+    margin-right: 0.5rem;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.warehouse-empty {
+    text-align: center;
+    padding: 3rem 2rem;
+    color: #4a5568;
+}
+
+.warehouse-empty .material-symbols-outlined {
+    font-size: 3rem;
+    color: #cbd5e0;
+    margin-bottom: 1rem;
+}
+
+/* === RESPONSIVE DESIGN === */
+@media (max-width: 1024px) {
+    .warehouse-grid {
+        grid-template-areas: 
+            "shelves shelves"
+            "admin storage"
+            "entrance exit";
+        grid-template-columns: 1fr 1fr;
+        grid-template-rows: 2fr auto auto;
+        height: 400px;
+    }
+    
+    .shelves-grid {
+        grid-template-columns: repeat(4, 1fr);
+        grid-template-rows: repeat(3, 1fr);
+    }
+}
+
+@media (max-width: 768px) {
+    .warehouse-visualization-section {
+        padding: 1rem;
+    }
+    
+    .visualization-header {
+        flex-direction: column;
+        gap: 1rem;
+        align-items: stretch;
+    }
+    
+    .view-controls {
+        justify-content: center;
+    }
+    
+    .warehouse-stats {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    
+    .warehouse-layout-container {
+        padding: 1rem;
+    }
+    
+    .warehouse-grid {
+        grid-template-areas: 
+            "shelves"
+            "admin"
+            "storage"
+            "entrance"
+            "exit";
+        grid-template-columns: 1fr;
+        grid-template-rows: 3fr repeat(4, auto);
+        height: auto;
+        gap: 0.75rem;
+    }
+    
+    .zone-area {
+        min-height: 60px;
+        flex-direction: row;
+        padding: 0.75rem;
+    }
+    
+    .zone-area .material-symbols-outlined {
+        font-size: 1.25rem;
+    }
+    
+    .shelves-grid {
+        grid-template-columns: repeat(3, 1fr);
+        grid-template-rows: repeat(3, 1fr);
+        gap: 0.5rem;
+        min-height: 250px;
+    }
+    
+    .legend-items {
+        gap: 1rem;
+        justify-content: flex-start;
+    }
+}
+
+@media (max-width: 480px) {
+    .warehouse-stats {
+        grid-template-columns: 1fr;
+    }
+    
+    .view-controls {
+        flex-direction: column;
+        gap: 2px;
+    }
+    
+    .shelves-grid {
+        grid-template-columns: repeat(2, 1fr);
+        grid-template-rows: repeat(4, 1fr);
+    }
+    
+    .shelf-container {
+        min-height: 70px;
+        padding: 0.5rem;
+    }
+    
+    .legend-items {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.5rem;
+    }
+}
+
+/* === ACCESSIBILITY === */
+@media (prefers-reduced-motion: reduce) {
+    * {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
+
+/* === PRINT STYLES === */
+@media print {
+    .view-controls {
+        display: none !important;
+    }
+    
+    .warehouse-visualization-section {
+        box-shadow: none;
+        border: 1px solid #000;
+    }
+    
+    .warehouse-grid {
+        height: auto;
+        min-height: 400px;
+    }
+    
+    .shelf-container {
+        border: 1px solid #000;
+    }
+}

@@ -283,12 +283,18 @@ class WarehouseVisualization {
 
     switchView(newView) {
         this.currentView = newView;
-        
-        // Update active button
+
         document.querySelectorAll('.view-btn').forEach(btn => {
             btn.classList.remove('active');
         });
         document.querySelector(`[data-view="${newView}"]`)?.classList.add('active');
+
+        const warehouseSection = document.getElementById('warehouseVisualization');
+        const tableSection = document.querySelector('.table-responsive');
+        if (warehouseSection && tableSection) {
+            warehouseSection.classList.remove('d-none');
+            tableSection.classList.add('d-none');
+        }
 
         this.renderWarehouse();
     }
@@ -296,18 +302,10 @@ class WarehouseVisualization {
     toggleTableView() {
         const warehouseSection = document.getElementById('warehouseVisualization');
         const tableSection = document.querySelector('.table-responsive');
-        
+
         if (warehouseSection && tableSection) {
-            const isWarehouseVisible = !warehouseSection.classList.contains('d-none');
-            
-            warehouseSection.classList.toggle('d-none');
-            tableSection.classList.toggle('d-none');
-            
-            // Update button text
-            const tableBtn = document.querySelector('[data-view="table"] span:last-child');
-            if (tableBtn) {
-                tableBtn.textContent = isWarehouseVisible ? 'Vizual' : 'Tabel';
-            }
+            warehouseSection.classList.add('d-none');
+            tableSection.classList.remove('d-none');
         }
     }
 
@@ -593,7 +591,19 @@ class WarehouseVisualization {
 
 // Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
-    if (document.getElementById('warehouseVisualization')) {
+    const warehouseEl = document.getElementById('warehouseVisualization');
+    const tableEl = document.querySelector('.table-responsive');
+    const controls = document.querySelector('.view-controls');
+
+    if (window.innerWidth <= 768) {
+        warehouseEl?.classList.add('d-none');
+        tableEl?.classList.remove('d-none');
+        controls?.classList.add('d-none');
+    } else if (warehouseEl && tableEl) {
+        tableEl.classList.add('d-none');
+    }
+
+    if (warehouseEl) {
         window.warehouseViz = new WarehouseVisualization();
     }
 });

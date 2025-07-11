@@ -152,22 +152,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 if (!$locationDetails) {
                     throw new Exception('Locația nu a fost găsită.');
                 }
-                
-                // Calculate additional metrics using geometry constants
-                $levelCapacity = 36; // 2.98m x 1m shelf fits 36 x 25L barrels per level
-                $totalCapacity = $levelCapacity * 3;
-                $locationDetails['level_capacity'] = $levelCapacity;
-
-                $locationDetails['occupancy'] = [
-                    'total' => $totalCapacity > 0 ?
-                        round(($locationDetails['total_items'] / $totalCapacity) * 100, 1) : 0,
-                    'bottom' => $levelCapacity > 0 ?
-                        round(($locationDetails['bottom_items'] / $levelCapacity) * 100, 1) : 0,
-                    'middle' => $levelCapacity > 0 ?
-                        round(($locationDetails['middle_items'] / $levelCapacity) * 100, 1) : 0,
-                    'top' => $levelCapacity > 0 ?
-                        round(($locationDetails['top_items'] / $levelCapacity) * 100, 1) : 0
-                ];
+               
                 
                 echo json_encode([
                     'success' => true,
@@ -825,4 +810,3 @@ INSERT INTO locations (location_code, type, grid_row, grid_col, available_levels
 ('ENTRANCE', 'zone', 3, 1, ''),
 ('TOILET', 'zone', 4, 1, '');
 */
-?>

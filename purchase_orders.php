@@ -10,6 +10,13 @@ if (!defined('BASE_PATH')) {
 }
 require_once BASE_PATH . '/bootstrap.php';
 require_once BASE_PATH . '/vendor/autoload.php';
+
+if (!class_exists('FPDF')) {
+    if (file_exists(BASE_PATH . '/lib/fpdf.php')) {
+        require_once BASE_PATH . '/lib/fpdf.php';
+    }
+}
+
 require_once BASE_PATH . '/lib/PHPMailer/PHPMailer.php';
 require_once BASE_PATH . '/lib/PHPMailer/SMTP.php';
 require_once BASE_PATH . '/lib/PHPMailer/Exception.php';
@@ -17,6 +24,7 @@ use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
 
 $config = require BASE_PATH . '/config/config.php';
+
 
 // Session and authentication check
 if (session_status() === PHP_SESSION_NONE) {
@@ -53,82 +61,169 @@ $currentUser = $usersModel->findById($_SESSION['user_id']);
  * Generate PDF for purchase order
  */
 function generatePurchaseOrderPdf(array $orderInfo, array $items): ?string {
-    // Use the standard FPDF class name
     if (!class_exists('FPDF')) {
+        error_log("FPDF class not found when generating PDF");
         return null;
     }
 
-    $pdf = new FPDF();  // Keep this as FPDF, not namespaced
-    $pdf->AddPage();
-    $pdf->SetFont('Arial', 'B', 16);
-    $pdf->Cell(0, 10, 'Comanda ' . $orderInfo['order_number'], 0, 1);
-    $pdf->SetFont('Arial', '', 12);
-    $pdf->Cell(0, 8, 'Furnizor: ' . $orderInfo['supplier_name'], 0, 1);
-    $pdf->Ln(5);
+    try {
+        error_log("Starting PDF generation for order: " . $orderInfo['order_number']);
+        
+        $pdf = new FPDF();
+        $pdf->AddPage();
+        
+        // Use ONLY built-in Arial font (no external font files needed)
+        $pdf->SetFont('Arial', 'B', 16);
+        $pdf->Cell(0, 10, 'COMANDA ACHIZITIE', 0, 1, 'C');
+        
+        $pdf->SetFont('Arial', '', 12);
+        $pdf->Cell(0, 8, 'Numar comanda: ' . $orderInfo['order_number'], 0, 1);
+        $pdf->Cell(0, 8, 'Furnizor: ' . $orderInfo['supplier_name'], 0, 1);
+        $pdf->Cell(0, 8, 'Data: ' . date('d.m.Y H:i'), 0, 1);
+        $pdf->Ln(10);
 
-    $pdf->SetFont('Arial', 'B', 12);
-    $pdf->Cell(70, 8, 'Produs', 1);
-    $pdf->Cell(30, 8, 'Cod', 1);
-    $pdf->Cell(20, 8, 'Cant.', 1);
-    $pdf->Cell(30, 8, 'Pret', 1);
-    $pdf->Cell(30, 8, 'Total', 1, 1);
-    $pdf->SetFont('Arial', '', 12);
+        // Table header - simple design, no fancy fonts
+        $pdf->SetFont('Arial', 'B', 10);
+        $pdf->Cell(80, 8, 'Produs', 1, 0, 'C');
+        $pdf->Cell(30, 8, 'Cantitate', 1, 0, 'C');
+        $pdf->Cell(30, 8, 'Pret', 1, 0, 'C');
+        $pdf->Cell(30, 8, 'Total', 1, 1, 'C');
 
-    foreach ($items as $it) {
-        $name = $it['product_name'] ?? '';
-        $code = $it['product_code'] ?? '';
-        $qty = $it['quantity'] ?? 0;
-        $price = $it['unit_price'] ?? 0;
-        $total = $qty * $price;
-        $pdf->Cell(70, 8, $name, 1);
-        $pdf->Cell(30, 8, $code, 1);
-        $pdf->Cell(20, 8, $qty, 1);
-        $pdf->Cell(30, 8, number_format($price, 2), 1);
-        $pdf->Cell(30, 8, number_format($total, 2), 1, 1);
+        // Table content
+        $pdf->SetFont('Arial', '', 9);
+        $grandTotal = 0;
+        
+        foreach ($items as $it) {
+            $name = $it['product_name'] ?? '';
+            $qty = floatval($it['quantity'] ?? 0);
+            $price = floatval($it['unit_price'] ?? 0);
+            $total = $qty * $price;
+            $grandTotal += $total;
+            
+            // Truncate long product names
+            if (strlen($name) > 35) {
+                $name = substr($name, 0, 32) . '...';
+            }
+            
+            $pdf->Cell(80, 8, $name, 1);
+            $pdf->Cell(30, 8, number_format($qty, 2), 1, 0, 'R');
+            $pdf->Cell(30, 8, number_format($price, 2), 1, 0, 'R');
+            $pdf->Cell(30, 8, number_format($total, 2), 1, 1, 'R');
+        }
+        
+        // Total row
+        $pdf->SetFont('Arial', 'B', 10);
+        $pdf->Cell(140, 8, 'TOTAL:', 1, 0, 'R');
+        $pdf->Cell(30, 8, number_format($grandTotal, 2) . ' RON', 1, 1, 'R');
+
+        // Try multiple writable locations
+        $fileName = 'po_' . $orderInfo['order_number'] . '_' . time() . '.pdf';
+        $writableLocations = [
+            BASE_PATH . '/storage/purchase_order_pdfs/',
+            '/tmp/wms_pdfs/',
+            '/tmp/',
+            BASE_PATH . '/tmp/',
+            sys_get_temp_dir() . '/'
+        ];
+        
+        $successPath = null;
+        $finalFileName = null;
+        
+        foreach ($writableLocations as $dir) {
+            // Create directory if it doesn't exist
+            if (!is_dir($dir)) {
+                @mkdir($dir, 0777, true);
+            }
+            
+            if (is_dir($dir) && is_writable($dir)) {
+                $testPath = $dir . $fileName;
+                try {
+                    $pdf->Output('F', $testPath);
+                    if (file_exists($testPath) && filesize($testPath) > 0) {
+                        $successPath = $testPath;
+                        $finalFileName = $fileName;
+                        error_log("PDF created successfully: $testPath (Size: " . filesize($testPath) . " bytes)");
+                        break;
+                    }
+                } catch (Exception $e) {
+                    error_log("Failed to create PDF in $dir: " . $e->getMessage());
+                    continue;
+                }
+            }
+        }
+        
+        if ($successPath) {
+            return $finalFileName;
+        } else {
+            error_log("Could not create PDF in any writable location");
+            return null;
+        }
+        
+    } catch (Exception $e) {
+        error_log("Error generating PDF: " . $e->getMessage());
+        return null;
     }
-
-    $fileName = 'po_' . $orderInfo['order_number'] . '_' . time() . '.pdf';
-    $path = BASE_PATH . '/storage/purchase_order_pdfs/' . $fileName;
-    
-    // Create directory if it doesn't exist
-    $dir = dirname($path);
-    if (!is_dir($dir)) {
-        mkdir($dir, 0755, true);
-    }
-    
-    $pdf->Output('F', $path);
-    return $fileName;
 }
 
 /**
  * Send purchase order email with attachment
  */
-function sendPurchaseOrderEmail(array $smtp, string $to, string $subject, string $body, string $attachmentPath): bool {
+function sendPurchaseOrderEmail(array $smtp, string $to, string $subject, string $body, string $attachmentPath = ''): array {
     $mail = new PHPMailer(true);
+    
     try {
+        // Use your working SMTP settings
         $mail->isSMTP();
-        $mail->Host = $smtp['smtp_host'] ?? 'localhost';
-        $mail->Port = $smtp['smtp_port'] ?? 25;
+        $mail->Host = $smtp['smtp_host'];
+        $mail->Port = intval($smtp['smtp_port']);
         $mail->SMTPAuth = true;
-        $mail->Username = $smtp['smtp_user'] ?? '';
-        $mail->Password = $smtp['smtp_pass'] ?? '';
+        $mail->Username = $smtp['smtp_user'];
+        $mail->Password = $smtp['smtp_pass'];
+        
+        // Set security if provided
         if (!empty($smtp['smtp_secure'])) {
             $mail->SMTPSecure = $smtp['smtp_secure'];
         }
-
-        $from = $smtp['smtp_user'] ?? 'no-reply@localhost';
-        $mail->setFrom($from, 'WMS');
+        
+        // Recipients and content
+        $mail->setFrom($smtp['smtp_user'], 'WMS - Comanda Achizitie');
         $mail->addAddress($to);
         $mail->Subject = $subject;
         $mail->Body = $body;
-        if (is_file($attachmentPath)) {
-            $mail->addAttachment($attachmentPath);
+        $mail->isHTML(false);
+        
+        // Add attachment if provided and exists
+        if (!empty($attachmentPath)) {
+            // Check multiple possible paths
+            $possiblePaths = [
+                BASE_PATH . '/storage/purchase_order_pdfs/' . $attachmentPath,
+                '/tmp/wms_pdfs/' . $attachmentPath,
+                '/tmp/' . $attachmentPath,
+                $attachmentPath // In case it's already a full path
+            ];
+            
+            $attachmentFound = false;
+            foreach ($possiblePaths as $path) {
+                if (is_file($path)) {
+                    $mail->addAttachment($path);
+                    $attachmentFound = true;
+                    error_log("PDF attachment added: $path");
+                    break;
+                }
+            }
+            
+            if (!$attachmentFound) {
+                error_log("PDF attachment not found in any location: $attachmentPath");
+            }
         }
+        
         $mail->send();
-        return true;
+        return ['success' => true, 'message' => 'Email trimis cu succes'];
+        
     } catch (Exception $e) {
-        error_log('Mail error: ' . $e->getMessage());
-        return false;
+        $errorMsg = 'Eroare email: ' . $e->getMessage();
+        error_log($errorMsg);
+        return ['success' => false, 'message' => $errorMsg];
     }
 }
 
@@ -142,7 +237,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         switch ($action) {
             case 'create_stock_purchase':
-                // Handle stock purchase order creation - MOVED FROM transactions.php
                 $sellerId = intval($_POST['seller_id'] ?? 0);
                 $customMessage = trim($_POST['custom_message'] ?? '');
                 $emailSubject = trim($_POST['email_subject'] ?? '');
@@ -156,49 +250,69 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (empty($items)) {
                     throw new Exception('Trebuie să adaugi cel puțin un produs.');
                 }
-                if ($emailSubject === '' || $customMessage === '') {
-                    throw new Exception('Subiectul și mesajul emailului sunt obligatorii.');
-                }
                 
                 // Process items and calculate total
                 $processedItems = [];
                 $totalAmount = 0;
                 
                 foreach ($items as $item) {
-                    if (empty($item['product_name']) || floatval($item['quantity']) <= 0 || floatval($item['unit_price']) <= 0) {
-                        continue;
-                    }
+                    $purchasableProductId = intval($item['purchasable_product_id'] ?? 0);
                     
-                    // Check if product exists or create new purchasable product
-                    $purchasableProductId = null;
-                    if (!empty($item['purchasable_product_id'])) {
-                        $purchasableProductId = intval($item['purchasable_product_id']);
-                    } else {
-                        // Create new purchasable product
-                        $productData = [
-                            'supplier_product_name' => $item['product_name'],
-                            'supplier_product_code' => $item['product_code'] ?? '',
-                            'description' => $item['description'] ?? '',
-                            'unit_measure' => 'bucata',
-                            'last_purchase_price' => floatval($item['unit_price']),
-                            'preferred_seller_id' => $sellerId
-                        ];
-                        
-                        $purchasableProductId = $purchasableProductModel->createProduct($productData);
-                        if (!$purchasableProductId) {
-                            throw new Exception('Eroare la crearea produsului: ' . $item['product_name']);
+                    // If no product ID provided, try to find or create the product
+                    if ($purchasableProductId <= 0) {
+                        $productName = trim($item['product_name'] ?? '');
+                        if (!empty($productName)) {
+                            // Try to find existing product first
+                            $matchingProduct = $purchasableProductModel->findByName($productName);
+                            
+                            if ($matchingProduct) {
+                                // Found existing product, use its ID
+                                $purchasableProductId = $matchingProduct['id'];
+                                error_log("Found existing product: {$productName} with ID: {$purchasableProductId}");
+                            } else {
+                                // Product doesn't exist, create it automatically
+                                error_log("Product not found, creating new: {$productName}");
+                                
+                                $newProductData = [
+                                    'supplier_product_name' => $productName,
+                                    'supplier_product_code' => trim($item['product_code'] ?? ''),
+                                    'description' => trim($item['description'] ?? ''),
+                                    'unit_measure' => 'buc', // Default unit
+                                    'last_purchase_price' => floatval($item['unit_price'] ?? 0),
+                                    'currency' => 'RON',
+                                    'internal_product_id' => null, // We'll link this later if needed
+                                    'preferred_seller_id' => $sellerId,
+                                    'notes' => trim($item['description'] ?? ''),
+                                    'status' => 'active'
+                                ];
+                                
+                                $purchasableProductId = $purchasableProductModel->createProduct($newProductData);
+                                
+                                if ($purchasableProductId) {
+                                    error_log("Successfully created new product: {$productName} with ID: {$purchasableProductId}");
+                                } else {
+                                    throw new Exception("Nu s-a putut crea produsul nou: {$productName}");
+                                }
+                            }
+                        } else {
+                            throw new Exception('Numele produsului este obligatoriu.');
                         }
                     }
                     
                     $quantity = floatval($item['quantity']);
                     $unitPrice = floatval($item['unit_price']);
+                    
+                    if ($quantity <= 0 || $unitPrice <= 0) {
+                        throw new Exception('Cantitatea și prețul trebuie să fie mai mari decât 0.');
+                    }
+                    
                     $totalPrice = $quantity * $unitPrice;
                     
                     $processedItems[] = [
                         'purchasable_product_id' => $purchasableProductId,
                         'quantity' => $quantity,
                         'unit_price' => $unitPrice,
-                        'notes' => $item['notes'] ?? ''
+                        'notes' => trim($item['description'] ?? '')
                     ];
                     
                     $totalAmount += $totalPrice;
@@ -208,7 +322,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     throw new Exception('Nu s-au putut procesa produsele selectate.');
                 }
                 
-                // Get seller email for purchase order
+                // Get seller details
                 $seller = $sellerModel->getSellerById($sellerId);
                 $emailRecipient = $_POST['email_recipient'] ?? $seller['email'] ?? '';
                 
@@ -242,38 +356,77 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     
                     $transactionModel->createTransaction($transactionData);
 
+                    // Get order info for PDF generation
                     $orderInfo = $purchaseOrderModel->getPurchaseOrderById($orderId);
                     $orderInfo['supplier_name'] = $seller['supplier_name'];
+                    
+                    // Generate PDF
                     $pdfFile = generatePurchaseOrderPdf($orderInfo, $items);
+                    
                     if ($pdfFile) {
                         $purchaseOrderModel->updatePdfPath($orderId, $pdfFile);
-                        $pdfPath = BASE_PATH . '/storage/purchase_order_pdfs/' . $pdfFile;
-                        sendPurchaseOrderEmail($currentUser, $emailRecipient, $emailSubject, $customMessage, $pdfPath);
-                        $purchaseOrderModel->markAsSent($orderId, $emailRecipient);
+                        error_log("PDF generated successfully: $pdfFile");
+                    } else {
+                        error_log("PDF generation failed for order: " . $orderInfo['order_number']);
                     }
-
-                    $message = 'Comanda de stoc a fost creată cu succes. Numărul comenzii: ' . $orderInfo['order_number'];
-                    $messageType = 'success';
+                    
+                    // Prepare SMTP settings from your working configuration
+                    $smtpSettings = [
+                        'smtp_host' => $currentUser['smtp_host'] ?? '',
+                        'smtp_port' => $currentUser['smtp_port'] ?? 587,
+                        'smtp_user' => $currentUser['smtp_user'] ?? '',
+                        'smtp_pass' => $currentUser['smtp_pass'] ?? '',
+                        'smtp_secure' => $currentUser['smtp_secure'] ?? 'tls'
+                    ];
+                    
+                    // Check if SMTP is configured
+                    if (empty($smtpSettings['smtp_host']) || empty($smtpSettings['smtp_user'])) {
+                        $message = 'Comanda a fost creată cu succes (' . $orderInfo['order_number'] . '), dar emailul nu a fost trimis - configurați setările SMTP în profilul dvs.';
+                        $messageType = 'warning';
+                    } else {
+                        // Prepare email content
+                        $emailBody = "Bună ziua,\n\n";
+                        $emailBody .= "Vă transmitem comanda de achiziție " . $orderInfo['order_number'] . ".\n\n";
+                        if (!empty($customMessage)) {
+                            $emailBody .= $customMessage . "\n\n";
+                        }
+                        $emailBody .= "Vă mulțumim!\n";
+                        $emailBody .= "Echipa WMS";
+                        
+                        $finalSubject = !empty($emailSubject) ? $emailSubject : 'Comanda ' . $orderInfo['order_number'];
+                        
+                        // Send email
+                        $emailResult = sendPurchaseOrderEmail($smtpSettings, $emailRecipient, $finalSubject, $emailBody, $pdfFile);
+                        
+                        if ($emailResult['success']) {
+                            $purchaseOrderModel->markAsSent($orderId, $emailRecipient);
+                            $message = 'Comanda de stoc a fost creată și trimisă prin email cu succes! Numărul comenzii: ' . $orderInfo['order_number'];
+                            $messageType = 'success';
+                        } else {
+                            $message = 'Comanda a fost creată (' . $orderInfo['order_number'] . '), dar emailul nu a fost trimis. Eroare: ' . $emailResult['message'];
+                            $messageType = 'warning';
+                        }
+                    }
                 } else {
                     throw new Exception('Eroare la crearea comenzii de stoc.');
                 }
                 break;
                 
-            case 'update_status':
-                $orderId = intval($_POST['order_id'] ?? 0);
-                $newStatus = $_POST['status'] ?? '';
-                
-                if ($orderId <= 0 || empty($newStatus)) {
-                    throw new Exception('Date invalide pentru actualizare.');
-                }
-                
-                if ($purchaseOrderModel->updateStatus($orderId, $newStatus)) {
-                    $message = 'Statusul comenzii a fost actualizat cu succes.';
-                    $messageType = 'success';
-                } else {
-                    throw new Exception('Eroare la actualizarea statusului.');
-                }
-                break;
+                case 'update_status':
+                    $orderId = intval($_POST['order_id'] ?? 0);
+                    $newStatus = $_POST['status'] ?? '';
+                    
+                    if ($orderId <= 0 || empty($newStatus)) {
+                        throw new Exception('Date invalide pentru actualizare.');
+                    }
+                    
+                    if ($purchaseOrderModel->updateStatus($orderId, $newStatus)) {
+                        $message = 'Statusul comenzii a fost actualizat cu succes.';
+                        $messageType = 'success';
+                    } else {
+                        throw new Exception('Eroare la actualizarea statusului.');
+                    }
+                    break;
                 
             case 'send_email':
                 $orderId = intval($_POST['order_id'] ?? 0);
@@ -283,13 +436,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     throw new Exception('Date invalide pentru trimiterea emailului.');
                 }
                 
-                // Here you would implement email sending functionality
-                // For now, we'll just mark as sent
-                if ($purchaseOrderModel->markAsSent($orderId, $emailRecipient)) {
+                // Get order details
+                $orderInfo = $purchaseOrderModel->getPurchaseOrderById($orderId);
+                if (!$orderInfo) {
+                    throw new Exception('Comanda nu a fost găsită.');
+                }
+                
+                // Get seller info
+                $seller = $sellerModel->getSellerById($orderInfo['seller_id']);
+                $orderInfo['supplier_name'] = $seller['supplier_name'];
+                
+                // Prepare SMTP settings
+                $smtpSettings = [
+                    'smtp_host' => $currentUser['smtp_host'] ?? '',
+                    'smtp_port' => $currentUser['smtp_port'] ?? 587,
+                    'smtp_user' => $currentUser['smtp_user'] ?? '',
+                    'smtp_pass' => $currentUser['smtp_pass'] ?? '',
+                    'smtp_secure' => $currentUser['smtp_secure'] ?? 'tls'
+                ];
+                
+                if (empty($smtpSettings['smtp_host']) || empty($smtpSettings['smtp_user'])) {
+                    throw new Exception('Configurați setările SMTP în profilul dvs.');
+                }
+                
+                // Prepare email
+                $emailSubject = 'Comanda ' . $orderInfo['order_number'];
+                $emailBody = "Bună ziua,\n\n";
+                $emailBody .= "Vă transmitem comanda de achiziție " . $orderInfo['order_number'] . ".\n\n";
+                $emailBody .= "Vă mulțumim!\n";
+                $emailBody .= "Echipa WMS";
+                
+                // Send email
+                $emailResult = sendPurchaseOrderEmail($smtpSettings, $emailRecipient, $emailSubject, $emailBody, $orderInfo['pdf_path']);
+                
+                if ($emailResult['success']) {
+                    $purchaseOrderModel->markAsSent($orderId, $emailRecipient);
                     $message = 'Comanda a fost trimisă prin email cu succes.';
                     $messageType = 'success';
                 } else {
-                    throw new Exception('Eroare la trimiterea emailului.');
+                    throw new Exception('Eroare la trimiterea emailului: ' . $emailResult['message']);
                 }
                 break;
 
@@ -323,14 +508,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 
                 // Process invoice recording
-                // This would involve creating invoice records and updating quantities
                 $message = 'Factura a fost înregistrată cu succes.';
                 $messageType = 'success';
                 break;
+
+                default:
+                throw new Exception('Acțiune necunoscută.');
         }
     } catch (Exception $e) {
         $message = $e->getMessage();
         $messageType = 'error';
+        error_log("Purchase order error: " . $e->getMessage());
     }
 }
 

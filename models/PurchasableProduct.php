@@ -233,4 +233,21 @@ class PurchasableProduct {
             return false;
         }
     }
+
+    // find purchasable product by name
+    public function findByName(string $productName): array|false {
+        $query = "SELECT * FROM {$this->table}
+                WHERE supplier_product_name = :product_name
+                AND status = 'active'
+                LIMIT 1";
+        try {
+            $stmt = $this->conn->prepare($query);
+            $stmt->bindValue(':product_name', $productName);
+            $stmt->execute();
+            return $stmt->fetch(PDO::FETCH_ASSOC);
+        } catch (PDOException $e) {
+            error_log("Error finding purchasable product by name: " . $e->getMessage());
+            return false;
+        }
+    }
 }

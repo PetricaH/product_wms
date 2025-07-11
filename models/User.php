@@ -83,7 +83,7 @@ class Users {
     }
 
     /**
-     * Create a new user - FIXED VERSION
+     * Create a new user - REVISED for optional SMTP
      * @param array $data User data array containing username, email, password, role, status
      * @return int|false Returns the new user ID on success, false on failure
      */
@@ -91,29 +91,29 @@ class Users {
         // Hash the password before storing
         $hashedPassword = password_hash($data['password'], PASSWORD_DEFAULT);
         
-        // Extract values into variables (required for bindParam)
-        $username = $data['username'];
-        $email = $data['email'];
-        $role = $data['role'];
-        $status = $data['status'] ?? 1;
+        // Build a parameter array. This method is more robust for optional values.
+        $params = [
+            ':username' => $data['username'],
+            ':email' => $data['email'],
+            ':password' => $hashedPassword,
+            ':role' => $data['role'],
+            ':status' => $data['status'] ?? 1,
+            ':smtp_host' => $data['smtp_host'] ?? null,
+            ':smtp_port' => $data['smtp_port'] ?? null,
+            ':smtp_user' => $data['smtp_user'] ?? null,
+            ':smtp_pass' => $data['smtp_pass'] ?? null,
+            ':smtp_secure' => $data['smtp_secure'] ?? null,
+        ];
         
         try {
-            $stmt = $this->db->prepare("INSERT INTO users (username, email, password, role, status, smtp_host, smtp_port, smtp_user, smtp_pass, smtp_secure)
-                VALUES (:username, :email, :password, :role, :status, :smtp_host, :smtp_port, :smtp_user, :smtp_pass, :smtp_secure)");
+            $sql = "INSERT INTO users (username, email, password, role, status, smtp_host, smtp_port, smtp_user, smtp_pass, smtp_secure)
+                VALUES (:username, :email, :password, :role, :status, :smtp_host, :smtp_port, :smtp_user, :smtp_pass, :smtp_secure)";
             
-            // Now bindParam works because we're passing variables by reference
-            $stmt->bindParam(':username', $username, PDO::PARAM_STR);
-            $stmt->bindParam(':email', $email, PDO::PARAM_STR);
-            $stmt->bindParam(':password', $hashedPassword, PDO::PARAM_STR);
-            $stmt->bindParam(':role', $role, PDO::PARAM_STR);
-            $stmt->bindParam(':status', $status, PDO::PARAM_INT);
-            $stmt->bindParam(':smtp_host', $data['smtp_host'] ?? null, PDO::PARAM_STR);
-            $stmt->bindParam(':smtp_port', $data['smtp_port'] ?? null, PDO::PARAM_INT);
-            $stmt->bindParam(':smtp_user', $data['smtp_user'] ?? null, PDO::PARAM_STR);
-            $stmt->bindParam(':smtp_pass', $data['smtp_pass'] ?? null, PDO::PARAM_STR);
-            $stmt->bindParam(':smtp_secure', $data['smtp_secure'] ?? null, PDO::PARAM_STR);
+            $stmt = $this->db->prepare($sql);
             
-            $stmt->execute();
+            // Execute with the params array, which correctly handles nulls
+            $stmt->execute($params);
+            
             return (int)$this->db->lastInsertId();
         } catch (PDOException $e) {
             error_log("Error in Users::createUser: " . $e->getMessage());
@@ -204,12 +204,12 @@ class Users {
 
     /**
      * Get all users with optional filtering and pagination
-     * @param int $limit Optional limit for pagination
+     * @param int|null $limit Optional limit for pagination
      * @param int $offset Optional offset for pagination  
      * @param string $search Optional search term for username or email
      * @return array Array of user records
      */
-    public function getAllUsers(int $limit = null, int $offset = 0, string $search = ''): array {
+    public function getAllUsers(?int $limit = null, int $offset = 0, string $search = ''): array {
         try {
             $sql = "SELECT id, username, email, role, status, created_at FROM users";
             $params = [];

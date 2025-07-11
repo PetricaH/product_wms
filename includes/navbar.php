@@ -105,14 +105,14 @@ if (isset($_SESSION['username'])) {
         </li>
         
         <!-- Transactions -->
-        <li class="sidebar__item">
+        <!-- <li class="sidebar__item">
             <a href="<?= getNavUrl('transactions.php') ?>" 
                class="sidebar__link <?= getActiveClass('transactions.php') ?>"
                data-tooltip="Tranzacții">
                 <span class="material-symbols-outlined">receipt_long</span>
                 <span class="link-text">Tranzacții</span>
             </a>
-        </li>
+        </li> -->
 
         <!-- Sellers -->
         <li class="sidebar__item">
@@ -157,17 +157,19 @@ if (isset($_SESSION['username'])) {
 
     <!-- User Profile Section -->
     <div class="sidebar__profile">
-        <div class="profile-avatar">
-            <?= htmlspecialchars($userInitials) ?>
-        </div>
-        <div class="profile-info">
-            <span class="profile-name">
-                <?= isset($_SESSION['username']) ? htmlspecialchars($_SESSION['username']) : 'Admin User' ?>
-            </span>
-            <span class="profile-role">
-                <?= isset($_SESSION['role']) ? ucfirst(htmlspecialchars($_SESSION['role'])) : 'Administrator' ?>
-            </span>
-        </div>
+        <a href="views/users/profile.php">
+            <div class="profile-avatar">
+                <?= htmlspecialchars($userInitials) ?>
+            </div>
+            <div class="profile-info">
+                <span class="profile-name">
+                    <?= isset($_SESSION['username']) ? htmlspecialchars($_SESSION['username']) : 'Admin User' ?>
+                </span>
+                <span class="profile-role">
+                    <?= isset($_SESSION['role']) ? ucfirst(htmlspecialchars($_SESSION['role'])) : 'Administrator' ?>
+                </span>
+            </div>
+        </a>
         <a href="<?= getNavUrl('logout.php') ?>" 
            class="logout-link" 
            title="Logout"

@@ -499,10 +499,10 @@ require_once __DIR__ . '/includes/header.php';
                                 <option value="">Selectează furnizor</option>
                                 <?php foreach ($sellers as $seller): ?>
                                     <option value="<?= $seller['id'] ?>" 
-                                            data-email="<?= htmlspecialchars($seller['email']) ?>"
-                                            data-contact="<?= htmlspecialchars($seller['contact_person']) ?>"
-                                            data-phone="<?= htmlspecialchars($seller['phone']) ?>">
-                                        <?= htmlspecialchars($seller['supplier_name']) ?>
+                                            data-email="<?= htmlspecialchars($seller['email'] ?? '') ?>"
+                                            data-contact="<?= htmlspecialchars($seller['contact_person'] ?? '') ?>"
+                                            data-phone="<?= htmlspecialchars($seller['phone'] ?? '') ?>">
+                                        <?= htmlspecialchars($seller['supplier_name'] ?? '') ?>
                                     </option>
                                 <?php endforeach; ?>
                             </select>

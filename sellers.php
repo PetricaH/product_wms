@@ -157,208 +157,212 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
         <?php require_once __DIR__ . '/includes/navbar.php'; ?>
         
         <main class="main-content">
-            <div class="content-header">
-                <h1>
-                    <span class="material-symbols-outlined">business</span>
-                    Gestionare Furnizori
-                </h1>
-                <button class="btn btn-primary" onclick="openCreateModal()">
-                    <span class="material-symbols-outlined">add</span>
-                    Furnizor Nou
-                </button>
-            </div>
-
-            <?php if ($message): ?>
-                <div class="alert alert-<?= $messageType ?>">
-                    <?= htmlspecialchars($message) ?>
-                </div>
-            <?php endif; ?>
-
-            <!-- Search and Filter Form -->
-            <div class="filter-container">
-                <form method="GET" class="filter-form">
-                    <div class="filter-group">
-                        <label for="search">Căutare:</label>
-                        <input type="text" 
-                               id="search" 
-                               name="search" 
-                               value="<?= htmlspecialchars($search) ?>" 
-                               placeholder="Nume, CIF, cod furnizor, email...">
-                    </div>
-                    
-                    <div class="filter-group">
-                        <label for="status">Status:</label>
-                        <select id="status" name="status">
-                            <option value="">Toate</option>
-                            <option value="active" <?= $statusFilter === 'active' ? 'selected' : '' ?>>Activ</option>
-                            <option value="inactive" <?= $statusFilter === 'inactive' ? 'selected' : '' ?>>Inactiv</option>
-                        </select>
-                    </div>
-                    
-                    <div class="filter-actions">
-                        <button type="submit" class="btn btn-primary">
-                            <span class="material-symbols-outlined">search</span>
-                            Caută
+            <div class="page-container">
+                <div class="page-header">
+                    <div class="page-header-content">
+                        <h1>
+                            <span class="material-symbols-outlined">business</span>
+                            Gestionare Furnizori
+                        </h1>
+                        <button class="btn btn-primary" onclick="openCreateModal()">
+                            <span class="material-symbols-outlined">add</span>
+                            Furnizor Nou
                         </button>
-                        <?php if ($search || $statusFilter): ?>
-                            <a href="?" class="btn btn-secondary">
-                                <span class="material-symbols-outlined">clear</span>
-                                Reset
-                            </a>
-                        <?php endif; ?>
                     </div>
-                </form>
-            </div>
+                </div>
 
-            <!-- Sellers Table -->
-            <div class="sellers-table-container">
-                <?php if (!empty($sellers)): ?>
-                    <table class="sellers-table">
-                        <thead>
-                            <tr>
-                                <th>Furnizor</th>
-                                <th>Contact</th>
-                                <th>Informații Fiscale</th>
-                                <th>Adresă</th>
-                                <th>Status</th>
-                                <th>Acțiuni</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php foreach ($sellers as $seller): ?>
-                                <tr>
-                                    <td>
-                                        <div class="seller-info">
-                                            <strong><?= htmlspecialchars($seller['supplier_name']) ?></strong>
-                                            <?php if ($seller['supplier_code']): ?>
-                                                <br><small class="text-muted">Cod: <?= htmlspecialchars($seller['supplier_code']) ?></small>
-                                            <?php endif; ?>
-                                        </div>
-                                    </td>
-                                    <td>
-                                        <div class="contact-info">
-                                            <?php if ($seller['contact_person']): ?>
-                                                <div><strong><?= htmlspecialchars($seller['contact_person']) ?></strong></div>
-                                            <?php endif; ?>
-                                            <?php if ($seller['phone']): ?>
-                                                <div><span class="material-symbols-outlined">phone</span> <?= htmlspecialchars($seller['phone']) ?></div>
-                                            <?php endif; ?>
-                                            <?php if ($seller['email']): ?>
-                                                <div><span class="material-symbols-outlined">email</span> <?= htmlspecialchars($seller['email']) ?></div>
-                                            <?php endif; ?>
-                                        </div>
-                                    </td>
-                                    <td>
-                                        <div class="fiscal-info">
-                                            <?php if ($seller['cif']): ?>
-                                                <div><strong>CIF:</strong> <?= htmlspecialchars($seller['cif']) ?></div>
-                                            <?php endif; ?>
-                                            <?php if ($seller['registration_number']): ?>
-                                                <div><strong>Reg:</strong> <?= htmlspecialchars($seller['registration_number']) ?></div>
-                                            <?php endif; ?>
-                                            <?php if ($seller['bank_name']): ?>
-                                                <div><strong>Bancă:</strong> <?= htmlspecialchars($seller['bank_name']) ?></div>
-                                            <?php endif; ?>
-                                            <?php if ($seller['iban']): ?>
-                                                <div><strong>IBAN:</strong> <?= htmlspecialchars($seller['iban']) ?></div>
-                                            <?php endif; ?>
-                                        </div>
-                                    </td>
-                                    <td>
-                                        <div class="address-info">
-                                            <?php if ($seller['address']): ?>
-                                                <div><?= htmlspecialchars($seller['address']) ?></div>
-                                            <?php endif; ?>
-                                            <?php if ($seller['city'] || $seller['county']): ?>
-                                                <div>
-                                                    <?= htmlspecialchars($seller['city'] ?? '') ?>
-                                                    <?= $seller['city'] && $seller['county'] ? ', ' : '' ?>
-                                                    <?= htmlspecialchars($seller['county'] ?? '') ?>
-                                                </div>
-                                            <?php endif; ?>
-                                            <?php if ($seller['country']): ?>
-                                                <div><?= htmlspecialchars($seller['country']) ?></div>
-                                            <?php endif; ?>
-                                        </div>
-                                    </td>
-                                    <td>
-                                        <span class="status-badge status-<?= $seller['status'] ?>">
-                                            <?= $seller['status'] === 'active' ? 'Activ' : 'Inactiv' ?>
-                                        </span>
-                                    </td>
-                                    <td>
-                                        <div class="table-actions">
-                                            <button class="btn btn-sm btn-secondary" 
-                                                    onclick="viewSellerDetails(<?= $seller['id'] ?>)" 
-                                                    title="Vezi detalii">
-                                                <span class="material-symbols-outlined">visibility</span>
-                                            </button>
-                                            <button class="btn btn-sm btn-primary" 
-                                                    onclick="openEditModal(<?= $seller['id'] ?>)" 
-                                                    title="Editează">
-                                                <span class="material-symbols-outlined">edit</span>
-                                            </button>
-                                            <button class="btn btn-sm btn-danger" 
-                                                    onclick="openDeleteModal(<?= $seller['id'] ?>, '<?= htmlspecialchars($seller['supplier_name'], ENT_QUOTES) ?>')" 
-                                                    title="Șterge">
-                                                <span class="material-symbols-outlined">delete</span>
-                                            </button>
-                                        </div>
-                                    </td>
-                                </tr>
-                            <?php endforeach; ?>
-                        </tbody>
-                    </table>
-                    
-                    <!-- Pagination (same pattern as products.php) -->
-                    <?php if ($totalPages > 1): ?>
-                        <div class="pagination-container">
-                            <div class="pagination-info">
-                                Afișare <?= ($offset + 1) ?>-<?= min($offset + $pageSize, $totalCount) ?> din <?= number_format($totalCount) ?> furnizori
-                            </div>
-                            <div class="pagination-controls">
-                                <?php if ($page > 1): ?>
-                                    <a href="?page=1&search=<?= urlencode($search) ?>&status=<?= urlencode($statusFilter) ?>" class="pagination-btn">Prima</a>
-                                    <a href="?page=<?= $page - 1 ?>&search=<?= urlencode($search) ?>&status=<?= urlencode($statusFilter) ?>" class="pagination-btn">‹</a>
-                                <?php endif; ?>
-                                
-                                <?php 
-                                $startPage = max(1, $page - 2);
-                                $endPage = min($totalPages, $page + 2);
-                                
-                                for ($i = $startPage; $i <= $endPage; $i++): ?>
-                                    <?php if ($i == $page): ?>
-                                        <span class="pagination-btn active"><?= $i ?></span>
-                                    <?php else: ?>
-                                        <a href="?page=<?= $i ?>&search=<?= urlencode($search) ?>&status=<?= urlencode($statusFilter) ?>" class="pagination-btn"><?= $i ?></a>
-                                    <?php endif; ?>
-                                <?php endfor; ?>
-                                
-                                <?php if ($page < $totalPages): ?>
-                                    <a href="?page=<?= $page + 1 ?>&search=<?= urlencode($search) ?>&status=<?= urlencode($statusFilter) ?>" class="pagination-btn">›</a>
-                                    <a href="?page=<?= $totalPages ?>&search=<?= urlencode($search) ?>&status=<?= urlencode($statusFilter) ?>" class="pagination-btn">Ultima</a>
-                                <?php endif; ?>
-                            </div>
-                        </div>
-                    <?php endif; ?>
-                    
-                <?php else: ?>
-                    <div class="empty-state">
-                        <span class="material-symbols-outlined">business</span>
-                        <h3>Nu există furnizori</h3>
-                        <p>
-                            <?php if ($search || $statusFilter): ?>
-                                Nu s-au găsit furnizori cu criteriile selectate.
-                                <a href="?" class="btn btn-secondary">Șterge filtrele</a>
-                            <?php else: ?>
-                                Adaugă primul furnizor pentru a putea crea comenzi de achiziție.
-                                <button class="btn btn-primary" onclick="openCreateModal()">Adaugă Furnizor</button>
-                            <?php endif; ?>
-                        </p>
+                <?php if ($message): ?>
+                    <div class="alert alert-<?= $messageType ?>">
+                        <?= htmlspecialchars($message) ?>
                     </div>
                 <?php endif; ?>
-            </div>
-        </main>
+
+                <!-- Search and Filter Form -->
+                <div class="filter-container">
+                    <form method="GET" class="filter-form">
+                        <div class="filter-group">
+                            <label for="search">Căutare:</label>
+                            <input type="text" 
+                                id="search" 
+                                name="search" 
+                                value="<?= htmlspecialchars($search) ?>" 
+                                placeholder="Nume, CIF, cod furnizor, email...">
+                        </div>
+                        
+                        <div class="filter-group">
+                            <label for="status">Status:</label>
+                            <select id="status" name="status">
+                                <option value="">Toate</option>
+                                <option value="active" <?= $statusFilter === 'active' ? 'selected' : '' ?>>Activ</option>
+                                <option value="inactive" <?= $statusFilter === 'inactive' ? 'selected' : '' ?>>Inactiv</option>
+                            </select>
+                        </div>
+                        
+                        <div class="filter-actions">
+                            <button type="submit" class="btn btn-primary">
+                                <span class="material-symbols-outlined">search</span>
+                                Caută
+                            </button>
+                            <?php if ($search || $statusFilter): ?>
+                                <a href="?" class="btn btn-secondary">
+                                    <span class="material-symbols-outlined">clear</span>
+                                    Reset
+                                </a>
+                            <?php endif; ?>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Sellers Table -->
+                <div class="sellers-table-container">
+                    <?php if (!empty($sellers)): ?>
+                        <table class="sellers-table">
+                            <thead>
+                                <tr>
+                                    <th>Furnizor</th>
+                                    <th>Contact</th>
+                                    <th>Informații Fiscale</th>
+                                    <th>Adresă</th>
+                                    <th>Status</th>
+                                    <th>Acțiuni</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($sellers as $seller): ?>
+                                    <tr>
+                                        <td>
+                                            <div class="seller-info">
+                                                <strong><?= htmlspecialchars($seller['supplier_name']) ?></strong>
+                                                <?php if ($seller['supplier_code']): ?>
+                                                    <br><small class="text-muted">Cod: <?= htmlspecialchars($seller['supplier_code']) ?></small>
+                                                <?php endif; ?>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <div class="contact-info">
+                                                <?php if ($seller['contact_person']): ?>
+                                                    <div><strong><?= htmlspecialchars($seller['contact_person']) ?></strong></div>
+                                                <?php endif; ?>
+                                                <?php if ($seller['phone']): ?>
+                                                    <div><span class="material-symbols-outlined">phone</span> <?= htmlspecialchars($seller['phone']) ?></div>
+                                                <?php endif; ?>
+                                                <?php if ($seller['email']): ?>
+                                                    <div><span class="material-symbols-outlined">email</span> <?= htmlspecialchars($seller['email']) ?></div>
+                                                <?php endif; ?>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <div class="fiscal-info">
+                                                <?php if ($seller['cif']): ?>
+                                                    <div><strong>CIF:</strong> <?= htmlspecialchars($seller['cif']) ?></div>
+                                                <?php endif; ?>
+                                                <?php if ($seller['registration_number']): ?>
+                                                    <div><strong>Reg:</strong> <?= htmlspecialchars($seller['registration_number']) ?></div>
+                                                <?php endif; ?>
+                                                <?php if ($seller['bank_name']): ?>
+                                                    <div><strong>Bancă:</strong> <?= htmlspecialchars($seller['bank_name']) ?></div>
+                                                <?php endif; ?>
+                                                <?php if ($seller['iban']): ?>
+                                                    <div><strong>IBAN:</strong> <?= htmlspecialchars($seller['iban']) ?></div>
+                                                <?php endif; ?>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <div class="address-info">
+                                                <?php if ($seller['address']): ?>
+                                                    <div><?= htmlspecialchars($seller['address']) ?></div>
+                                                <?php endif; ?>
+                                                <?php if ($seller['city'] || $seller['county']): ?>
+                                                    <div>
+                                                        <?= htmlspecialchars($seller['city'] ?? '') ?>
+                                                        <?= $seller['city'] && $seller['county'] ? ', ' : '' ?>
+                                                        <?= htmlspecialchars($seller['county'] ?? '') ?>
+                                                    </div>
+                                                <?php endif; ?>
+                                                <?php if ($seller['country']): ?>
+                                                    <div><?= htmlspecialchars($seller['country']) ?></div>
+                                                <?php endif; ?>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <span class="status-badge status-<?= $seller['status'] ?>">
+                                                <?= $seller['status'] === 'active' ? 'Activ' : 'Inactiv' ?>
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <div class="table-actions">
+                                                <button class="btn btn-sm btn-secondary" 
+                                                        onclick="viewSellerDetails(<?= $seller['id'] ?>)" 
+                                                        title="Vezi detalii">
+                                                    <span class="material-symbols-outlined">visibility</span>
+                                                </button>
+                                                <button class="btn btn-sm btn-primary" 
+                                                        onclick="openEditModal(<?= $seller['id'] ?>)" 
+                                                        title="Editează">
+                                                    <span class="material-symbols-outlined">edit</span>
+                                                </button>
+                                                <button class="btn btn-sm btn-danger" 
+                                                        onclick="openDeleteModal(<?= $seller['id'] ?>, '<?= htmlspecialchars($seller['supplier_name'], ENT_QUOTES) ?>')" 
+                                                        title="Șterge">
+                                                    <span class="material-symbols-outlined">delete</span>
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                        
+                        <!-- Pagination (same pattern as products.php) -->
+                        <?php if ($totalPages > 1): ?>
+                            <div class="pagination-container">
+                                <div class="pagination-info">
+                                    Afișare <?= ($offset + 1) ?>-<?= min($offset + $pageSize, $totalCount) ?> din <?= number_format($totalCount) ?> furnizori
+                                </div>
+                                <div class="pagination-controls">
+                                    <?php if ($page > 1): ?>
+                                        <a href="?page=1&search=<?= urlencode($search) ?>&status=<?= urlencode($statusFilter) ?>" class="pagination-btn">Prima</a>
+                                        <a href="?page=<?= $page - 1 ?>&search=<?= urlencode($search) ?>&status=<?= urlencode($statusFilter) ?>" class="pagination-btn">‹</a>
+                                    <?php endif; ?>
+                                    
+                                    <?php 
+                                    $startPage = max(1, $page - 2);
+                                    $endPage = min($totalPages, $page + 2);
+                                    
+                                    for ($i = $startPage; $i <= $endPage; $i++): ?>
+                                        <?php if ($i == $page): ?>
+                                            <span class="pagination-btn active"><?= $i ?></span>
+                                        <?php else: ?>
+                                            <a href="?page=<?= $i ?>&search=<?= urlencode($search) ?>&status=<?= urlencode($statusFilter) ?>" class="pagination-btn"><?= $i ?></a>
+                                        <?php endif; ?>
+                                    <?php endfor; ?>
+                                    
+                                    <?php if ($page < $totalPages): ?>
+                                        <a href="?page=<?= $page + 1 ?>&search=<?= urlencode($search) ?>&status=<?= urlencode($statusFilter) ?>" class="pagination-btn">›</a>
+                                        <a href="?page=<?= $totalPages ?>&search=<?= urlencode($search) ?>&status=<?= urlencode($statusFilter) ?>" class="pagination-btn">Ultima</a>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                        <?php endif; ?>
+                        
+                    <?php else: ?>
+                        <div class="empty-state">
+                            <span class="material-symbols-outlined">business</span>
+                            <h3>Nu există furnizori</h3>
+                            <p>
+                                <?php if ($search || $statusFilter): ?>
+                                    Nu s-au găsit furnizori cu criteriile selectate.
+                                    <a href="?" class="btn btn-secondary">Șterge filtrele</a>
+                                <?php else: ?>
+                                    Adaugă primul furnizor pentru a putea crea comenzi de achiziție.
+                                    <button class="btn btn-primary" onclick="openCreateModal()">Adaugă Furnizor</button>
+                                <?php endif; ?>
+                            </p>
+                        </div>
+                    <?php endif; ?>
+                </div>
+            </main>
+        </div>
     </div>
 
     <!-- Create Seller Modal -->

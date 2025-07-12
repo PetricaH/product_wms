@@ -1,15 +1,20 @@
 <?php
-// File: includes/footer.php
-// This footer explicitly checks for and loads page-specific JavaScript,
-// matching the logic from header.php for better reliability.
+// File: includes/footer.php - Corrected with script loading order
 
-// The $currentPage variable is assumed to be defined in the main page file.
 if (!isset($currentPage)) {
     $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
 }
+?>
 
+<script>
+    window.APP_CONFIG = {
+        // Correctly check if the BASE_URL constant is defined.
+        baseUrl: '<?php echo defined('BASE_URL') ? rtrim(BASE_URL, '/') : ''; ?>'
+    };
+</script>
+
+<?php
 // Define an array of page-specific JavaScript files.
-// This mirrors the CSS loading logic in header.php and is more robust.
 $pageSpecificJS = [
     'products' => 'products.js',
     'inventory' => 'inventory.js',
@@ -21,8 +26,8 @@ $pageSpecificJS = [
     'locations' => 'locations.js',
     'orders' => 'orders.js',
     'sellers' => 'sellers.js',
-    'purchase_orders' => 'purchase_orders.js'
-    // Add any other page-specific script mappings here.
+    'purchase_orders' => 'purchase_orders.js',
+    'product-units' => 'product-units.js'
 ];
 
 // Check if a specific script is defined for the current page in our array.
@@ -34,7 +39,7 @@ if (isset($pageSpecificJS[$currentPage])) {
     if (file_exists($jsFilePath)) {
         $jsUrl = '';
         
-        // Determine the correct URL based on the environment, matching header.php logic.
+        // Determine the correct URL based on the environment.
         if (function_exists('in_prod') && in_prod()) {
             if (function_exists('asset')) {
                 $jsUrl = asset('scripts/' . $jsFileName);
@@ -46,11 +51,11 @@ if (isset($pageSpecificJS[$currentPage])) {
         
         // If a URL was successfully generated, output the script tag.
         if ($jsUrl) {
-            // Use defer for consistency and add a version number to prevent caching issues.
             echo '<script src="' . $jsUrl . '?v=' . filemtime($jsFilePath) . '" defer></script>';
         }
     }
 }
 ?>
+
 </body>
 </html>

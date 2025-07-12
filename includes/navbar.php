@@ -83,6 +83,16 @@ if (isset($_SESSION['username'])) {
                 <span class="link-text">Stocuri</span>
             </a>
         </li>
+
+        <!-- Product Units Management -->
+        <li class="sidebar__item">
+            <a href="<?= getNavUrl('product-units.php') ?>" 
+               class="sidebar__link <?= getActiveClass('product-units.php') ?>"
+               data-tooltip="Unități Produse">
+                <span class="material-symbols-outlined">inventory_2</span>
+                <span class="link-text">Unități Produse</span>
+            </a>
+        </li>
         
         <!-- Locations -->
         <li class="sidebar__item">

@@ -28,7 +28,8 @@ $pageSpecificCSS = [
     'smartbill-sync' => 'smartbill-s,ync.css',
     'activities' => 'activities.css',
     'sellers' => 'sellers.css',
-    'purchase_orders' => 'purchase_orders.css'
+    'purchase_orders' => 'purchase_orders.css',
+    'product-units' => 'product-units.css'
 ];
 
 // Create a list of CSS files to load: start with global ones

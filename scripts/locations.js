@@ -234,48 +234,50 @@ class EnhancedWarehouseVisualization {
     }
 
     extractZones() {
-        // Use dynamic zones from PHP if available, otherwise extract from locations
-        if (window.dynamicZones && window.dynamicZones.length > 0) {
-            return window.dynamicZones.map(zone => ({
-                name: zone.zone_name,
-                shelfCount: parseInt(zone.shelf_count) || 0,
-                avgOccupancy: parseFloat(zone.avg_occupancy) || 0,
-                totalCapacity: parseInt(zone.total_capacity) || 0,
-                totalItems: parseInt(zone.total_items) || 0,
-                shelves: this.locations.filter(l => l.zone === zone.zone_name && l.type === 'Shelf')
-            }));
-        }
-        
-        // Fallback: extract from locations data
-        const zoneMap = new Map();
-        
-        this.locations.forEach(location => {
-            const zoneName = location.zone;
-            if (zoneName && location.type === 'Shelf') {
-                if (!zoneMap.has(zoneName)) {
-                    zoneMap.set(zoneName, {
-                        name: zoneName,
-                        shelves: [],
-                        totalOccupancy: 0,
-                        shelfCount: 0
-                    });
-                }
-                
-                const zone = zoneMap.get(zoneName);
-                zone.shelves.push(location);
-                zone.shelfCount++;
-                zone.totalOccupancy += (location.occupancy?.total || 0);
-            }
-        });
-        
-        // Calculate average occupancy for each zone
-        const zones = Array.from(zoneMap.values()).map(zone => ({
-            ...zone,
-            avgOccupancy: zone.shelfCount > 0 ? zone.totalOccupancy / zone.shelfCount : 0
+    // Use dynamic zones from PHP if available, otherwise extract from locations
+    if (window.dynamicZones && window.dynamicZones.length > 0) {
+        return window.dynamicZones.map(zone => ({
+            name: zone.zone_name,
+            shelfCount: parseInt(zone.shelf_count) || 0,
+            avgOccupancy: parseFloat(zone.avg_occupancy) || 0,
+            totalCapacity: parseInt(zone.total_capacity) || 0,
+            totalItems: parseInt(zone.total_items) || 0,
+            // FIXED: Case insensitive filtering
+            shelves: this.locations.filter(l => l.zone === zone.zone_name && l.type.toLowerCase() === 'shelf')
         }));
-        
-        return zones.sort((a, b) => a.name.localeCompare(b.name));
     }
+    
+    // Fallback: extract from locations data
+    const zoneMap = new Map();
+    
+    this.locations.forEach(location => {
+        const zoneName = location.zone;
+        // FIXED: Case insensitive type check
+        if (zoneName && location.type.toLowerCase() === 'shelf') {
+            if (!zoneMap.has(zoneName)) {
+                zoneMap.set(zoneName, {
+                    name: zoneName,
+                    shelves: [],
+                    totalOccupancy: 0,
+                    shelfCount: 0
+                });
+            }
+            
+            const zone = zoneMap.get(zoneName);
+            zone.shelves.push(location);
+            zone.shelfCount++;
+            zone.totalOccupancy += (location.occupancy?.total || 0);
+        }
+    });
+    
+    // Calculate average occupancy for each zone
+    const zones = Array.from(zoneMap.values()).map(zone => ({
+        ...zone,
+        avgOccupancy: zone.shelfCount > 0 ? zone.totalOccupancy / zone.shelfCount : 0
+    }));
+    
+    return zones.sort((a, b) => a.name.localeCompare(b.name));
+}
 
     createTooltip() {
         if (document.getElementById('enhancedTooltip')) return;
@@ -453,42 +455,43 @@ class EnhancedWarehouseVisualization {
     }
 
     renderShelves() {
-        const shelvesGrid = document.getElementById('shelvesGrid');
-        const shelvesContainer = document.getElementById('shelvesContainer');
-        const shelvesTitle = document.getElementById('shelvesTitle');
-        
-        if (!shelvesGrid) return;
-        
-        if (!this.currentZone) {
-            shelvesGrid.innerHTML = this.getEmptyShelvesState();
-            if (shelvesTitle) {
-                shelvesTitle.textContent = 'Selectează o zonă pentru a vedea rafturile';
-            }
-            this.toggleLegend(false);
-            return;
-        }
-        
-        // Update header
+    const shelvesGrid = document.getElementById('shelvesGrid');
+    const shelvesContainer = document.getElementById('shelvesContainer');
+    const shelvesTitle = document.getElementById('shelvesTitle');
+    
+    if (!shelvesGrid) return;
+    
+    if (!this.currentZone) {
+        shelvesGrid.innerHTML = this.getEmptyShelvesState();
         if (shelvesTitle) {
-            shelvesTitle.textContent = `Rafturi - Zona ${this.currentZone}`;
+            shelvesTitle.textContent = 'Selectează o zonă pentru a vedea rafturile';
         }
-        
-        const zoneShelves = this.locations.filter(l => 
-            l.zone === this.currentZone && l.type === 'Shelf'
-        );
-        
-        if (zoneShelves.length === 0) {
-            shelvesGrid.innerHTML = this.getEmptyShelvesState(`Nu există rafturi în zona ${this.currentZone}`);
-            this.toggleLegend(false);
-            return;
-        }
-        
-        // Sort shelves by location code for consistent display
-        zoneShelves.sort((a, b) => a.location_code.localeCompare(b.location_code));
-        
-        shelvesGrid.innerHTML = zoneShelves.map(shelf => this.createShelfElement(shelf)).join('');
-        this.toggleLegend(true);
+        this.toggleLegend(false);
+        return;
     }
+    
+    // Update header
+    if (shelvesTitle) {
+        shelvesTitle.textContent = `Rafturi - Zona ${this.currentZone}`;
+    }
+    
+    // FIXED: Case insensitive type filtering
+    const zoneShelves = this.locations.filter(l => 
+        l.zone === this.currentZone && l.type.toLowerCase() === 'shelf'
+    );
+    
+    if (zoneShelves.length === 0) {
+        shelvesGrid.innerHTML = this.getEmptyShelvesState(`Nu există rafturi în zona ${this.currentZone}`);
+        this.toggleLegend(false);
+        return;
+    }
+    
+    // Sort shelves by location code for consistent display
+    zoneShelves.sort((a, b) => a.location_code.localeCompare(b.location_code));
+    
+    shelvesGrid.innerHTML = zoneShelves.map(shelf => this.createShelfElement(shelf)).join('');
+    this.toggleLegend(true);
+}
 
     createShelfElement(shelf) {
         const occupancyTotal = shelf.occupancy?.total || 0;
@@ -539,60 +542,62 @@ class EnhancedWarehouseVisualization {
     }
 
     renderTable() {
-        const tbody = document.getElementById('locationsTableBody');
-        if (!tbody) return;
+    const tbody = document.getElementById('locationsTableBody');
+    if (!tbody) return;
 
-        let filteredLocations = [...this.locations];
-        
-        // Apply current filters
-        const zoneFilter = document.getElementById('zoneFilter')?.value;
-        const typeFilter = document.getElementById('typeFilter')?.value;
-        const searchFilter = document.getElementById('searchFilter')?.value.toLowerCase();
-        
-        if (zoneFilter) {
-            filteredLocations = filteredLocations.filter(l => l.zone === zoneFilter);
-        }
-        
-        if (typeFilter) {
-            filteredLocations = filteredLocations.filter(l => l.type === typeFilter);
-        }
-        
-        if (searchFilter) {
-            filteredLocations = filteredLocations.filter(l => 
-                l.location_code.toLowerCase().includes(searchFilter)
-            );
-        }
-        
-        tbody.innerHTML = filteredLocations.map(location => {
-            const occupancyClass = this.getOccupancyClass(location.occupancy?.total || 0);
-            const isShelf = location.type === 'Shelf';
-            
-            return `
-                <tr>
-                    <td><strong>${location.location_code}</strong></td>
-                    <td>Zona ${location.zone}</td>
-                    <td>${location.type}</td>
-                    <td><span class="occupancy-badge ${occupancyClass}">${Math.round(location.occupancy?.total || 0)}%</span></td>
-                    <td>${isShelf ? Math.round(location.occupancy?.bottom || 0) + '%' : '-'}</td>
-                    <td>${isShelf ? Math.round(location.occupancy?.middle || 0) + '%' : '-'}</td>
-                    <td>${isShelf ? Math.round(location.occupancy?.top || 0) + '%' : '-'}</td>
-                    <td>${location.items?.total || location.total_items || 0}</td>
-                    <td>${location.unique_products || 0}</td>
-                    <td>
-                        <button class="btn btn-sm btn-outline" onclick="openEditModal(${JSON.stringify(location).replace(/"/g, '&quot;')})" title="Editează">
-                            <span class="material-symbols-outlined">edit</span>
-                        </button>
-                        <button class="btn btn-sm btn-outline-danger" onclick="openDeleteModal(${location.id}, '${location.location_code}')" title="Șterge">
-                            <span class="material-symbols-outlined">delete</span>
-                        </button>
-                    </td>
-                </tr>
-            `;
-        }).join('');
-        
-        // Update table info
-        this.updateTableInfo(filteredLocations.length, this.locations.length);
+    let filteredLocations = [...this.locations];
+    
+    // Apply current filters
+    const zoneFilter = document.getElementById('zoneFilter')?.value;
+    const typeFilter = document.getElementById('typeFilter')?.value;
+    const searchFilter = document.getElementById('searchFilter')?.value.toLowerCase();
+    
+    if (zoneFilter) {
+        filteredLocations = filteredLocations.filter(l => l.zone === zoneFilter);
     }
+    
+    if (typeFilter) {
+        // FIXED: Case insensitive type filtering
+        filteredLocations = filteredLocations.filter(l => l.type.toLowerCase() === typeFilter.toLowerCase());
+    }
+    
+    if (searchFilter) {
+        filteredLocations = filteredLocations.filter(l => 
+            l.location_code.toLowerCase().includes(searchFilter)
+        );
+    }
+    
+    tbody.innerHTML = filteredLocations.map(location => {
+        const occupancyClass = this.getOccupancyClass(location.occupancy?.total || 0);
+        // FIXED: Case insensitive type check
+        const isShelf = location.type.toLowerCase() === 'shelf';
+        
+        return `
+            <tr>
+                <td><strong>${location.location_code}</strong></td>
+                <td>Zona ${location.zone}</td>
+                <td>${location.type}</td>
+                <td><span class="occupancy-badge ${occupancyClass}">${Math.round(location.occupancy?.total || 0)}%</span></td>
+                <td>${isShelf ? Math.round(location.occupancy?.bottom || 0) + '%' : '-'}</td>
+                <td>${isShelf ? Math.round(location.occupancy?.middle || 0) + '%' : '-'}</td>
+                <td>${isShelf ? Math.round(location.occupancy?.top || 0) + '%' : '-'}</td>
+                <td>${location.items?.total || location.total_items || 0}</td>
+                <td>${location.unique_products || 0}</td>
+                <td>
+                    <button class="btn btn-sm btn-outline" onclick="openEditModal(${JSON.stringify(location).replace(/"/g, '&quot;')})" title="Editează">
+                        <span class="material-symbols-outlined">edit</span>
+                    </button>
+                    <button class="btn btn-sm btn-outline-danger" onclick="openDeleteModal(${location.id}, '${location.location_code}')" title="Șterge">
+                        <span class="material-symbols-outlined">delete</span>
+                    </button>
+                </td>
+            </tr>
+        `;
+    }).join('');
+    
+    // Update table info
+    this.updateTableInfo(filteredLocations.length, this.locations.length);
+}
 
     updateTableInfo(filtered, total) {
         // You can add table pagination info here if needed
@@ -713,6 +718,29 @@ class EnhancedWarehouseVisualization {
         this.isLoading = loading;
         // Add loading state UI updates here if needed
     }
+
+    debugLocationsData() {
+    console.log('=== DEBUGGING LOCATIONS DATA ===');
+    console.log('Total locations:', this.locations.length);
+    console.log('Locations by type:');
+    
+    const typeMap = new Map();
+    this.locations.forEach(loc => {
+        const type = loc.type;
+        if (!typeMap.has(type)) {
+            typeMap.set(type, []);
+        }
+        typeMap.get(type).push(loc.location_code);
+    });
+    
+    typeMap.forEach((codes, type) => {
+        console.log(`  ${type}: ${codes.length} locations - ${codes.slice(0, 5).join(', ')}${codes.length > 5 ? '...' : ''}`);
+    });
+    
+    console.log('Dynamic zones:', window.dynamicZones);
+    console.log('Extracted zones:', this.zones);
+    console.log('================================');
+}
 }
 
 // Export for global access

@@ -1,22 +1,96 @@
-// File: scripts/locations.js
-// JavaScript functionality for the locations page
+/**
+ * Enhanced Locations JavaScript - Complete Updated File
+ * File: scripts/locations.js
+ * Auto-populates zone from location_code and enhanced warehouse visualization
+ * Includes all fixes and enhancements for storage-focused visualization
+ */
 
 document.addEventListener('DOMContentLoaded', function() {
-    console.log('Locations page loaded');
+    console.log('Enhanced Locations page loaded');
+    
+    // Initialize warehouse visualization if data exists
+    if (typeof window.warehouseData !== 'undefined') {
+        window.warehouseViz = new EnhancedWarehouseVisualization();
+    }
+    
+    // Auto-populate zone when location_code changes
+    const locationCodeInput = document.getElementById('location_code');
+    const zoneInput = document.getElementById('zone');
+    
+    if (locationCodeInput && zoneInput) {
+        locationCodeInput.addEventListener('input', function() {
+            const locationCode = this.value.trim();
+            if (locationCode && locationCode.includes('-')) {
+                const extractedZone = locationCode.split('-')[0].toUpperCase();
+                zoneInput.value = extractedZone;
+                zoneInput.style.backgroundColor = 'var(--success-color-light, #d4edda)';
+                
+                // Show success message briefly
+                showZoneAutoFill(extractedZone);
+            } else {
+                zoneInput.value = '';
+                zoneInput.style.backgroundColor = '';
+            }
+        });
+    }
 });
 
-// Modal functions
+// Show zone auto-fill message
+function showZoneAutoFill(zone) {
+    const existingMessage = document.querySelector('.zone-autofill-message');
+    if (existingMessage) {
+        existingMessage.remove();
+    }
+    
+    const zoneInput = document.getElementById('zone');
+    const message = document.createElement('small');
+    message.className = 'zone-autofill-message';
+    message.style.color = 'var(--success-color, #198754)';
+    message.style.fontSize = '0.75rem';
+    message.style.marginTop = '0.25rem';
+    message.style.display = 'block';
+    message.textContent = `✓ Zonă detectată automat: ${zone}`;
+    
+    zoneInput.parentNode.appendChild(message);
+    
+    // Remove message after 3 seconds
+    setTimeout(() => {
+        if (message.parentNode) {
+            message.parentNode.removeChild(message);
+        }
+    }, 3000);
+}
+
+// Modal functions (enhanced)
 function openCreateModal() {
     document.getElementById('modalTitle').textContent = 'Adaugă Locație';
     document.getElementById('formAction').value = 'create';
     document.getElementById('locationId').value = '';
     document.getElementById('submitBtn').textContent = 'Salvează';
     
-    // Clear form
+    // Clear form and reset zone input styling
     document.getElementById('locationForm').reset();
+    const zoneInput = document.getElementById('zone');
+    if (zoneInput) {
+        zoneInput.style.backgroundColor = '';
+    }
+    
+    // Clear any existing auto-fill messages
+    const existingMessage = document.querySelector('.zone-autofill-message');
+    if (existingMessage) {
+        existingMessage.remove();
+    }
     
     // Show modal
     document.getElementById('locationModal').classList.add('show');
+    
+    // Focus on location code input
+    setTimeout(() => {
+        const locationCodeInput = document.getElementById('location_code');
+        if (locationCodeInput) {
+            locationCodeInput.focus();
+        }
+    }, 100);
 }
 
 function openEditModal(location) {
@@ -28,14 +102,14 @@ function openEditModal(location) {
     // Populate form
     document.getElementById('location_code').value = location.location_code;
     document.getElementById('zone').value = location.zone;
-    document.getElementById('type').value = location.type || 'shelf';
+    document.getElementById('type').value = location.type || 'Shelf';
     document.getElementById('capacity').value = location.capacity || '';
     
-    // Convert database enum to form value
+    // Convert database status to form value
     const statusValue = location.status === 'active' ? '1' : '0';
     document.getElementById('status').value = statusValue;
     
-    document.getElementById('description').value = location.notes || ''; // Use 'notes' field
+    document.getElementById('description').value = location.notes || '';
     
     // Show modal
     document.getElementById('locationModal').classList.add('show');
@@ -43,6 +117,12 @@ function openEditModal(location) {
 
 function closeModal() {
     document.getElementById('locationModal').classList.remove('show');
+    
+    // Clear any existing auto-fill messages
+    const existingMessage = document.querySelector('.zone-autofill-message');
+    if (existingMessage) {
+        existingMessage.remove();
+    }
 }
 
 function openDeleteModal(locationId, locationCode) {
@@ -76,10 +156,11 @@ document.addEventListener('keydown', function(event) {
     }
 });
 
-// Form validation
+// Enhanced form validation with validation support
 document.getElementById('locationForm').addEventListener('submit', function(event) {
     const locationCode = document.getElementById('location_code').value.trim();
     const zone = document.getElementById('zone').value.trim();
+    const type = document.getElementById('type').value;
     
     if (!locationCode || !zone) {
         event.preventDefault();
@@ -87,487 +168,191 @@ document.getElementById('locationForm').addEventListener('submit', function(even
         return false;
     }
     
-    // Validate location code format (optional)
-    const codePattern = /^[A-Z0-9\-]+$/i;
-    if (!codePattern.test(locationCode)) {
-        event.preventDefault();
-        alert('Codul locației poate conține doar litere, cifre și cratima (-)');
-        return false;
+    // Use enhanced validation if available
+    if (window.locationValidation) {
+        const validation = window.locationValidation.validateLocationCode(locationCode, type);
+        if (!validation.valid) {
+            event.preventDefault();
+            alert('Erori de validare:\n' + validation.errors.join('\n'));
+            return false;
+        }
+        
+        // Validate that zone matches location code prefix for shelves
+        if (type === 'Shelf' && validation.extractedZone && zone.toUpperCase() !== validation.extractedZone) {
+            event.preventDefault();
+            alert(`Zona "${zone}" nu corespunde cu prefixul din codul locației "${validation.extractedZone}"`);
+            return false;
+        }
+    } else {
+        // Fallback validation
+        if (type === 'Shelf' && !locationCode.includes('-')) {
+            event.preventDefault();
+            alert('Pentru rafturi, codul locației trebuie să conțină cratimă (ex: MID-1A)');
+            return false;
+        }
+        
+        if (type === 'Shelf' && locationCode.includes('-')) {
+            const extractedZone = locationCode.split('-')[0].toUpperCase();
+            if (zone.toUpperCase() !== extractedZone) {
+                event.preventDefault();
+                alert(`Zona "${zone}" nu corespunde cu prefixul din codul locației "${extractedZone}"`);
+                return false;
+            }
+        }
     }
 });
 
 /**
- * Warehouse Visualization JavaScript
- * File: assets/js/warehouse-visualization.js
- * Production-ready implementation for WMS
+ * Enhanced Warehouse Visualization Class
+ * Complete implementation with dynamic zones and enhanced functionality
  */
-
-class WarehouseVisualization {
+class EnhancedWarehouseVisualization {
     constructor() {
         this.currentView = 'total';
-        this.shelfData = [];
+        this.currentZone = null;
+        this.locations = window.warehouseData || [];
+        this.zones = this.extractZones();
+        this.tooltip = null;
         this.isLoading = false;
-        this.refreshInterval = null;
-        this.selectedShelf = null;
         
         this.init();
     }
 
     init() {
+        this.createTooltip();
         this.bindEvents();
-        this.loadWarehouseData();
-        this.setupKeyboardNavigation();
-        this.startPeriodicRefresh();
+        this.renderZones();
+        this.updateCurrentViewIndicator();
+        
+        // Auto-select first zone if available
+        if (this.zones.length > 0) {
+            this.selectZone(this.zones[0].name);
+        }
+        
+        // Show legend if shelves are visible
+        this.toggleLegend(this.zones.length > 0 && this.currentZone);
+    }
+
+    extractZones() {
+        // Use dynamic zones from PHP if available, otherwise extract from locations
+        if (window.dynamicZones && window.dynamicZones.length > 0) {
+            return window.dynamicZones.map(zone => ({
+                name: zone.zone_name,
+                shelfCount: parseInt(zone.shelf_count) || 0,
+                avgOccupancy: parseFloat(zone.avg_occupancy) || 0,
+                totalCapacity: parseInt(zone.total_capacity) || 0,
+                totalItems: parseInt(zone.total_items) || 0,
+                shelves: this.locations.filter(l => l.zone === zone.zone_name && l.type === 'Shelf')
+            }));
+        }
+        
+        // Fallback: extract from locations data
+        const zoneMap = new Map();
+        
+        this.locations.forEach(location => {
+            const zoneName = location.zone;
+            if (zoneName && location.type === 'Shelf') {
+                if (!zoneMap.has(zoneName)) {
+                    zoneMap.set(zoneName, {
+                        name: zoneName,
+                        shelves: [],
+                        totalOccupancy: 0,
+                        shelfCount: 0
+                    });
+                }
+                
+                const zone = zoneMap.get(zoneName);
+                zone.shelves.push(location);
+                zone.shelfCount++;
+                zone.totalOccupancy += (location.occupancy?.total || 0);
+            }
+        });
+        
+        // Calculate average occupancy for each zone
+        const zones = Array.from(zoneMap.values()).map(zone => ({
+            ...zone,
+            avgOccupancy: zone.shelfCount > 0 ? zone.totalOccupancy / zone.shelfCount : 0
+        }));
+        
+        return zones.sort((a, b) => a.name.localeCompare(b.name));
+    }
+
+    createTooltip() {
+        if (document.getElementById('enhancedTooltip')) return;
+        
+        const tooltip = document.createElement('div');
+        tooltip.id = 'enhancedTooltip';
+        tooltip.className = 'enhanced-tooltip';
+        tooltip.style.cssText = `
+            position: absolute;
+            background: var(--black, #0F1013);
+            color: var(--white, #FEFFFF);
+            padding: 1rem;
+            border-radius: 8px;
+            border: 1px solid var(--border-color-strong, rgba(255,255,255,0.25));
+            font-size: 0.8rem;
+            z-index: 1000;
+            min-width: 280px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+            pointer-events: none;
+            opacity: 0;
+            transform: translateY(10px);
+            transition: all 0.2s ease;
+        `;
+        
+        document.body.appendChild(tooltip);
+        this.tooltip = tooltip;
     }
 
     bindEvents() {
-        // View mode buttons
+        // View buttons
         document.querySelectorAll('.view-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 const view = e.currentTarget.dataset.view;
-                if (view === 'table') {
-                    this.toggleTableView();
-                } else {
-                    this.switchView(view);
-                }
+                this.switchView(view);
             });
         });
 
-        // Filter change events
-        const filterElements = document.querySelectorAll('#zoneFilter, #typeFilter, #searchInput');
-        filterElements.forEach(element => {
-            if (element) {
-                element.addEventListener('input', this.debounce(() => {
-                    this.refreshWarehouseData();
-                }, 300));
+        // Zone selection
+        document.addEventListener('click', (e) => {
+            if (e.target.closest('.storage-zone')) {
+                const zone = e.target.closest('.storage-zone').dataset.zone;
+                this.selectZone(zone);
             }
         });
 
-        // Modal events
-        const editBtn = document.getElementById('editLocationBtn');
-        if (editBtn) {
-            editBtn.addEventListener('click', () => {
-                if (this.selectedShelf) {
-                    window.location.href = `locations.php?action=edit&id=${this.selectedShelf.id}`;
-                }
-            });
-        }
-    }
-
-    loadWarehouseData() {
-        if (!window.warehouseData || !Array.isArray(window.warehouseData)) {
-            this.handleEmptyData();
-            return;
-        }
-
-        this.shelfData = window.warehouseData.map(location => {
-            return {
-                id: parseInt(location.id),
-                code: location.location_code,
-                zone: location.zone,
-                type: location.type || 'shelf',
-                capacity: parseInt(location.capacity) || 0,
-                levelCapacity: parseInt(location.level_capacity) || 0,
-                totalItems: parseInt(location.total_items) || 0,
-                occupancy: {
-                    total: parseFloat(location.occupancy?.total) || 0,
-                    bottom: parseFloat(location.occupancy?.bottom) || 0,
-                    middle: parseFloat(location.occupancy?.middle) || 0,
-                    top: parseFloat(location.occupancy?.top) || 0
-                },
-                items: {
-                    total: parseInt(location.total_items) || 0,
-                    bottom: parseInt(location.bottom_items) || 0,
-                    middle: parseInt(location.middle_items) || 0,
-                    top: parseInt(location.top_items) || 0
-                },
-                status: location.status || 'active',
-                uniqueProducts: parseInt(location.unique_products) || 0,
-                lastUpdated: new Date()
-            };
-        });
-
-        this.renderWarehouse();
-        this.updateStats();
-    }
-
-    renderWarehouse() {
-        const shelvesGrid = document.getElementById('shelvesGrid');
-        if (!shelvesGrid) return;
-
-        if (this.shelfData.length === 0) {
-            shelvesGrid.innerHTML = this.getEmptyState();
-            return;
-        }
-
-        shelvesGrid.className = `shelves-grid view-mode-${this.currentView}`;
-        shelvesGrid.innerHTML = '';
-
-        // Sort shelves by zone and code
-        const sortedShelves = [...this.shelfData].sort((a, b) => {
-            if (a.zone !== b.zone) return a.zone.localeCompare(b.zone);
-            return a.code.localeCompare(b.code);
-        });
-
-        sortedShelves.forEach(shelf => {
-            const shelfElement = this.createShelfElement(shelf);
-            shelvesGrid.appendChild(shelfElement);
-        });
-    }
-
-    createShelfElement(shelf) {
-        const shelfDiv = document.createElement('div');
-        shelfDiv.className = 'shelf-container';
-        shelfDiv.dataset.shelfId = shelf.id;
-        shelfDiv.setAttribute('tabindex', '0');
-        shelfDiv.setAttribute('role', 'button');
-        shelfDiv.setAttribute('aria-label', `Locația ${shelf.code}, ocupare ${shelf.occupancy.total}%`);
-
-        const occupancyValue = this.currentView === 'total' 
-            ? shelf.occupancy.total 
-            : shelf.occupancy[this.currentView];
-        const occupancyClass = this.getOccupancyClass(occupancyValue);
-
-        shelfDiv.innerHTML = `
-            <div class="shelf-header">
-                <div class="shelf-code">${this.escapeHtml(shelf.code)}</div>
-                <div class="shelf-occupancy-badge ${occupancyClass}">${occupancyValue.toFixed(1)}%</div>
-            </div>
-            <div class="shelf-levels">
-                ${this.createLevelElements(shelf)}
-            </div>
-        `;
-
-        // Event listeners
-        shelfDiv.addEventListener('click', () => this.selectShelf(shelf));
-        shelfDiv.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                this.selectShelf(shelf);
-            }
-        });
-
-        shelfDiv.addEventListener('mouseenter', (e) => this.showTooltip(e, shelf));
-        shelfDiv.addEventListener('mouseleave', () => this.hideTooltip());
-
-        return shelfDiv;
-    }
-
-    createLevelElements(shelf) {
-        const levels = ['top', 'middle', 'bottom'];
-        
-        return levels.map(level => {
-            const occupancy = shelf.occupancy[level];
-            const items = shelf.items[level];
-            const isActive = this.currentView === level;
-            const occupancyClass = this.getOccupancyClass(occupancy);
-            
-            return `
-                <div class="shelf-level ${isActive ? 'active' : ''}" data-level="${level}">
-                    <div class="level-fill ${occupancyClass}" 
-                         style="width: ${occupancy}%"
-                         title="${this.capitalizeFirst(level)}: ${occupancy.toFixed(1)}% (${items}/${shelf.levelCapacity} articole)">
-                    </div>
-                </div>
-            `;
-        }).join('');
-    }
-
-    getOccupancyClass(percentage) {
-        if (percentage === 0) return 'occupancy-empty';
-        if (percentage <= 50) return 'occupancy-low';
-        if (percentage <= 79) return 'occupancy-medium';
-        if (percentage <= 94) return 'occupancy-high';
-        return 'occupancy-full';
-    }
-
-    switchView(newView) {
-        this.currentView = newView;
-
-        document.querySelectorAll('.view-btn').forEach(btn => {
-            btn.classList.remove('active');
-        });
-        document.querySelector(`[data-view="${newView}"]`)?.classList.add('active');
-
-        const warehouseSection = document.getElementById('warehouseVisualization');
-        const tableSection = document.querySelector('.table-responsive');
-        if (warehouseSection && tableSection) {
-            warehouseSection.classList.remove('d-none');
-            tableSection.classList.add('d-none');
-        }
-
-        this.renderWarehouse();
-    }
-
-    toggleTableView() {
-        const warehouseSection = document.getElementById('warehouseVisualization');
-        const tableSection = document.querySelector('.table-responsive');
-
-        if (warehouseSection && tableSection) {
-            warehouseSection.classList.add('d-none');
-            tableSection.classList.remove('d-none');
-        }
-    }
-
-    async selectShelf(shelf) {
-        this.selectedShelf = shelf;
-        await this.showLocationDetails(shelf);
-    }
-
-    async showLocationDetails(shelf) {
-        const modal = new bootstrap.Modal(document.getElementById('locationDetailsModal'));
-        const content = document.getElementById('locationDetailsContent');
-        
-        if (!content) return;
-
-        content.innerHTML = this.getModalLoadingState();
-        modal.show();
-
-        try {
-            const response = await fetch('locations.php', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                },
-                body: `action=get_location_details&id=${shelf.id}`
-            });
-
-            const data = await response.json();
-            
-            if (data.success) {
-                content.innerHTML = this.generateLocationDetailsHTML(data.location, shelf);
-            } else {
-                content.innerHTML = this.getModalErrorState(data.message || 'Eroare la încărcarea datelor.');
-            }
-        } catch (error) {
-            console.error('Error fetching location details:', error);
-            content.innerHTML = this.getModalErrorState('Eroare de conexiune.');
-        }
-    }
-
-    generateLocationDetailsHTML(locationData, shelf) {
-        return `
-            <div class="location-details">
-                <div class="row mb-4">
-                    <div class="col-md-6">
-                        <h6 class="mb-3"><i class="material-symbols-outlined me-2">info</i>Informații Generale</h6>
-                        <table class="table table-sm">
-                            <tr><td><strong>Cod Locație:</strong></td><td><code>${this.escapeHtml(shelf.code)}</code></td></tr>
-                            <tr><td><strong>Zonă:</strong></td><td>${this.escapeHtml(shelf.zone)}</td></tr>
-                            <tr><td><strong>Tip:</strong></td><td>${this.escapeHtml(shelf.type)}</td></tr>
-                            <tr><td><strong>Capacitate Totală:</strong></td><td>${shelf.capacity} articole</td></tr>
-                            <tr><td><strong>Capacitate/Nivel:</strong></td><td>${shelf.levelCapacity} articole</td></tr>
-                            <tr><td><strong>Produse Unice:</strong></td><td>${shelf.uniqueProducts}</td></tr>
-                        </table>
-                    </div>
-                    <div class="col-md-6">
-                        <h6 class="mb-3"><i class="material-symbols-outlined me-2">analytics</i>Ocupare pe Nivele</h6>
-                        <div class="level-breakdown">
-                            ${this.generateLevelBreakdown(shelf)}
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="row">
-                    <div class="col-12">
-                        <h6 class="mb-3"><i class="material-symbols-outlined me-2">inventory</i>Distribuție Articole</h6>
-                        <div class="progress-group">
-                            <div class="progress mb-2" style="height: 25px;">
-                                <div class="progress-bar ${this.getProgressBarClass(shelf.occupancy.total)}" 
-                                     style="width: ${shelf.occupancy.total}%">
-                                    ${shelf.occupancy.total.toFixed(1)}% (${shelf.items.total}/${shelf.capacity})
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `;
-    }
-
-    generateLevelBreakdown(shelf) {
-        const levels = [
-            { key: 'top', label: 'Nivel Superior', icon: 'vertical_align_top' },
-            { key: 'middle', label: 'Nivel Mijloc', icon: 'horizontal_rule' },
-            { key: 'bottom', label: 'Nivel Inferior', icon: 'vertical_align_bottom' }
-        ];
-
-        return levels.map(level => {
-            const occupancy = shelf.occupancy[level.key];
-            const items = shelf.items[level.key];
-            const progressClass = this.getProgressBarClass(occupancy);
-            
-            return `
-                <div class="level-row mb-2">
-                    <div class="d-flex justify-content-between align-items-center mb-1">
-                        <span class="level-label">
-                            <i class="material-symbols-outlined me-1" style="font-size: 1rem;">${level.icon}</i>
-                            ${level.label}
-                        </span>
-                        <span class="level-value">${occupancy.toFixed(1)}%</span>
-                    </div>
-                    <div class="progress" style="height: 8px;">
-                        <div class="progress-bar ${progressClass}" 
-                             style="width: ${occupancy}%"
-                             title="${items}/${shelf.levelCapacity} articole">
-                        </div>
-                    </div>
-                </div>
-            `;
-        }).join('');
-    }
-
-    getProgressBarClass(percentage) {
-        if (percentage === 0) return 'bg-light';
-        if (percentage <= 50) return 'bg-success';
-        if (percentage <= 79) return 'bg-warning';
-        if (percentage <= 94) return 'bg-danger';
-        return 'bg-dark';
-    }
-
-    updateStats() {
-        if (this.shelfData.length === 0) return;
-
-        const totalOccupancy = this.shelfData.reduce((sum, shelf) => sum + shelf.occupancy.total, 0) / this.shelfData.length;
-        const occupiedShelves = this.shelfData.filter(shelf => shelf.totalItems > 0).length;
-        const totalItems = this.shelfData.reduce((sum, shelf) => sum + shelf.totalItems, 0);
-        const highOccupancyShelves = this.shelfData.filter(shelf => shelf.occupancy.total >= 80).length;
-
-        // Update stat cards
-        const statValues = document.querySelectorAll('.stat-value');
-        if (statValues[0]) statValues[0].textContent = `${totalOccupancy.toFixed(1)}%`;
-        if (statValues[1]) statValues[1].textContent = `${occupiedShelves}/${this.shelfData.length}`;
-        if (statValues[2]) statValues[2].textContent = totalItems.toLocaleString();
-        if (statValues[3]) statValues[3].textContent = highOccupancyShelves;
-    }
-
-    async refreshWarehouseData() {
-        if (this.isLoading) return;
-        
-        this.isLoading = true;
-        
-        try {
-            const currentFilters = window.currentFilters || {};
-            const params = new URLSearchParams({
-                action: 'get_warehouse_data',
-                zone: currentFilters.zone || '',
-                type: currentFilters.type || '',
-                search: currentFilters.search || ''
-            });
-
-            const response = await fetch(`locations.php?${params}`);
-            const data = await response.json();
-            
-            if (data.success) {
-                window.warehouseData = data.locations;
-                this.loadWarehouseData();
-            }
-        } catch (error) {
-            console.error('Error refreshing warehouse data:', error);
-        } finally {
-            this.isLoading = false;
-        }
-    }
-
-    setupKeyboardNavigation() {
-        document.addEventListener('keydown', (e) => {
-            if (e.target.classList.contains('shelf-container')) {
-                const shelves = Array.from(document.querySelectorAll('.shelf-container'));
-                const currentIndex = shelves.indexOf(e.target);
-                let nextIndex = currentIndex;
-
-                switch (e.key) {
-                    case 'ArrowRight':
-                        nextIndex = Math.min(currentIndex + 1, shelves.length - 1);
-                        break;
-                    case 'ArrowLeft':
-                        nextIndex = Math.max(currentIndex - 1, 0);
-                        break;
-                    case 'ArrowDown':
-                        nextIndex = Math.min(currentIndex + 6, shelves.length - 1);
-                        break;
-                    case 'ArrowUp':
-                        nextIndex = Math.max(currentIndex - 6, 0);
-                        break;
-                    default:
-                        return;
-                }
-
-                if (nextIndex !== currentIndex) {
-                    e.preventDefault();
-                    shelves[nextIndex].focus();
+        // Enhanced hover tooltips
+        document.addEventListener('mouseover', (e) => {
+            if (e.target.closest('.shelf-item')) {
+                const shelfElement = e.target.closest('.shelf-item');
+                const shelfId = parseInt(shelfElement.dataset.shelfId);
+                const shelf = this.locations.find(s => s.id === shelfId);
+                if (shelf) {
+                    this.showEnhancedTooltip(e, shelf);
                 }
             }
         });
-    }
 
-    startPeriodicRefresh() {
-        // Refresh every 30 seconds
-        this.refreshInterval = setInterval(() => {
-            this.refreshWarehouseData();
-        }, 30000);
-    }
+        document.addEventListener('mouseout', (e) => {
+            if (e.target.closest('.shelf-item')) {
+                this.hideTooltip();
+            }
+        });
 
-    stopPeriodicRefresh() {
-        if (this.refreshInterval) {
-            clearInterval(this.refreshInterval);
-            this.refreshInterval = null;
-        }
-    }
+        document.addEventListener('mousemove', (e) => {
+            if (this.tooltip && this.tooltip.style.opacity === '1') {
+                this.updateTooltipPosition(e);
+            }
+        });
 
-    showTooltip(event, shelf) {
-        // Simple browser tooltip via title attribute (already handled in createLevelElements)
-        // Can be enhanced with custom tooltip library if needed
-    }
-
-    hideTooltip() {
-        // Handled by browser for title tooltips
-    }
-
-    handleEmptyData() {
-        const shelvesGrid = document.getElementById('shelvesGrid');
-        if (shelvesGrid) {
-            shelvesGrid.innerHTML = this.getEmptyState();
-        }
-    }
-
-    getEmptyState() {
-        return `
-            <div class="warehouse-empty">
-                <i class="material-symbols-outlined">inventory</i>
-                <h5>Nu există locații disponibile</h5>
-                <p>Nu au fost găsite locații care să corespundă criteriilor de filtrare.</p>
-            </div>
-        `;
-    }
-
-    getModalLoadingState() {
-        return `
-            <div class="warehouse-loading">
-                <i class="material-symbols-outlined">refresh</i>
-                Încărcare detalii...
-            </div>
-        `;
-    }
-
-    getModalErrorState(message) {
-        return `
-            <div class="alert alert-danger">
-                <i class="material-symbols-outlined me-2">error</i>
-                ${this.escapeHtml(message)}
-            </div>
-        `;
-    }
-
-    // Utility methods
-    escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
-    }
-
-    capitalizeFirst(str) {
-        return str.charAt(0).toUpperCase() + str.slice(1);
+        // Table filters
+        const zoneFilter = document.getElementById('zoneFilter');
+        const typeFilter = document.getElementById('typeFilter');
+        const searchFilter = document.getElementById('searchFilter');
+        
+        if (zoneFilter) zoneFilter.addEventListener('change', () => this.filterTable());
+        if (typeFilter) typeFilter.addEventListener('change', () => this.filterTable());
+        if (searchFilter) searchFilter.addEventListener('input', this.debounce(() => this.filterTable(), 300));
     }
 
     debounce(func, wait) {
@@ -582,35 +367,353 @@ class WarehouseVisualization {
         };
     }
 
-    // Cleanup method
-    destroy() {
-        this.stopPeriodicRefresh();
-        // Remove event listeners if needed
+    switchView(view) {
+        this.currentView = view;
+
+        // Update active button
+        document.querySelectorAll('.view-btn').forEach(btn => {
+            btn.classList.remove('active');
+        });
+        document.querySelector(`[data-view="${view}"]`)?.classList.add('active');
+
+        // Toggle between visualization and table
+        const warehouseViz = document.getElementById('warehouseVisualization');
+        const tableContainer = document.getElementById('tableContainer');
+
+        if (view === 'table') {
+            if (warehouseViz) warehouseViz.classList.add('hidden');
+            if (tableContainer) tableContainer.classList.add('active');
+            this.renderTable();
+        } else {
+            if (warehouseViz) warehouseViz.classList.remove('hidden');
+            if (tableContainer) tableContainer.classList.remove('active');
+            this.renderShelves();
+        }
+
+        this.updateCurrentViewIndicator();
+    }
+
+    updateCurrentViewIndicator() {
+        const indicator = document.getElementById('currentViewText');
+        const icon = document.getElementById('currentViewIcon');
+
+        if (!indicator || !icon) return;
+
+        const viewLabels = {
+            'total': 'Vizualizare Zone și Rafturi',
+            'table': 'Vizualizare Tabel'
+        };
+
+        const viewIcons = {
+            'total': 'shelves',
+            'table': 'table_view'
+        };
+
+        indicator.textContent = viewLabels[this.currentView] || 'Necunoscut';
+        icon.textContent = viewIcons[this.currentView] || 'help';
+    }
+
+    selectZone(zoneName) {
+        this.currentZone = zoneName;
+        
+        // Update zone selection visual feedback
+        document.querySelectorAll('.storage-zone').forEach(z => {
+            const isSelected = z.dataset.zone === zoneName;
+            z.style.borderColor = isSelected ? 'var(--success-color, #198754)' : 'var(--border-color)';
+            z.style.backgroundColor = isSelected ? 'var(--button-hover)' : '';
+            
+            // Add selected class for better styling
+            if (isSelected) {
+                z.classList.add('selected');
+            } else {
+                z.classList.remove('selected');
+            }
+        });
+
+        this.renderShelves();
+        this.toggleLegend(true);
+    }
+
+    renderZones() {
+        const zonesGrid = document.getElementById('storageZonesGrid');
+        if (!zonesGrid) return;
+        
+        if (this.zones.length === 0) {
+            zonesGrid.innerHTML = this.getEmptyZonesState();
+            return;
+        }
+        
+        zonesGrid.innerHTML = this.zones.map(zone => `
+            <div class="storage-zone" data-zone="${zone.name}">
+                <span class="material-symbols-outlined zone-icon">shelves</span>
+                <div class="zone-label">Zona ${zone.name}</div>
+                <div class="zone-stats">${zone.shelfCount || 0} rafturi • ${Math.round(zone.avgOccupancy || 0)}% ocupare</div>
+            </div>
+        `).join('');
+    }
+
+    renderShelves() {
+        const shelvesGrid = document.getElementById('shelvesGrid');
+        const shelvesContainer = document.getElementById('shelvesContainer');
+        const shelvesTitle = document.getElementById('shelvesTitle');
+        
+        if (!shelvesGrid) return;
+        
+        if (!this.currentZone) {
+            shelvesGrid.innerHTML = this.getEmptyShelvesState();
+            if (shelvesTitle) {
+                shelvesTitle.textContent = 'Selectează o zonă pentru a vedea rafturile';
+            }
+            this.toggleLegend(false);
+            return;
+        }
+        
+        // Update header
+        if (shelvesTitle) {
+            shelvesTitle.textContent = `Rafturi - Zona ${this.currentZone}`;
+        }
+        
+        const zoneShelves = this.locations.filter(l => 
+            l.zone === this.currentZone && l.type === 'Shelf'
+        );
+        
+        if (zoneShelves.length === 0) {
+            shelvesGrid.innerHTML = this.getEmptyShelvesState(`Nu există rafturi în zona ${this.currentZone}`);
+            this.toggleLegend(false);
+            return;
+        }
+        
+        // Sort shelves by location code for consistent display
+        zoneShelves.sort((a, b) => a.location_code.localeCompare(b.location_code));
+        
+        shelvesGrid.innerHTML = zoneShelves.map(shelf => this.createShelfElement(shelf)).join('');
+        this.toggleLegend(true);
+    }
+
+    createShelfElement(shelf) {
+        const occupancyTotal = shelf.occupancy?.total || 0;
+        const occupancyBottom = shelf.occupancy?.bottom || 0;
+        const occupancyMiddle = shelf.occupancy?.middle || 0;
+        const occupancyTop = shelf.occupancy?.top || 0;
+
+        // Create level bars (always visible now) - top to bottom order
+        const levelsHTML = `
+            <div class="shelf-levels">
+                <div class="shelf-level" data-level="top" title="Nivel superior: ${Math.round(occupancyTop)}%">
+                    <div class="level-fill ${this.getOccupancyClass(occupancyTop)}" 
+                         style="width: ${occupancyTop}%"></div>
+                </div>
+                <div class="shelf-level" data-level="middle" title="Nivel mijloc: ${Math.round(occupancyMiddle)}%">
+                    <div class="level-fill ${this.getOccupancyClass(occupancyMiddle)}" 
+                         style="width: ${occupancyMiddle}%"></div>
+                </div>
+                <div class="shelf-level" data-level="bottom" title="Nivel inferior: ${Math.round(occupancyBottom)}%">
+                    <div class="level-fill ${this.getOccupancyClass(occupancyBottom)}" 
+                         style="width: ${occupancyBottom}%"></div>
+                </div>
+            </div>
+        `;
+
+        return `
+            <div class="shelf-item ${this.getOccupancyClass(occupancyTotal)}" data-shelf-id="${shelf.id}">
+                <div class="shelf-code">${shelf.location_code}</div>
+                ${levelsHTML}
+                <div class="shelf-occupancy">${Math.round(occupancyTotal)}%</div>
+            </div>
+        `;
+    }
+
+    getOccupancyClass(percentage) {
+        if (percentage === 0) return 'occupancy-empty';
+        if (percentage <= 50) return 'occupancy-low';
+        if (percentage <= 79) return 'occupancy-medium';
+        if (percentage <= 94) return 'occupancy-high';
+        return 'occupancy-full';
+    }
+
+    toggleLegend(show) {
+        const legend = document.getElementById('occupancyLegend');
+        if (legend) {
+            legend.style.display = show ? 'flex' : 'none';
+        }
+    }
+
+    renderTable() {
+        const tbody = document.getElementById('locationsTableBody');
+        if (!tbody) return;
+
+        let filteredLocations = [...this.locations];
+        
+        // Apply current filters
+        const zoneFilter = document.getElementById('zoneFilter')?.value;
+        const typeFilter = document.getElementById('typeFilter')?.value;
+        const searchFilter = document.getElementById('searchFilter')?.value.toLowerCase();
+        
+        if (zoneFilter) {
+            filteredLocations = filteredLocations.filter(l => l.zone === zoneFilter);
+        }
+        
+        if (typeFilter) {
+            filteredLocations = filteredLocations.filter(l => l.type === typeFilter);
+        }
+        
+        if (searchFilter) {
+            filteredLocations = filteredLocations.filter(l => 
+                l.location_code.toLowerCase().includes(searchFilter)
+            );
+        }
+        
+        tbody.innerHTML = filteredLocations.map(location => {
+            const occupancyClass = this.getOccupancyClass(location.occupancy?.total || 0);
+            const isShelf = location.type === 'Shelf';
+            
+            return `
+                <tr>
+                    <td><strong>${location.location_code}</strong></td>
+                    <td>Zona ${location.zone}</td>
+                    <td>${location.type}</td>
+                    <td><span class="occupancy-badge ${occupancyClass}">${Math.round(location.occupancy?.total || 0)}%</span></td>
+                    <td>${isShelf ? Math.round(location.occupancy?.bottom || 0) + '%' : '-'}</td>
+                    <td>${isShelf ? Math.round(location.occupancy?.middle || 0) + '%' : '-'}</td>
+                    <td>${isShelf ? Math.round(location.occupancy?.top || 0) + '%' : '-'}</td>
+                    <td>${location.items?.total || location.total_items || 0}</td>
+                    <td>${location.unique_products || 0}</td>
+                    <td>
+                        <button class="btn btn-sm btn-outline" onclick="openEditModal(${JSON.stringify(location).replace(/"/g, '&quot;')})" title="Editează">
+                            <span class="material-symbols-outlined">edit</span>
+                        </button>
+                        <button class="btn btn-sm btn-outline-danger" onclick="openDeleteModal(${location.id}, '${location.location_code}')" title="Șterge">
+                            <span class="material-symbols-outlined">delete</span>
+                        </button>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+        
+        // Update table info
+        this.updateTableInfo(filteredLocations.length, this.locations.length);
+    }
+
+    updateTableInfo(filtered, total) {
+        // You can add table pagination info here if needed
+        console.log(`Showing ${filtered} of ${total} locations`);
+    }
+
+    filterTable() {
+        if (this.currentView === 'table') {
+            this.renderTable();
+        }
+    }
+
+    showEnhancedTooltip(event, shelf) {
+        if (!this.tooltip) return;
+
+        const occupancy = shelf.occupancy || {};
+        const items = shelf.items || {
+            total: shelf.total_items || 0,
+            bottom: shelf.bottom_items || 0,
+            middle: shelf.middle_items || 0,
+            top: shelf.top_items || 0
+        };
+
+        this.tooltip.innerHTML = `
+            <div style="font-weight: 600; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
+                <span class="material-symbols-outlined" style="font-size: 1rem;">info</span>
+                Raft ${shelf.location_code}
+            </div>
+            <div style="margin-bottom: 0.75rem;">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 0.25rem; font-size: 0.75rem;">
+                    <span>🔼 Sus:</span>
+                    <span>${Math.round(occupancy.top || 0)}% (${items.top || 0} articole)</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 0.25rem; font-size: 0.75rem;">
+                    <span>➖ Mijloc:</span>
+                    <span>${Math.round(occupancy.middle || 0)}% (${items.middle || 0} articole)</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 0.25rem; font-size: 0.75rem;">
+                    <span>🔽 Jos:</span>
+                    <span>${Math.round(occupancy.bottom || 0)}% (${items.bottom || 0} articole)</span>
+                </div>
+            </div>
+            <div style="padding-top: 0.5rem; border-top: 1px solid var(--border-color); font-size: 0.7rem; color: var(--text-secondary);">
+                📦 Total: ${items.total || 0} articole din ${shelf.capacity || 0}<br>
+                🏷️ Produse unice: ${shelf.unique_products || 0}<br>
+                📍 Zonă: ${shelf.zone}
+            </div>
+        `;
+
+        this.tooltip.style.opacity = '1';
+        this.tooltip.style.transform = 'translateY(0)';
+        this.updateTooltipPosition(event);
+    }
+
+    updateTooltipPosition(event) {
+        if (!this.tooltip) return;
+
+        const rect = this.tooltip.getBoundingClientRect();
+        let x = event.clientX + 15;
+        let y = event.clientY - rect.height - 15;
+
+        // Keep tooltip within viewport
+        if (x + rect.width > window.innerWidth) {
+            x = event.clientX - rect.width - 15;
+        }
+        if (y < 0) {
+            y = event.clientY + 15;
+        }
+
+        this.tooltip.style.left = x + 'px';
+        this.tooltip.style.top = y + 'px';
+    }
+
+    hideTooltip() {
+        if (this.tooltip) {
+            this.tooltip.style.opacity = '0';
+            this.tooltip.style.transform = 'translateY(10px)';
+        }
+    }
+
+    getEmptyZonesState() {
+        return `
+            <div style="grid-column: 1 / -1; text-align: center; padding: 2rem; color: var(--text-secondary);">
+                <span class="material-symbols-outlined" style="font-size: 3rem; margin-bottom: 1rem; display: block; color: var(--border-color);">
+                    shelves
+                </span>
+                <h3 style="margin-bottom: 0.5rem; color: var(--text-primary);">Nu există zone de stocare</h3>
+                <p>Adaugă rafturi cu format de cod ca MID-1A pentru a crea zone automat.</p>
+            </div>
+        `;
+    }
+
+    getEmptyShelvesState(customMessage = null) {
+        return `
+            <div style="grid-column: 1 / -1; text-align: center; padding: 2rem; color: var(--text-secondary);">
+                <span class="material-symbols-outlined" style="font-size: 2.5rem; margin-bottom: 1rem; display: block; color: var(--border-color);">
+                    inventory_2
+                </span>
+                <p>${customMessage || 'Selectează o zonă pentru a vedea rafturile'}</p>
+            </div>
+        `;
+    }
+
+    // Public methods for external use
+    refresh() {
+        this.locations = window.warehouseData || [];
+        this.zones = this.extractZones();
+        this.renderZones();
+        if (this.currentZone) {
+            this.renderShelves();
+        }
+        if (this.currentView === 'table') {
+            this.renderTable();
+        }
+    }
+
+    setLoading(loading) {
+        this.isLoading = loading;
+        // Add loading state UI updates here if needed
     }
 }
 
-// Initialize when DOM is ready
-document.addEventListener('DOMContentLoaded', () => {
-    const warehouseEl = document.getElementById('warehouseVisualization');
-    const tableEl = document.querySelector('.table-responsive');
-    const controls = document.querySelector('.view-controls');
-
-    if (window.innerWidth <= 768) {
-        warehouseEl?.classList.add('d-none');
-        tableEl?.classList.remove('d-none');
-        controls?.classList.add('d-none');
-    } else if (warehouseEl && tableEl) {
-        tableEl.classList.add('d-none');
-    }
-
-    if (warehouseEl) {
-        window.warehouseViz = new WarehouseVisualization();
-    }
-});
-
-// Cleanup on page unload
-window.addEventListener('beforeunload', () => {
-    if (window.warehouseViz) {
-        window.warehouseViz.destroy();
-    }
-});
+// Export for global access
+window.EnhancedWarehouseVisualization = EnhancedWarehouseVisualization;

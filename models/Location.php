@@ -616,6 +616,12 @@ public function getWarehouseVisualizationData($zoneFilter = '', $typeFilter = ''
         $stmt->execute();
         $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
+        // Process the results to add occupancy data
+        foreach ($results as &$location) { // Use a reference '&' to modify the array directly
+            $totalCapacity = (int)$location['capacity'];
+            // Assuming a standard shelf has 3 levels if not specified otherwise
+            $levelCapacity = $totalCapacity > 0 ? $totalCapacity / 3 : 0; 
+            
             $location['occupancy'] = [
                 'total' => $totalCapacity > 0 ? round(($location['total_items'] / $totalCapacity) * 100, 1) : 0,
                 'bottom' => $levelCapacity > 0 ? round(($location['bottom_items'] / $levelCapacity) * 100, 1) : 0,
@@ -625,7 +631,7 @@ public function getWarehouseVisualizationData($zoneFilter = '', $typeFilter = ''
         }
         
         return $results;
-        
+
     } catch (PDOException $e) {
         error_log("Error getting warehouse visualization data: " . $e->getMessage());
         return [];

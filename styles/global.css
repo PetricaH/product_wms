@@ -554,6 +554,11 @@ body {
 .bg-warning { background-color: var(--warning-color) !important; }
 .bg-info { background-color: var(--info-color) !important; }
 
+/* Display Utilities */
+.d-flex { display: flex !important; }
+.d-block { display: block !important; }
+.d-none { display: none !important; }
+
 /* Spacing Utilities */
 .m-0 { margin: 0 !important; }
 .mb-1 { margin-bottom: 0.25rem !important; }

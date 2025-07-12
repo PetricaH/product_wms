@@ -168,6 +168,117 @@ class Order
         return $order;
     }
     
+      /**
+     * Count active orders (pending, processing, etc.)
+     * @return int Number of active orders
+     */
+    public function countActiveOrders(): int {
+        try {
+            $query = "SELECT COUNT(*) FROM orders 
+                    WHERE status IN ('pending', 'processing', 'confirmed', 'shipped')";
+            $stmt = $this->conn->prepare($query);
+            $stmt->execute();
+            return (int)$stmt->fetchColumn();
+            
+        } catch (PDOException $e) {
+            error_log("Error counting active orders: " . $e->getMessage());
+            return 0;
+        }
+    }
+
+    /**
+     * Count pending orders
+     * @return int Number of pending orders
+     */
+    public function countPendingOrders(): int {
+        try {
+            $query = "SELECT COUNT(*) FROM orders WHERE status = 'pending'";
+            $stmt = $this->conn->prepare($query);
+            $stmt->execute();
+            return (int)$stmt->fetchColumn();
+            
+        } catch (PDOException $e) {
+            error_log("Error counting pending orders: " . $e->getMessage());
+            return 0;
+        }
+    }
+
+    /**
+     * Count orders completed today
+     * @return int Number of orders completed today
+     */
+    public function countCompletedToday(): int {
+        try {
+            $query = "SELECT COUNT(*) FROM orders 
+                    WHERE status = 'completed' AND DATE(updated_at) = CURDATE()";
+            $stmt = $this->conn->prepare($query);
+            $stmt->execute();
+            return (int)$stmt->fetchColumn();
+            
+        } catch (PDOException $e) {
+            error_log("Error counting completed orders today: " . $e->getMessage());
+            return 0;
+        }
+    }
+
+    /**
+     * Get recent orders
+     * @param int $limit Number of recent orders to fetch
+     * @return array Recent orders with basic info
+     */
+    public function getRecentOrders(int $limit = 10): array {
+        try {
+            $query = "SELECT id, customer_name, status, total_amount, created_at
+                    FROM orders 
+                    ORDER BY created_at DESC 
+                    LIMIT :limit";
+            
+            $stmt = $this->conn->prepare($query);
+            $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+            $stmt->execute();
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+        } catch (PDOException $e) {
+            error_log("Error getting recent orders: " . $e->getMessage());
+            return [];
+        }
+    }
+
+    /**
+     * Count orders created today
+     * @return int Number of orders created today
+     */
+    public function countOrdersCreatedToday(): int {
+        try {
+            $query = "SELECT COUNT(*) FROM orders WHERE DATE(created_at) = CURDATE()";
+            $stmt = $this->conn->prepare($query);
+            $stmt->execute();
+            return (int)$stmt->fetchColumn();
+            
+        } catch (PDOException $e) {
+            error_log("Error counting orders created today: " . $e->getMessage());
+            return 0;
+        }
+    }
+
+    /**
+     * Count shipped orders today  
+     * @return int Number of orders shipped today
+     */
+    public function countShippedToday(): int {
+        try {
+            $query = "SELECT COUNT(*) FROM orders 
+                    WHERE status = 'shipped' AND DATE(updated_at) = CURDATE()";
+            $stmt = $this->conn->prepare($query);
+            $stmt->execute();
+            return (int)$stmt->fetchColumn();
+            
+        } catch (PDOException $e) {
+            error_log("Error counting shipped orders today: " . $e->getMessage());
+            return 0;
+        }
+    }
+
     /**
      * Get order items with product and unit details
      */

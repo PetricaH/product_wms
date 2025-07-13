@@ -1,5 +1,5 @@
 <?php
-// File: api/warehouse/dashboard_stats.php - Warehouse dashboard statistics
+// File: api/warehouse/dashboard_stats.php - Fixed to show outbound order statistics
 header('Content-Type: application/json');
 error_reporting(E_ALL);
 ini_set('display_errors', 0);
@@ -44,30 +44,30 @@ try {
     // Get warehouse statistics
     $stats = [];
 
-    // 1. Pending picks (orders waiting to be picked)
+    // 1. Pending picks (orders waiting to be picked) - FIXED: Changed to 'outbound'
     $pendingPicksQuery = "
         SELECT COUNT(*) as count 
         FROM orders 
         WHERE status IN ('pending', 'assigned') 
-        AND type = 'inbound'
+        AND type = 'outbound'
     ";
     $stmt = $db->prepare($pendingPicksQuery);
     $stmt->execute();
     $stats['pending_picks'] = (int)$stmt->fetchColumn();
 
-    // 2. Picks completed today
+    // 2. Picks completed today - FIXED: Changed to 'outbound'
     $picksTodayQuery = "
         SELECT COUNT(*) as count 
         FROM orders 
         WHERE DATE(updated_at) = CURDATE() 
         AND status = 'completed'
-        AND type = 'inbound'
+        AND type = 'outbound'
     ";
     $stmt = $db->prepare($picksTodayQuery);
     $stmt->execute();
     $stats['picks_today'] = (int)$stmt->fetchColumn();
 
-    // 3. Pending receipts (incoming shipments)
+    // 3. Pending receipts (incoming shipments) - This should remain 'inbound' as it's for receiving
     $pendingReceiptsQuery = "
         SELECT COUNT(*) as count 
         FROM orders 
@@ -78,7 +78,7 @@ try {
     $stmt->execute();
     $stats['pending_receipts'] = (int)$stmt->fetchColumn();
 
-    // 4. Receipts processed today
+    // 4. Receipts processed today - This should remain 'inbound' as it's for receiving
     $receiptsTodayQuery = "
         SELECT COUNT(*) as count 
         FROM orders 
@@ -95,38 +95,34 @@ try {
     $stmt->execute();
     $stats['total_orders'] = (int)$stmt->fetchColumn();
 
-    // 6. Orders by status breakdown
-    $statusBreakdownQuery = "
-        SELECT status, COUNT(*) as count 
+    // 6. Today's shipments (outbound orders shipped today)
+    $shipmentsTodayQuery = "
+        SELECT COUNT(*) as count 
         FROM orders 
-        GROUP BY status
+        WHERE DATE(shipped_date) = CURDATE() 
+        AND type = 'outbound'
+        AND status = 'shipped'
     ";
-    $stmt = $db->prepare($statusBreakdownQuery);
+    $stmt = $db->prepare($shipmentsTodayQuery);
     $stmt->execute();
-    $statusBreakdown = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
-    $stats['status_breakdown'] = $statusBreakdown;
+    $stats['shipments_today'] = (int)$stmt->fetchColumn();
 
-    // 7. Activity summary (last 7 days)
-    $activityQuery = "
-        SELECT 
-            DATE(created_at) as date,
-            COUNT(*) as orders_created,
-            SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as orders_completed
+    // 7. Processing orders (currently being worked on)
+    $processingOrdersQuery = "
+        SELECT COUNT(*) as count 
         FROM orders 
-        WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
-        GROUP BY DATE(created_at)
-        ORDER BY date DESC
+        WHERE status = 'processing' 
+        AND type = 'outbound'
     ";
-    $stmt = $db->prepare($activityQuery);
+    $stmt = $db->prepare($processingOrdersQuery);
     $stmt->execute();
-    $stats['weekly_activity'] = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $stats['processing_orders'] = (int)$stmt->fetchColumn();
 
-    // Return successful response
+    // Return the statistics
     echo json_encode([
         'status' => 'success',
         'stats' => $stats,
-        'timestamp' => date('Y-m-d H:i:s'),
-        'cache_duration' => 300 // 5 minutes
+        'timestamp' => date('Y-m-d H:i:s')
     ]);
 
 } catch (PDOException $e) {
@@ -134,14 +130,24 @@ try {
     http_response_code(500);
     echo json_encode([
         'status' => 'error',
-        'message' => 'Database connection error'
+        'message' => 'Database connection error.',
+        'debug' => [
+            'error' => $e->getMessage(),
+            'file' => basename(__FILE__),
+            'line' => __LINE__
+        ]
     ]);
 } catch (Exception $e) {
     error_log("General error in dashboard_stats.php: " . $e->getMessage());
     http_response_code(500);
     echo json_encode([
         'status' => 'error',
-        'message' => 'Server error occurred'
+        'message' => 'Server error: ' . $e->getMessage(),
+        'debug' => [
+            'file' => basename(__FILE__),
+            'line' => __LINE__,
+            'BASE_PATH' => BASE_PATH
+        ]
     ]);
 }
 ?>

@@ -126,7 +126,9 @@ class AWBController {
             throw new Exception('Total weight must be greater than 0', 400);
         }
         
-        if (!preg_match('/^[0-9\s\-\(\)]{10,15}$/', $order['recipient_phone'])) {
+        // Allow optional leading '+' as phone numbers may be stored in
+        // international format (e.g. +40728260020)
+        if (!preg_match('/^\+?[0-9\s\-\(\)]{10,15}$/', $order['recipient_phone'])) {
             throw new Exception('Invalid phone number format', 400);
         }
         

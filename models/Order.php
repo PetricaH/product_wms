@@ -64,6 +64,25 @@ class Order
         }
     }
 
+     /**
+     * Get orders by status
+     * @param string $status Order status
+     * @return array
+     */
+    public function getOrdersByStatus($status) {
+        $query = "SELECT * FROM {$this->table} WHERE status = :status ORDER BY order_date DESC";
+        
+        try {
+            $stmt = $this->conn->prepare($query);
+            $stmt->bindValue(':status', $status);
+            $stmt->execute();
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (PDOException $e) {
+            error_log("Error getting orders by status: " . $e->getMessage());
+            return [];
+        }
+    }
+
     /**
      * Delete an order and its items
      * @param int $orderId Order ID

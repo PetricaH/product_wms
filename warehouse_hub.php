@@ -1,42 +1,33 @@
+<?php
+// warehouse_hub.php - Proper version with includes
+session_start();
+
+// Include necessary files
+require_once 'bootstrap.php';
+require_once 'includes/helpers.php';
+
+// Check if user is logged in (optional - depending on your auth system)
+if (!isset($_SESSION['user_id'])) {
+    header('Location: login.php');
+    exit;
+}
+?>
 <!DOCTYPE html>
 <html lang="ro">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <?php include_once 'includes/warehouse_header.php'; ?>
     <title>Hub Operații Depozit - WMS</title>
-    
-    <!-- Fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet">
-    
-    <!-- CSS Files -->
-    <link rel="stylesheet" href="styles/global.css">
-    <link rel="stylesheet" href="styles/warehouse-css/warehouse_hub.css">
 </head>
 <body>
-    <!-- Header -->
-    <div class="header">
-        <div class="header-content">
-            <div class="header-title">
-                <span class="material-symbols-outlined">warehouse</span>
-                WMS - Hub Operații
-            </div>
-            <div class="user-info">
-                <div id="current-time"></div>
-                <div class="user-badge">
-                    <span class="material-symbols-outlined">person</span>
-                    <span id="worker-name">Lucrător</span>
-                </div>
-            </div>
-        </div>
-    </div>
+    <!-- Header Navigation -->
+    <?php include_once 'includes/warehouse_navbar.php'; ?>
 
-    <a href="biometric-setup.php">Setup Biometric Auth</a>
     <!-- Main Container -->
     <div class="main-container">
         <div class="page-header">
             <h1 class="page-title">Hub Operații Depozit</h1>
             <p class="page-subtitle">Selectează operația dorită pentru a începe lucrul</p>
+            <a href="biometric-setup.php">Setup Biometric Auth</a>
         </div>
 
         <div class="operations-grid">
@@ -122,11 +113,4 @@
         </div>
     </div>
 
-    <div class="footer">
-        WMS © 2025 - Sistem de Management Depozit
-    </div>
-
-    <!-- JavaScript Files -->
-    <script src="scripts/warehouse-js/warehouse_hub.js?v=<?= filemtime('scripts/warehouse-js/warehouse_hub.js') ?>"></script>
-</body>
-</html>
+    <?php include_once 'includes/warehouse_footer.php'; ?>

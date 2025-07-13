@@ -1,9 +1,9 @@
-// File: scripts/warehouse_hub.js
-// Warehouse Hub Dashboard JavaScript
+// File: scripts/warehouse-js/warehouse_hub.js
+// Warehouse Hub Dashboard JavaScript - FIXED: Only the API base path
 
 class WarehouseHub {
     constructor() {
-        this.apiBase = '/api';
+        this.apiBase = window.WMS_CONFIG?.apiBase || '/api';
         this.currentUser = null;
         this.stats = {};
         this.init();
@@ -84,8 +84,8 @@ class WarehouseHub {
         try {
             console.log('👤 Loading user information...');
             
-            // Try to get user info from API
-            const result = await this.fetchAPI('/user/current');
+            // FIXED: Call .php file directly instead of going through API router
+            const result = await this.fetchAPI('/user/current.php');
             
             if (result.status === 'success' && result.user) {
                 this.currentUser = result.user;
@@ -105,20 +105,13 @@ class WarehouseHub {
         }
     }
 
-    updateUserDisplay() {
-        const workerNameEl = document.getElementById('worker-name');
-        if (workerNameEl && this.currentUser) {
-            workerNameEl.textContent = this.currentUser.name;
-        }
-    }
-
     async loadStatistics() {
         try {
             console.log('📊 Loading dashboard statistics...');
             this.setLoadingState(true);
             
-            // Load statistics from API
-            const result = await this.fetchAPI('/warehouse/dashboard_stats');
+            // FIXED: Call .php file directly instead of going through API router  
+            const result = await this.fetchAPI('/warehouse/dashboard_stats.php');
             
             if (result.status === 'success' && result.stats) {
                 this.stats = result.stats;
@@ -134,6 +127,13 @@ class WarehouseHub {
             this.loadPlaceholderStats();
         } finally {
             this.setLoadingState(false);
+        }
+    }
+
+    updateUserDisplay() {
+        const workerNameEl = document.getElementById('worker-name');
+        if (workerNameEl && this.currentUser) {
+            workerNameEl.textContent = this.currentUser.name;
         }
     }
 

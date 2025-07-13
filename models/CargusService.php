@@ -334,6 +334,36 @@ class CargusService
         
         return $defaults[$unitMeasure] ?? 0.5; // Default 500g
     }
+
+    /**
+     * Normalize phone number to local format accepted by Cargus
+     * Examples:
+     *  - '+40728260020' => '0728260020'
+     *  - '0040728260020' => '0728260020'
+     *  - '40728260020' => '0728260020'
+     */
+    private function normalizeLocalPhone($phone) {
+        if (!$phone) {
+            return '';
+        }
+
+        // Keep only digits
+        $digits = preg_replace('/\D+/', '', $phone);
+
+        // Remove leading country code variations
+        if (strpos($digits, '0040') === 0) {
+            $digits = substr($digits, 4);
+        } elseif (strpos($digits, '40') === 0) {
+            $digits = substr($digits, 2);
+        }
+
+        // Ensure leading zero
+        if ($digits !== '' && $digits[0] !== '0') {
+            $digits = '0' . $digits;
+        }
+
+        return $digits;
+    }
     
     /**
      * Get sender location configuration
@@ -366,7 +396,7 @@ class CargusService
                 'BuildingNumber' => $senderLocation['building_number'],
                 'AddressText' => $senderLocation['address_text'],
                 'ContactPerson' => $senderLocation['contact_person'],
-                'PhoneNumber' => $senderLocation['phone'],
+                'PhoneNumber' => $this->normalizeLocalPhone($senderLocation['phone']),
                 'Email' => $senderLocation['email']
             ],
             'Recipient' => [
@@ -378,9 +408,10 @@ class CargusService
                 'StreetId' => $order['recipient_street_id'],
                 'StreetName' => '', // Optional
                 'BuildingNumber' => $order['recipient_building_number'] ?: 'N/A',
-                'AddressText' => $order['recipient_address'],
+                // Use shipping_address as the textual address for the recipient
+                'AddressText' => $order['shipping_address'],
                 'ContactPerson' => $order['recipient_contact_person'] ?: $order['customer_name'],
-                'PhoneNumber' => $order['recipient_phone'],
+                'PhoneNumber' => $this->normalizeLocalPhone($order['recipient_phone']),
                 'Email' => $order['recipient_email'] ?: ''
             ],
             'Parcels' => $calculatedData['parcels_count'],
@@ -427,12 +458,15 @@ class CargusService
         if ($awbData['Parcels'] <= 0) $errors[] = 'Must have at least 1 parcel';
         if ($awbData['Envelopes'] > 9) $errors[] = 'Maximum 9 envelopes allowed';
         
-        // Phone validation
+        // Phone validation after normalizing to local format
         $phonePattern = '/^[0-9\s\-\(\)]{10,15}$/';
-        if (!preg_match($phonePattern, $awbData['Sender']['PhoneNumber'])) {
+        $senderPhone = $this->normalizeLocalPhone($awbData['Sender']['PhoneNumber']);
+        $recipientPhone = $this->normalizeLocalPhone($awbData['Recipient']['PhoneNumber']);
+
+        if (!preg_match($phonePattern, $senderPhone)) {
             $errors[] = 'Invalid sender phone format';
         }
-        if (!preg_match($phonePattern, $awbData['Recipient']['PhoneNumber'])) {
+        if (!preg_match($phonePattern, $recipientPhone)) {
             $errors[] = 'Invalid recipient phone format';
         }
         

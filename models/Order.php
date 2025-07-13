@@ -659,8 +659,11 @@ class Order
         }
         
         // Phone validation
-        if (!empty($order['recipient_phone']) && !preg_match('/^[0-9\s\-\(\)]{10,15}$/', $order['recipient_phone'])) {
-            $errors[] = 'Invalid phone number format';
+        if (!empty($order['recipient_phone'])) {
+            $normalizedPhone = $this->normalizeLocalPhone($order['recipient_phone']);
+            if (!preg_match('/^[0-9\s\-\(\)]{10,15}$/', $normalizedPhone)) {
+                $errors[] = 'Invalid phone number format';
+            }
         }
         
         // Weight validation
@@ -692,13 +695,17 @@ class Order
     public function createOrder($orderData) {
         try {
             $this->conn->beginTransaction();
+
+            if (!empty($orderData['recipient_phone'])) {
+                $orderData['recipient_phone'] = $this->normalizeLocalPhone($orderData['recipient_phone']);
+            }
             
             // Insert main order
             $orderQuery = "
                 INSERT INTO orders (
                     order_number, customer_id, status, total_value, declared_value,
                     recipient_name, recipient_county_id, recipient_locality_id,
-                    recipient_street_id, recipient_building_number, recipient_address,
+                    recipient_street_id, recipient_building_number, shipping_address,
                     recipient_contact_person, recipient_phone, recipient_email,
                     observations, package_content, created_at
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
@@ -716,7 +723,7 @@ class Order
                 $orderData['recipient_locality_id'],
                 $orderData['recipient_street_id'] ?? null,
                 $orderData['recipient_building_number'] ?? '',
-                $orderData['recipient_address'],
+                $orderData['shipping_address'],
                 $orderData['recipient_contact_person'] ?? $orderData['recipient_name'],
                 $orderData['recipient_phone'],
                 $orderData['recipient_email'] ?? '',
@@ -769,6 +776,29 @@ class Order
                 'error' => $e->getMessage()
             ];
         }
+    }
+
+    /**
+     * Convert phone number with +40 prefix to local format (07...)
+     */
+    private function normalizeLocalPhone($phone) {
+        if (!$phone) {
+            return '';
+        }
+
+        $digits = preg_replace('/\D+/', '', $phone);
+
+        if (strpos($digits, '0040') === 0) {
+            $digits = substr($digits, 4);
+        } elseif (strpos($digits, '40') === 0) {
+            $digits = substr($digits, 2);
+        }
+
+        if ($digits !== '' && $digits[0] !== '0') {
+            $digits = '0' . $digits;
+        }
+
+        return $digits;
     }
     
     /**

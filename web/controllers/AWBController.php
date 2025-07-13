@@ -126,13 +126,38 @@ class AWBController {
             throw new Exception('Total weight must be greater than 0', 400);
         }
         
-        if (!preg_match('/^[0-9\s\-\(\)]{10,15}$/', $order['recipient_phone'])) {
+        // Normalize phone to local format before validating
+        $normalizedPhone = $this->normalizeLocalPhone($order['recipient_phone']);
+        if (!preg_match('/^[0-9\s\-\(\)]{10,15}$/', $normalizedPhone)) {
             throw new Exception('Invalid phone number format', 400);
         }
         
         if (isset($order['envelopes_count']) && $order['envelopes_count'] > 9) {
             throw new Exception('Maximum 9 envelopes allowed', 400);
         }
+    }
+
+    /**
+     * Convert phone numbers with country prefix to local format (07...) for Cargus
+     */
+    private function normalizeLocalPhone($phone) {
+        if (!$phone) {
+            return '';
+        }
+
+        $digits = preg_replace('/\D+/', '', $phone);
+
+        if (strpos($digits, '0040') === 0) {
+            $digits = substr($digits, 4);
+        } elseif (strpos($digits, '40') === 0) {
+            $digits = substr($digits, 2);
+        }
+
+        if ($digits !== '' && $digits[0] !== '0') {
+            $digits = '0' . $digits;
+        }
+
+        return $digits;
     }
     
     private function logAction($action, $orderId, $details) {

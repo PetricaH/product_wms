@@ -615,13 +615,6 @@ const ProductUnitsApp = {
         }
     },
 
-    // ===== CRUD OPERATIONS =====
-    async editProductUnit(id) {
-        console.log(`Edit product unit: ${id}`);
-        // TODO: Implement edit functionality
-        this.showInfo('Funcționalitatea de editare va fi implementată în curând!');
-    },
-
     async deleteProductUnit(id) {
         if (!confirm('Sunteți sigur că doriți să ștergeți această configurare?')) {
             return;
@@ -828,7 +821,593 @@ const ProductUnitsApp = {
                 this.loadStatistics();
             }
         }, this.config.refreshInterval);
+    },
+
+    async editProductUnit(id) {
+        
+    this.showLoading();
+    
+    try {
+        // Get product unit data
+        const productUnit = this.state.productUnits.find(pu => pu.id === parseInt(id));
+        
+        if (!productUnit) {
+            // If not in state, fetch from API
+            const response = await this.apiCall('GET', `${this.config.apiEndpoints.productUnits}?id=${id}`);
+            if (!response || response.length === 0) {
+                throw new Error('Product unit not found');
+            }
+            productUnit = response[0];
+        }
+
+        // Show edit modal
+        this.showEditProductUnitModal(productUnit);
+        
+    } catch (error) {
+        console.error('Error loading product unit for edit:', error);
+        this.showError('Eroare la încărcarea datelor pentru editare');
+    } finally {
+        this.hideLoading();
     }
+},
+
+showEditProductUnitModal(productUnit) {
+    // Create modal if it doesn't exist
+    if (!document.getElementById('editProductUnitModal')) {
+        this.createEditProductUnitModal();
+    }
+    
+    // Populate form
+    document.getElementById('edit-product-unit-id').value = productUnit.id;
+    document.getElementById('edit-weight-per-unit').value = productUnit.weight_per_unit;
+    document.getElementById('edit-volume-per-unit').value = productUnit.volume_per_unit || '';
+    document.getElementById('edit-dimensions-length').value = productUnit.dimensions?.length || '';
+    document.getElementById('edit-dimensions-width').value = productUnit.dimensions?.width || '';
+    document.getElementById('edit-dimensions-height').value = productUnit.dimensions?.height || '';
+    document.getElementById('edit-max-stack-height').value = productUnit.max_stack_height || 1;
+    document.getElementById('edit-packaging-cost').value = productUnit.packaging_cost || 0;
+    
+    // Checkboxes
+    document.getElementById('edit-fragile').checked = productUnit.fragile || false;
+    document.getElementById('edit-hazardous').checked = productUnit.hazardous || false;
+    document.getElementById('edit-temperature-controlled').checked = productUnit.temperature_controlled || false;
+    
+    // Show product info
+    document.getElementById('edit-product-info').textContent = 
+        `${productUnit.product_name} (${productUnit.product_code}) - ${productUnit.unit_name}`;
+    
+    // Show modal
+    document.getElementById('editProductUnitModal').style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+},
+
+createEditProductUnitModal() {
+    const modalHtml = `
+        <div class="modal" id="editProductUnitModal" style="display: none;">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3><span class="material-symbols-outlined">edit</span> Editează Configurare Produs</h3>
+                        <button class="modal-close" onclick="ProductUnitsApp.closeEditModal()">
+                            <span class="material-symbols-outlined">close</span>
+                        </button>
+                    </div>
+                    <form id="editProductUnitForm" onsubmit="ProductUnitsApp.handleEditSubmit(event)">
+                        <div class="modal-body">
+                            <input type="hidden" id="edit-product-unit-id" name="id">
+                            
+                            <div class="form-group">
+                                <label>Produs</label>
+                                <div class="form-info" id="edit-product-info"></div>
+                            </div>
+                            
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="edit-weight-per-unit">Greutate per unitate <span class="required">*</span></label>
+                                    <div class="input-group">
+                                        <input type="number" id="edit-weight-per-unit" name="weight_per_unit" 
+                                               step="0.001" min="0" class="form-control" required>
+                                        <span class="input-group-text">kg</span>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label for="edit-volume-per-unit">Volum per unitate</label>
+                                    <div class="input-group">
+                                        <input type="number" id="edit-volume-per-unit" name="volume_per_unit" 
+                                               step="0.001" min="0" class="form-control">
+                                        <span class="input-group-text">L</span>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="edit-dimensions-length">Lungime</label>
+                                    <div class="input-group">
+                                        <input type="number" id="edit-dimensions-length" name="dimensions_length" 
+                                               step="0.1" min="0" class="form-control">
+                                        <span class="input-group-text">cm</span>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label for="edit-dimensions-width">Lățime</label>
+                                    <div class="input-group">
+                                        <input type="number" id="edit-dimensions-width" name="dimensions_width" 
+                                               step="0.1" min="0" class="form-control">
+                                        <span class="input-group-text">cm</span>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label for="edit-dimensions-height">Înălțime</label>
+                                    <div class="input-group">
+                                        <input type="number" id="edit-dimensions-height" name="dimensions_height" 
+                                               step="0.1" min="0" class="form-control">
+                                        <span class="input-group-text">cm</span>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="edit-max-stack-height">Înălțime maximă stivă</label>
+                                    <input type="number" id="edit-max-stack-height" name="max_stack_height" 
+                                           min="1" max="50" class="form-control" value="1">
+                                </div>
+                                <div class="form-group">
+                                    <label for="edit-packaging-cost">Cost ambalare</label>
+                                    <div class="input-group">
+                                        <input type="number" id="edit-packaging-cost" name="packaging_cost" 
+                                               step="0.01" min="0" class="form-control">
+                                        <span class="input-group-text">RON</span>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="form-section">
+                                <h4>Proprietăți Speciale</h4>
+                                <div class="checkbox-grid">
+                                    <label class="form-check">
+                                        <input type="checkbox" id="edit-fragile" name="fragile">
+                                        <span class="checkmark"></span>
+                                        <span class="check-label">
+                                            <span class="material-symbols-outlined">warning</span>
+                                            Fragil
+                                        </span>
+                                    </label>
+                                    <label class="form-check">
+                                        <input type="checkbox" id="edit-hazardous" name="hazardous">
+                                        <span class="checkmark"></span>
+                                        <span class="check-label">
+                                            <span class="material-symbols-outlined">dangerous</span>
+                                            Periculos
+                                        </span>
+                                    </label>
+                                    <label class="form-check">
+                                        <input type="checkbox" id="edit-temperature-controlled" name="temperature_controlled">
+                                        <span class="checkmark"></span>
+                                        <span class="check-label">
+                                            <span class="material-symbols-outlined">thermostat</span>
+                                            Controlat termic
+                                        </span>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" onclick="ProductUnitsApp.closeEditModal()">Anulează</button>
+                            <button type="submit" class="btn btn-primary">
+                                <span class="material-symbols-outlined">save</span>
+                                Actualizează
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+},
+
+async handleEditSubmit(event) {
+    event.preventDefault();
+    
+    const formData = new FormData(event.target);
+    const data = {
+        id: formData.get('id'),
+        weight_per_unit: formData.get('weight_per_unit'),
+        volume_per_unit: formData.get('volume_per_unit') || null,
+        dimensions_length: formData.get('dimensions_length') || null,
+        dimensions_width: formData.get('dimensions_width') || null,
+        dimensions_height: formData.get('dimensions_height') || null,
+        max_stack_height: formData.get('max_stack_height') || 1,
+        packaging_cost: formData.get('packaging_cost') || 0,
+        fragile: formData.has('fragile'),
+        hazardous: formData.has('hazardous'),
+        temperature_controlled: formData.has('temperature_controlled')
+    };
+
+    if (!data.weight_per_unit) {
+        this.showError('Greutatea per unitate este obligatorie');
+        return;
+    }
+
+    this.showLoading();
+
+    try {
+        const response = await this.apiCall('PUT', this.config.apiEndpoints.productUnits, data);
+        
+        if (response.success) {
+            this.showSuccess('Configurarea a fost actualizată cu succes!');
+            this.closeEditModal();
+            await this.loadProductUnits();
+            await this.loadStatistics();
+        } else {
+            throw new Error(response.error || 'Eroare la actualizarea configurării');
+        }
+    } catch (error) {
+        console.error('Error updating product unit:', error);
+        this.showError(error.message || 'Eroare la actualizarea configurării');
+    } finally {
+        this.hideLoading();
+    }
+},
+
+closeEditModal() {
+    const modal = document.getElementById('editProductUnitModal');
+    if (modal) {
+        modal.style.display = 'none';
+        document.body.style.overflow = '';
+        // Reset form
+        const form = modal.querySelector('form');
+        if (form) form.reset();
+    }
+},
+
+// ===== MISSING UNIT TYPES EDIT FUNCTIONALITY =====
+async editUnitType(id) {
+    console.log(`Editing unit type: ${id}`);
+    
+    try {
+        this.showLoading();
+        
+        // Get unit type data from API
+        const response = await this.apiCall('GET', `${this.config.apiEndpoints.unitTypes || baseUrl + '/api/unit_types.php'}?id=${id}`);
+        const unitType = Array.isArray(response) ? response.find(ut => ut.id === parseInt(id)) : response;
+        
+        if (!unitType) {
+            throw new Error('Unit type not found');
+        }
+        
+        this.showEditUnitTypeModal(unitType);
+        
+    } catch (error) {
+        console.error('Error loading unit type:', error);
+        this.showError('Eroare la încărcarea tipului de unitate pentru editare');
+    } finally {
+        this.hideLoading();
+    }
+},
+
+showEditUnitTypeModal(unitType) {
+    // Create modal if it doesn't exist
+    if (!document.getElementById('editUnitTypeModal')) {
+        this.createEditUnitTypeModal();
+    }
+    
+    // Populate form
+    document.getElementById('edit-unit-type-id').value = unitType.id;
+    document.getElementById('edit-unit-code').value = unitType.unit_code;
+    document.getElementById('edit-unit-name').value = unitType.unit_name;
+    document.getElementById('edit-base-type').value = unitType.base_type;
+    document.getElementById('edit-default-weight').value = unitType.default_weight_per_unit;
+    document.getElementById('edit-packaging-type').value = unitType.packaging_type || 'standard';
+    document.getElementById('edit-max-items-per-parcel').value = unitType.max_items_per_parcel || '';
+    document.getElementById('edit-requires-separate-parcel').checked = unitType.requires_separate_parcel || false;
+    document.getElementById('edit-unit-active').checked = unitType.active !== false;
+    
+    // Show modal
+    document.getElementById('editUnitTypeModal').style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+},
+
+createEditUnitTypeModal() {
+    const modalHtml = `
+        <div class="modal" id="editUnitTypeModal" style="display: none;">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3><span class="material-symbols-outlined">edit</span> Editează Tip Unitate</h3>
+                        <button class="modal-close" onclick="ProductUnitsApp.closeEditUnitTypeModal()">
+                            <span class="material-symbols-outlined">close</span>
+                        </button>
+                    </div>
+                    <form id="editUnitTypeForm" onsubmit="ProductUnitsApp.handleEditUnitTypeSubmit(event)">
+                        <div class="modal-body">
+                            <input type="hidden" id="edit-unit-type-id" name="id">
+                            
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="edit-unit-code">Cod Unitate</label>
+                                    <input type="text" id="edit-unit-code" name="unit_code" class="form-control" readonly>
+                                    <small class="form-help">Codul unității nu poate fi modificat</small>
+                                </div>
+                                <div class="form-group">
+                                    <label for="edit-unit-name">Numele Unității <span class="required">*</span></label>
+                                    <input type="text" id="edit-unit-name" name="unit_name" class="form-control" required maxlength="50">
+                                </div>
+                            </div>
+                            
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="edit-base-type">Tip de Bază <span class="required">*</span></label>
+                                    <select id="edit-base-type" name="base_type" class="form-control" required>
+                                        <option value="">Selectează tip</option>
+                                        <option value="weight">Greutate</option>
+                                        <option value="volume">Volum</option>
+                                        <option value="count">Număr</option>
+                                        <option value="length">Lungime</option>
+                                        <option value="area">Suprafață</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="edit-default-weight">Greutate Implicită <span class="required">*</span></label>
+                                    <div class="input-group">
+                                        <input type="number" id="edit-default-weight" name="default_weight_per_unit" 
+                                               step="0.001" min="0" class="form-control" required>
+                                        <span class="input-group-text">kg</span>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="edit-packaging-type">Tip Ambalare</label>
+                                    <select id="edit-packaging-type" name="packaging_type" class="form-control">
+                                        <option value="standard">Standard</option>
+                                        <option value="fragile">Fragil</option>
+                                        <option value="liquid">Lichid</option>
+                                        <option value="bulk">Vrac</option>
+                                        <option value="custom">Personalizat</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="edit-max-items-per-parcel">Maxim pe Colet</label>
+                                    <input type="number" id="edit-max-items-per-parcel" name="max_items_per_parcel" 
+                                           min="1" max="1000" class="form-control">
+                                    <small class="form-help">Lasă gol pentru nelimitat</small>
+                                </div>
+                            </div>
+                            
+                            <div class="form-section">
+                                <h4>Proprietăți Speciale</h4>
+                                <div class="checkbox-grid">
+                                    <label class="form-check">
+                                        <input type="checkbox" id="edit-requires-separate-parcel" name="requires_separate_parcel">
+                                        <span class="checkmark"></span>
+                                        <span class="check-label">
+                                            <span class="material-symbols-outlined">package_2</span>
+                                            Necesită colet separat
+                                        </span>
+                                    </label>
+                                    <label class="form-check">
+                                        <input type="checkbox" id="edit-unit-active" name="active">
+                                        <span class="checkmark"></span>
+                                        <span class="check-label">
+                                            <span class="material-symbols-outlined">check_circle</span>
+                                            Activ
+                                        </span>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" onclick="ProductUnitsApp.closeEditUnitTypeModal()">Anulează</button>
+                            <button type="submit" class="btn btn-primary">
+                                <span class="material-symbols-outlined">save</span>
+                                Actualizează
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+},
+
+async handleEditUnitTypeSubmit(event) {
+    event.preventDefault();
+    
+    const formData = new FormData(event.target);
+    const data = {
+        id: formData.get('id'),
+        unit_name: formData.get('unit_name'),
+        base_type: formData.get('base_type'),
+        default_weight_per_unit: formData.get('default_weight_per_unit'),
+        packaging_type: formData.get('packaging_type'),
+        max_items_per_parcel: formData.get('max_items_per_parcel') || null,
+        requires_separate_parcel: formData.has('requires_separate_parcel'),
+        active: formData.has('active')
+    };
+
+    if (!data.unit_name || !data.base_type) {
+        this.showError('Numele unității și tipul de bază sunt obligatorii');
+        return;
+    }
+
+    this.showLoading();
+
+    try {
+        const response = await this.apiCall('PUT', this.config.apiEndpoints.unitTypes || baseUrl + '/api/unit_types.php', data);
+        
+        if (response.success) {
+            this.showSuccess('Tipul de unitate a fost actualizat cu succes!');
+            this.closeEditUnitTypeModal();
+            // Refresh the unit types tab if it's active
+            if (this.state.currentTab === 'unit-types') {
+                await this.loadUnitTypes();
+            }
+        } else {
+            throw new Error(response.error || 'Eroare la actualizarea tipului de unitate');
+        }
+    } catch (error) {
+        console.error('Error updating unit type:', error);
+        this.showError(error.message || 'Eroare la actualizarea tipului de unitate');
+    } finally {
+        this.hideLoading();
+    }
+},
+
+closeEditUnitTypeModal() {
+    const modal = document.getElementById('editUnitTypeModal');
+    if (modal) {
+        modal.style.display = 'none';
+        document.body.style.overflow = '';
+        const form = modal.querySelector('form');
+        if (form) form.reset();
+    }
+},
+
+// ===== MISSING PACKAGING RULES EDIT/DELETE FUNCTIONALITY =====
+async editPackagingRule(id) {
+    console.log(`Editing packaging rule: ${id}`);
+    
+    try {
+        this.showLoading();
+        
+        // Get packaging rule data from API
+        const response = await this.apiCall('GET', `${this.config.apiEndpoints.packagingRules || baseUrl + '/api/packaging_rules.php'}?id=${id}`);
+        const packagingRule = Array.isArray(response) ? response.find(pr => pr.id === parseInt(id)) : response;
+        
+        if (!packagingRule) {
+            throw new Error('Packaging rule not found');
+        }
+        
+        this.showEditPackagingRuleModal(packagingRule);
+        
+    } catch (error) {
+        console.error('Error loading packaging rule:', error);
+        this.showError('Eroare la încărcarea regulii de ambalare pentru editare');
+    } finally {
+        this.hideLoading();
+    }
+},
+
+async deletePackagingRule(id, ruleName) {
+    if (!confirm(`Sunteți sigur că doriți să ștergeți regula "${ruleName}"?`)) {
+        return;
+    }
+
+    this.showLoading();
+
+    try {
+        const response = await this.apiCall('DELETE', `${this.config.apiEndpoints.packagingRules || baseUrl + '/api/packaging_rules.php'}?id=${id}`);
+        
+        if (response.success) {
+            this.showSuccess('Regula de ambalare a fost ștearsă cu succes!');
+            // Refresh the packaging rules tab if it's active
+            if (this.state.currentTab === 'packaging-rules') {
+                await this.loadPackagingRules();
+            }
+        } else {
+            throw new Error(response.error || 'Eroare la ștergerea regulii de ambalare');
+        }
+    } catch (error) {
+        console.error('Error deleting packaging rule:', error);
+        this.showError(error.message || 'Eroare la ștergerea regulii de ambalare');
+    } finally {
+        this.hideLoading();
+    }
+},
+
+// ===== UTILITY FUNCTIONS TO ADD =====
+async apiCall(method, url, data = null) {
+    const options = {
+        method: method,
+        headers: {
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    };
+
+    if (data && (method === 'POST' || method === 'PUT')) {
+        options.body = JSON.stringify(data);
+    }
+
+    const response = await fetch(url, options);
+    
+    if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    return await response.json();
+},
+
+showLoading() {
+    // Add loading indicator if it doesn't exist
+    if (!document.getElementById('loadingIndicator')) {
+        const loadingHtml = `
+            <div id="loadingIndicator" class="loading-overlay" style="display: none;">
+                <div class="loading-content">
+                    <div class="loading-spinner"></div>
+                    <p>Se încarcă...</p>
+                </div>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', loadingHtml);
+    }
+    
+    document.getElementById('loadingIndicator').style.display = 'flex';
+},
+
+hideLoading() {
+    const loading = document.getElementById('loadingIndicator');
+    if (loading) {
+        loading.style.display = 'none';
+    }
+},
+
+showSuccess(message) {
+    this.showNotification(message, 'success');
+},
+
+showError(message) {
+    this.showNotification(message, 'error');
+},
+
+showNotification(message, type = 'info') {
+    const notification = document.createElement('div');
+    notification.className = `notification notification-${type}`;
+    notification.innerHTML = `
+        <span class="material-symbols-outlined">
+            ${type === 'success' ? 'check_circle' : 
+              type === 'error' ? 'error' : 'info'}
+        </span>
+        <span>${message}</span>
+        <button class="notification-close" onclick="this.parentElement.remove()">
+            <span class="material-symbols-outlined">close</span>
+        </button>
+    `;
+
+    if (!document.getElementById('notificationContainer')) {
+        const container = document.createElement('div');
+        container.id = 'notificationContainer';
+        container.className = 'notification-container';
+        document.body.appendChild(container);
+    }
+
+    document.getElementById('notificationContainer').appendChild(notification);
+
+    // Auto-remove after 5 seconds
+    setTimeout(() => {
+        if (notification.parentElement) {
+            notification.remove();
+        }
+    }, 5000);
+}
+
 };
 
 // ===== INITIALIZATION =====
@@ -838,3 +1417,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // Export for global access (if needed)
 window.ProductUnitsApp = ProductUnitsApp;
+window.editProductUnit = (id) => ProductUnitsApp.editProductUnit(id);
+window.editUnitType = (id) => ProductUnitsApp.editUnitType(id);
+window.editPackagingRule = (id) => ProductUnitsApp.editPackagingRule(id);
+window.deletePackagingRule = (id, name) => ProductUnitsApp.deletePackagingRule(id, name);

@@ -73,18 +73,50 @@ function viewOrderDetails(orderId) {
         document.body.appendChild(modal);
     }
     
-    // Fetch order details via AJAX
-    fetch(`order_details.php?id=${orderId}`)
-        .then(response => response.json())
-        .then(order => {
+    // Show loading state
+    const content = document.getElementById('orderDetailsContent');
+    content.innerHTML = '<div class="loading" style="text-align: center; padding: 2rem; color: #666;">Se încarcă detaliile comenzii...</div>';
+    modal.style.display = 'block';
+    
+    // Fetch order details via the warehouse API
+    fetch(`api/warehouse/order_details.php?id=${orderId}`)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            const contentType = response.headers.get('content-type');
+            if (!contentType || !contentType.includes('application/json')) {
+                throw new Error('Server returned non-JSON response');
+            }
+            
+            return response.json();
+        })
+        .then(response => {
+            // Debug log
+            console.log('API Response:', response);
+            
+            if (response.status !== 'success') {
+                throw new Error(response.message || 'API returned error status');
+            }
+            
+            // Extract the actual order data from the nested structure
+            const order = response.data;
             displayOrderDetails(order);
-            modal.style.display = 'block';
         })
         .catch(error => {
             console.error('Error loading order details:', error);
-            alert('Error loading order details');
+            
+            content.innerHTML = `
+                <div class="error-message" style="text-align: center; padding: 2rem;">
+                    <h3 style="color: #dc3545; margin-bottom: 1rem;">Eroare la încărcarea detaliilor comenzii</h3>
+                    <p style="color: #666; margin-bottom: 1.5rem;">${error.message}</p>
+                    <button onclick="closeOrderDetailsModal()" class="btn btn-secondary" style="padding: 0.5rem 1rem; background-color: #6c757d; color: white; border: none; border-radius: 4px; cursor: pointer;">Închide</button>
+                </div>
+            `;
         });
 }
+
 
 function createOrderDetailsModal() {
     const modal = document.createElement('div');
@@ -105,25 +137,16 @@ function createOrderDetailsModal() {
 }
 
 function displayOrderDetails(order) {
-    const content = `
-        <div class="order-details">
-            <div class="details-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">
-                <div class="detail-section">
-                    <h4>Informații Comandă</h4>
-                    <p><strong>Număr:</strong> ${order.order_number}</p>
-                    <p><strong>Data:</strong> ${order.order_date}</p>
-                    <p><strong>Status:</strong> ${order.status}</p>
-                    <p><strong>Prioritate:</strong> ${order.priority}</p>
-                    <p><strong>Valoare:</strong> ${order.total_value} RON</p>
-                </div>
-                <div class="detail-section">
-                    <h4>Informații Client</h4>
-                    <p><strong>Nume:</strong> ${order.customer_name}</p>
-                    <p><strong>Email:</strong> ${order.customer_email}</p>
-                    <p><strong>Adresă:</strong> ${order.shipping_address || 'Nu este specificată'}</p>
-                </div>
-            </div>
-            
+    // Debug: log the order data to see what we're getting
+    console.log('Order data for display:', order);
+    
+    // Ensure items is always an array
+    const items = order.items || [];
+    
+    // Generate items table HTML
+    let itemsTableHtml = '';
+    if (items.length > 0) {
+        itemsTableHtml = `
             <div class="items-section" style="margin-top: 2rem;">
                 <h4>Produse comandate</h4>
                 <table style="width: 100%; border-collapse: collapse;">
@@ -132,27 +155,81 @@ function displayOrderDetails(order) {
                             <th style="padding: 8px; border: 1px solid #ddd;">Produs</th>
                             <th style="padding: 8px; border: 1px solid #ddd;">SKU</th>
                             <th style="padding: 8px; border: 1px solid #ddd;">Cantitate</th>
+                            <th style="padding: 8px; border: 1px solid #ddd;">Cantitate ridicată</th>
                             <th style="padding: 8px; border: 1px solid #ddd;">Preț unitar</th>
                             <th style="padding: 8px; border: 1px solid #ddd;">Total</th>
                         </tr>
                     </thead>
                     <tbody>
-                        ${order.items.map(item => `
+                        ${items.map(item => `
                             <tr>
-                                <td style="padding: 8px; border: 1px solid #ddd;">${item.product_name}</td>
-                                <td style="padding: 8px; border: 1px solid #ddd;">${item.sku}</td>
-                                <td style="padding: 8px; border: 1px solid #ddd;">${item.quantity}</td>
-                                <td style="padding: 8px; border: 1px solid #ddd;">${item.unit_price} RON</td>
-                                <td style="padding: 8px; border: 1px solid #ddd;">${(item.quantity * item.unit_price).toFixed(2)} RON</td>
+                                <td style="padding: 8px; border: 1px solid #ddd;">${item.product_name || 'Produs necunoscut'}</td>
+                                <td style="padding: 8px; border: 1px solid #ddd;">${item.sku || '-'}</td>
+                                <td style="padding: 8px; border: 1px solid #ddd;">${item.quantity_ordered || item.quantity || '0'}</td>
+                                <td style="padding: 8px; border: 1px solid #ddd;">${item.picked_quantity || '0'}</td>
+                                <td style="padding: 8px; border: 1px solid #ddd;">${parseFloat(item.unit_price || 0).toFixed(2)} RON</td>
+                                <td style="padding: 8px; border: 1px solid #ddd;">${(parseFloat(item.quantity_ordered || item.quantity || 0) * parseFloat(item.unit_price || 0)).toFixed(2)} RON</td>
                             </tr>
                         `).join('')}
                     </tbody>
                 </table>
             </div>
+        `;
+    } else {
+        itemsTableHtml = `
+            <div class="items-section" style="margin-top: 2rem;">
+                <h4>Produse comandate</h4>
+                <p style="color: #666; font-style: italic;">Nu au fost găsite produse pentru această comandă.</p>
+            </div>
+        `;
+    }
+    
+    // Format the date nicely
+    let formattedDate = order.order_date || 'N/A';
+    if (order.order_date && order.order_date !== 'N/A') {
+        try {
+            const date = new Date(order.order_date);
+            formattedDate = date.toLocaleDateString('ro-RO') + ' ' + date.toLocaleTimeString('ro-RO', {hour: '2-digit', minute: '2-digit'});
+        } catch (e) {
+            formattedDate = order.order_date;
+        }
+    }
+    
+    const content = `
+        <div class="order-details">
+            <div class="details-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">
+                <div class="detail-section">
+                    <h4>Informații Comandă</h4>
+                    <p><strong>Număr:</strong> ${order.order_number || 'N/A'}</p>
+                    <p><strong>Data:</strong> ${formattedDate}</p>
+                    <p><strong>Status:</strong> ${order.status_label || order.status || 'N/A'}</p>
+                    <p><strong>Valoare:</strong> ${parseFloat(order.total_value || 0).toFixed(2)} RON</p>
+                    ${order.tracking_number ? `<p><strong>AWB:</strong> ${order.tracking_number}</p>` : ''}
+                </div>
+                <div class="detail-section">
+                    <h4>Informații Client</h4>
+                    <p><strong>Nume:</strong> ${order.customer_name || 'N/A'}</p>
+                    <p><strong>Email:</strong> ${order.customer_email || 'N/A'}</p>
+                    <p><strong>Adresă:</strong> ${order.shipping_address || 'Nu este specificată'}</p>
+                </div>
+            </div>
+            
+            ${order.progress ? `
+                <div class="progress-section" style="margin-top: 2rem;">
+                    <h4>Progres comandă</h4>
+                    <p><strong>Total articole:</strong> ${order.progress.total_items || 0}</p>
+                    <p><strong>Cantitate comandată:</strong> ${order.progress.total_quantity_ordered || 0}</p>
+                    <p><strong>Cantitate ridicată:</strong> ${order.progress.total_quantity_picked || 0}</p>
+                    <p><strong>Rămas de ridicat:</strong> ${order.progress.total_remaining || 0}</p>
+                    <p><strong>Progres:</strong> ${order.progress.progress_percent || 0}%</p>
+                </div>
+            ` : ''}
+            
+            ${itemsTableHtml}
             
             ${order.notes ? `
                 <div class="notes-section" style="margin-top: 2rem;">
-                    <h4>Notițe</h4>
+                    <h4>Observații</h4>
                     <p>${order.notes}</p>
                 </div>
             ` : ''}
@@ -163,7 +240,10 @@ function displayOrderDetails(order) {
 }
 
 function closeOrderDetailsModal() {
-    document.getElementById('orderDetailsModal').style.display = 'none';
+    const modal = document.getElementById('orderDetailsModal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
 }
 
 /**
@@ -184,7 +264,7 @@ function generateAWB(orderId) {
         return;
     }
 
-    fetch(`/web/awb.php/orders/${orderId}/awb`, {
+    fetch(`web/awb.php/orders/${orderId}/awb`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',

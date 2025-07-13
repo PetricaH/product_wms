@@ -11,6 +11,8 @@ class Order
 {
     private $conn;
     private $weightCalculator;
+    private $table = "orders";
+    private $itemsTable = "order_items";
     
     public function __construct($conn) {
         $this->conn = $conn;
@@ -57,6 +59,48 @@ class Order
         } catch (PDOException $e) {
             error_log("Error getting orders total count: " . $e->getMessage());
             return 0;
+        }
+    }
+
+    /**
+     * Delete an order and its items
+     * @param int $orderId Order ID
+     * @return bool
+     */
+    public function deleteOrder($orderId) {
+        try {
+            $this->conn->beginTransaction();
+            
+            // Delete order items first
+            $itemQuery = "DELETE FROM {$this->itemsTable} WHERE order_id = :order_id";
+            $itemStmt = $this->conn->prepare($itemQuery);
+            $itemStmt->bindValue(':order_id', $orderId, PDO::PARAM_INT);
+            $itemStmt->execute();
+            
+            // Delete order
+            $orderQuery = "DELETE FROM {$this->table} WHERE id = :id";
+            $orderStmt = $this->conn->prepare($orderQuery);
+            $orderStmt->bindValue(':id', $orderId, PDO::PARAM_INT);
+            $result = $orderStmt->execute();
+
+            $this->conn->commit();
+
+            if ($result) {
+                $userId = $_SESSION['user_id'] ?? 0;
+                logActivity(
+                    $userId,
+                    'delete',
+                    'order',
+                    $orderId,
+                    'Order deleted'
+                );
+            }
+
+            return $result;
+        } catch (PDOException $e) {
+            $this->conn->rollBack();
+            error_log("Error deleting order: " . $e->getMessage());
+            return false;
         }
     }
     
@@ -134,40 +178,59 @@ class Order
     /**
      * Get order by ID with complete AWB data
      */
+    /**
+     * Get order by ID with full details - FIXED to not use customers table
+     * @param int $orderId
+     * @return array|false
+     */
     public function getOrderById($orderId) {
-        $query = "
-            SELECT 
-                o.*,
-                c.name as customer_name,
-                c.email as customer_email,
-                c.phone as customer_phone,
-                sl.company_name as sender_company,
-                sl.contact_person as sender_contact,
-                sl.phone as sender_phone,
-                sl.email as sender_email
-            FROM orders o
-            LEFT JOIN customers c ON o.customer_id = c.id
-            LEFT JOIN sender_locations sl ON sl.is_default = 1 AND sl.active = 1
-            WHERE o.id = ?
-        ";
+        // First get the main order data (no customers table join)
+        $query = "SELECT o.*, 
+                        COALESCE((SELECT SUM(oi.quantity * oi.unit_price) FROM {$this->itemsTable} oi WHERE oi.order_id = o.id), 0) as total_value,
+                        COALESCE((SELECT COUNT(*) FROM {$this->itemsTable} oi WHERE oi.order_id = o.id), 0) as total_items
+                FROM {$this->table} o 
+                WHERE o.id = :id";
         
-        $stmt = $this->conn->prepare($query);
-        $stmt->execute([$orderId]);
-        $order = $stmt->fetch(PDO::FETCH_ASSOC);
-        
-        if (!$order) {
-            return null;
+        try {
+            $stmt = $this->conn->prepare($query);
+            $stmt->bindValue(':id', $orderId, PDO::PARAM_INT);
+            $stmt->execute();
+            $order = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            if (!$order) {
+                return false;
+            }
+            
+            // Get order items using your existing getOrderItems method (if it exists)
+            if (method_exists($this, 'getOrderItems')) {
+                $order['items'] = $this->getOrderItems($orderId);
+            } else {
+                // Fallback: get items directly
+                $itemsQuery = "SELECT oi.*, p.name as product_name, p.sku
+                            FROM {$this->itemsTable} oi
+                            LEFT JOIN products p ON oi.product_id = p.product_id
+                            WHERE oi.order_id = :order_id
+                            ORDER BY oi.id";
+                
+                $itemsStmt = $this->conn->prepare($itemsQuery);
+                $itemsStmt->bindValue(':order_id', $orderId, PDO::PARAM_INT);
+                $itemsStmt->execute();
+                $order['items'] = $itemsStmt->fetchAll(PDO::FETCH_ASSOC);
+            }
+            
+            // Ensure shipping data is calculated if your method exists
+            if (method_exists($this, 'ensureShippingDataCalculated')) {
+                $this->ensureShippingDataCalculated($order);
+            }
+            
+            return $order;
+            
+        } catch (PDOException $e) {
+            error_log("Error getting order by ID: " . $e->getMessage());
+            return false;
         }
-        
-        // Get order items with product details
-        $order['items'] = $this->getOrderItems($orderId);
-        
-        // Calculate shipping data if auto-calculation is enabled
-        $this->ensureShippingDataCalculated($order);
-        
-        return $order;
     }
-    
+
       /**
      * Count active orders (pending, processing, etc.)
      * @return int Number of active orders
@@ -479,6 +542,42 @@ class Order
         $stmt = $this->conn->prepare($query);
         $stmt->execute($params);
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    /**
+     * Update order status
+     * @param int $orderId Order ID
+     * @param string $status New status
+     * @return bool
+     */
+    public function updateStatus($orderId, $status) {
+        $status = strtolower($status);
+        $query = "UPDATE {$this->table} SET status = :status, updated_at = NOW() WHERE id = :id";
+
+        try {
+            $old = $this->getOrderById($orderId);
+            $stmt = $this->conn->prepare($query);
+            $stmt->bindValue(':id', $orderId, PDO::PARAM_INT);
+            $stmt->bindValue(':status', $status);
+            $result = $stmt->execute();
+            if ($result) {
+                $userId = $_SESSION['user_id'] ?? 0;
+                $oldStatus = $old['status'] ?? null;
+                logActivity(
+                    $userId,
+                    'update',
+                    'order',
+                    $orderId,
+                    'Order status updated',
+                    ['status' => $oldStatus],
+                    ['status' => $status]
+                );
+            }
+            return $result;
+        } catch (PDOException $e) {
+            error_log("Error updating order status: " . $e->getMessage());
+            return false;
+        }
     }
     
     /**

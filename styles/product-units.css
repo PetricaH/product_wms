@@ -806,3 +806,296 @@
         justify-content: center;
     }
 }
+
+/* ===== MODAL ENHANCEMENTS FOR EDIT FUNCTIONALITY ===== */
+
+/* Form styling for edit modals */
+.form-info {
+    background: var(--surface-background);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    padding: 0.75rem;
+    color: var(--text-secondary);
+    font-weight: 500;
+    margin-bottom: 1rem;
+}
+
+.form-section {
+    margin-top: 1.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border-color);
+}
+
+.form-section h4 {
+    margin-bottom: 1rem;
+    color: var(--text-primary);
+    font-size: 1rem;
+    font-weight: 600;
+}
+
+/* Input groups for units */
+.input-group {
+    display: flex;
+    align-items: stretch;
+}
+
+.input-group .form-control {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+    border-right: none;
+}
+
+.input-group .form-control:focus {
+    border-right: 1px solid var(--primary-color);
+}
+
+.input-group-text {
+    display: flex;
+    align-items: center;
+    padding: 0.75rem;
+    background: var(--surface-background);
+    border: 1px solid var(--border-color);
+    border-left: none;
+    border-top-right-radius: var(--border-radius);
+    border-bottom-right-radius: var(--border-radius);
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    font-weight: 500;
+    min-width: 3rem;
+    justify-content: center;
+}
+
+/* Enhanced checkbox styling */
+.checkbox-grid {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: 1fr;
+}
+
+@media (min-width: 768px) {
+    .checkbox-grid {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
+.form-check {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    cursor: pointer;
+    padding: 0.75rem;
+    border-radius: var(--border-radius);
+    transition: var(--transition);
+    border: 1px solid transparent;
+}
+
+.form-check:hover {
+    background: var(--surface-background);
+    border-color: var(--border-color);
+}
+
+.checkmark {
+    width: 20px;
+    height: 20px;
+    border: 2px solid var(--border-color);
+    border-radius: 4px;
+    position: relative;
+    transition: var(--transition);
+    flex-shrink: 0;
+}
+
+.form-check input[type="checkbox"] {
+    display: none;
+}
+
+.form-check input[type="checkbox"]:checked + .checkmark {
+    background: var(--primary-color);
+    border-color: var(--primary-color);
+}
+
+.form-check input[type="checkbox"]:checked + .checkmark::after {
+    content: '✓';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: white;
+    font-size: 12px;
+    font-weight: bold;
+}
+
+.check-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 500;
+    color: var(--text-primary);
+    flex: 1;
+}
+
+.check-label .material-symbols-outlined {
+    font-size: 1.2rem;
+    color: var(--text-secondary);
+}
+
+/* Form help text */
+.form-help {
+    display: block;
+    margin-top: 0.25rem;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    line-height: 1.3;
+}
+
+.required {
+    color: var(--danger-color);
+}
+
+/* Loading overlay */
+.loading-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.8);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+    backdrop-filter: blur(4px);
+}
+
+.loading-content {
+    text-align: center;
+    color: white;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+}
+
+.loading-spinner {
+    width: 40px;
+    height: 40px;
+    border: 4px solid rgba(255, 255, 255, 0.3);
+    border-top: 4px solid white;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Notification system */
+.notification-container {
+    position: fixed;
+    top: 1rem;
+    right: 1rem;
+    z-index: 10001;
+    max-width: 400px;
+    pointer-events: none;
+}
+
+.notification {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 1rem;
+    margin-bottom: 0.5rem;
+    border-radius: var(--border-radius);
+    background: var(--container-background);
+    border: 1px solid var(--border-color);
+    box-shadow: var(--card-shadow);
+    animation: slideIn 0.3s ease-out;
+    pointer-events: auto;
+}
+
+.notification-success {
+    border-color: var(--success-color);
+}
+
+.notification-error {
+    border-color: var(--danger-color);
+}
+
+.notification .material-symbols-outlined {
+    font-size: 1.25rem;
+    flex-shrink: 0;
+}
+
+.notification-success .material-symbols-outlined {
+    color: var(--success-color);
+}
+
+.notification-error .material-symbols-outlined {
+    color: var(--danger-color);
+}
+
+.notification-close {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 0.25rem;
+    border-radius: 4px;
+    margin-left: auto;
+    transition: var(--transition);
+}
+
+.notification-close:hover {
+    background: var(--surface-background);
+    color: var(--text-primary);
+}
+
+@keyframes slideIn {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+/* Form row layout for edit modals */
+.form-row {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: 1fr;
+}
+
+@media (min-width: 768px) {
+    .form-row {
+        grid-template-columns: 1fr 1fr;
+    }
+    
+    .form-row.triple {
+        grid-template-columns: 1fr 1fr 1fr;
+    }
+}
+
+/* Responsive modal adjustments */
+@media (max-width: 768px) {
+    .modal-dialog {
+        margin: 0;
+        max-height: 100vh;
+        height: 100vh;
+        max-width: 100%;
+    }
+    
+    .modal-content {
+        border-radius: 0;
+        height: 100%;
+    }
+    
+    .form-row {
+        grid-template-columns: 1fr;
+    }
+    
+    .checkbox-grid {
+        grid-template-columns: 1fr;
+    }

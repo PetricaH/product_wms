@@ -176,36 +176,33 @@ class Order
     }
 
     /**
-     * Get order by ID with complete AWB data
-     */
-    /**
      * Get order by ID with full details - FIXED to not use customers table
      * @param int $orderId
      * @return array|false
      */
     public function getOrderById($orderId) {
-        // First get the main order data (no customers table join)
-        $query = "SELECT o.*, 
-                        COALESCE((SELECT SUM(oi.quantity * oi.unit_price) FROM {$this->itemsTable} oi WHERE oi.order_id = o.id), 0) as total_value,
-                        COALESCE((SELECT COUNT(*) FROM {$this->itemsTable} oi WHERE oi.order_id = o.id), 0) as total_items
-                FROM {$this->table} o 
-                WHERE o.id = :id";
+    $query = "SELECT o.*, 
+                    COALESCE((SELECT SUM(oi.quantity * oi.unit_price) FROM {$this->itemsTable} oi WHERE oi.order_id = o.id), 0) as total_value,
+                    COALESCE((SELECT COUNT(*) FROM {$this->itemsTable} oi WHERE oi.order_id = o.id), 0) as total_items
+            FROM {$this->table} o 
+            WHERE o.id = :id";
+    
+    try {
+        $stmt = $this->conn->prepare($query);
+        $stmt->bindValue(':id', $orderId, PDO::PARAM_INT);
+        $stmt->execute();
+        $order = $stmt->fetch(PDO::FETCH_ASSOC);
         
+        if (!$order) {
+            return false;
+        }
+        
+        // Get order items with error handling
         try {
-            $stmt = $this->conn->prepare($query);
-            $stmt->bindValue(':id', $orderId, PDO::PARAM_INT);
-            $stmt->execute();
-            $order = $stmt->fetch(PDO::FETCH_ASSOC);
-            
-            if (!$order) {
-                return false;
-            }
-            
-            // Get order items using your existing getOrderItems method (if it exists)
             if (method_exists($this, 'getOrderItems')) {
                 $order['items'] = $this->getOrderItems($orderId);
             } else {
-                // Fallback: get items directly
+                // Fallback: get items directly with FIXED join condition
                 $itemsQuery = "SELECT oi.*, p.name as product_name, p.sku
                             FROM {$this->itemsTable} oi
                             LEFT JOIN products p ON oi.product_id = p.product_id
@@ -217,19 +214,27 @@ class Order
                 $itemsStmt->execute();
                 $order['items'] = $itemsStmt->fetchAll(PDO::FETCH_ASSOC);
             }
-            
-            // Ensure shipping data is calculated if your method exists
+        } catch (Exception $e) {
+            error_log("Warning: Could not get order items for order {$orderId}: " . $e->getMessage());
+            $order['items'] = [];
+        }
+        
+        // Ensure shipping data is calculated with error handling
+        try {
             if (method_exists($this, 'ensureShippingDataCalculated')) {
                 $this->ensureShippingDataCalculated($order);
             }
-            
-            return $order;
-            
-        } catch (PDOException $e) {
-            error_log("Error getting order by ID: " . $e->getMessage());
-            return false;
+        } catch (Exception $e) {
+            error_log("Warning: Could not calculate shipping data for order {$orderId}: " . $e->getMessage());
         }
+        
+        return $order;
+        
+    } catch (PDOException $e) {
+        error_log("Error getting order by ID: " . $e->getMessage());
+        return false;
     }
+}
 
       /**
      * Count active orders (pending, processing, etc.)

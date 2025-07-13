@@ -264,25 +264,45 @@ function generateAWB(orderId) {
         return;
     }
 
-    fetch(`web/awb.php/orders/${orderId}/awb`, {
+    // Use query parameters instead of path info
+    const baseUrl = window.APP_CONFIG && window.APP_CONFIG.baseUrl ? window.APP_CONFIG.baseUrl : '';
+    const awbUrl = `${baseUrl.replace(/\/$/, '')}/web/awb.php?order_id=${orderId}`;
+
+    console.log(`Making request to: ${awbUrl}`);
+
+    fetch(awbUrl, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
             'X-CSRF-Token': csrfToken,
         },
-        credentials: 'same-origin'
+        credentials: 'same-origin',
+        body: JSON.stringify({
+            order_id: orderId,
+            csrf_token: csrfToken
+        })
     })
     .then(response => {
+        console.log(`Response status: ${response.status}`);
+        
         if (!response.ok) {
-            return response.json().then(errorData => {
-                throw new Error(errorData.error || `HTTP ${response.status}`);
+            return response.text().then(errorText => {
+                console.error('Error response:', errorText);
+                try {
+                    const errorData = JSON.parse(errorText);
+                    throw new Error(errorData.error || `HTTP ${response.status}`);
+                } catch (parseError) {
+                    throw new Error(`HTTP ${response.status}: ${errorText.substring(0, 200)}`);
+                }
             });
         }
         return response.json();
     })
     .then(data => {
+        console.log('Success response:', data);
+        
         if (data.success) {
-            alert(`AWB ${data.data.awb_barcode} a fost generat cu succes! Pagina se va reîncărca.`);
+            alert(`AWB ${data.awb_barcode} a fost generat cu succes! Pagina se va reîncărca.`);
             location.reload();
         } else {
             alert(`Eroare la generarea AWB: ${data.error || 'Răspuns nevalid de la server.'}`);
@@ -296,6 +316,12 @@ function generateAWB(orderId) {
             errorMessage = 'Sesiunea a expirat. Vă rugăm să vă autentificați din nou.';
         } else if (error.message.includes('CSRF')) {
             errorMessage = 'Eroare de securitate. Reîncărcați pagina și încercați din nou.';
+        } else if (error.message.includes('Order not found')) {
+            errorMessage = 'Comanda nu a fost găsită sau nu este în starea corectă pentru generarea AWB.';
+        } else if (error.message.includes('AWB can only be generated for picked orders')) {
+            errorMessage = 'AWB poate fi generat doar pentru comenzile în starea "Pregătit pentru expediere".';
+        } else if (error.message.includes('AWB already exists')) {
+            errorMessage = 'AWB-ul a fost deja generat pentru această comandă.';
         } else if (error.message) {
             errorMessage = `Eroare: ${error.message}`;
         }

@@ -5,6 +5,9 @@
  * Handles AWB generation for authenticated users
  */
 
+require_once BASE_PATH . '/utils/Phone.php';
+use Utils\Phone;
+
 class AWBController {
     private $orderModel;
     private $cargusService;
@@ -126,9 +129,9 @@ class AWBController {
             throw new Exception('Total weight must be greater than 0', 400);
         }
         
-        // Allow optional leading '+' as phone numbers may be stored in
-        // international format (e.g. +40728260020)
-        if (!preg_match('/^\+?[0-9\s\-\(\)]{10,15}$/', $order['recipient_phone'])) {
+        // Normalize phone to local format before validating
+        $normalizedPhone = Phone::toLocal($order['recipient_phone']);
+        if (!preg_match('/^[0-9\s\-\(\)]{10,15}$/', $normalizedPhone)) {
             throw new Exception('Invalid phone number format', 400);
         }
         

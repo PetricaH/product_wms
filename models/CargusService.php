@@ -11,6 +11,9 @@
  * - Configuration management
  */
 
+require_once BASE_PATH . '/utils/Phone.php';
+use Utils\Phone;
+
 class CargusService 
 {
     private $apiUrl;
@@ -208,6 +211,36 @@ class CargusService
             ];
         }
     }
+
+    /**
+     * Normalize phone number to local format accepted by Cargus
+     * Examples:
+     *  - '+40728260020' => '0728260020'
+     *  - '0040728260020' => '0728260020'
+     *  - '40728260020' => '0728260020'
+     */
+    private function normalizeLocalPhone($phone) {
+        if (!$phone) {
+            return '';
+        }
+
+        // Keep only digits
+        $digits = preg_replace('/\D+/', '', $phone);
+
+        // Remove leading country code variations
+        if (strpos($digits, '0040') === 0) {
+            $digits = substr($digits, 4);
+        } elseif (strpos($digits, '40') === 0) {
+            $digits = substr($digits, 2);
+        }
+
+        // Ensure leading zero
+        if ($digits !== '' && $digits[0] !== '0') {
+            $digits = '0' . $digits;
+        }
+
+        return $digits;
+    }
     
     /**
      * Calculate order weight and parcels based on products
@@ -366,7 +399,7 @@ class CargusService
                 'BuildingNumber' => $senderLocation['building_number'],
                 'AddressText' => $senderLocation['address_text'],
                 'ContactPerson' => $senderLocation['contact_person'],
-                'PhoneNumber' => $senderLocation['phone'],
+                'PhoneNumber' => Phone::toLocal($order['recipient_phone']),
                 'Email' => $senderLocation['email']
             ],
             'Recipient' => [
@@ -378,9 +411,9 @@ class CargusService
                 'StreetId' => $order['recipient_street_id'],
                 'StreetName' => '', 
                 'BuildingNumber' => $order['recipient_building_number'] ?: 'N/A',
-                'AddressText' => $order['recipient_address'],
+                'AddressText' => $order['shipping_address'],
                 'ContactPerson' => $order['recipient_contact_person'] ?: $order['customer_name'],
-                'PhoneNumber' => $order['recipient_phone'],
+                'PhoneNumber' => Phone::toLocal($order['recipient_phone']),
                 'Email' => $order['recipient_email'] ?: ''
             ],
             'Parcels' => $calculatedData['parcels_count'],
@@ -409,6 +442,10 @@ class CargusService
      */
     private function validateAWBData($awbData) {
         $errors = [];
+
+        // Normalize phone numbers to local format
+        $awbData['Sender']['PhoneNumber'] = Phone::toLocal($awbData['Sender']['PhoneNumber'] ?? '');
+        $awbData['Recipient']['PhoneNumber'] = Phone::toLocal($awbData['Recipient']['PhoneNumber'] ?? '');
         
         // Required sender fields
         if (empty($awbData['Sender']['Name'])) $errors[] = 'Sender name required';

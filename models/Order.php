@@ -6,6 +6,8 @@
  * Extended Order model with AWB generation capabilities,
  * weight calculation, and product unit management
  */
+require_once BASE_PATH . '/utils/Phone.php';
+use Utils\Phone;
 
 class Order 
 {
@@ -659,11 +661,11 @@ class Order
         }
         
         // Phone validation
-        if (
-            !empty($order['recipient_phone']) &&
-            !preg_match('/^\+?[0-9\s\-\(\)]{10,15}$/', $order['recipient_phone'])
-        ) {
-            $errors[] = 'Invalid phone number format';
+        if (!empty($order['recipient_phone'])) {
+            $normalized = Phone::toLocal($order['recipient_phone']);
+            if (!preg_match('/^[0-9\s\-\(\)]{10,15}$/', $normalized)) {
+                $errors[] = 'Invalid phone number format';
+            }
         }
         
         // Weight validation
@@ -701,7 +703,7 @@ class Order
                 INSERT INTO orders (
                     order_number, customer_id, status, total_value, declared_value,
                     recipient_name, recipient_county_id, recipient_locality_id,
-                    recipient_street_id, recipient_building_number, recipient_address,
+                    recipient_street_id, recipient_building_number, shipping_address,
                     recipient_contact_person, recipient_phone, recipient_email,
                     observations, package_content, created_at
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
@@ -719,7 +721,7 @@ class Order
                 $orderData['recipient_locality_id'],
                 $orderData['recipient_street_id'] ?? null,
                 $orderData['recipient_building_number'] ?? '',
-                $orderData['recipient_address'],
+                $orderData['shipping_address'],
                 $orderData['recipient_contact_person'] ?? $orderData['recipient_name'],
                 $orderData['recipient_phone'],
                 $orderData['recipient_email'] ?? '',

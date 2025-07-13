@@ -227,8 +227,8 @@ class CargusService
                 ut.requires_separate_parcel,
                 ut.max_items_per_parcel
             FROM order_items oi
-            JOIN products p ON oi.product_id = p.id
-            LEFT JOIN product_units pu ON p.id = pu.product_id 
+            JOIN products p ON oi.product_id = p.product_id
+            LEFT JOIN product_units pu ON p.product_id = pu.product_id 
             LEFT JOIN unit_types ut ON pu.unit_type_id = ut.id AND ut.unit_code = oi.unit_measure
             WHERE oi.order_id = ?
         ");
@@ -370,13 +370,13 @@ class CargusService
                 'Email' => $senderLocation['email']
             ],
             'Recipient' => [
-                'Name' => $order['recipient_name'] ?: $order['customer_name'],
+                'Name' => $order['customer_name'],
                 'CountyId' => $order['recipient_county_id'],
-                'CountyName' => '', // Optional - can be fetched if needed
+                'CountyName' => '',
                 'LocalityId' => $order['recipient_locality_id'],
-                'LocalityName' => '', // Optional
+                'LocalityName' => '',
                 'StreetId' => $order['recipient_street_id'],
-                'StreetName' => '', // Optional
+                'StreetName' => '', 
                 'BuildingNumber' => $order['recipient_building_number'] ?: 'N/A',
                 'AddressText' => $order['recipient_address'],
                 'ContactPerson' => $order['recipient_contact_person'] ?: $order['customer_name'],

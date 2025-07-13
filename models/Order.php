@@ -364,8 +364,8 @@ class Order
                 COALESCE(pu.fragile, 0) as fragile,
                 COALESCE(pu.hazardous, 0) as hazardous
             FROM order_items oi
-            JOIN products p ON oi.product_id = p.id
-            LEFT JOIN product_units pu ON p.id = pu.product_id
+            JOIN products p ON oi.product_id = p.product_id
+            LEFT JOIN product_units pu ON p.product_id = pu.product_id
             LEFT JOIN unit_types ut ON pu.unit_type_id = ut.id AND ut.unit_code = oi.unit_measure
             WHERE oi.order_id = ?
             ORDER BY oi.id ASC
@@ -915,9 +915,9 @@ class Order
         
         // Products without unit configuration
         $stmt = $this->conn->prepare("
-            SELECT COUNT(DISTINCT p.id) as count
+            SELECT COUNT(DISTINCT p.product_id) as count
             FROM products p
-            LEFT JOIN product_units pu ON p.id = pu.product_id AND pu.active = 1
+            LEFT JOIN product_units pu ON p.product_id = pu.product_id AND pu.active = 1
             WHERE p.active = 1 AND pu.id IS NULL
         ");
         $stmt->execute();

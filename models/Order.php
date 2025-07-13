@@ -659,7 +659,10 @@ class Order
         }
         
         // Phone validation
-        if (!empty($order['recipient_phone']) && !preg_match('/^[0-9\s\-\(\)]{10,15}$/', $order['recipient_phone'])) {
+        if (
+            !empty($order['recipient_phone']) &&
+            !preg_match('/^\+?[0-9\s\-\(\)]{10,15}$/', $order['recipient_phone'])
+        ) {
             $errors[] = 'Invalid phone number format';
         }
         

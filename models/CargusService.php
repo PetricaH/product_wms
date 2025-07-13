@@ -399,7 +399,7 @@ class CargusService
                 'BuildingNumber' => $senderLocation['building_number'],
                 'AddressText' => $senderLocation['address_text'],
                 'ContactPerson' => $senderLocation['contact_person'],
-                'PhoneNumber' => Phone::toLocal($order['recipient_phone']),
+                'PhoneNumber' => Phone::toLocal($senderLocation['phone']),
                 'Email' => $senderLocation['email']
             ],
             'Recipient' => [

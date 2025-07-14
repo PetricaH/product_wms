@@ -24,6 +24,13 @@ function respond($data, int $code = 200) {
     exit;
 }
 
+// Session and authentication check (admin or warehouse roles allowed)
+session_start();
+$allowedRoles = ['admin', 'warehouse', 'warehouse_worker'];
+if (!isset($_SESSION['user_id']) || !in_array($_SESSION['role'] ?? '', $allowedRoles, true)) {
+    respond(['status' => 'error', 'message' => 'Access denied'], 403);
+}
+
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     respond(['status' => 'error', 'message' => 'Method not allowed'], 405);
 }

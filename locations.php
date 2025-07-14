@@ -48,6 +48,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'zone' => trim($_POST['zone'] ?? ''),
                 'type' => trim($_POST['type'] ?? 'Shelf'),
                 'capacity' => intval($_POST['capacity'] ?? 0),
+                'levels' => intval($_POST['levels'] ?? 3),
                 'description' => trim($_POST['description'] ?? ''),
                 'status' => intval($_POST['status'] ?? 1)
             ];
@@ -77,6 +78,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'zone' => trim($_POST['zone'] ?? ''),
                 'type' => trim($_POST['type'] ?? 'Shelf'),
                 'capacity' => intval($_POST['capacity'] ?? 0),
+                'levels' => intval($_POST['levels'] ?? 3),
                 'description' => trim($_POST['description'] ?? ''),
                 'status' => intval($_POST['status'] ?? 1)
             ];
@@ -347,8 +349,12 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                         <div class="row">
                             <div class="form-group">
                                 <label for="capacity" class="form-label">Capacitate</label>
-                                <input type="number" name="capacity" id="capacity" class="form-control" 
+                                <input type="number" name="capacity" id="capacity" class="form-control"
                                        min="0" placeholder="Nr. max articole">
+                            </div>
+                            <div class="form-group">
+                                <label for="levels" class="form-label">Niveluri</label>
+                                <input type="number" name="levels" id="levels" class="form-control" min="1" value="3">
                             </div>
                             <div class="form-group">
                                 <label for="status" class="form-label">Status</label>

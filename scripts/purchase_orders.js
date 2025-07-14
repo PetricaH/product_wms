@@ -200,6 +200,14 @@ function createProductItem(index) {
             </div>
             <div class="row">
                 <div class="form-group">
+                    <label>Produs Intern (opțional)</label>
+                    <select class="form-control internal-product-select" name="items[${index}][internal_product_id]">
+                        ${generateInternalProductOptions()}
+                    </select>
+                </div>
+            </div>
+            <div class="row">
+                <div class="form-group">
                     <label>Nume Produs *</label>
                     <input type="text" name="items[${index}][product_name]" class="form-control product-name" required 
                            placeholder="Nume produs de la furnizor">
@@ -245,10 +253,11 @@ function generateProductOptions() {
     if (typeof window.purchasableProducts !== 'undefined') {
         let options = '';
         window.purchasableProducts.forEach(product => {
-            options += `<option value="${product.id}" 
+            options += `<option value="${product.id}"
                                 data-name="${escapeHtml(product.supplier_product_name)}"
                                 data-code="${escapeHtml(product.supplier_product_code || '')}"
-                                data-price="${product.last_purchase_price || ''}">
+                                data-price="${product.last_purchase_price || ''}"
+                                data-internal-id="${product.internal_product_id || ''}">
                             ${escapeHtml(product.supplier_product_name)}
                             ${product.supplier_product_code ? `(${escapeHtml(product.supplier_product_code)})` : ''}
                         </option>`;
@@ -256,6 +265,17 @@ function generateProductOptions() {
         return options;
     }
     return '';
+}
+
+function generateInternalProductOptions() {
+    if (typeof window.allProducts !== 'undefined') {
+        let options = '<option value="">-- Produs intern --</option>';
+        window.allProducts.forEach(p => {
+            options += `<option value="${p.product_id}">${escapeHtml(p.name)} (${escapeHtml(p.sku)})</option>`;
+        });
+        return options;
+    }
+    return '<option value="">-- Produs intern --</option>';
 }
 
 function escapeHtml(text) {
@@ -303,11 +323,13 @@ function selectExistingProduct(index, selectElement) {
         const productCodeField = item.querySelector('.product-code');
         const unitPriceField = item.querySelector('.unit-price');
         const purchasableProductIdField = item.querySelector('.purchasable-product-id');
+        const internalSelect = item.querySelector('.internal-product-select');
         
         if (productNameField) productNameField.value = productName || '';
         if (productCodeField) productCodeField.value = productCode || '';
         if (unitPriceField) unitPriceField.value = lastPrice || '';
         if (purchasableProductIdField) purchasableProductIdField.value = selectedOption.value;
+        if (internalSelect) internalSelect.value = selectedOption.getAttribute('data-internal-id') || '';
         
         // Calculate total if quantity is set
         const quantityField = item.querySelector('.quantity');
@@ -320,12 +342,14 @@ function selectExistingProduct(index, selectElement) {
         const productCodeField = item.querySelector('.product-code');
         const unitPriceField = item.querySelector('.unit-price');
         const purchasableProductIdField = item.querySelector('.purchasable-product-id');
+        const internalSelect = item.querySelector('.internal-product-select');
         const itemTotalField = item.querySelector('.item-total');
         
         if (productNameField) productNameField.value = '';
         if (productCodeField) productCodeField.value = '';
         if (unitPriceField) unitPriceField.value = '';
         if (purchasableProductIdField) purchasableProductIdField.value = '';
+        if (internalSelect) internalSelect.value = '';
         if (itemTotalField) itemTotalField.value = '';
         
         calculateOrderTotal();

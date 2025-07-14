@@ -219,9 +219,9 @@ class Location {
      * @return int|false Location ID on success, false on failure
      */
     public function createLocation(array $locationData) {
-        $query = "INSERT INTO {$this->table} 
-                  (location_code, zone, type, capacity, notes, status, created_at) 
-                  VALUES (:location_code, :zone, :type, :capacity, :notes, :status, NOW())";
+        $query = "INSERT INTO {$this->table}
+                  (location_code, zone, type, levels, capacity, notes, status, created_at)
+                  VALUES (:location_code, :zone, :type, :levels, :capacity, :notes, :status, NOW())";
         
         try {
             // Check if location code already exists
@@ -238,6 +238,7 @@ class Location {
                 ':location_code' => $locationData['location_code'],
                 ':zone' => $locationData['zone'],
                 ':type' => $locationData['type'] ?: 'shelf',
+                ':levels' => $locationData['levels'] ?? self::STANDARD_LEVELS,
                 ':capacity' => $locationData['capacity'] ?: 0,
                 ':notes' => $locationData['description'] ?? '',
                 ':status' => $status
@@ -282,8 +283,9 @@ class Location {
             $query = "UPDATE {$this->table} 
                       SET location_code = :location_code, 
                           zone = :zone, 
-                          type = :type, 
-                          capacity = :capacity, 
+                          type = :type,
+                          levels = :levels,
+                          capacity = :capacity,
                           notes = :notes, 
                           status = :status, 
                           updated_at = NOW()
@@ -295,6 +297,7 @@ class Location {
                 ':location_code' => $locationData['location_code'],
                 ':zone' => $locationData['zone'],
                 ':type' => $locationData['type'] ?: 'shelf',
+                ':levels' => $locationData['levels'] ?? self::STANDARD_LEVELS,
                 ':capacity' => $locationData['capacity'] ?: 0,
                 ':notes' => $locationData['description'] ?? '',
                 ':status' => $status
@@ -600,8 +603,8 @@ public function getWarehouseVisualizationData($zoneFilter = '', $typeFilter = ''
         // Process the results to add occupancy data
         foreach ($results as &$location) { // Use a reference '&' to modify the array directly
             $totalCapacity = (int)$location['capacity'];
-            // Assuming a standard shelf has 3 levels if not specified otherwise
-            $levelCapacity = $totalCapacity > 0 ? $totalCapacity / 3 : 0; 
+            $levels = (int)($location['levels'] ?? self::STANDARD_LEVELS);
+            $levelCapacity = $levels > 0 ? $totalCapacity / $levels : 0;
             
             $location['occupancy'] = [
                 'total' => $totalCapacity > 0 ? round(($location['total_items'] / $totalCapacity) * 100, 1) : 0,
@@ -648,9 +651,10 @@ public function getLocationDetails($locationId) {
             return false;
         }
 
+        $levels = (int)($data['levels'] ?? self::STANDARD_LEVELS);
         $levelCapacity = $this->getLevelCapacity();
         $data['level_capacity'] = $levelCapacity;
-        $data['capacity'] = $levelCapacity * self::STANDARD_LEVELS;
+        $data['capacity'] = $levelCapacity * $levels;
         $totalCapacity = $data['capacity'];
 
         $data['occupancy'] = [
@@ -838,7 +842,8 @@ public function getEnhancedWarehouseData($zoneFilter = '', $typeFilter = '', $se
         $location = $this->enhanceLocationOccupancy($location);
         
         // Add level capacity information
-        $location['level_capacity'] = $location['capacity'] > 0 ? $location['capacity'] / 3 : 0;
+        $levels = (int)($location['levels'] ?? self::STANDARD_LEVELS);
+        $location['level_capacity'] = $levels > 0 && $location['capacity'] > 0 ? $location['capacity'] / $levels : 0;
         
         // Add items per level for enhanced visualization
         $location['items'] = [
@@ -859,7 +864,8 @@ public function getEnhancedWarehouseData($zoneFilter = '', $typeFilter = '', $se
  */
 private function enhanceLocationOccupancy($location) {
     $totalCapacity = (int)($location['capacity'] ?? 0);
-    $levelCapacity = $totalCapacity > 0 ? $totalCapacity / 3 : 0;
+    $levels = (int)($location['levels'] ?? self::STANDARD_LEVELS);
+    $levelCapacity = $levels > 0 ? $totalCapacity / $levels : 0;
     
     // Enhanced occupancy with better calculations
     $location['occupancy'] = [

@@ -47,12 +47,14 @@ $db = $dbFactory();
 require_once BASE_PATH . '/models/PurchaseOrder.php';
 require_once BASE_PATH . '/models/Seller.php';
 require_once BASE_PATH . '/models/PurchasableProduct.php';
+require_once BASE_PATH . '/models/Product.php';
 require_once BASE_PATH . '/models/Transaction.php';
 require_once BASE_PATH . '/models/User.php';
 
 $purchaseOrderModel = new PurchaseOrder($db);
 $sellerModel = new Seller($db);
 $purchasableProductModel = new PurchasableProduct($db);
+$productModel = new Product($db);
 $transactionModel = new Transaction($db);
 $usersModel = new Users($db);
 $currentUser = $usersModel->findById($_SESSION['user_id']);
@@ -257,6 +259,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 
                 foreach ($items as $item) {
                     $purchasableProductId = intval($item['purchasable_product_id'] ?? 0);
+                    $internalProductId = intval($item['internal_product_id'] ?? 0);
                     
                     // If no product ID provided, try to find or create the product
                     if ($purchasableProductId <= 0) {
@@ -280,7 +283,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     'unit_measure' => 'buc', // Default unit
                                     'last_purchase_price' => floatval($item['unit_price'] ?? 0),
                                     'currency' => 'RON',
-                                    'internal_product_id' => null, // We'll link this later if needed
+                                    'internal_product_id' => $internalProductId > 0 ? $internalProductId : null,
                                     'preferred_seller_id' => $sellerId,
                                     'notes' => trim($item['description'] ?? ''),
                                     'status' => 'active'
@@ -297,8 +300,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         } else {
                             throw new Exception('Numele produsului este obligatoriu.');
                         }
+                    } else {
+                        if ($internalProductId > 0) {
+                            $purchasableProductModel->updateProduct($purchasableProductId, ['internal_product_id' => $internalProductId]);
+                        }
                     }
-                    
+
                     $quantity = floatval($item['quantity']);
                     $unitPrice = floatval($item['unit_price']);
                     
@@ -538,6 +545,7 @@ if ($sellerFilter > 0) {
 $purchaseOrders = $purchaseOrderModel->getAllPurchaseOrders($filters);
 $sellers = $sellerModel->getAllSellers();
 $purchasableProducts = $purchasableProductModel->getAllProducts();
+$allProducts = $productModel->getAllProductsForDropdown();
 
 // Include header
 $currentPage = 'purchase_orders';
@@ -743,13 +751,27 @@ require_once __DIR__ . '/includes/header.php';
                                             <label>Selectează Produs Existent</label>
                                             <select class="form-control existing-product-select" onchange="selectExistingProduct(0, this)">
                                                 <option value="">Sau creează produs nou...</option>
-                                                <?php foreach ($purchasableProducts as $product): ?>
-                                                    <option value="<?= $product['id'] ?>" 
+                                            <?php foreach ($purchasableProducts as $product): ?>
+                                                    <option value="<?= $product['id'] ?>"
                                                             data-name="<?= htmlspecialchars($product['supplier_product_name']) ?>"
                                                             data-code="<?= htmlspecialchars($product['supplier_product_code']) ?>"
-                                                            data-price="<?= $product['last_purchase_price'] ?>">
+                                                            data-price="<?= $product['last_purchase_price'] ?>"
+                                                            data-internal-id="<?= $product['internal_product_id'] ?>">
                                                         <?= htmlspecialchars($product['supplier_product_name']) ?>
                                                         <?= $product['supplier_product_code'] ? ' (' . htmlspecialchars($product['supplier_product_code']) . ')' : '' ?>
+                                                    </option>
+                                            <?php endforeach; ?>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="row">
+                                        <div class="form-group">
+                                            <label>Produs Intern (opțional)</label>
+                                            <select class="form-control internal-product-select" name="items[0][internal_product_id]">
+                                                <option value="">-- Produs intern --</option>
+                                                <?php foreach ($allProducts as $prod): ?>
+                                                    <option value="<?= $prod['product_id'] ?>">
+                                                        <?= htmlspecialchars($prod['name']) ?> (<?= htmlspecialchars($prod['sku']) ?>)
                                                     </option>
                                                 <?php endforeach; ?>
                                             </select>
@@ -989,6 +1011,7 @@ require_once __DIR__ . '/includes/header.php';
 <script>
 // Make purchasable products available globally for JavaScript
 window.purchasableProducts = <?= json_encode($purchasableProducts) ?>;
+window.allProducts = <?= json_encode($allProducts) ?>;
 </script>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

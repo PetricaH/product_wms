@@ -81,6 +81,10 @@ function openCreateModal() {
         existingMessage.remove();
     }
     
+    // Set default levels
+    const levelsField = document.getElementById('levels');
+    if (levelsField) levelsField.value = '3';
+
     // Show modal
     document.getElementById('locationModal').classList.add('show');
     
@@ -104,6 +108,8 @@ function openEditModal(location) {
     document.getElementById('zone').value = location.zone;
     document.getElementById('type').value = location.type || 'Shelf';
     document.getElementById('capacity').value = location.capacity || '';
+    const levelsFieldEdit = document.getElementById('levels');
+    if (levelsFieldEdit) levelsFieldEdit.value = location.levels || 3;
     
     // Convert database status to form value
     const statusValue = location.status === 'active' ? '1' : '0';

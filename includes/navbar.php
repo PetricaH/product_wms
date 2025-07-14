@@ -156,8 +156,8 @@ if (isset($_SESSION['username'])) {
 
         <!-- Printers -->
         <li class="sidebar__item">
-            <a href="<?= getNavUrl('printers.php') ?>"
-               class="sidebar__link <?= getActiveClass('printers.php') ?>"
+            <a href="<?= getNavUrl('printer-management.php') ?>"
+               class="sidebar__link <?= getActiveClass('printer-management.php') ?>"
                data-tooltip="Imprimante">
                 <span class="material-symbols-outlined">print</span>
                 <span class="link-text">Imprimante</span>

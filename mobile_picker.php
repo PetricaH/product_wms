@@ -23,6 +23,9 @@ $hasOrderFromUrl = !empty($orderNumber);
                 <div class="order-number">#<span id="current-order-number"><?= $orderNumber ?></span></div>
                 <div class="customer-name" id="customer-name">Loading...</div>
             </div>
+            <button id="print-invoice-btn" class="btn btn-secondary btn-sm <?= !$hasOrderFromUrl ? 'hidden' : '' ?>" title="Printează Factura">
+                <span class="material-symbols-outlined">print</span>
+            </button>
         </div>
     </div>
 

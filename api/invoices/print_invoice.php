@@ -24,6 +24,11 @@ function respond($data, int $code = 200) {
     exit;
 }
 
+session_start();
+if (!isset($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'admin') {
+    respond(['status' => 'error', 'message' => 'Access denied'], 403);
+}
+
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     respond(['status' => 'error', 'message' => 'Method not allowed'], 405);
 }

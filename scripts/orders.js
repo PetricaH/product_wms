@@ -340,6 +340,340 @@ function printAWB(barcode) {
 }
 
 /**
+ * Send request to generate and print the invoice for a specific order.
+ * @param {number} orderId Order ID
+ */
+function printInvoice(orderId, printerId = null) {
+    if (!confirm(`Trimite factura la imprimantă pentru comanda #${orderId}?`)) {
+        return;
+    }
+
+    // Show loading state
+    const printBtn = document.querySelector(`button[onclick="printInvoice(${orderId})"]`);
+    if (printBtn) {
+        printBtn.disabled = true;
+        printBtn.innerHTML = '<span class="material-symbols-outlined spinning">hourglass_empty</span>';
+    }
+
+    const formData = new FormData();
+    formData.append('order_id', orderId);
+    if (printerId) {
+        formData.append('printer_id', printerId);
+    }
+
+    fetch('api/invoices/print_invoice_network.php', {
+        method: 'POST',
+        body: formData
+    })
+        .then(resp => resp.text())
+        .then(text => {
+            try {
+                const data = JSON.parse(text);
+                if (data.status === 'success') {
+                    showNotification(
+                        `Factura a fost trimisă la imprimantă: ${data.printer || 'imprimanta implicită'}`,
+                        'success'
+                    );
+                    
+                    // Update print job if available
+                    if (data.job_id) {
+                        console.log(`Print job created: ${data.job_id}`);
+                    }
+                } else {
+                    showNotification(
+                        `Eroare la imprimare: ${data.message}`,
+                        'error'
+                    );
+                    
+                    // Show detailed error for admins
+                    if (data.job_id && window.userRole === 'admin') {
+                        console.error('Print job failed:', data);
+                    }
+                }
+            } catch (e) {
+                console.error('Parse error:', text);
+                showNotification('Eroare la procesarea răspunsului de la server', 'error');
+            }
+        })
+        .catch(err => {
+            console.error('Print request failed:', err);
+            let errorMessage = 'A apărut o eroare neașteptată în timpul imprimării.';
+            
+            if (err.message.includes('503')) {
+                errorMessage = 'Serverul de imprimare nu este disponibil. Verificați conexiunea cu imprimanta.';
+            } else if (err.message.includes('404')) {
+                errorMessage = 'Nu s-a găsit o imprimantă configurată pentru facturi.';
+            } else if (err.message.includes('Authentication')) {
+                errorMessage = 'Sesiunea a expirat. Vă rugăm să vă autentificați din nou.';
+            }
+            
+            showNotification(`Eroare la imprimare: ${errorMessage}`, 'error');
+        })
+        .finally(() => {
+            // Restore button state
+            if (printBtn) {
+                printBtn.disabled = false;
+                printBtn.innerHTML = '<span class="material-symbols-outlined">print</span>';
+            }
+        });
+}
+
+/**
+ * Enhanced print invoice with printer selection
+ * @param {number} orderId Order ID
+ */
+function printInvoiceWithSelection(orderId) {
+    // First, get available printers
+    fetch('api/printer_management.php?path=printers')
+        .then(resp => resp.json())
+        .then(printers => {
+            const invoicePrinters = printers.filter(p => 
+                p.is_active && 
+                p.print_server && 
+                p.print_server.is_active && 
+                (p.printer_type === 'invoice' || p.printer_type === 'document')
+            );
+            
+            if (invoicePrinters.length === 0) {
+                showNotification('Nu sunt disponibile imprimante pentru facturi.', 'warning');
+                return;
+            }
+            
+            if (invoicePrinters.length === 1) {
+                // Only one printer available, use it directly
+                printInvoice(orderId, invoicePrinters[0].id);
+                return;
+            }
+            
+            // Multiple printers - show selection modal
+            showPrinterSelectionModal(orderId, invoicePrinters);
+        })
+        .catch(err => {
+            console.error('Failed to load printers:', err);
+            // Fallback to default printer
+            printInvoice(orderId);
+        });
+}
+
+/**
+ * Show printer selection modal
+ * @param {number} orderId 
+ * @param {Array} printers 
+ */
+function showPrinterSelectionModal(orderId, printers) {
+    const modal = document.createElement('div');
+    modal.className = 'modal show';
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width: 400px;">
+            <h3>Selectează imprimanta</h3>
+            <p>Selectează imprimanta pentru factura comenzii #${orderId}:</p>
+            
+            <div style="margin: 1.5rem 0;">
+                ${printers.map(printer => `
+                    <div style="margin-bottom: 1rem;">
+                        <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                            <input type="radio" name="selected-printer" value="${printer.id}" 
+                                   ${printer.is_default ? 'checked' : ''}>
+                            <div>
+                                <strong>${printer.name}</strong>
+                                <br>
+                                <small style="color: var(--text-muted);">
+                                    ${printer.print_server.name} - ${printer.printer_type}
+                                    ${printer.is_default ? ' (implicit)' : ''}
+                                </small>
+                            </div>
+                        </label>
+                    </div>
+                `).join('')}
+            </div>
+            
+            <div style="display: flex; gap: 1rem; justify-content: flex-end;">
+                <button class="btn btn-secondary" onclick="this.closest('.modal').remove()">
+                    Anulează
+                </button>
+                <button class="btn btn-primary" onclick="confirmPrinterSelection(${orderId})">
+                    Printează
+                </button>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    
+    // Auto-select default printer if available
+    const defaultPrinter = modal.querySelector('input[type="radio"]:checked');
+    if (!defaultPrinter && printers.length > 0) {
+        modal.querySelector('input[type="radio"]').checked = true;
+    }
+}
+
+/**
+ * Confirm printer selection and print
+ * @param {number} orderId 
+ */
+function confirmPrinterSelection(orderId) {
+    const selectedPrinter = document.querySelector('input[name="selected-printer"]:checked');
+    if (!selectedPrinter) {
+        showNotification('Vă rugăm să selectați o imprimantă.', 'warning');
+        return;
+    }
+    
+    const printerId = parseInt(selectedPrinter.value);
+    
+    // Close modal
+    document.querySelector('.modal').remove();
+    
+    // Print with selected printer
+    printInvoice(orderId, printerId);
+}
+
+/**
+ * Enhanced notification system
+ * @param {string} message 
+ * @param {string} type 
+ */
+function showNotification(message, type = 'info') {
+    // Create notification element
+    const notification = document.createElement('div');
+    notification.className = `notification notification-${type}`;
+    notification.innerHTML = `
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+            <span class="material-symbols-outlined">
+                ${type === 'success' ? 'check_circle' : type === 'error' ? 'error' : type === 'warning' ? 'warning' : 'info'}
+            </span>
+            <span>${message}</span>
+        </div>
+        <button onclick="this.parentElement.remove()" style="background: none; border: none; color: inherit; cursor: pointer;">
+            <span class="material-symbols-outlined">close</span>
+        </button>
+    `;
+    
+    // Add styles if not already present
+    if (!document.querySelector('#notification-styles')) {
+        const styles = document.createElement('style');
+        styles.id = 'notification-styles';
+        styles.textContent = `
+            .notification {
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                background: var(--container-background);
+                border: 1px solid var(--border-color);
+                border-radius: var(--border-radius);
+                padding: 1rem;
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+                z-index: 10000;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                min-width: 300px;
+                animation: slideInRight 0.3s ease;
+            }
+            
+            .notification-success {
+                border-left: 4px solid #22c55e;
+                background: rgba(34, 197, 94, 0.05);
+            }
+            
+            .notification-error {
+                border-left: 4px solid #ef4444;
+                background: rgba(239, 68, 68, 0.05);
+            }
+            
+            .notification-warning {
+                border-left: 4px solid #fbbf24;
+                background: rgba(251, 191, 36, 0.05);
+            }
+            
+            .notification-info {
+                border-left: 4px solid #3b82f6;
+                background: rgba(59, 130, 246, 0.05);
+            }
+            
+            @keyframes slideInRight {
+                from { transform: translateX(100%); opacity: 0; }
+                to { transform: translateX(0); opacity: 1; }
+            }
+            
+            .spinning {
+                animation: spin 1s linear infinite;
+            }
+            
+            @keyframes spin {
+                from { transform: rotate(0deg); }
+                to { transform: rotate(360deg); }
+            }
+        `;
+        document.head.appendChild(styles);
+    }
+    
+    document.body.appendChild(notification);
+    
+    // Auto-remove after 5 seconds
+    setTimeout(() => {
+        if (notification.parentElement) {
+            notification.remove();
+        }
+    }, 5000);
+}
+
+/**
+ * Check print server status and show indicators
+ */
+async function checkPrintServerStatus() {
+    try {
+        const response = await fetch('api/printer_management.php?path=print-servers');
+        const servers = await response.json();
+        
+        const onlineServers = servers.filter(s => s.is_active).length;
+        const totalServers = servers.length;
+        
+        // Update UI indicator if present
+        const statusIndicator = document.getElementById('print-server-status');
+        if (statusIndicator) {
+            statusIndicator.innerHTML = `
+                <span class="material-symbols-outlined">print</span>
+                Servere imprimare: ${onlineServers}/${totalServers} online
+            `;
+            statusIndicator.className = `status-indicator ${onlineServers > 0 ? 'status-online' : 'status-offline'}`;
+        }
+        
+        return { online: onlineServers, total: totalServers };
+    } catch (error) {
+        console.error('Failed to check print server status:', error);
+        return { online: 0, total: 0 };
+    }
+}
+
+// Initialize print server status checking
+document.addEventListener('DOMContentLoaded', function() {
+    // Check status initially
+    checkPrintServerStatus();
+    
+    // Check every 30 seconds
+    setInterval(checkPrintServerStatus, 30000);
+});
+
+// Enhanced print functions for different document types
+function printAWB(orderId, awbCode) {
+    // Similar implementation for AWB printing
+    console.log(`Print AWB ${awbCode} for order ${orderId}`);
+    showNotification('AWB printing not implemented yet', 'info');
+}
+
+function printLabel(orderId, labelType = 'shipping') {
+    // Implementation for label printing
+    console.log(`Print ${labelType} label for order ${orderId}`);
+    showNotification('Label printing not implemented yet', 'info');
+}
+
+function printPackingList(orderId) {
+    // Implementation for packing list printing
+    console.log(`Print packing list for order ${orderId}`);
+    showNotification('Packing list printing not implemented yet', 'info');
+}
+
+/**
  * Dynamically adds a new product row to the "Create Order" form.
  */
 function addOrderItem() {

@@ -12,7 +12,7 @@ class AddAssignedAtColumnInOrdersTableMigration {
     public function up(PDO $pdo) {
         // Add your migration logic here
         $sql = "
-            ALTER TABLE `orders` ADD `assigned_at` TIMESTAMP NULL DEFAULT NULL AFTER `assigned_to`
+            ALTER TABLE `orders` ADD COLUMN `assigned_at` TIMESTAMP NULL DEFAULT NULL AFTER `assigned_to`
         ";
         $pdo->exec($sql);
     }

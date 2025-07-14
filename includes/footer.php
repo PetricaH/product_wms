@@ -27,7 +27,8 @@ $pageSpecificJS = [
     'orders' => 'orders.js',
     'sellers' => 'sellers.js',
     'purchase_orders' => 'purchase_orders.js',
-    'product-units' => 'product-units.js'
+    'product-units' => 'product-units.js',
+    'printer-management' => 'printer-management.js'
 ];
 
 // Check if a specific script is defined for the current page in our array.

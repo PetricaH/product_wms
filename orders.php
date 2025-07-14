@@ -310,6 +310,9 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                                 <span class="material-symbols-outlined">local_shipping</span>
                                                             </button>
                                                         <?php endif; ?>
+                                                        <button class="btn btn-sm btn-outline-info" onclick="printInvoice(<?= $order['id'] ?>)" title="Printează Factura">
+                                                            <span class="material-symbols-outlined">print</span>
+                                                        </button>
                                                         <button class="btn btn-sm btn-outline-danger"
                                                                 onclick="openDeleteModal(<?= $order['id'] ?>, '<?= htmlspecialchars(addslashes($order['order_number'])) ?>')"
                                                                 title="Șterge">

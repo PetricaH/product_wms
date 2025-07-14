@@ -15,3 +15,4 @@ node_modules/
 database/backups/*.sql
 vendor/
 \.phpunit.result.cache
+storage/invoice_pdfs/

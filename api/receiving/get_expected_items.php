@@ -1,10 +1,9 @@
 <?php
 /**
- * API: Get Expected Items for Receiving Session
+ * API: Get Expected Items for Receiving Session - PROGRESS COUNTER FIX
  * File: api/receiving/get_expected_items.php
  * 
- * Returns the list of items expected for a receiving session
- * WORKING WITH EXISTING DATABASE STRUCTURE - NO CHANGES NEEDED
+ * FIXED: Return correct total_items_expected and total_items_received for progress counter
  */
 
 header('Content-Type: application/json');
@@ -46,6 +45,7 @@ try {
     }
     
     // Validate session exists and user has access
+    // FIXED: Use s.supplier_name instead of s.name
     $stmt = $db->prepare("
         SELECT rs.*, po.order_number as po_number, s.supplier_name
         FROM receiving_sessions rs
@@ -66,8 +66,40 @@ try {
         throw new Exception('Receiving session not found or access denied');
     }
     
+    // FIXED: Calculate current totals for progress counter
+    // Count expected items
+    $stmt = $db->prepare("
+        SELECT COUNT(*) as expected_count 
+        FROM purchase_order_items 
+        WHERE purchase_order_id = :po_id
+    ");
+    $stmt->execute([':po_id' => $session['purchase_order_id']]);
+    $expectedCount = $stmt->fetchColumn();
+    
+    // Count received items
+    $stmt = $db->prepare("
+        SELECT COUNT(DISTINCT purchase_order_item_id) as received_count
+        FROM receiving_items 
+        WHERE receiving_session_id = :session_id
+    ");
+    $stmt->execute([':session_id' => $sessionId]);
+    $receivedCount = $stmt->fetchColumn();
+    
+    // Update the session record with correct totals
+    $stmt = $db->prepare("
+        UPDATE receiving_sessions 
+        SET total_items_expected = :expected_count,
+            total_items_received = :received_count,
+            updated_at = NOW()
+        WHERE id = :session_id
+    ");
+    $stmt->execute([
+        ':expected_count' => $expectedCount,
+        ':received_count' => $receivedCount,
+        ':session_id' => $sessionId
+    ]);
+    
     // Get expected items from purchase order with current receiving status
-    // Map purchasable_products to main products via internal_product_id or SKU
     $stmt = $db->prepare("
         SELECT 
             poi.id,
@@ -120,23 +152,15 @@ try {
             'location_id' => (int)$item['location_id'],
             'location_code' => $item['location_code'],
             'condition_status' => $item['condition_status'] ?: 'good',
-            'batch_number' => $item['batch_number'],
-            'expiry_date' => $item['expiry_date'],
-            'notes' => $item['notes'],
+            'batch_number' => $item['batch_number'] ?: '',
+            'expiry_date' => $item['expiry_date'] ?: '',
+            'notes' => $item['notes'] ?: '',
             'status' => $item['status'],
             'received_at' => $item['received_at']
         ];
     }, $items);
     
-    // Get session summary
-    $totalExpected = count($items);
-    $totalReceived = count(array_filter($items, function($item) {
-        return $item['status'] === 'received';
-    }));
-    $totalPartial = count(array_filter($items, function($item) {
-        return $item['status'] === 'partial';
-    }));
-    
+    // FIXED: Return session data with correct progress totals
     echo json_encode([
         'success' => true,
         'session' => [
@@ -146,14 +170,26 @@ try {
             'supplier_name' => $session['supplier_name'],
             'status' => $session['status'],
             'supplier_document_number' => $session['supplier_document_number'],
-            'supplier_document_type' => $session['supplier_document_type']
+            'supplier_document_type' => $session['supplier_document_type'],
+            'supplier_document_date' => $session['supplier_document_date'],
+            'purchase_order_id' => (int)$session['purchase_order_id'],
+            'supplier_id' => (int)$session['supplier_id'],
+            'total_items_expected' => (int)$expectedCount,  // FIXED: Include progress totals
+            'total_items_received' => (int)$receivedCount,   // FIXED: Include progress totals
+            'created_at' => $session['created_at']
         ],
         'items' => $formattedItems,
         'summary' => [
-            'total_expected' => $totalExpected,
-            'total_received' => $totalReceived,
-            'total_partial' => $totalPartial,
-            'total_pending' => $totalExpected - $totalReceived - $totalPartial
+            'total_expected' => count($items),
+            'total_received' => count(array_filter($items, function($item) {
+                return $item['status'] === 'received';
+            })),
+            'total_partial' => count(array_filter($items, function($item) {
+                return $item['status'] === 'partial';
+            })),
+            'total_pending' => count(array_filter($items, function($item) {
+                return $item['status'] === 'pending';
+            }))
         ]
     ]);
     

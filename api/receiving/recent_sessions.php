@@ -66,7 +66,9 @@ try {
         OR :user_id IN (
             SELECT id FROM users WHERE role IN ('admin', 'manager')
         )
-        GROUP BY rs.id
+        GROUP BY rs.id, rs.session_number, rs.supplier_document_number, rs.supplier_document_type,
+                 rs.status, rs.total_items_expected, rs.total_items_received, rs.created_at,
+                 rs.completed_at, s.supplier_name, po.order_number, u.username
         ORDER BY rs.created_at DESC
         LIMIT :limit
     ");
@@ -101,7 +103,7 @@ try {
             'created_at' => $session['created_at'],
             'completed_at' => $session['completed_at'],
             'duration' => $session['completed_at'] ? 
-                $this->calculateDuration($session['created_at'], $session['completed_at']) : null
+                calculateDuration($session['created_at'], $session['completed_at']) : null
         ];
     }, $sessions);
     

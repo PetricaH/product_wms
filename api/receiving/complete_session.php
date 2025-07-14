@@ -169,7 +169,8 @@ try {
             pp.supplier_product_code as sku,
             l.location_code
         FROM receiving_items ri
-        JOIN purchasable_products pp ON ri.purchasable_product_id = pp.id
+        JOIN purchase_order_items poi ON ri.purchase_order_item_id = poi.id
+        JOIN purchasable_products pp ON poi.purchasable_product_id = pp.id
         LEFT JOIN locations l ON ri.location_id = l.id
         WHERE ri.receiving_session_id = :session_id
         ORDER BY ri.created_at ASC

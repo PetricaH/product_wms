@@ -579,8 +579,7 @@ class WarehouseReceiving {
     }
 
     viewSession(sessionId) {
-        // Navigate to session details or open modal
-        console.log('View session:', sessionId);
+        this.resumeSession(sessionId);
     }
 
     // Scanner functionality

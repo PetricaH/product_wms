@@ -4,6 +4,7 @@
  * File: api/receiving/start_session.php
  * 
  * Creates a new receiving session for a purchase order
+ * FIXED: Consistent supplier_name usage and proper session creation
  */
 
 header('Content-Type: application/json');
@@ -60,6 +61,7 @@ try {
     }
     
     // Validate purchase order exists
+    // FIXED: Use s.supplier_name instead of s.name and proper JOIN
     $stmt = $db->prepare("
         SELECT po.*, s.supplier_name as supplier_name, s.id as supplier_id
         FROM purchase_orders po
@@ -103,8 +105,29 @@ try {
         exit;
     }
     
-    // Generate session number
-    $sessionNumber = 'REC-' . date('Y') . '-' . str_pad(mt_rand(1, 999999), 6, '0', STR_PAD_LEFT);
+    // Generate unique session number
+    $prefix = 'REC-' . date('Y') . '-';
+    
+    // Get the last session number for this year
+    $stmt = $db->prepare("
+        SELECT session_number 
+        FROM receiving_sessions 
+        WHERE session_number LIKE :prefix 
+        ORDER BY session_number DESC 
+        LIMIT 1
+    ");
+    $stmt->execute([':prefix' => $prefix . '%']);
+    $lastNumber = $stmt->fetchColumn();
+    
+    if ($lastNumber) {
+        // Extract the number part and increment
+        $lastNum = (int)substr($lastNumber, strlen($prefix));
+        $nextNum = $lastNum + 1;
+    } else {
+        $nextNum = 1;
+    }
+    
+    $sessionNumber = $prefix . str_pad($nextNum, 6, '0', STR_PAD_LEFT);
     
     // Start transaction
     $db->beginTransaction();
@@ -171,6 +194,7 @@ try {
             'supplier_id' => $purchaseOrder['supplier_id'],
             'status' => 'in_progress',
             'total_items_expected' => $itemCount,
+            'total_items_received' => 0,
             'created_at' => date('Y-m-d H:i:s')
         ]
     ]);

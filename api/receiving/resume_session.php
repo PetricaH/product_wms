@@ -1,9 +1,9 @@
 <?php
 /**
- * API: Resume Receiving Session
+ * API: Resume Receiving Session - SIMPLE VERSION
  * File: api/receiving/resume_session.php
  * 
- * Allows resuming an existing receiving session
+ * Simple session validation for resuming (if this endpoint is needed)
  */
 
 header('Content-Type: application/json');
@@ -56,40 +56,30 @@ try {
         throw new Exception('Session ID is required');
     }
     
-    // Check if user can resume this session
+    // Validate session exists and user can access it
     $stmt = $db->prepare("
-        SELECT rs.*, po.order_number as po_number, s.supplier_name as supplier_name,
-               u.username as received_by_name, u.role as user_role
+        SELECT rs.*, po.order_number as po_number, s.supplier_name as supplier_name
         FROM receiving_sessions rs
         JOIN purchase_orders po ON rs.purchase_order_id = po.id
         JOIN sellers s ON rs.supplier_id = s.id
-        JOIN users u ON rs.received_by = u.id
         WHERE rs.id = :session_id 
         AND rs.status = 'in_progress'
+        AND (rs.received_by = :user_id OR :user_id IN (
+            SELECT id FROM users WHERE role IN ('admin', 'manager')
+        ))
     ");
-    $stmt->execute([':session_id' => $sessionId]);
+    $stmt->execute([
+        ':session_id' => $sessionId,
+        ':user_id' => $_SESSION['user_id']
+    ]);
     $session = $stmt->fetch(PDO::FETCH_ASSOC);
     
     if (!$session) {
-        throw new Exception('Receiving session not found or not active');
-    }
-    
-    // Check permissions - user must be the original receiver or admin/manager
-    $stmt = $db->prepare("SELECT role FROM users WHERE id = :user_id");
-    $stmt->execute([':user_id' => $_SESSION['user_id']]);
-    $currentUserRole = $stmt->fetchColumn();
-    
-    $canResume = (
-        $session['received_by'] == $_SESSION['user_id'] || 
-        in_array($currentUserRole, ['admin', 'manager'])
-    );
-    
-    if (!$canResume) {
-        throw new Exception('You do not have permission to resume this receiving session');
+        throw new Exception('Receiving session not found or not accessible');
     }
     
     // If different user is resuming, update the received_by field
-    if ($session['received_by'] != $_SESSION['user_id'] && in_array($currentUserRole, ['admin', 'manager'])) {
+    if ($session['received_by'] != $_SESSION['user_id']) {
         $stmt = $db->prepare("
             UPDATE receiving_sessions SET 
                 received_by = :new_user_id,
@@ -100,31 +90,13 @@ try {
             ':new_user_id' => $_SESSION['user_id'],
             ':session_id' => $sessionId
         ]);
-        
-        // Update session data for response
-        $session['received_by'] = $_SESSION['user_id'];
     }
     
-    // Return session info for resuming
+    // Return basic session info - the frontend will call get_expected_items.php for details
     echo json_encode([
         'success' => true,
-        'session' => [
-            'id' => (int)$session['id'],
-            'session_number' => $session['session_number'],
-            'supplier_document_number' => $session['supplier_document_number'],
-            'supplier_document_type' => $session['supplier_document_type'],
-            'supplier_document_date' => $session['supplier_document_date'],
-            'purchase_order_id' => (int)$session['purchase_order_id'],
-            'po_number' => $session['po_number'],
-            'supplier_name' => $session['supplier_name'],
-            'supplier_id' => (int)$session['supplier_id'],
-            'status' => $session['status'],
-            'total_items_expected' => (int)$session['total_items_expected'],
-            'total_items_received' => (int)$session['total_items_received'],
-            'created_at' => $session['created_at'],
-            'resumed_at' => date('Y-m-d H:i:s')
-        ],
-        'message' => 'Session resumed successfully'
+        'message' => 'Session resumed successfully',
+        'session_id' => $sessionId
     ]);
     
 } catch (Exception $e) {

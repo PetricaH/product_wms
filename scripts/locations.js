@@ -501,25 +501,34 @@ class EnhancedWarehouseVisualization {
 
     createShelfElement(shelf) {
         const occupancyTotal = shelf.occupancy?.total || 0;
-        const occupancyBottom = shelf.occupancy?.bottom || 0;
-        const occupancyMiddle = shelf.occupancy?.middle || 0;
-        const occupancyTop = shelf.occupancy?.top || 0;
+        const levels = parseInt(shelf.levels || 3);
 
-        // Create level bars (always visible now) - top to bottom order
+        // Build occupancy array top-down. If we only have the classic
+        // top/middle/bottom values use them, otherwise distribute total
+        // occupancy evenly across all configured levels.
+        let levelOccupancies = [];
+        if (levels === 3) {
+            levelOccupancies = [
+                shelf.occupancy?.top || 0,
+                shelf.occupancy?.middle || 0,
+                shelf.occupancy?.bottom || 0
+            ];
+        } else {
+            const each = levels > 0 ? occupancyTotal / levels : 0;
+            for (let i = 0; i < levels; i++) {
+                levelOccupancies.push(each);
+            }
+        }
+
+        // Generate level bars from top (index 0) to bottom (last index)
         const levelsHTML = `
             <div class="shelf-levels">
-                <div class="shelf-level" data-level="top" title="Nivel superior: ${Math.round(occupancyTop)}%">
-                    <div class="level-fill ${this.getOccupancyClass(occupancyTop)}" 
-                         style="width: ${occupancyTop}%"></div>
-                </div>
-                <div class="shelf-level" data-level="middle" title="Nivel mijloc: ${Math.round(occupancyMiddle)}%">
-                    <div class="level-fill ${this.getOccupancyClass(occupancyMiddle)}" 
-                         style="width: ${occupancyMiddle}%"></div>
-                </div>
-                <div class="shelf-level" data-level="bottom" title="Nivel inferior: ${Math.round(occupancyBottom)}%">
-                    <div class="level-fill ${this.getOccupancyClass(occupancyBottom)}" 
-                         style="width: ${occupancyBottom}%"></div>
-                </div>
+                ${levelOccupancies.map((occ, idx) => {
+                    const levelName = levels - idx;
+                    return `<div class="shelf-level" data-level="${levelName}" title="Nivel ${levelName}: ${Math.round(occ)}%">
+                                <div class="level-fill ${this.getOccupancyClass(occ)}" style="width: ${occ}%"></div>
+                            </div>`;
+                }).join('')}
             </div>
         `;
 

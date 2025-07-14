@@ -25,6 +25,7 @@ document.addEventListener('DOMContentLoaded', () => {
         orderInfo: document.getElementById('order-info'),
         currentOrderNumber: document.getElementById('current-order-number'),
         customerName: document.getElementById('customer-name'),
+        printInvoiceBtn: document.getElementById('print-invoice-btn'),
         
         // Progress
         progressSection: document.getElementById('progress-section'),
@@ -133,6 +134,8 @@ document.addEventListener('DOMContentLoaded', () => {
         elements.qtyIncrease?.addEventListener('click', () => adjustQuantity(1));
         elements.confirmQuantityBtn?.addEventListener('click', confirmPick);
         elements.backToProduct?.addEventListener('click', () => showStep('product'));
+
+        elements.printInvoiceBtn?.addEventListener('click', printInvoice);
         
         // Scanner
         elements.closeScanner?.addEventListener('click', closeScanner);
@@ -208,13 +211,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function updateOrderDisplay() {
         if (!currentOrder) return;
-        
+
         if (elements.currentOrderNumber) {
             elements.currentOrderNumber.textContent = currentOrder.order_number;
         }
-        
+
         if (elements.customerName) {
             elements.customerName.textContent = currentOrder.customer_name || 'Client necunoscut';
+        }
+
+        if (elements.printInvoiceBtn) {
+            elements.printInvoiceBtn.classList.remove('hidden');
         }
     }
 
@@ -596,6 +603,31 @@ document.addEventListener('DOMContentLoaded', () => {
         elements.completionSection?.classList.remove('hidden');
     }
 
+    async function printInvoice() {
+        if (!currentOrder) return;
+        try {
+            showLoading(true);
+            const formData = new FormData();
+            formData.append('order_id', currentOrder.id);
+            const response = await fetch(`${API_BASE}/invoices/print_invoice.php`, {
+                method: 'POST',
+                body: formData
+            });
+            const text = await response.text();
+            const data = JSON.parse(text);
+            if (data.status === 'success') {
+                showMessage('Factura a fost trimisă la imprimantă.', 'success');
+            } else {
+                throw new Error(data.message || 'Eroare la imprimare');
+            }
+        } catch (err) {
+            console.error('Print invoice error:', err);
+            showMessage(`Eroare la imprimare: ${err.message}`, 'error');
+        } finally {
+            showLoading(false);
+        }
+    }
+
     // Utility Functions
     function showLoading(show = true) {
         if (elements.loadingOverlay) {
@@ -638,6 +670,7 @@ document.addEventListener('DOMContentLoaded', () => {
         orderItems: () => orderItems,
         refreshItems: () => {
             if (currentOrder) loadOrderItems(currentOrder.id);
-        }
+        },
+        printInvoice
     };
 });

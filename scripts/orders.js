@@ -340,6 +340,40 @@ function printAWB(barcode) {
 }
 
 /**
+ * Send request to generate and print the invoice for a specific order.
+ * @param {number} orderId Order ID
+ */
+function printInvoice(orderId) {
+    if (!confirm(`Trimite factura la imprimantă pentru comanda #${orderId}?`)) {
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('order_id', orderId);
+
+    fetch('api/invoices/print_invoice.php', {
+        method: 'POST',
+        body: formData
+    })
+        .then(resp => resp.text())
+        .then(text => {
+            try {
+                const data = JSON.parse(text);
+                if (data.status === 'success') {
+                    alert('Factura a fost trimisă la imprimantă.');
+                } else {
+                    alert(data.message || 'Eroare la imprimare.');
+                }
+            } catch (e) {
+                alert('Eroare la imprimare: ' + e.message);
+            }
+        })
+        .catch(err => {
+            alert('Eroare la imprimare: ' + err.message);
+        });
+}
+
+/**
  * Dynamically adds a new product row to the "Create Order" form.
  */
 function addOrderItem() {

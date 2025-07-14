@@ -18,7 +18,7 @@ $warehousePageJS = [
     'warehouse_orders' => 'warehouse_orders.js',
     'warehouse_hub' => 'warehouse_hub.js',
     'mobile_picker' => 'mobile_picker.js',
-    'mobile_receiving' => 'mobile_receiving.js',
+    'warehouse_receiving' => 'warehouse_receiving.js',
     'warehouse_inventory' => 'warehouse_inventory.js'
 ];
 

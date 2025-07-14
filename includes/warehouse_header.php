@@ -31,7 +31,7 @@ $warehousePageCSS = [
     'warehouse_orders' => 'warehouse_orders.css',
     'warehouse_hub' => 'warehouse_hub.css',
     'mobile_picker' => 'mobile_picker.css',
-    'mobile_receiving' => 'mobile_receiving.css',
+    'warehouse_receiving' => 'warehouse_receiving.css',
     'warehouse_inventory' => 'warehouse_inventory.css'
 ];
 

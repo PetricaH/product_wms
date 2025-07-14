@@ -42,9 +42,9 @@ try {
 
     require_once BASE_PATH . '/models/Order.php';
 
-    // FPDF will be loaded via Composer autoload (setasign/fpdf)
-
-    require_once BASE_PATH . '/lib/fpdf.php';
+    // FPDF should be loaded via Composer autoload (setasign/fpdf)
+    // The explicit require below is redundant if Composer is used correctly.
+    // require_once BASE_PATH . '/lib/fpdf.php';
 
 
     $orderModel = new Order($db);
@@ -120,7 +120,19 @@ try {
 
     // Send to printer via lpr
     $cmd = 'lpr -P ' . escapeshellarg($printerName) . ' ' . escapeshellarg($filePath);
-    $printOutput = shell_exec($cmd . ' 2>&1');
+    $outputLines = [];
+    $exitStatus = 0;
+    exec($cmd . ' 2>&1', $outputLines, $exitStatus);
+    $printOutput = implode("\n", $outputLines);
+
+    if ($exitStatus !== 0) {
+        respond([
+            'status' => 'error',
+            'message' => 'Printing failed',
+            'debug' => $printOutput,
+            'exit_status' => $exitStatus
+        ], 500);
+    }
 
     respond(['status' => 'success', 'message' => 'Invoice sent to printer', 'debug' => $printOutput]);
 

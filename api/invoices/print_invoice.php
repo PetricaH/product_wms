@@ -10,10 +10,12 @@ if (!defined('BASE_PATH')) {
 }
 
 require_once BASE_PATH . '/config/config.php';
+
 // Use Composer autoloader so we get the FPDF library with bundled fonts
 if (file_exists(BASE_PATH . '/vendor/autoload.php')) {
     require_once BASE_PATH . '/vendor/autoload.php';
 }
+
 
 function respond($data, int $code = 200) {
     ob_end_clean();
@@ -39,7 +41,11 @@ try {
     $db = $config['connection_factory']();
 
     require_once BASE_PATH . '/models/Order.php';
+
     // FPDF will be loaded via Composer autoload (setasign/fpdf)
+
+    require_once BASE_PATH . '/lib/fpdf.php';
+
 
     $orderModel = new Order($db);
     $order = $orderModel->getOrderById((int)$orderId);

@@ -82,7 +82,7 @@ $currentPage = 'printers';
                     </div>
                     <div class="form-group">
                         <label for="printerAddress" class="form-label">Adresă Rețea</label>
-                        <input type="text" id="printerAddress" name="network_address" class="form-control" required>
+                        <input type="text" id="printerAddress" name="network_identifier" class="form-control" required>
                     </div>
                 </div>
                 <div class="modal-footer">

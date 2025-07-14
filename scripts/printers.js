@@ -60,9 +60,9 @@ const PrinterApp = {
             tr.innerHTML = `
                 <td>${p.id}</td>
                 <td>${p.name}</td>
-                <td>${p.network_address}</td>
+                <td>${p.network_identifier}</td>
                 <td>
-                    <button class="btn btn-sm btn-primary" data-id="${p.id}" data-name="${p.name}" data-address="${p.network_address}">Editează</button>
+                    <button class="btn btn-sm btn-primary" data-id="${p.id}" data-name="${p.name}" data-address="${p.network_identifier}">Editează</button>
                     <button class="btn btn-sm btn-danger" data-del="${p.id}" data-name="${p.name}">Șterge</button>
                 </td>`;
             tr.querySelector('[data-id]')?.addEventListener('click', () => {
@@ -92,7 +92,7 @@ const PrinterApp = {
     async save() {
         const payload = {
             name: this.nameInput.value.trim(),
-            network_address: this.addressInput.value.trim()
+            network_identifier: this.addressInput.value.trim()
         };
         const id = this.idInput.value;
         if (id) payload.id = parseInt(id, 10);

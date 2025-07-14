@@ -45,13 +45,15 @@ try {
 }
 
 function handleGet(PDO $db) {
-    $stmt = $db->query("SELECT id, name, network_address FROM printers ORDER BY name ASC");
+    // Corrected column name here
+    $stmt = $db->query("SELECT id, name, network_identifier FROM printers ORDER BY name ASC");
     $printers = $stmt->fetchAll(PDO::FETCH_ASSOC);
     $formatted = array_map(function ($row) {
         return [
             'id' => (int)$row['id'],
             'name' => $row['name'],
-            'network_address' => $row['network_address'],
+            // Corrected key in the response array
+            'network_identifier' => $row['network_identifier'],
         ];
     }, $printers);
 
@@ -60,14 +62,17 @@ function handleGet(PDO $db) {
 
 function handlePost(PDO $db) {
     $input = json_decode(file_get_contents('php://input'), true);
-    if (!$input || empty($input['name']) || empty($input['network_address'])) {
+    // Corrected check for network_identifier
+    if (!$input || empty($input['name']) || empty($input['network_identifier'])) {
         http_response_code(400);
         echo json_encode(['error' => 'Invalid input']);
         return;
     }
 
-    $stmt = $db->prepare('INSERT INTO printers (name, network_address) VALUES (?, ?)');
-    $result = $stmt->execute([$input['name'], $input['network_address']]);
+    // Corrected column name in INSERT statement
+    $stmt = $db->prepare('INSERT INTO printers (name, network_identifier) VALUES (?, ?)');
+    // Corrected value from input
+    $result = $stmt->execute([$input['name'], $input['network_identifier']]);
 
     if ($result) {
         echo json_encode(['success' => true, 'id' => $db->lastInsertId()]);
@@ -92,9 +97,10 @@ function handlePut(PDO $db) {
         $fields[] = 'name = ?';
         $values[] = $input['name'];
     }
-    if (isset($input['network_address'])) {
-        $fields[] = 'network_address = ?';
-        $values[] = $input['network_address'];
+    // Corrected check and field name for UPDATE
+    if (isset($input['network_identifier'])) {
+        $fields[] = 'network_identifier = ?';
+        $values[] = $input['network_identifier'];
     }
 
     if (empty($fields)) {

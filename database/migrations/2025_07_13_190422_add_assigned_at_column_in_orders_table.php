@@ -12,8 +12,7 @@ class AddAssignedAtColumnInOrdersTableMigration {
     public function up(PDO $pdo) {
         // Add your migration logic here
         $sql = "
-            ALTER TABLE `orders` ADD `assigned_at` TIMESTAMP NULL DEFAULT NULL AFTER `assigned_to`
-            )
+            ALTER TABLE `orders` ADD COLUMN `assigned_at` TIMESTAMP NULL DEFAULT NULL AFTER `assigned_to`
         ";
         $pdo->exec($sql);
     }
@@ -23,7 +22,7 @@ class AddAssignedAtColumnInOrdersTableMigration {
      */
     public function down(PDO $pdo) {
         // Add your rollback logic here
-        $pdo->exec("ALTER TABLE `orders` REMOVE `assigned_at` TIMESTAMP NULL DEFAULT NULL AFTER `assigned_to`");
+        $pdo->exec("ALTER TABLE `orders` DROP COLUMN `assigned_at`");
     }
 }
 

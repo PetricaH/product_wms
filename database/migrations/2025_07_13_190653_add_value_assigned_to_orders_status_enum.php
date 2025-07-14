@@ -10,10 +10,9 @@ class AddValueAssignedToOrdersStatusEnumMigration {
      * Run the migration
      */
     public function up(PDO $pdo) {
-        // Add your migration logic here
+        // Define the SQL to modify the enum
         $sql = "
-            ALTER TABLE `orders` MODIFY `status` ENUM('pending', 'processing', 'picked', 'assigned', 'completed', 'cancelled', 'shipped') DEFAULT 'pending'
-            )
+            ALTER TABLE `orders` MODIFY COLUMN `status` ENUM('pending', 'processing', 'picked', 'assigned', 'completed', 'cancelled', 'shipped') DEFAULT 'pending'
         ";
         $pdo->exec($sql);
     }
@@ -22,8 +21,11 @@ class AddValueAssignedToOrdersStatusEnumMigration {
      * Rollback the migration
      */
     public function down(PDO $pdo) {
-        // Add your rollback logic here
-        $pdo->exec("ALTER TABLE `orders` MODIFY `status` ENUM('pending', 'processing', 'picked','completed', 'cancelled', 'shipped') DEFAULT 'pending'");
+        // Define the SQL to revert the enum change
+        $sql = "
+            ALTER TABLE `orders` MODIFY COLUMN `status` ENUM('pending', 'processing', 'picked', 'completed', 'cancelled', 'shipped') DEFAULT 'pending'
+        ";
+        $pdo->exec($sql);
     }
 }
 

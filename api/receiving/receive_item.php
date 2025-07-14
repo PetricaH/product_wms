@@ -45,8 +45,12 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 $config = require BASE_PATH . '/config/config.php';
 $dbFactory = $config['connection_factory'];
 $db = $dbFactory();
+require_once BASE_PATH . '/models/Product.php';
+require_once BASE_PATH . '/models/PurchasableProduct.php';
 
 try {
+    $productModel = new Product($db);
+    $purchasableModel = new PurchasableProduct($db);
     // Get input data
     $input = json_decode(file_get_contents('php://input'), true);
     
@@ -107,7 +111,25 @@ try {
     }
     
     if (!$orderItem['main_product_id']) {
-        throw new Exception('No matching main product found for this purchasable product');
+        // Auto-create main product if not found
+        $newSku = $orderItem['sku'] ?: $productModel->generateSku('PRD');
+        if ($productModel->skuExists($newSku)) {
+            $newSku = $productModel->generateSku('PRD');
+        }
+        $newProductId = $productModel->createProduct([
+            'sku' => $newSku,
+            'name' => $orderItem['product_name'],
+            'description' => $orderItem['product_name'],
+            'category' => '',
+            'quantity' => 0,
+            'price' => $orderItem['unit_price'] ?? 0
+        ]);
+        if (!$newProductId) {
+            throw new Exception('Failed to auto-create main product');
+        }
+        // Update purchasable product mapping
+        $purchasableModel->updateProduct((int)$orderItem['purchasable_product_id'], ['internal_product_id' => $newProductId]);
+        $orderItem['main_product_id'] = $newProductId;
     }
     
     // Validate location exists

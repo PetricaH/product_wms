@@ -77,6 +77,7 @@ class CreateCompleteWmsSchemaMigration {
                     location_code VARCHAR(50) UNIQUE NOT NULL,
                     zone VARCHAR(50) NOT NULL,
                     type ENUM('warehouse', 'zone', 'rack', 'shelf', 'bin') DEFAULT 'bin',
+                    levels INT DEFAULT 3,
                     parent_location_id INT NULL,
                     capacity INT DEFAULT 0,
                     current_occupancy INT DEFAULT 0,
@@ -408,12 +409,12 @@ class CreateCompleteWmsSchemaMigration {
             
             // Default locations
             $pdo->exec("
-                INSERT INTO locations (location_code, zone, type, capacity) VALUES 
-                ('WH-01', 'Main Warehouse', 'warehouse', 10000),
-                ('WH-01-A', 'Zone A', 'zone', 2500),
-                ('WH-01-A-R01', 'Rack A01', 'rack', 500),
-                ('WH-01-A-R01-S01', 'Shelf A01-S01', 'shelf', 50),
-                ('WH-01-A-R01-S01-B01', 'Bin A01-S01-B01', 'bin', 10)
+                INSERT INTO locations (location_code, zone, type, levels, capacity) VALUES
+                ('WH-01', 'Main Warehouse', 'warehouse', 3, 10000),
+                ('WH-01-A', 'Zone A', 'zone', 3, 2500),
+                ('WH-01-A-R01', 'Rack A01', 'rack', 3, 500),
+                ('WH-01-A-R01-S01', 'Shelf A01-S01', 'shelf', 3, 50),
+                ('WH-01-A-R01-S01-B01', 'Bin A01-S01-B01', 'bin', 1, 10)
             ");
             
             // Default settings

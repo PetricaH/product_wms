@@ -102,9 +102,24 @@ try {
 
     $pdf->Output('F', $filePath);
 
+    // Determine printer to use
+    $printerId = isset($_POST['printer_id']) ? (int)$_POST['printer_id'] : null;
+    if ($printerId) {
+        $stmt = $db->prepare('SELECT network_identifier FROM printers WHERE id = ? LIMIT 1');
+        $stmt->execute([$printerId]);
+    } else {
+        $stmt = $db->prepare('SELECT network_identifier FROM printers WHERE is_default = 1 LIMIT 1');
+        $stmt->execute();
+    }
+
+    $printerRow = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$printerRow) {
+        respond(['status' => 'error', 'message' => 'Printer not found'], 404);
+    }
+    $printerName = $printerRow['network_identifier'];
+
     // Send to printer via lpr
-    $printer = 'Brother_MFC_L2712DN';
-    $cmd = 'lpr -P ' . escapeshellarg($printer) . ' ' . escapeshellarg($filePath);
+    $cmd = 'lpr -P ' . escapeshellarg($printerName) . ' ' . escapeshellarg($filePath);
     $printOutput = shell_exec($cmd . ' 2>&1');
 
     respond(['status' => 'success', 'message' => 'Invoice sent to printer', 'debug' => $printOutput]);

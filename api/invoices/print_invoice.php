@@ -105,7 +105,19 @@ try {
     // Send to printer via lpr
     $printer = 'Brother_MFC_L2712DN';
     $cmd = 'lpr -P ' . escapeshellarg($printer) . ' ' . escapeshellarg($filePath);
-    $printOutput = shell_exec($cmd . ' 2>&1');
+    $outputLines = [];
+    $exitStatus = 0;
+    exec($cmd . ' 2>&1', $outputLines, $exitStatus);
+    $printOutput = implode("\n", $outputLines);
+
+    if ($exitStatus !== 0 || stripos($printOutput, 'not found') !== false) {
+        respond([
+            'status' => 'error',
+            'message' => 'Printing failed',
+            'debug' => $printOutput,
+            'exit_status' => $exitStatus
+        ], 500);
+    }
 
     respond(['status' => 'success', 'message' => 'Invoice sent to printer', 'debug' => $printOutput]);
 

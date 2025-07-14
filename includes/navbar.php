@@ -146,11 +146,21 @@ if (isset($_SESSION['username'])) {
 
         <!-- SmartBill Sync -->
         <li class="sidebar__item">
-            <a href="<?= getNavUrl('smartbill-sync.php') ?>" 
+            <a href="<?= getNavUrl('smartbill-sync.php') ?>"
                class="sidebar__link <?= getActiveClass('smartbill-sync.php') ?>"
                data-tooltip="SmartBill Sync">
                 <span class="material-symbols-outlined">sync</span>
                 <span class="link-text">SmartBill Sync</span>
+            </a>
+        </li>
+
+        <!-- Printers -->
+        <li class="sidebar__item">
+            <a href="<?= getNavUrl('printers.php') ?>"
+               class="sidebar__link <?= getActiveClass('printers.php') ?>"
+               data-tooltip="Imprimante">
+                <span class="material-symbols-outlined">print</span>
+                <span class="link-text">Imprimante</span>
             </a>
         </li>
         

@@ -42,9 +42,9 @@ try {
 
     require_once BASE_PATH . '/models/Order.php';
 
-    // FPDF will be loaded via Composer autoload (setasign/fpdf)
-
-    require_once BASE_PATH . '/lib/fpdf.php';
+    // FPDF should be loaded via Composer autoload (setasign/fpdf)
+    // The explicit require below is redundant if Composer is used correctly.
+    // require_once BASE_PATH . '/lib/fpdf.php';
 
 
     $orderModel = new Order($db);
@@ -102,15 +102,30 @@ try {
 
     $pdf->Output('F', $filePath);
 
+    // Determine printer to use
+    $printerId = isset($_POST['printer_id']) ? (int)$_POST['printer_id'] : null;
+    if ($printerId) {
+        $stmt = $db->prepare('SELECT network_identifier FROM printers WHERE id = ? LIMIT 1');
+        $stmt->execute([$printerId]);
+    } else {
+        $stmt = $db->prepare('SELECT network_identifier FROM printers WHERE is_default = 1 LIMIT 1');
+        $stmt->execute();
+    }
+
+    $printerRow = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$printerRow) {
+        respond(['status' => 'error', 'message' => 'Printer not found'], 404);
+    }
+    $printerName = $printerRow['network_identifier'];
+
     // Send to printer via lpr
-    $printer = 'Brother_MFC_L2712DN';
-    $cmd = 'lpr -P ' . escapeshellarg($printer) . ' ' . escapeshellarg($filePath);
+    $cmd = 'lpr -P ' . escapeshellarg($printerName) . ' ' . escapeshellarg($filePath);
     $outputLines = [];
     $exitStatus = 0;
     exec($cmd . ' 2>&1', $outputLines, $exitStatus);
     $printOutput = implode("\n", $outputLines);
 
-    if ($exitStatus !== 0 || stripos($printOutput, 'not found') !== false) {
+    if ($exitStatus !== 0) {
         respond([
             'status' => 'error',
             'message' => 'Printing failed',

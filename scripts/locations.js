@@ -5,6 +5,14 @@
  * Includes all fixes and enhancements for storage-focused visualization
  */
 
+let qr = null;
+function updateLocationQr() {
+    if (qr) {
+        const codeInput = document.getElementById('location_code');
+        qr.set({ value: codeInput ? codeInput.value.trim() : '' });
+    }
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     console.log('Enhanced Locations page loaded');
     
@@ -16,7 +24,11 @@ document.addEventListener('DOMContentLoaded', function() {
     // Auto-populate zone when location_code changes
     const locationCodeInput = document.getElementById('location_code');
     const zoneInput = document.getElementById('zone');
-    
+    const qrCanvas = document.getElementById('locationQrCanvas');
+    if (qrCanvas && window.QRious) {
+        qr = new QRious({ element: qrCanvas, size: 150, value: '' });
+    }
+
     if (locationCodeInput && zoneInput) {
         locationCodeInput.addEventListener('input', function() {
             const locationCode = this.value.trim();
@@ -24,13 +36,14 @@ document.addEventListener('DOMContentLoaded', function() {
                 const extractedZone = locationCode.split('-')[0].toUpperCase();
                 zoneInput.value = extractedZone;
                 zoneInput.style.backgroundColor = 'var(--success-color-light, #d4edda)';
-                
+
                 // Show success message briefly
                 showZoneAutoFill(extractedZone);
             } else {
                 zoneInput.value = '';
                 zoneInput.style.backgroundColor = '';
             }
+            updateLocationQr();
         });
     }
 });
@@ -84,6 +97,7 @@ function openCreateModal() {
     // Set default levels
     const levelsField = document.getElementById('levels');
     if (levelsField) levelsField.value = '3';
+    updateLocationQr();
 
     // Show modal
     document.getElementById('locationModal').classList.add('show');
@@ -116,6 +130,7 @@ function openEditModal(location) {
     document.getElementById('status').value = statusValue;
     
     document.getElementById('description').value = location.notes || '';
+    updateLocationQr();
     
     // Show modal
     document.getElementById('locationModal').classList.add('show');
@@ -139,6 +154,16 @@ function openDeleteModal(locationId, locationCode) {
 
 function closeDeleteModal() {
     document.getElementById('deleteModal').classList.remove('show');
+}
+
+function downloadLocationQr() {
+    const canvas = document.getElementById('locationQrCanvas');
+    if (!canvas) return;
+    const link = document.createElement('a');
+    const code = document.getElementById('location_code').value || 'location';
+    link.href = canvas.toDataURL('image/png');
+    link.download = `${code}_qr.png`;
+    link.click();
 }
 
 // Close modals when clicking outside
@@ -760,3 +785,4 @@ class EnhancedWarehouseVisualization {
 
 // Export for global access
 window.EnhancedWarehouseVisualization = EnhancedWarehouseVisualization;
+window.downloadLocationQr = downloadLocationQr;

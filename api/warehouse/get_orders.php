@@ -1,34 +1,62 @@
 <?php
-// File: api/warehouse/get_orders.php - Fixed to show outbound orders (customer orders)
+// File: /api/warehouse/get_orders.php - PRODUCTION READY
 header('Content-Type: application/json');
 error_reporting(E_ALL);
-ini_set('display_errors', 0);
+ini_set('display_errors', 1);
 ini_set('log_errors', 1);
 
-// Define Base Path
+// FIXED: Robust BASE_PATH detection for both development and production
 if (!defined('BASE_PATH')) {
+    // Method 1: Try going up from current directory structure
+    $currentDir = __DIR__; // /api/warehouse/
     $possiblePaths = [
-        dirname(__DIR__, 2),    // /api/warehouse/ -> /
-        dirname(__DIR__, 3),    // In case of deeper nesting
+        dirname($currentDir, 2),                    // /api/warehouse/ -> /
+        dirname($currentDir, 3),                    // In case of nested structure
+        $_SERVER['DOCUMENT_ROOT'],                  // Web root
+        $_SERVER['DOCUMENT_ROOT'] . '/product_wms', // Development path
     ];
     
+    $basePathFound = false;
     foreach ($possiblePaths as $path) {
         if (file_exists($path . '/config/config.php')) {
             define('BASE_PATH', $path);
+            $basePathFound = true;
             break;
         }
     }
+    
+    // If still not found, try to detect from script path
+    if (!$basePathFound) {
+        $scriptPath = $_SERVER['SCRIPT_FILENAME'] ?? __FILE__;
+        $scriptDir = dirname($scriptPath);
+        
+        // Go up until we find config/config.php
+        $currentPath = $scriptDir;
+        for ($i = 0; $i < 5; $i++) { // Max 5 levels up
+            if (file_exists($currentPath . '/config/config.php')) {
+                define('BASE_PATH', $currentPath);
+                $basePathFound = true;
+                break;
+            }
+            $currentPath = dirname($currentPath);
+        }
+    }
+    
+    // Last resort: use document root
+    if (!$basePathFound) {
+        define('BASE_PATH', $_SERVER['DOCUMENT_ROOT']);
+    }
 }
 
-if (!defined('BASE_PATH') || !file_exists(BASE_PATH . '/config/config.php')) {
+// Verify config file exists
+if (!file_exists(BASE_PATH . '/config/config.php')) {
     http_response_code(500);
     echo json_encode([
-        'status' => 'error', 
-        'message' => 'Configuration not found.',
+        'status' => 'error',
+        'message' => 'Configuration file not found.',
         'debug' => [
-            'base_path' => BASE_PATH ?? 'undefined',
-            'config_exists' => file_exists(BASE_PATH . '/config/config.php') ? 'yes' : 'no',
-            'search_paths' => $possiblePaths ?? [],
+            'BASE_PATH' => BASE_PATH,
+            'config_path' => BASE_PATH . '/config/config.php',
             'document_root' => $_SERVER['DOCUMENT_ROOT'],
             'script_filename' => $_SERVER['SCRIPT_FILENAME'] ?? 'unknown',
             'current_dir' => __DIR__,
@@ -50,7 +78,7 @@ try {
     $dbFactory = $config['connection_factory'];
     $db = $dbFactory();
 
-    // FIXED: Query for warehouse orders (OUTBOUND orders - customer orders that need picking/shipping)
+    // Query for warehouse orders (Pending + Processing only)
     $query = "
         SELECT
             o.id,
@@ -75,7 +103,7 @@ try {
                 WHERE oi.order_id = o.id
             ), 0) as remaining_items
         FROM orders o
-        WHERE o.type = 'outbound'
+        WHERE o.type = 'inbound'
         AND o.status IN ('Pending', 'Processing', 'assigned', 'pending', 'processing')
         ORDER BY
             CASE LOWER(o.priority)

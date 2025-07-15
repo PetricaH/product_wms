@@ -524,124 +524,49 @@ class ImportProcessor {
     /**
      * Validate and process products
      */
-    private function validateAndProcessProducts($products) {
-        if (empty($products) || !is_array($products)) {
-            return [];
-        }
-
+    private function validateAndProcessProducts($orderedProducts) {
         $processedProducts = [];
-        $accountingLines = []; // Store all accounting lines for audit trail
         
-        // Step 1: Store all accounting lines and group by product code
-        $productGroups = [];
-        
-        foreach ($products as $index => $product) {
-            // Store original accounting line for audit trail
-            $accountingLines[] = [
-                'line_number' => $index + 1,
-                'code' => $product['code'] ?? '',
-                'name' => $product['name'] ?? '',
-                'unit' => $product['unit'] ?? 'bucata',
-                'quantity' => floatval($product['quantity'] ?? 0),
-                'unit_price' => floatval($product['price'] ?? 0),
-                'total_price' => floatval(str_replace(',', '', $product['total_price'] ?? 0))
-            ];
-            
-            // Group by product code for consolidation
-            $code = $product['code'] ?? '';
-            if (empty($code)) {
-                continue;
-            }
-            
-            if (!isset($productGroups[$code])) {
-                $productGroups[$code] = [];
-            }
-            
-            $productGroups[$code][] = [
-                'name' => $product['name'] ?? '',
-                'unit' => $product['unit'] ?? 'bucata',
-                'quantity' => floatval($product['quantity'] ?? 0),
-                'unit_price' => floatval($product['price'] ?? 0),
-                'total_price' => floatval(str_replace(',', '', $product['total_price'] ?? 0)),
-                'is_discount' => strpos(strtolower($product['name'] ?? ''), 'discount') !== false
-            ];
+        if (empty($orderedProducts) || !is_array($orderedProducts)) {
+            $this->warnings[] = "No products provided in import data";
+            return $processedProducts;
         }
         
-        // Step 2: Consolidate each product group
-        foreach ($productGroups as $code => $items) {
-            $consolidatedProduct = $this->consolidateProductGroup($code, $items);
-            
-            // Only add to order if there's a net positive quantity
-            if ($consolidatedProduct && $consolidatedProduct['net_quantity'] > 0) {
-                $processedProducts[] = $consolidatedProduct;
+        foreach ($orderedProducts as $index => $product) {
+            try {
+                // Extract product information
+                $productCode = $product['code'] ?? $product['sku'] ?? '';
+                $productName = $product['name'] ?? $product['product_name'] ?? '';
+                $quantity = floatval($product['quantity'] ?? $product['qty'] ?? 0);
+                $unitPrice = floatval($product['unit_price'] ?? $product['price'] ?? 0);
+                
+                if ($quantity <= 0) {
+                    $this->warnings[] = "Product $index: Invalid quantity ($quantity)";
+                    continue;
+                }
+                
+                // Try to find matching warehouse product
+                $warehouseProduct = $this->findWarehouseProduct($productCode, $productName);
+                
+                if (!$warehouseProduct) {
+                    $this->warnings[] = "Product $index: No warehouse match found for '$productCode' / '$productName'";
+                    continue;
+                }
+                
+                $processedProducts[] = [
+                    'warehouse_product' => $warehouseProduct,
+                    'quantity' => $quantity,
+                    'unit_price' => $unitPrice,
+                    'original_code' => $productCode,
+                    'original_name' => $productName
+                ];
+                
+            } catch (Exception $e) {
+                $this->warnings[] = "Product $index processing error: " . $e->getMessage();
             }
         }
-        
-        // Store accounting lines for audit trail
-        $this->debugInfo['accounting_lines'] = $accountingLines;
-        $this->debugInfo['consolidated_products'] = $processedProducts;
         
         return $processedProducts;
-    }
-
-    private function consolidateProductGroup($code, $items) {
-        if (empty($items)) {
-            return null;
-        }
-        
-        $netQuantity = 0;
-        $netTotalPrice = 0;
-        $productName = '';
-        $unit = 'bucata';
-        $regularItems = [];
-        $discountItems = [];
-        
-        // Separate regular items from discount items
-        foreach ($items as $item) {
-            if ($item['is_discount']) {
-                $discountItems[] = $item;
-            } else {
-                $regularItems[] = $item;
-                // Use the name from non-discount item
-                if (empty($productName)) {
-                    $productName = $item['name'];
-                    $unit = $item['unit'];
-                }
-            }
-            
-            // Calculate net total price (always sum all prices including negative)
-            $netTotalPrice += $item['total_price'];
-        }
-        
-        // Calculate net quantity for Romanian accounting
-        // Only count physical items to pick (regular items), not discount lines
-        foreach ($regularItems as $item) {
-            $netQuantity += $item['quantity'];
-        }
-        
-        // Calculate effective unit price
-        $effectiveUnitPrice = $netQuantity > 0 ? $netTotalPrice / $netQuantity : 0;
-        
-        // Build consolidation notes
-        $consolidationNotes = [];
-        if (!empty($discountItems)) {
-            $consolidationNotes[] = "Consolidated from " . (count($regularItems) + count($discountItems)) . " accounting lines";
-            foreach ($discountItems as $discount) {
-                $consolidationNotes[] = "Applied discount: " . $discount['name'];
-            }
-        }
-        
-        return [
-            'code' => $code,
-            'name' => $productName,
-            'unit' => $unit,
-            'net_quantity' => $netQuantity, // Physical items to pick
-            'effective_unit_price' => $effectiveUnitPrice, // Price after discounts
-            'net_total_price' => $netTotalPrice, // Total after discounts
-            'original_items_count' => count($items),
-            'has_discounts' => !empty($discountItems),
-            'consolidation_notes' => implode(' | ', $consolidationNotes)
-        ];
     }
 
     /**
@@ -708,205 +633,20 @@ class ImportProcessor {
     }
 
     /**
-     * Calculate total weight from consolidated products
-     */
-    private function calculateOrderWeight($products, $import) {
-        $totalWeight = 0;
-        $weightNotes = [];
-        
-        foreach ($products as $product) {
-            $productWeight = $this->calculateProductWeight($product, $weightNotes);
-            $totalWeight += $productWeight * $product['net_quantity'];
-            
-            $this->debugInfo['weight_calculation'][] = [
-                'product_code' => $product['code'],
-                'product_name' => $product['name'],
-                'quantity' => $product['net_quantity'],
-                'unit_weight' => $productWeight,
-                'total_weight' => $productWeight * $product['net_quantity'],
-                'calculation_method' => $weightNotes[count($weightNotes) - 1] ?? 'default'
-            ];
-        }
-        
-        // Ensure minimum weight of 0.1 kg (100g) for shipping
-        $totalWeight = max($totalWeight, 0.1);
-        
-        // Add packaging weight (estimate 5% extra for boxes/packaging)
-        $packagingWeight = $totalWeight * 0.05;
-        $finalWeight = round($totalWeight + $packagingWeight, 2);
-        
-        $this->debugInfo['weight_summary'] = [
-            'products_weight' => $totalWeight,
-            'packaging_weight' => $packagingWeight,
-            'final_weight' => $finalWeight,
-            'calculation_notes' => $weightNotes
-        ];
-        
-        return $finalWeight;
-    }
-
-    /**
-     * Calculate weight for individual product
-     */
-    private function calculateProductWeight($product, &$weightNotes) {
-        $code = $product['code'];
-        $name = strtolower($product['name']);
-        
-        // Method 1: Extract volume from code (e.g., WA616.25 = 25 liters)
-        $volumeWeight = $this->extractWeightFromCode($code, $weightNotes);
-        if ($volumeWeight > 0) {
-            return $volumeWeight;
-        }
-        
-        // Method 2: Check database for configured weight
-        $dbWeight = $this->getProductWeightFromDatabase($code, $weightNotes);
-        if ($dbWeight > 0) {
-            return $dbWeight;
-        }
-        
-        // Method 3: Intelligent defaults based on product type
-        $categoryWeight = $this->getWeightByCategory($name, $weightNotes);
-        if ($categoryWeight > 0) {
-            return $categoryWeight;
-        }
-        
-        // Method 4: Default fallback
-        $weightNotes[] = "Default weight applied for unknown product: {$code}";
-        return 1.0; // 1 kg default
-    }
-
-    /**
-     * Extract weight from product codes like WA616.25 (25 liters)
-     */
-    private function extractWeightFromCode($code, &$weightNotes) {
-        // Pattern: Letters + Numbers + Dot + Number (volume)
-        if (preg_match('/^[A-Z]+\d*\.(\d+(?:\.\d+)?)$/i', $code, $matches)) {
-            $volume = floatval($matches[1]);
-            
-            if ($volume > 0) {
-                // For liquid products, assume density ~1.1 kg/liter (slightly heavier than water)
-                $weight = $volume * 1.1;
-                $weightNotes[] = "Extracted volume from code {$code}: {$volume}L = {$weight}kg";
-                return $weight;
-            }
-        }
-        
-        // Pattern: Numbers in code might indicate weight/volume
-        if (preg_match('/(\d+(?:\.\d+)?)\s*(kg|l|litri|liters?)/i', $code, $matches)) {
-            $value = floatval($matches[1]);
-            $unit = strtolower($matches[2]);
-            
-            if ($unit === 'kg') {
-                $weightNotes[] = "Extracted weight from code {$code}: {$value}kg";
-                return $value;
-            } elseif (in_array($unit, ['l', 'litri', 'liter', 'liters'])) {
-                $weight = $value * 1.1; // Convert liters to kg
-                $weightNotes[] = "Extracted volume from code {$code}: {$value}L = {$weight}kg";
-                return $weight;
-            }
-        }
-        
-        return 0;
-    }
-
-    /**
-     * Get product weight from database (product_units table)
-     */
-    private function getProductWeightFromDatabase($code, &$weightNotes) {
-        try {
-            $query = "
-                SELECT pu.weight_per_unit 
-                FROM products p
-                JOIN product_units pu ON p.product_id = pu.product_id
-                WHERE p.sku = :code AND pu.active = 1
-                LIMIT 1
-            ";
-            
-            $stmt = $this->db->prepare($query);
-            $stmt->execute([':code' => $code]);
-            $result = $stmt->fetch(PDO::FETCH_ASSOC);
-            
-            if ($result && $result['weight_per_unit'] > 0) {
-                $weight = floatval($result['weight_per_unit']);
-                $weightNotes[] = "Database weight for {$code}: {$weight}kg";
-                return $weight;
-            }
-        } catch (Exception $e) {
-            error_log("Error getting product weight from database: " . $e->getMessage());
-        }
-        
-        return 0;
-    }
-
-    /**
-     * Intelligent weight defaults based on product category/name
-     */
-    private function getWeightByCategory($productName, &$weightNotes) {
-        $name = strtolower($productName);
-        
-        // Chemical/Industrial products
-        if (preg_match('/\b(spuma|spumă|detergent|chimical|chemical|acid|spray)\b/i', $name)) {
-            $weightNotes[] = "Chemical product category: 2.5kg default";
-            return 2.5;
-        }
-        
-        // Electronic appliances
-        if (preg_match('/\b(statie|stație|calcat|iron|electronic|aparat|device)\b/i', $name)) {
-            $weightNotes[] = "Electronic appliance category: 3.0kg default";
-            return 3.0;
-        }
-        
-        // Tools/Hardware
-        if (preg_match('/\b(tool|unelte|scule|hardware|metal)\b/i', $name)) {
-            $weightNotes[] = "Tools/hardware category: 1.5kg default";
-            return 1.5;
-        }
-        
-        // Containers/Barrels (empty)
-        if (preg_match('/\b(barrel|butoias|container|bidon)\b/i', $name)) {
-            $weightNotes[] = "Container category: 4.0kg default";
-            return 4.0;
-        }
-        
-        // Small items/accessories
-        if (preg_match('/\b(accesor|piesa|component|small|mic)\b/i', $name)) {
-            $weightNotes[] = "Small item category: 0.5kg default";
-            return 0.5;
-        }
-        
-        return 0;
-    }
-
-    /**
      * Create order with comprehensive data including AWB fields
      */
     private function createOrder($import, $clientInfo, $invoiceInfo, $locationMapping) {
         $orderNumber = $this->generateOrderNumber();
         $shippingAddress = $this->buildShippingAddress($import);
         
-        // Calculate total from consolidated products
-        $calculatedTotal = 0;
-        if (!empty($this->debugInfo['consolidated_products'])) {
-            foreach ($this->debugInfo['consolidated_products'] as $product) {
-                $calculatedTotal += $product['net_total_price'];
-            }
-        }
-        
-        $totalValue = $calculatedTotal > 0 ? $calculatedTotal : floatval($import['total_value'] ?? 0);
+        // Determine total value for priority calculation
+        $totalValue = floatval($import['total_value'] ?? 0);
         $priority = $this->determinePriority($totalValue, $import['company_name'] ?? $import['contact_person_name']);
         
-        // ✅ Calculate smart weight from products
-        $calculatedWeight = 0;
-        if (!empty($this->debugInfo['consolidated_products'])) {
-            $calculatedWeight = $this->calculateOrderWeight($this->debugInfo['consolidated_products'], $import);
-        }
-        
-        // Use calculated weight or fallback to import/default
-        $totalWeight = $calculatedWeight > 0 ? $calculatedWeight : floatval($import['estimated_weight'] ?? 1.0);
-        
+        // Get system user ID
         $systemUserId = $this->getSystemUserId();
         
-        // Prepare order data
+        // Prepare order data matching the actual orders table structure
         $orderData = [
             'order_number' => $orderNumber,
             'customer_name' => $import['company_name'] ?? $import['contact_person_name'],
@@ -919,7 +659,7 @@ class ImportProcessor {
             'total_value' => $totalValue,
             'created_by' => $systemUserId ?: 1,
             
-            // AWB/Shipping data
+            // AWB/Shipping data - populated from location mapping
             'recipient_county_id' => $locationMapping['cargus_county_id'] ?? null,
             'recipient_locality_id' => $locationMapping['cargus_locality_id'] ?? null,
             'recipient_county_name' => $locationMapping['cargus_county_name'] ?? $import['delivery_county'],
@@ -930,10 +670,10 @@ class ImportProcessor {
             'recipient_street_name' => $import['delivery_street'] ?? '',
             'recipient_building_number' => '',
             
-            // ✅ Smart weight calculation
-            'total_weight' => $totalWeight,
+            // Default shipping details
+            'total_weight' => floatval($import['estimated_weight'] ?? 1.0),
             'declared_value' => $totalValue,
-            'parcels_count' => $this->calculateParcelsCount($totalWeight, $this->debugInfo['consolidated_products'] ?? []),
+            'parcels_count' => intval($import['parcels_count'] ?? 1),
             'envelopes_count' => intval($import['envelopes_count'] ?? 0),
             'cash_repayment' => floatval($import['cash_repayment'] ?? 0),
             'bank_repayment' => floatval($import['bank_repayment'] ?? 0),
@@ -941,7 +681,7 @@ class ImportProcessor {
             'morning_delivery' => !empty($import['morning_delivery']) ? 1 : 0,
             'open_package' => !empty($import['open_package']) ? 1 : 0,
             'observations' => $import['delivery_notes'] ?? '',
-            'package_content' => $this->buildPackageContent($this->debugInfo['consolidated_products'] ?? []),
+            'package_content' => $import['package_content'] ?? 'Various products',
             
             // References
             'sender_reference1' => $import['invoice_number'] ?? '',
@@ -974,120 +714,56 @@ class ImportProcessor {
         $this->debugInfo['order_creation'] = [
             'order_id' => $orderId,
             'order_number' => $orderNumber,
-            'calculated_total' => $calculatedTotal,
-            'calculated_weight' => $calculatedWeight,
-            'used_weight' => $totalWeight,
-            'parcels_count' => $orderData['parcels_count'],
             'awb_ready' => !empty($locationMapping),
+            'total_value' => $totalValue,
             'priority' => $priority
         ];
         
         return $orderId;
     }
 
-
-    /**
-     * Calculate number of parcels based on weight and products
-     */
-    private function calculateParcelsCount($totalWeight, $products) {
-        $itemsCount = count($products);
-        
-        // If total weight > 20kg, split into multiple parcels
-        if ($totalWeight > 20) {
-            return ceil($totalWeight / 20); // Max 20kg per parcel
-        }
-        
-        // If many different products, might need multiple boxes
-        if ($itemsCount > 5) {
-            return min(ceil($itemsCount / 5), 3); // Max 5 items per box, max 3 boxes
-        }
-        
-        // Default: 1 parcel
-        return 1;
-    }
-
-    /**
-     * Build package content description for Cargus
-     */
-    private function buildPackageContent($products) {
-        if (empty($products)) {
-            return 'Various products';
-        }
-        
-        $descriptions = [];
-        foreach ($products as $product) {
-            $desc = $product['net_quantity'] . 'x ' . $product['name'];
-            if (strlen($desc) > 50) {
-                $desc = $product['net_quantity'] . 'x ' . substr($product['name'], 0, 45) . '...';
-            }
-            $descriptions[] = $desc;
-        }
-        
-        $content = implode(', ', $descriptions);
-        
-        // Truncate if too long (Cargus has limits)
-        if (strlen($content) > 200) {
-            $content = substr($content, 0, 195) . '...';
-        }
-        
-        return $content;
-    }
-
-
     /**
      * Add order items to the database
      */
-    private function addOrderItems($orderId, $products) {
-        if (empty($products)) {
-            return;
+    private function addOrderItems($orderId, $processedProducts) {
+        foreach ($processedProducts as $product) {
+            $this->addOrderItem($orderId, $product['warehouse_product'], $product);
         }
-        
-        foreach ($products as $product) {
-            try {
-                // Look up warehouse product
-                $warehouseProduct = $this->findWarehouseProduct($product['code'], $product['name']);
-                
-                if (!$warehouseProduct) {
-                    $this->warnings[] = "Product not found in warehouse: {$product['code']} - {$product['name']}";
-                    continue;
-                }
-                
-                // Ensure proper decimal precision for prices
-                $unitPrice = round(floatval($product['effective_unit_price']), 2);
-                $quantity = intval($product['net_quantity']);
-                
-                // Insert order item using actual table schema
-                $query = "INSERT INTO order_items (
-                    order_id, product_id, quantity, quantity_ordered, unit_price, unit_measure
+    }
+
+    /**
+     * Add individual order item
+     */
+    private function addOrderItem($orderId, $warehouseProduct, $productData) {
+        try {
+            // Ensure we have valid values for NOT NULL fields
+            $quantity = max(1, intval($productData['quantity']));
+            $unitPrice = max(0, floatval($productData['unit_price']));
+            
+            $query = "
+                INSERT INTO order_items (
+                    order_id, product_id, quantity, quantity_ordered, unit_price
                 ) VALUES (
-                    :order_id, :product_id, :quantity, :quantity_ordered, :unit_price, :unit_measure
-                )";
-                
-                $stmt = $this->db->prepare($query);
-                $stmt->execute([
-                    ':order_id' => $orderId,
-                    ':product_id' => $warehouseProduct['product_id'],
-                    ':quantity' => $quantity,
-                    ':quantity_ordered' => $quantity,
-                    ':unit_price' => $unitPrice, // ✅ Properly rounded decimal
-                    ':unit_measure' => $product['unit'] ?? 'bucata'
-                ]);
-                
-                $this->debugInfo['order_items'][] = [
-                    'product_code' => $product['code'],
-                    'product_name' => $product['name'],
-                    'net_quantity' => $quantity,
-                    'unit_price_stored' => $unitPrice, // ✅ Show actual stored price
-                    'effective_price' => $product['effective_unit_price'],
-                    'net_total' => $product['net_total_price'],
-                    'original_lines' => $product['original_items_count'],
-                    'consolidation_notes' => $product['consolidation_notes']
-                ];
-                
-            } catch (Exception $e) {
-                $this->warnings[] = "Error adding order item {$product['code']}: " . $e->getMessage();
-                error_log("Order item error: " . $e->getMessage() . " - Data: " . json_encode($product));
+                    :order_id, :product_id, :quantity, :quantity_ordered, :unit_price
+                )
+            ";
+            
+            $stmt = $this->db->prepare($query);
+            $result = $stmt->execute([
+                ':order_id' => $orderId,
+                ':product_id' => $warehouseProduct['product_id'],
+                ':quantity' => $quantity,
+                ':quantity_ordered' => $quantity,
+                ':unit_price' => $unitPrice
+            ]);
+            
+            if (!$result) {
+                throw new Exception("Failed to insert order item for product " . $warehouseProduct['product_id']);
             }
+            
+        } catch (PDOException $e) {
+            error_log("Error inserting order item: " . $e->getMessage());
+            throw new Exception("Database error inserting order item: " . $e->getMessage());
         }
     }
 
@@ -1107,7 +783,7 @@ class ImportProcessor {
     /**
      * Build order notes from import data
      */
-   private function buildOrderNotes($import, $invoiceInfo) {
+    private function buildOrderNotes($import, $invoiceInfo) {
         $notes = [];
         
         if (!empty($import['invoice_number'])) {
@@ -1124,19 +800,6 @@ class ImportProcessor {
         
         if (!empty($invoiceInfo['notes'])) {
             $notes[] = "Notes: {$invoiceInfo['notes']}";
-        }
-        
-        // Add consolidation summary
-        if (!empty($this->debugInfo['accounting_lines']) && !empty($this->debugInfo['consolidated_products'])) {
-            $accountingLines = count($this->debugInfo['accounting_lines']);
-            $consolidatedItems = count($this->debugInfo['consolidated_products']);
-            $notes[] = "Consolidated: $accountingLines accounting lines → $consolidatedItems pick items";
-        }
-        
-        // Add weight calculation summary
-        if (!empty($this->debugInfo['weight_summary'])) {
-            $weightSummary = $this->debugInfo['weight_summary'];
-            $notes[] = "Weight: {$weightSummary['final_weight']}kg calculated ({$weightSummary['products_weight']}kg products + {$weightSummary['packaging_weight']}kg packaging)";
         }
         
         $notes[] = "Imported from n8n automation on " . date('Y-m-d H:i:s');

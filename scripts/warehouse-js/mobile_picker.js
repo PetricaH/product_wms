@@ -289,7 +289,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="item-details">
                 <div class="item-detail">
                     <span class="material-symbols-outlined">pin_drop</span>
-                    <span>${escapeHtml(item.location_code || 'A1-01')}</span>
+                    <span>${escapeHtml(item.location_code || 'N/A')}</span>
                 </div>
                 <div class="item-detail">
                     <span class="material-symbols-outlined">inventory</span>
@@ -312,12 +312,17 @@ document.addEventListener('DOMContentLoaded', () => {
         currentItem = { ...item, index };
         scannedLocation = null;
         scannedProduct = null;
-        
-        // Set up location step
-        const expectedLocation = item.location_code || 'A1-01';
-        if (elements.targetLocation) elements.targetLocation.textContent = expectedLocation;
-        
-        showStep('location');
+
+        // Show location step only if a location code exists
+        if (item.location_code) {
+            const expectedLocation = item.location_code;
+            if (elements.targetLocation) elements.targetLocation.textContent = expectedLocation;
+            showStep('location');
+        } else {
+            // No location specified, skip directly to product verification
+            scannedLocation = '';
+            showStep('product');
+        }
     }
 
     function showStep(stepName) {
@@ -369,14 +374,21 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function verifyLocation() {
+        // If no location code is provided for the item, skip verification
+        if (!currentItem.location_code) {
+            scannedLocation = '';
+            showStep('product');
+            return;
+        }
+
         const inputLocation = elements.locationInput?.value?.trim().toUpperCase();
-        const expectedLocation = (currentItem.location_code || 'A1-01').toUpperCase();
-        
+        const expectedLocation = currentItem.location_code.toUpperCase();
+
         if (!inputLocation) {
             showMessage('Vă rugăm să introduceți codul locației.', 'error');
             return;
         }
-        
+
         if (inputLocation === expectedLocation) {
             scannedLocation = inputLocation;
             showMessage('Locație verificată cu succes!', 'success');
@@ -541,8 +553,9 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         
-        if (!scannedLocation || !scannedProduct) {
-            showMessage('Eroare: Locația și produsul trebuie verificate înainte de confirmare.', 'error');
+        const locationRequired = !!currentItem.location_code;
+        if (!scannedProduct || (locationRequired && !scannedLocation)) {
+            showMessage('Eroare: Produsul și, dacă este cazul, locația trebuie verificate înainte de confirmare.', 'error');
             return;
         }
         

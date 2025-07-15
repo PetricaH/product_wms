@@ -322,9 +322,14 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                         
                         <div class="form-group">
                             <label for="location_code" class="form-label">Cod Locație *</label>
-                            <input type="text" name="location_code" id="location_code" class="form-control" 
+                            <input type="text" name="location_code" id="location_code" class="form-control"
                                    placeholder="ex: MID-1A, LEFT-2B, RIGHT-3C" required>
                             <small class="form-help">Format pentru rafturi: [ZONĂ]-[POZIȚIE] (ex: MID-1A)</small>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">QR Code</label>
+                            <canvas id="locationQrCanvas" width="150" height="150" style="display:block;margin-bottom:0.5rem;"></canvas>
+                            <button type="button" class="btn btn-secondary" id="downloadQrBtn" onclick="downloadLocationQr()">Descarcă QR</button>
                         </div>
                         
                         <div class="row">
@@ -443,7 +448,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
             }
         };
     </script>
-
+    <script src="https://cdn.jsdelivr.net/npm/qrious@4.0.2/dist/qrious.min.js"></script>
     <?php require_once __DIR__ . '/includes/footer.php'; ?>
 </body>
 </html>

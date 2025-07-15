@@ -39,10 +39,17 @@ try {
      * Remove stock without managing its own transaction. Returns false if
      * insufficient stock is available.
      */
-    function removeStockForPick(PDO $db, int $productId, int $quantity): bool {
-        $query = "SELECT id, quantity FROM inventory WHERE product_id = :pid AND quantity > 0 ORDER BY received_at ASC, id ASC";
+    function removeStockForPick(PDO $db, int $productId, int $quantity, ?int $locationId = null): bool {
+        $query = "SELECT id, quantity FROM inventory WHERE product_id = :pid AND quantity > 0";
+        $params = [':pid' => $productId];
+        if ($locationId !== null) {
+            $query .= " AND location_id = :lid";
+            $params[':lid'] = $locationId;
+        }
+        $query .= " ORDER BY received_at ASC, id ASC";
+
         $stmt = $db->prepare($query);
-        $stmt->execute([':pid' => $productId]);
+        $stmt->execute($params);
         $records = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
         if (empty($records)) {
@@ -90,6 +97,17 @@ try {
     $orderItemId = $_POST['order_item_id'] ?? '';
     $quantityPicked = $_POST['quantity_picked'] ?? '';
     $orderId = $_POST['order_id'] ?? '';
+    $locationCode = trim($_POST['verified_location'] ?? '');
+    $locationId = null;
+    if ($locationCode !== '') {
+        $stmt = $db->prepare(
+            "SELECT id FROM locations WHERE location_code = :code AND status='active'"
+        );
+        $stmt->execute([':code' => $locationCode]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$row) throw new Exception('Location not found or inactive');
+        $locationId = (int)$row['id'];
+    }
 
     if (empty($orderItemId) || empty($quantityPicked) || empty($orderId)) {
         http_response_code(400);
@@ -147,7 +165,10 @@ try {
         }
 
         // Deduct stock from inventory using FIFO
-        if (!removeStockForPick($db, (int)$orderItem['product_id'], $quantityPicked)) {
+        if (!removeStockForPick($db, (int)$orderItem['product_id'], $quantityPicked, $locationId)) {
+            if ($locationId !== null) {
+                throw new Exception('Insufficient stock at specified location.');
+            }
             throw new Exception('Insufficient stock available for this product.');
         }
 
@@ -222,6 +243,8 @@ try {
                 'order_item_id' => $orderItemId,
                 'product_name' => $orderItem['product_name'],
                 'sku' => $orderItem['sku'],
+                'location_id' => $locationId,
+                'location_code' => $locationCode,
                 'quantity_picked_now' => $quantityPicked,
                 'total_picked' => $newTotalPicked,
                 'total_ordered' => $totalOrdered,

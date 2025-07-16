@@ -141,9 +141,10 @@ class WarehouseReceiving {
         try {
             const response = await fetch(`${this.config.apiBase}/receiving/start_session.php`, {
                 method: 'POST',
+                credentials: 'same-origin',
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-CSRF-Token': this.config.csrfToken
+                    'X-CSRF-Token': csrfToken
                 },
                 body: JSON.stringify({
                     purchase_order_id: poId
@@ -323,11 +324,13 @@ class WarehouseReceiving {
         this.showLoading(true);
         
         try {
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || this.config.csrfToken;
             const response = await fetch(`${this.config.apiBase}/receiving/receive_item.php`, {
                 method: 'POST',
+                credentials: 'same-origin',
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-CSRF-Token': this.config.csrfToken
+                    'X-CSRF-Token': csrfToken
                 },
                 body: JSON.stringify({
                     session_id: this.currentReceivingSession.id,
@@ -413,11 +416,13 @@ class WarehouseReceiving {
         this.showLoading(true);
         
         try {
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || this.config.csrfToken;
             const response = await fetch(`${this.config.apiBase}/receiving/complete_session.php`, {
                 method: 'POST',
+                credentials: 'same-origin',
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-CSRF-Token': this.config.csrfToken
+                    'X-CSRF-Token': csrfToken
                 },
                 body: JSON.stringify({
                     session_id: this.currentReceivingSession.id

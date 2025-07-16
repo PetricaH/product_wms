@@ -176,13 +176,14 @@ $currentPage = 'warehouse_receiving';
                             <span class="material-symbols-outlined">search</span>
                             Caută Comanda
                         </h2>
-                        <p class="step-subtitle">Scrie numărul comenzii de achiziție</p>
+
                     </div>
 
                     <div class="step-content">
                         <div class="form-group">
+
                             <label for="po-search-input" class="form-label">Număr Comandă</label>
-                            <input type="text" id="po-search-input" class="form-input" placeholder="ex: PO-2024-001">
+
                         </div>
                         <div id="po-search-results" class="purchase-orders-list"></div>
                     </div>

@@ -24,6 +24,7 @@ if ($search === '') {
 }
 
 try {
+
     $stmt = $db->prepare(
         "SELECT po.id, po.order_number, s.supplier_name, po.status,
                po.total_amount, po.currency, po.expected_delivery_date,
@@ -37,6 +38,7 @@ try {
         ORDER BY po.created_at DESC
         LIMIT 10"
     );
+
     $stmt->execute([':search' => '%' . $search . '%']);
     $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -47,9 +49,9 @@ try {
             'supplier_name' => $po['supplier_name'],
             'status' => $po['status'],
             'total_amount' => number_format((float)$po['total_amount'], 2),
-            'currency' => $po['currency'],
-            'expected_delivery_date' => $po['expected_delivery_date'],
-            'items_count' => (int)$po['items_count']
+
+            'currency' => $po['currency']
+
         ];
     }, $orders);
 

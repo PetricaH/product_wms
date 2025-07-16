@@ -49,8 +49,9 @@ try {
             'supplier_name' => $po['supplier_name'],
             'status' => $po['status'],
             'total_amount' => number_format((float)$po['total_amount'], 2),
-
-            'currency' => $po['currency']
+            'currency' => $po['currency'],
+            'expected_delivery_date' => $po['expected_delivery_date'],
+            'items_count' => (int)$po['items_count']
 
         ];
     }, $orders);

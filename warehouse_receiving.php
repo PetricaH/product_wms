@@ -169,21 +169,20 @@ $currentPage = 'warehouse_receiving';
                     </div>
                 <?php endif; ?>
 
-                <!-- Step 1: Order Search -->
+                 <!-- Step 1: Order Search -->
                 <div id="step-1" class="step-section active">
                     <div class="step-header">
                         <h2 class="step-title">
                             <span class="material-symbols-outlined">search</span>
                             Caută Comanda
                         </h2>
-
+                        <p class="step-subtitle">Scrie numărul comenzii sau numele furnizorului</p>
                     </div>
 
                     <div class="step-content">
                         <div class="form-group">
-
-                            <label for="po-search-input" class="form-label">Număr Comandă</label>
-
+                            <label for="po-search-input" class="form-label">Comandă sau Furnizor</label>
+                            <input type="text" id="po-search-input" class="form-input" placeholder="ex: PO-2024-001 sau Furnizor">
                         </div>
                         <div id="po-search-results" class="purchase-orders-list"></div>
                     </div>

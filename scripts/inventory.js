@@ -18,6 +18,8 @@
 
         function openMoveStockModal(item) {
             document.getElementById('move-inventory-id').value = item.id;
+            document.getElementById('move-product-id').value = item.product_id;
+            document.getElementById('move-from-location-id').value = item.location_id;
             document.getElementById('move-product-name').textContent = item.product_name;
             document.getElementById('available-quantity').textContent = parseInt(item.quantity).toLocaleString();
             document.getElementById('move-quantity').max = item.quantity;

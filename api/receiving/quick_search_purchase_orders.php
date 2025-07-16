@@ -24,16 +24,19 @@ if ($search === '') {
 }
 
 try {
-    $stmt = $db->prepare("
-        SELECT po.id, po.order_number, s.supplier_name, po.status,
-               po.total_amount, po.currency
+    $stmt = $db->prepare(
+        "SELECT po.id, po.order_number, s.supplier_name, po.status,
+               po.total_amount, po.currency, po.expected_delivery_date,
+               COUNT(poi.id) AS items_count
         FROM purchase_orders po
         JOIN sellers s ON po.seller_id = s.id
-        WHERE po.order_number LIKE :search
+        LEFT JOIN purchase_order_items poi ON po.id = poi.purchase_order_id
+        WHERE (po.order_number LIKE :search OR s.supplier_name LIKE :search)
           AND po.status IN ('sent','confirmed','partial_delivery','delivered')
+        GROUP BY po.id
         ORDER BY po.created_at DESC
-        LIMIT 10
-    ");
+        LIMIT 10"
+    );
     $stmt->execute([':search' => '%' . $search . '%']);
     $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -44,7 +47,9 @@ try {
             'supplier_name' => $po['supplier_name'],
             'status' => $po['status'],
             'total_amount' => number_format((float)$po['total_amount'], 2),
-            'currency' => $po['currency']
+            'currency' => $po['currency'],
+            'expected_delivery_date' => $po['expected_delivery_date'],
+            'items_count' => (int)$po['items_count']
         ];
     }, $orders);
 

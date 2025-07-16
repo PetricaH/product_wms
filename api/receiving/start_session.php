@@ -24,15 +24,6 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
-// CSRF check
-$headers = apache_request_headers();
-$csrfToken = $headers['X-CSRF-Token'] ?? '';
-if (!$csrfToken || $csrfToken !== $_SESSION['csrf_token']) {
-    http_response_code(403);
-    echo json_encode(['success' => false, 'message' => 'Invalid CSRF token']);
-    exit;
-}
-
 // Only allow POST
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);

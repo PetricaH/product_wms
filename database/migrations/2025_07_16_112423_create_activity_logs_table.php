@@ -36,7 +36,7 @@ class CreateActivityLogsTable
           KEY `idx_resource` (`resource_type`, `resource_id`),
           KEY `idx_created_at` (`created_at`),
           CONSTRAINT `fk_activity_logs_user_id` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+        )
         ";
 
         // Execute the SQL statement

@@ -169,87 +169,25 @@ $currentPage = 'warehouse_receiving';
                     </div>
                 <?php endif; ?>
 
-                <!-- Step 1: Document Entry -->
+                <!-- Step 1: Order Search -->
                 <div id="step-1" class="step-section active">
                     <div class="step-header">
                         <h2 class="step-title">
-                            <span class="material-symbols-outlined">receipt</span>
-                            Introdu Documentul Furnizorului
+                            <span class="material-symbols-outlined">search</span>
+                            Caută Comanda
                         </h2>
-                        <p class="step-subtitle">Începe cu numărul facturii sau avizului de livrare</p>
+                        <p class="step-subtitle">Scrie numărul comenzii de achiziție</p>
                     </div>
-                    
+
                     <div class="step-content">
-                        <form id="document-form" class="document-form">
-                            <div class="form-group">
-                                <label for="supplier-doc-number" class="form-label">
-                                    Numărul Documentului *
-                                </label>
-                                <input type="text" 
-                                       id="supplier-doc-number" 
-                                       name="supplier_doc_number" 
-                                       class="form-input" 
-                                       placeholder="ex: FAC-2024-001, AV-123456"
-                                       required>
-                            </div>
-                            
-                            <div class="form-group">
-                                <label for="doc-type" class="form-label">
-                                    Tipul Documentului *
-                                </label>
-                                <select id="doc-type" name="doc_type" class="form-select" required>
-                                    <option value="">Selectează tipul</option>
-                                    <option value="invoice">Factură</option>
-                                    <option value="delivery_note">Aviz de livrare</option>
-                                    <option value="packing_slip">Bon de transport</option>
-                                </select>
-                            </div>
-                            
-                            <div class="form-group">
-                                <label for="doc-date" class="form-label">
-                                    Data Documentului
-                                </label>
-                                <input type="date" 
-                                       id="doc-date" 
-                                       name="doc_date" 
-                                       class="form-input">
-                            </div>
-                            
-                            <button type="submit" class="btn btn-primary">
-                                <span class="material-symbols-outlined">search</span>
-                                Caută Comenzi Asociate
-                            </button>
-                        </form>
+                        <div class="form-group">
+                            <label for="po-search-input" class="form-label">Număr Comandă</label>
+                            <input type="text" id="po-search-input" class="form-input" placeholder="ex: PO-2024-001">
+                        </div>
+                        <div id="po-search-results" class="purchase-orders-list"></div>
                     </div>
                 </div>
 
-                <!-- Step 2: Purchase Order Selection -->
-                <div id="step-2" class="step-section">
-                    <div class="step-header">
-                        <h2 class="step-title">
-                            <span class="material-symbols-outlined">shopping_cart</span>
-                            Selectează Comanda de Achiziție
-                        </h2>
-                        <p class="step-subtitle">Alege comanda corespunzătoare pentru această livrare</p>
-                    </div>
-                    
-                    <div class="step-content">
-                        <div id="purchase-orders-list" class="purchase-orders-list">
-                            <!-- Purchase orders will be populated here -->
-                        </div>
-                        
-                        <div class="step-actions">
-                            <button type="button" class="btn btn-secondary" onclick="goToPreviousStep()">
-                                <span class="material-symbols-outlined">arrow_back</span>
-                                Înapoi
-                            </button>
-                            <button type="button" class="btn btn-primary" id="select-po-btn" disabled>
-                                <span class="material-symbols-outlined">arrow_forward</span>
-                                Continuă cu Comanda
-                            </button>
-                        </div>
-                    </div>
-                </div>
 
                 <!-- Step 3: Item Receiving -->
                 <div id="step-3" class="step-section">

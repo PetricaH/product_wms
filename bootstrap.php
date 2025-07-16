@@ -6,6 +6,14 @@ if (!defined('BASE_PATH')) {
     define('BASE_PATH', __DIR__);
 }
 
+// FIXED: Start session early in bootstrap
+session_start();
+
+// FIXED: Generate CSRF token if not exists
+if (!isset($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+
 // Auto-detect base URL with correct protocol
 $serverName = $_SERVER['SERVER_NAME'] ?? $_SERVER['HTTP_HOST'] ?? 'localhost';
 $isProduction = !in_array($serverName, ['localhost', '127.0.0.1', '::1']) && 
@@ -25,6 +33,19 @@ function getNavUrl($path) {
     
     // Combine BASE_URL with path, ensuring no double slashes
     return rtrim(BASE_URL, '/') . '/' . $path;
+}
+
+// FIXED: Add CSRF token helper functions (only if not already defined)
+if (!function_exists('getCsrfToken')) {
+    function getCsrfToken() {
+        return $_SESSION['csrf_token'] ?? '';
+    }
+}
+
+if (!function_exists('validateCsrfToken')) {
+    function validateCsrfToken($token) {
+        return isset($_SESSION['csrf_token']) && hash_equals($_SESSION['csrf_token'], $token);
+    }
 }
 
 //Get asset URL based on current environment
@@ -92,5 +113,6 @@ function logActivity($userId, $action, $resourceType, $resourceId, $description,
         $agent = $_SERVER['HTTP_USER_AGENT'] ?? null;
         return $logger->log($userId, $action, $resourceType, $resourceId, $description, $oldValues, $newValues, $ip, $agent);
     }
-    return false;}
+    return false;
+}
 ?>

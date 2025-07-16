@@ -1,5 +1,5 @@
 <?php
-// includes/warehouse_header.php - FIXED: Production-ready API base URL & CSS Versioning
+// includes/warehouse_header.php - FIXED: Uses existing helpers and adds CSRF token
 require_once __DIR__ . '/helpers.php';
 require_once __DIR__ . '/../bootstrap.php';
 
@@ -11,6 +11,7 @@ $apiBase = rtrim(BASE_URL, '/') . '/api';
 ?>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="csrf-token" content="<?php echo getCsrfToken(); ?>">
 <title>WMS Warehouse Interface</title>
 <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -41,22 +42,8 @@ if (isset($warehousePageCSS[$currentPage])) {
 
     // Check if the file physically exists
     if (file_exists($cssFilePath)) {
-        $cssUrl = '';
-        
-        // Determine the correct URL based on the environment
-        if (function_exists('in_prod') && in_prod()) {
-            if (function_exists('asset')) {
-                $cssUrl = asset('styles/warehouse-css/' . $cssFileName);
-            }
-        } else {
-            // Development environment path
-            $cssUrl = BASE_URL . 'styles/warehouse-css/' . $cssFileName;
-        }
-        
-        // Output the link tag with cache busting
-        if ($cssUrl) {
-            echo '<link rel="stylesheet" href="' . $cssUrl . '?v=' . filemtime($cssFilePath) . '">';
-        }
+        $cssUrl = in_prod() ? asset('styles/warehouse-css/' . $cssFileName) : BASE_URL . 'styles/warehouse-css/' . $cssFileName;
+        echo '<link rel="stylesheet" href="' . $cssUrl . '?v=' . filemtime($cssFilePath) . '">';
     }
 }
 ?>
@@ -64,6 +51,7 @@ if (isset($warehousePageCSS[$currentPage])) {
 <script>
     window.WMS_CONFIG = {
         apiBase: '<?= $apiBase ?>', // FIXED: Now works in both dev and production
+        csrfToken: '<?= getCsrfToken() ?>', // FIXED: Added CSRF token from bootstrap
         warehouseMode: true,
         currentUser: <?= json_encode([
             'id' => $_SESSION['user_id'] ?? 1,
@@ -72,7 +60,9 @@ if (isset($warehousePageCSS[$currentPage])) {
         ]) ?>
     };
     
-    // DEBUG: Verify the API base is correct
+    // DEBUG: Verify the API base and CSRF token are correct
     console.log('🔧 API Base URL:', '<?= $apiBase ?>');
     console.log('🔧 BASE_URL:', '<?= BASE_URL ?>');
+    console.log('🔧 CSRF Token:', '<?= getCsrfToken() ?>');
+    console.log('🔧 Environment:', '<?= in_prod() ? 'production' : 'development' ?>');
 </script>

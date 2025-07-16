@@ -1,12 +1,4 @@
 <?php
-/**
- * Warehouse Receiving - Production Ready System
- * File: warehouse_receiving.php
- * 
- * Real-world receiving process starting with supplier documents
- * Following WMS design patterns and structure
- */
-
 // Security and bootstrap
 if (!defined('BASE_PATH')) {
     define('BASE_PATH', __DIR__);
@@ -14,8 +6,6 @@ if (!defined('BASE_PATH')) {
 
 require_once BASE_PATH . '/bootstrap.php';
 
-// Session and authentication check
-session_start();
 if (!isset($_SESSION['user_id'])) {
     header('Location: login.php');
     exit;

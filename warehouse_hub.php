@@ -1,7 +1,4 @@
 <?php
-// warehouse_hub.php - Proper version with includes
-session_start();
-
 // Include necessary files
 require_once 'bootstrap.php';
 require_once 'includes/helpers.php';

@@ -28,16 +28,10 @@ class WarehouseReceiving {
     }
 
     bindEvents() {
-        // Document form submission
-        const documentForm = document.getElementById('document-form');
-        if (documentForm) {
-            documentForm.addEventListener('submit', (e) => this.handleDocumentSubmit(e));
-        }
-
-        // Purchase order selection
-        const selectPOBtn = document.getElementById('select-po-btn');
-        if (selectPOBtn) {
-            selectPOBtn.addEventListener('click', () => this.selectPurchaseOrder());
+        // Search purchase order by number
+        const poSearchInput = document.getElementById('po-search-input');
+        if (poSearchInput) {
+            poSearchInput.addEventListener('input', (e) => this.quickSearchPO(e.target.value));
         }
 
         // Complete receiving
@@ -88,63 +82,31 @@ class WarehouseReceiving {
         }
     }
 
-    async handleDocumentSubmit(event) {
-        event.preventDefault();
-        
-        const formData = new FormData(event.target);
-        const supplierDocNumber = formData.get('supplier_doc_number');
-        const docType = formData.get('doc_type');
-        const docDate = formData.get('doc_date');
-        
-        if (!supplierDocNumber || !docType) {
-            this.showError('Completează numărul documentului și tipul acestuia');
+    async quickSearchPO(query) {
+        if (!query) {
+            const container = document.getElementById('po-search-results');
+            if (container) container.innerHTML = '';
             return;
         }
 
-        this.showLoading(true);
-        
         try {
-            // Search for matching purchase orders
-            const response = await fetch(`${this.config.apiBase}/receiving/search_purchase_orders.php`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRF-Token': this.config.csrfToken
-                },
-                body: JSON.stringify({
-                    supplier_doc_number: supplierDocNumber,
-                    doc_type: docType,
-                    doc_date: docDate
-                })
-            });
-
+            const response = await fetch(`${this.config.apiBase}/receiving/quick_search_purchase_orders.php?q=${encodeURIComponent(query)}`);
             const result = await response.json();
-            
-            if (!response.ok) {
-                throw new Error(result.message || 'Eroare la căutarea comenzilor');
-            }
 
-            if (result.purchase_orders && result.purchase_orders.length > 0) {
-                this.displayPurchaseOrders(result.purchase_orders);
-                this.showStep(2);
-            } else {
-                this.showError('Nu s-au găsit comenzi de achiziție asociate cu acest document');
+            if (response.ok && result.orders) {
+                this.displayPurchaseOrders(result.orders, 'po-search-results');
             }
-            
         } catch (error) {
-            console.error('Error searching purchase orders:', error);
-            this.showError('Eroare la căutarea comenzilor: ' + error.message);
-        } finally {
-            this.showLoading(false);
+            console.error('Quick search error:', error);
         }
     }
 
-    displayPurchaseOrders(purchaseOrders) {
-        const container = document.getElementById('purchase-orders-list');
+    displayPurchaseOrders(purchaseOrders, containerId = 'purchase-orders-list') {
+        const container = document.getElementById(containerId);
         if (!container) return;
 
         container.innerHTML = purchaseOrders.map(po => `
-            <div class="purchase-order-item" data-po-id="${po.id}" onclick="receivingSystem.selectPO(${po.id})">
+            <div class="purchase-order-item" data-po-id="${po.id}" onclick="receivingSystem.startReceivingFromSearch(${po.id})">
                 <div class="po-header">
                     <div class="po-number">${this.escapeHtml(po.order_number)}</div>
                     <div class="po-status status-${po.status}">
@@ -173,54 +135,26 @@ class WarehouseReceiving {
         `).join('');
     }
 
-    selectPO(poId) {
-        // Remove previous selection
-        document.querySelectorAll('.purchase-order-item').forEach(item => {
-            item.classList.remove('selected');
-        });
-        
-        // Add selection to clicked item
-        const selectedItem = document.querySelector(`[data-po-id="${poId}"]`);
-        if (selectedItem) {
-            selectedItem.classList.add('selected');
-            this.selectedPurchaseOrder = poId;
-            
-            // Enable continue button
-            const selectBtn = document.getElementById('select-po-btn');
-            if (selectBtn) {
-                selectBtn.disabled = false;
-            }
-        }
-    }
-
-    async selectPurchaseOrder() {
-        if (!this.selectedPurchaseOrder) {
-            this.showError('Selectează o comandă de achiziție');
-            return;
-        }
-
+    async startReceivingFromSearch(poId) {
         this.showLoading(true);
-        
+
         try {
-            // Start receiving session
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || this.config.csrfToken;
             const response = await fetch(`${this.config.apiBase}/receiving/start_session.php`, {
                 method: 'POST',
+                credentials: 'same-origin',
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-CSRF-Token': this.config.csrfToken
+                    'X-CSRF-Token': csrfToken
                 },
                 body: JSON.stringify({
-                    purchase_order_id: this.selectedPurchaseOrder,
-                    supplier_doc_number: document.getElementById('supplier-doc-number').value,
-                    doc_type: document.getElementById('doc-type').value,
-                    doc_date: document.getElementById('doc-date').value
+                    purchase_order_id: poId
                 })
             });
 
             const result = await response.json();
-            
+
             if (!response.ok) {
-                // Check if it's an existing session error
                 if (result.error_type === 'existing_session') {
                     this.handleExistingSession(result.existing_session);
                     return;
@@ -232,7 +166,7 @@ class WarehouseReceiving {
             this.loadReceivingItems();
             this.updateReceivingSummary();
             this.showStep(3);
-            
+
         } catch (error) {
             console.error('Error starting receiving session:', error);
             this.showError('Eroare la începerea recepției: ' + error.message);
@@ -391,11 +325,13 @@ class WarehouseReceiving {
         this.showLoading(true);
         
         try {
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || this.config.csrfToken;
             const response = await fetch(`${this.config.apiBase}/receiving/receive_item.php`, {
                 method: 'POST',
+                credentials: 'same-origin',
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-CSRF-Token': this.config.csrfToken
+                    'X-CSRF-Token': csrfToken
                 },
                 body: JSON.stringify({
                     session_id: this.currentReceivingSession.id,
@@ -481,11 +417,13 @@ class WarehouseReceiving {
         this.showLoading(true);
         
         try {
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || this.config.csrfToken;
             const response = await fetch(`${this.config.apiBase}/receiving/complete_session.php`, {
                 method: 'POST',
+                credentials: 'same-origin',
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-CSRF-Token': this.config.csrfToken
+                    'X-CSRF-Token': csrfToken
                 },
                 body: JSON.stringify({
                     session_id: this.currentReceivingSession.id
@@ -670,14 +608,14 @@ class WarehouseReceiving {
         this.selectedPurchaseOrder = null;
         this.receivingItems = [];
         
-        // Reset forms
-        const documentForm = document.getElementById('document-form');
-        if (documentForm) {
-            documentForm.reset();
+        const searchInput = document.getElementById('po-search-input');
+        if (searchInput) {
+            searchInput.value = '';
         }
-        
-        // Reset UI
-        document.getElementById('select-po-btn').disabled = true;
+        const results = document.getElementById('po-search-results');
+        if (results) {
+            results.innerHTML = '';
+        }
         
         this.showStep(1);
     }

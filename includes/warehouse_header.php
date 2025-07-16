@@ -11,7 +11,13 @@ $apiBase = rtrim(BASE_URL, '/') . '/api';
 ?>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="csrf-token" content="<?php echo getCsrfToken(); ?>">
+<?php
+// Ensure CSRF token exists for all warehouse pages
+if (!isset($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+?>
+<meta name="csrf-token" content="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
 <title>WMS Warehouse Interface</title>
 <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">

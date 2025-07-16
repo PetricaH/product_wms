@@ -139,6 +139,7 @@ class WarehouseReceiving {
         this.showLoading(true);
 
         try {
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || this.config.csrfToken;
             const response = await fetch(`${this.config.apiBase}/receiving/start_session.php`, {
                 method: 'POST',
                 credentials: 'same-origin',

@@ -55,9 +55,9 @@ try {
     $supplierDocNumber = trim($input['supplier_doc_number'] ?? '');
     $docType = trim($input['doc_type'] ?? '');
     $docDate = trim($input['doc_date'] ?? '');
-    
-    if (!$purchaseOrderId || !$supplierDocNumber || !$docType) {
-        throw new Exception('Purchase order ID, supplier document number and type are required');
+
+    if (!$purchaseOrderId) {
+        throw new Exception('Purchase order ID is required');
     }
     
     // Validate purchase order exists
@@ -70,9 +70,17 @@ try {
     ");
     $stmt->execute([':po_id' => $purchaseOrderId]);
     $purchaseOrder = $stmt->fetch(PDO::FETCH_ASSOC);
-    
+
     if (!$purchaseOrder) {
         throw new Exception('Purchase order not found');
+    }
+
+    // Use defaults when supplier document info is missing
+    if (!$supplierDocNumber) {
+        $supplierDocNumber = 'PO-' . $purchaseOrder['order_number'];
+    }
+    if (!$docType) {
+        $docType = 'delivery_note';
     }
     
     // Check if there's already an active session for this PO

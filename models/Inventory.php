@@ -169,9 +169,10 @@ class Inventory {
     /**
      * Add stock to inventory (receive goods)
      * @param array $data Inventory data
+     * @param bool $useTransaction Whether to wrap the operation in a transaction
      * @return int|false Inventory record ID on success, false on failure
      */
-    public function addStock(array $data): int|false {
+    public function addStock(array $data, bool $useTransaction = true): int|false {
         // Check required fields
         $requiredFields = ['product_id', 'location_id', 'quantity'];
         foreach ($requiredFields as $field) {
@@ -197,7 +198,9 @@ class Inventory {
         }
 
         try {
-            $this->conn->beginTransaction();
+            if ($useTransaction) {
+                $this->conn->beginTransaction();
+            }
 
             // Insert inventory record
             $query = "INSERT INTO {$this->inventoryTable} 
@@ -214,7 +217,9 @@ class Inventory {
             $stmt->bindParam(':received_at', $data['received_at'], PDO::PARAM_STR);
 
             if (!$stmt->execute()) {
-                $this->conn->rollBack();
+                if ($useTransaction && $this->conn->inTransaction()) {
+                    $this->conn->rollBack();
+                }
                 error_log("Add stock failed: Failed to insert inventory record");
                 return false;
             }
@@ -224,7 +229,9 @@ class Inventory {
             // Update product total quantity (if products table has quantity column)
             $this->updateProductTotalQuantity($data['product_id']);
 
-            $this->conn->commit();
+            if ($useTransaction) {
+                $this->conn->commit();
+            }
 
             $userId = $_SESSION['user_id'] ?? 0;
             logActivity(
@@ -240,7 +247,9 @@ class Inventory {
             return (int) $inventoryId;
 
         } catch (PDOException $e) {
-            $this->conn->rollBack();
+            if ($useTransaction && $this->conn->inTransaction()) {
+                $this->conn->rollBack();
+            }
             error_log("Add stock failed: " . $e->getMessage());
             return false;
         }
@@ -251,16 +260,19 @@ class Inventory {
      * @param int $productId Product ID
      * @param int $quantity Quantity to remove
      * @param int|null $locationId Optional specific location
+     * @param bool $useTransaction Whether to wrap the operation in a transaction
      * @return bool Success status
      */
-    public function removeStock(int $productId, int $quantity, ?int $locationId = null): bool {
+    public function removeStock(int $productId, int $quantity, ?int $locationId = null, bool $useTransaction = true): bool {
         if ($quantity <= 0) {
             error_log("Remove stock failed: Invalid quantity");
             return false;
         }
 
         try {
-            $this->conn->beginTransaction();
+            if ($useTransaction) {
+                $this->conn->beginTransaction();
+            }
 
             // Get available stock using FIFO (oldest first)
             $query = "SELECT i.id, i.quantity, i.location_id
@@ -281,7 +293,9 @@ class Inventory {
             $inventoryRecords = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
             if (empty($inventoryRecords)) {
-                $this->conn->rollBack();
+                if ($useTransaction && $this->conn->inTransaction()) {
+                    $this->conn->rollBack();
+                }
                 error_log("Remove stock failed: No stock available");
                 return false;
             }
@@ -289,7 +303,9 @@ class Inventory {
             // Check if enough stock is available
             $totalAvailable = array_sum(array_column($inventoryRecords, 'quantity'));
             if ($totalAvailable < $quantity) {
-                $this->conn->rollBack();
+                if ($useTransaction && $this->conn->inTransaction()) {
+                    $this->conn->rollBack();
+                }
                 error_log("Remove stock failed: Insufficient stock (available: {$totalAvailable}, requested: {$quantity})");
                 return false;
             }
@@ -328,7 +344,9 @@ class Inventory {
             // Update product total quantity
             $this->updateProductTotalQuantity($productId);
 
-            $this->conn->commit();
+            if ($useTransaction) {
+                $this->conn->commit();
+            }
 
             $userId = $_SESSION['user_id'] ?? 0;
             logActivity(
@@ -344,7 +362,9 @@ class Inventory {
             return true;
 
         } catch (PDOException $e) {
-            $this->conn->rollBack();
+            if ($useTransaction && $this->conn->inTransaction()) {
+                $this->conn->rollBack();
+            }
             error_log("Remove stock failed: " . $e->getMessage());
             return false;
         }
@@ -584,13 +604,13 @@ class Inventory {
         try {
             $this->conn->beginTransaction();
 
-            // Remove stock from source location
-            if (!$this->removeStock($productId, $quantity, $fromLocationId)) {
+            // Remove stock from source location within transaction
+            if (!$this->removeStock($productId, $quantity, $fromLocationId, false)) {
                 $this->conn->rollBack();
                 return false;
             }
 
-            // Add stock to destination location
+            // Add stock to destination location within transaction
             $addData = [
                 'product_id' => $productId,
                 'location_id' => $toLocationId,
@@ -598,7 +618,7 @@ class Inventory {
                 'received_at' => date('Y-m-d H:i:s')
             ];
 
-            if (!$this->addStock($addData)) {
+            if (!$this->addStock($addData, false)) {
                 $this->conn->rollBack();
                 return false;
             }
@@ -607,7 +627,9 @@ class Inventory {
             return true;
 
         } catch (Exception $e) {
-            $this->conn->rollBack();
+            if ($this->conn->inTransaction()) {
+                $this->conn->rollBack();
+            }
             error_log("Move stock failed: " . $e->getMessage());
             return false;
         }

@@ -105,7 +105,7 @@ return [
     'cargus' => [
         'username' => getenv('CARGUS_USER') ?: '',
         'password' => getenv('CARGUS_PASS') ?: '',
-        'subscriptionKey' => getenv('CARGUS_SUBSCRIPTION_KEY') ?: '', // Add this line
+        'subscriptionKey' => getenv('CARGUS_SUBSCRIPTION_KEY') ?: '',
         'api_url'  => getenv('CARGUS_API_URL') ?: 'https://urgentcargus.azure-api.net/api/'
     ],
 

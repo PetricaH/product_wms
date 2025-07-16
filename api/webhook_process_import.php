@@ -532,24 +532,30 @@ class ImportProcessor {
         $processedProducts = [];
         $accountingLines = []; // Store all accounting lines for audit trail
         
-        // Step 1: Store all accounting lines and group by product code
-        $productGroups = [];
-        
+        // Step 1: Store all accounting lines for audit trail
         foreach ($products as $index => $product) {
-            // Store original accounting line for audit trail
+            $totalPrice = $this->parsePrice($product['total_price'] ?? 0);
+            $unitPrice = $this->parsePrice($product['price'] ?? 0);
+            
             $accountingLines[] = [
                 'line_number' => $index + 1,
-                'code' => $product['code'] ?? '',
-                'name' => $product['name'] ?? '',
-                'unit' => $product['unit'] ?? 'bucata',
+                'code' => trim($product['code'] ?? ''),
+                'name' => trim($product['name'] ?? ''),
+                'unit' => trim($product['unit'] ?? 'bucata'),
                 'quantity' => floatval($product['quantity'] ?? 0),
-                'unit_price' => floatval($product['price'] ?? 0),
-                'total_price' => floatval(str_replace(',', '', $product['total_price'] ?? 0))
+                'unit_price' => $unitPrice,
+                'total_price' => $totalPrice
             ];
+        }
+        
+        // Step 2: Group products by code for consolidation
+        $productGroups = [];
+        foreach ($products as $product) {
+            $code = trim($product['code'] ?? '');
             
-            // Group by product code for consolidation
-            $code = $product['code'] ?? '';
+            // Skip items without product codes
             if (empty($code)) {
+                $this->warnings[] = "Skipping product without code: " . ($product['name'] ?? 'Unknown');
                 continue;
             }
             
@@ -557,23 +563,29 @@ class ImportProcessor {
                 $productGroups[$code] = [];
             }
             
+            $unitPrice = $this->parsePrice($product['price'] ?? 0);
+            $totalPrice = $this->parsePrice($product['total_price'] ?? 0);
+            
             $productGroups[$code][] = [
-                'name' => $product['name'] ?? '',
-                'unit' => $product['unit'] ?? 'bucata',
+                'name' => trim($product['name'] ?? ''),
+                'unit' => trim($product['unit'] ?? 'bucata'),
                 'quantity' => floatval($product['quantity'] ?? 0),
-                'unit_price' => floatval($product['price'] ?? 0),
-                'total_price' => floatval(str_replace(',', '', $product['total_price'] ?? 0)),
-                'is_discount' => strpos(strtolower($product['name'] ?? ''), 'discount') !== false
+                'unit_price' => $unitPrice,
+                'total_price' => $totalPrice,
+                // ✅ FIXED: Use price-based discount detection
+                'is_discount' => ($unitPrice < 0 || $totalPrice < 0) || $this->isDiscountItem($product['name'] ?? '')
             ];
         }
         
-        // Step 2: Consolidate each product group
+        // Step 3: Consolidate each product group
         foreach ($productGroups as $code => $items) {
             $consolidatedProduct = $this->consolidateProductGroup($code, $items);
             
-            // Only add to order if there's a net positive quantity
+            // Add product if it has positive quantity
             if ($consolidatedProduct && $consolidatedProduct['net_quantity'] > 0) {
                 $processedProducts[] = $consolidatedProduct;
+            } elseif ($consolidatedProduct && $consolidatedProduct['net_quantity'] <= 0) {
+                $this->warnings[] = "Product {$code} has zero/negative quantity after consolidation";
             }
         }
         
@@ -589,59 +601,116 @@ class ImportProcessor {
             return null;
         }
         
-        $netQuantity = 0;
-        $netTotalPrice = 0;
         $productName = '';
         $unit = 'bucata';
+        $unitPrice = 0;
+        $totalPayment = 0;
+        $physicalQuantity = 0;
         $regularItems = [];
         $discountItems = [];
         
-        // Separate regular items from discount items
+        // Step 1: Separate regular items from discount items
         foreach ($items as $item) {
             if ($item['is_discount']) {
                 $discountItems[] = $item;
             } else {
                 $regularItems[] = $item;
-                // Use the name from non-discount item
-                if (empty($productName)) {
-                    $productName = $item['name'];
-                    $unit = $item['unit'];
-                }
             }
-            
-            // Calculate net total price (always sum all prices including negative)
-            $netTotalPrice += $item['total_price'];
         }
         
-        // Calculate net quantity for Romanian accounting
-        // Only count physical items to pick (regular items), not discount lines
-        foreach ($regularItems as $item) {
-            $netQuantity += $item['quantity'];
+        // Step 2: Get product info from regular items (priority) or fallback to first item
+        if (!empty($regularItems)) {
+            $productName = $regularItems[0]['name'];
+            $unit = $regularItems[0]['unit'];
+            $unitPrice = $regularItems[0]['total_price']; // Use total_price (with VAT) as unit price
+        } else {
+            // Fallback to first item if no regular items (shouldn't happen in normal cases)
+            $productName = $items[0]['name'];
+            $unit = $items[0]['unit'];
+            $unitPrice = abs($items[0]['total_price']); // Use absolute value for display
         }
         
-        // Calculate effective unit price
-        $effectiveUnitPrice = $netQuantity > 0 ? $netTotalPrice / $netQuantity : 0;
+        // Step 3: Calculate physical quantity (ALL items get shipped)
+        $physicalQuantity = count($regularItems);
         
-        // Build consolidation notes
+        // Step 4: Calculate total payment (sum all prices including discounts)
+        foreach ($items as $item) {
+            $totalPayment += $item['total_price'];
+        }
+        
+        // Step 5: Validation - ensure we have positive quantity
+        if ($physicalQuantity <= 0) {
+            return null;
+        }
+        
+        // Step 6: Build consolidation notes
         $consolidationNotes = [];
+        if (count($items) > 1) {
+            $consolidationNotes[] = "Consolidated from " . count($items) . " accounting lines";
+        }
+        
         if (!empty($discountItems)) {
-            $consolidationNotes[] = "Consolidated from " . (count($regularItems) + count($discountItems)) . " accounting lines";
+            $totalDiscount = 0;
             foreach ($discountItems as $discount) {
-                $consolidationNotes[] = "Applied discount: " . $discount['name'];
+                $totalDiscount += abs($discount['total_price']);
             }
+            $consolidationNotes[] = "Applied discounts: " . number_format($totalDiscount, 2) . " RON";
+            $consolidationNotes[] = "Customer pays " . number_format($totalPayment, 2) . " RON for " . $physicalQuantity . " products";
         }
         
         return [
             'code' => $code,
             'name' => $productName,
             'unit' => $unit,
-            'net_quantity' => $netQuantity, // Physical items to pick
-            'effective_unit_price' => $effectiveUnitPrice, // Price after discounts
-            'net_total_price' => $netTotalPrice, // Total after discounts
+            'net_quantity' => $physicalQuantity, // Physical items to ship
+            'effective_unit_price' => round($unitPrice, 2), // Original unit price (with VAT)
+            'net_total_price' => round($totalPayment, 2), // What customer actually pays
             'original_items_count' => count($items),
             'has_discounts' => !empty($discountItems),
-            'consolidation_notes' => implode(' | ', $consolidationNotes)
+            'consolidation_notes' => implode(' | ', $consolidationNotes),
+            // Debug info
+            'debug_info' => [
+                'regular_items' => count($regularItems),
+                'discount_items' => count($discountItems),
+                'physical_quantity' => $physicalQuantity,
+                'original_unit_price' => $unitPrice,
+                'total_payment_after_discounts' => $totalPayment
+            ]
         ];
+    }
+
+    private function parsePrice($price) {
+        if (is_numeric($price)) {
+            return floatval($price);
+        }
+        
+        // Handle string prices with commas and spaces
+        $cleaned = str_replace([',', ' ', 'RON'], '', $price);
+        return floatval($cleaned);
+    }
+
+    private function isDiscountItem($productName) {
+        $discountKeywords = [
+            'discount', 'reducere', 'scont', 'rabat', 'remise', 'reduction',
+            'gratuit', 'gratis', 'free', '100%'
+        ];
+        $productNameLower = strtolower(trim($productName));
+        
+        // Check for discount keywords in product name
+        foreach ($discountKeywords as $keyword) {
+            if (strpos($productNameLower, $keyword) !== false) {
+                return true;
+            }
+        }
+        
+        // Check for discount indicators in parentheses
+        if (preg_match('/\(.*discount.*\)/i', $productNameLower)) {
+            return true;
+        }
+        
+        // DO NOT check for '-' in product name as it's part of product codes like "AP.-811"
+        
+        return false;
     }
 
     /**
@@ -895,7 +964,6 @@ class ImportProcessor {
         $totalValue = $calculatedTotal > 0 ? $calculatedTotal : floatval($import['total_value'] ?? 0);
         $priority = $this->determinePriority($totalValue, $import['company_name'] ?? $import['contact_person_name']);
         
-        // ✅ Calculate smart weight from products
         $calculatedWeight = 0;
         if (!empty($this->debugInfo['consolidated_products'])) {
             $calculatedWeight = $this->calculateOrderWeight($this->debugInfo['consolidated_products'], $import);
@@ -980,6 +1048,13 @@ class ImportProcessor {
             'parcels_count' => $orderData['parcels_count'],
             'awb_ready' => !empty($locationMapping),
             'priority' => $priority
+        ];
+
+        $this->debugInfo['total_calculation'] = [
+            'calculated_from_products' => $calculatedTotal,
+            'import_total_value' => floatval($import['total_value'] ?? 0),
+            'final_total_used' => $totalValue,
+            'products_count' => count($this->debugInfo['consolidated_products'] ?? [])
         ];
         
         return $orderId;

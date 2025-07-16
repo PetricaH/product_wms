@@ -246,7 +246,7 @@ class WarehouseHub {
                         break;
                     case 'receiving':
                         console.log('📦 Navigating to receiving interface...');
-                        window.location.href = 'mobile_receiving.php';
+                        window.location.href = 'warehouse_receiving.php';
                         break;
                     case 'inventory':
                         console.log('📋 Navigating to inventory search...');

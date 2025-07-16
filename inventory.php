@@ -91,15 +91,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             break;
             
         case 'move_stock':
-            $inventoryId = intval($_POST['inventory_id'] ?? 0);
-            $newLocationId = intval($_POST['new_location_id'] ?? 0);
-            $moveQuantity = intval($_POST['move_quantity'] ?? 0);
-            
-            if ($inventoryId <= 0 || $newLocationId <= 0 || $moveQuantity <= 0) {
+            $productId      = intval($_POST['product_id'] ?? 0);
+            $fromLocationId = intval($_POST['from_location_id'] ?? 0);
+            $newLocationId  = intval($_POST['new_location_id'] ?? 0);
+            $moveQuantity   = intval($_POST['move_quantity'] ?? 0);
+
+            if ($productId <= 0 || $fromLocationId <= 0 || $newLocationId <= 0 || $moveQuantity <= 0) {
                 $message = 'Toate câmpurile sunt obligatorii pentru mutarea stocului.';
                 $messageType = 'error';
             } else {
-                if ($inventoryModel->moveStock($inventoryId, $newLocationId, $moveQuantity)) {
+                if ($inventoryModel->moveStock($productId, $fromLocationId, $newLocationId, $moveQuantity)) {
                     $message = 'Stocul a fost mutat cu succes.';
                     $messageType = 'success';
                 } else {
@@ -641,6 +642,8 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                     <div class="modal-body">
                         <input type="hidden" name="action" value="move_stock">
                         <input type="hidden" id="move-inventory-id" name="inventory_id">
+                        <input type="hidden" id="move-product-id" name="product_id">
+                        <input type="hidden" id="move-from-location-id" name="from_location_id">
                         
                         <div class="alert alert-info">
                             <span class="material-symbols-outlined">info</span>

@@ -91,24 +91,23 @@ try {
             o.priority,
             o.type,
             o.notes,
-            COALESCE(o.total_value, 0) as total_value,
+            COALESCE(o.total_value, 0) AS total_value,
             COALESCE((
                 SELECT COUNT(*)
                 FROM order_items oi
                 WHERE oi.order_id = o.id
-            ), 0) as total_items,
+            ), 0) AS total_items,
             COALESCE((
                 SELECT SUM(oi.quantity - COALESCE(oi.picked_quantity, 0))
                 FROM order_items oi
                 WHERE oi.order_id = o.id
-            ), 0) as remaining_items
+            ), 0) AS remaining_items
         FROM orders o
-        WHERE o.type = 'inbound'
-        AND o.status IN ('Pending', 'Processing', 'assigned', 'pending', 'processing')
+        WHERE o.status IN ('Pending', 'Processing', 'assigned', 'pending', 'processing')
         ORDER BY
             CASE LOWER(o.priority)
                 WHEN 'urgent' THEN 1
-                WHEN 'high' THEN 2
+                WHEN 'high'   THEN 2
                 WHEN 'normal' THEN 3
                 ELSE 4
             END,

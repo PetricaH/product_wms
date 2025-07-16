@@ -1,3 +1,4 @@
+
 <?php
 /**
  * SmartBill Sync Dashboard
@@ -30,10 +31,17 @@ $dbFactory = $config['connection_factory'];
 $db = $dbFactory();
 
 // Include required files
+// require_once BASE_PATH . '/models/SmartBillService.php';
+// require_once BASE_PATH . '/smartbill_sync_service.php';
+
+// $smartBillService = new SmartBillService($db);
+// $syncService = new SmartBillSyncService($db);
+
 require_once BASE_PATH . '/models/SmartBillService.php';
+require_once BASE_PATH . '/models/MultiWarehouseSmartBillService.php';
 require_once BASE_PATH . '/smartbill_sync_service.php';
 
-$smartBillService = new SmartBillService($db);
+$smartBillService = new MultiWarehouseSmartBillService($db);
 $syncService = new SmartBillSyncService($db);
 
 // Handle AJAX requests

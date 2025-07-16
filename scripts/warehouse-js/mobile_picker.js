@@ -114,8 +114,15 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Refresh
         elements.refreshItemsBtn?.addEventListener('click', () => {
-            if (currentOrder) loadOrderItems(currentOrder.id);
+            // Check if there is an active order in the application's state
+            if (currentOrder && currentOrder.order_number) {
+                // Call the main loadOrder function, which handles fetching and redrawing everything.
+                loadOrder(currentOrder.order_number);
+            } else {
+                showMessage('Nu se poate reîncărca. Nicio comandă activă.', 'error');
+            }
         });
+        
         
         // Location Step
         elements.scanLocationBtn?.addEventListener('click', () => startScanner('location'));

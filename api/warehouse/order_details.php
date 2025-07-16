@@ -67,9 +67,12 @@ try {
             (oi.quantity - COALESCE(oi.picked_quantity, 0)) as remaining_to_pick,
             p.name AS product_name,
             p.sku,
-            p.barcode as product_barcode
+            p.barcode as product_barcode,
+            COALESCE(l.location_code, 'N/A') AS location_code
         FROM order_items oi
         JOIN products p ON oi.product_id = p.product_id
+        LEFT JOIN inventory i ON oi.product_id = i.product_id AND i.quantity > 0
+        LEFT JOIN locations l ON i.location_id = l.id
         WHERE oi.order_id = :order_id
         ORDER BY oi.id
     ";
@@ -132,6 +135,7 @@ try {
                     'remaining_to_pick' => (int)$item['remaining_to_pick'],
                     'unit_price' => number_format((float)$item['unit_price'], 2),
                     'line_total' => number_format((float)$item['line_total'], 2),
+                    'location_code' => $item['location_code'],
                     'is_complete' => ((int)$item['remaining_to_pick'] === 0)
                 ];
             }, $items)

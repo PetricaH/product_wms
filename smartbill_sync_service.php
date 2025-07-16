@@ -10,7 +10,12 @@ if (!defined('BASE_PATH')) {
 }
 
 require_once BASE_PATH . '/bootstrap.php';
+// require_once BASE_PATH . '/models/SmartBillService.php';
+
+require_once BASE_PATH . '/models/Order.php';
+
 require_once BASE_PATH . '/models/SmartBillService.php';
+require_once BASE_PATH . '/models/MultiWarehouseSmartBillService.php';
 require_once BASE_PATH . '/models/Order.php';
 
 class SmartBillSyncService {
@@ -19,13 +24,20 @@ class SmartBillSyncService {
     private $orderModel;
     private $debugMode;
     
+    // public function __construct($db) {
+    //     $this->conn = $db;
+    //     $this->smartBillService = new SmartBillService($db);
+    //     $this->orderModel = new Order($db);
+    //     $this->debugMode = (bool)$this->smartBillService->getConfig('debug_mode', false);
+    // }
+    
     public function __construct($db) {
         $this->conn = $db;
-        $this->smartBillService = new SmartBillService($db);
+        $this->smartBillService = new MultiWarehouseSmartBillService($db);
         $this->orderModel = new Order($db);
         $this->debugMode = (bool)$this->smartBillService->getConfig('debug_mode', false);
     }
-    
+
     /**
      * Run all scheduled sync jobs
      * @return array Sync results

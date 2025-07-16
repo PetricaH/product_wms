@@ -18,9 +18,14 @@ if (!isset($config['connection_factory']) || !is_callable($config['connection_fa
 $dbFactory = $config['connection_factory'];
 $db = $dbFactory();
 
-require_once BASE_PATH . '/models/SmartBillService.php';
+// require_once BASE_PATH . '/models/SmartBillService.php';
 
-$service = new SmartBillService($db);
+require_once BASE_PATH . '/models/MultiWarehouseSmartBillService.php';
+
+// $service = new SmartBillService($db);
+// $result = $service->syncProductsFromSmartBill();
+
+$service = new MultiWarehouseSmartBillService($db);
 $result = $service->syncProductsFromSmartBill();
 
 echo json_encode($result, JSON_PRETTY_PRINT) . PHP_EOL;

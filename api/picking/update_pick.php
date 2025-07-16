@@ -10,6 +10,7 @@ if (!defined('BASE_PATH')) {
     define('BASE_PATH', dirname(__DIR__, 2));
 }
 
+require_once BASE_PATH . '/bootstrap.php';
 if (!file_exists(BASE_PATH . '/config/config.php')) {
     http_response_code(500);
     echo json_encode(['status' => 'error', 'message' => 'Config file missing.']);

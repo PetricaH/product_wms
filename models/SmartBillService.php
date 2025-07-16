@@ -8,7 +8,7 @@
  */
 
 class SmartBillService {
-    private $conn;
+    protected $conn;
     private $config;
     private $apiUrl;
     private $username;

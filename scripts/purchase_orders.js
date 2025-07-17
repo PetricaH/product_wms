@@ -1023,7 +1023,7 @@ class PurchaseOrdersReceivingManager {
         const tbody = document.getElementById('orders-tbody');
         if (!tbody) return;
         
-        if (orders.length === 0) {
+        if (!orders || orders.length === 0) {
             tbody.innerHTML = `
                 <tr>
                     <td colspan="13" class="text-center">
@@ -1096,12 +1096,12 @@ class PurchaseOrdersReceivingManager {
                     <h4><span class="material-symbols-outlined">list_alt</span>Detalii Produse</h4>
                     ${this.renderItemsDetails(data.items)}
                 </div>
-                ${data.discrepancies.length > 0 ? `
+                ${data.discrepancies && data.discrepancies.length > 0 ? `
                     <div class="receiving-section">
                         <h4><span class="material-symbols-outlined">warning</span>Discrepanțe</h4>
                         ${this.renderDiscrepancies(data.discrepancies)}
                     </div>
-                ` : ''}
+                ` : ''}$
                 <div class="summary-stats">
                     ${this.renderSummaryStats(data.summary_stats)}
                 </div>
@@ -1110,7 +1110,7 @@ class PurchaseOrdersReceivingManager {
     }
 
     renderReceivingSessions(sessions) {
-        if (sessions.length === 0) {
+        if (!sessions || sessions.length === 0) {
             return '<p>Nu există sesiuni de primire înregistrate.</p>';
         }
         
@@ -1170,7 +1170,7 @@ class PurchaseOrdersReceivingManager {
     }
 
     renderDiscrepancies(discrepancies) {
-        if (discrepancies.length === 0) {
+        if (!discrepancies || discrepancies.length === 0) {
             return '<p>Nu există discrepanțe înregistrate.</p>';
         }
         

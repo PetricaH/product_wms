@@ -642,7 +642,6 @@ class PurchaseOrdersReceivingManager {
         }
     }
 
-    // NEW: Handle invoice upload
     async handleInvoiceUpload(e) {
         e.preventDefault();
         

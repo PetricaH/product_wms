@@ -1,7 +1,7 @@
 <?php
 /**
  * API: Upload Invoice
- * File: api/upload_invoice.php
+ * File: api/receiving/upload_invoice.php
  * 
  * Handles invoice file upload and marks purchase order as invoiced
  */
@@ -108,15 +108,16 @@ try {
     // Log the activity
     $stmt = $db->prepare("
         INSERT INTO activity_logs (
-            user_id, action, entity_type, entity_id, 
+            user_id, action, entity_type, entity_id, resource_type,
             description, ip_address, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, NOW())
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
     ");
     $stmt->execute([
         $_SESSION['user_id'],
         'upload_invoice',
         'purchase_order',
         $orderId,
+        'invoice_file', 
         "Invoice uploaded for purchase order {$order['order_number']}",
         $_SERVER['REMOTE_ADDR'] ?? 'unknown'
     ]);

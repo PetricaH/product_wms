@@ -882,7 +882,6 @@ require_once __DIR__ . '/includes/header.php';
                                 <option value="confirmed">Confirmat</option>
                                 <option value="partial_delivery">Livrare Parțială</option>
                                 <option value="delivered">Livrat</option>
-                                <!-- REMOVED: <option value="invoiced">Facturat</option> -->
                                 <option value="completed">Finalizat</option>
                                 <option value="cancelled">Anulat</option>
                             </select>

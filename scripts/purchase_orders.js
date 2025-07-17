@@ -634,6 +634,7 @@ class PurchaseOrdersReceivingManager {
         this.initializeInvoiceUpload();
     }
 
+    // NEW: Initialize invoice upload functionality
     initializeInvoiceUpload() {
         const form = document.getElementById('invoiceUploadForm');
         if (form) {
@@ -641,6 +642,7 @@ class PurchaseOrdersReceivingManager {
         }
     }
 
+    // NEW: Handle invoice upload
     async handleInvoiceUpload(e) {
         e.preventDefault();
         
@@ -652,7 +654,7 @@ class PurchaseOrdersReceivingManager {
         submitButton.innerHTML = '<span class="material-symbols-outlined spinning">sync</span> Încarcă...';
         
         try {
-            const response = await fetch('api/receiving/upload_invoice.php', {
+            const response = await fetch('api/upload_invoice.php', {
                 method: 'POST',
                 body: formData
             });
@@ -679,11 +681,13 @@ class PurchaseOrdersReceivingManager {
         }
     }
 
+    // NEW: Updated renderOrderRow with invoice functionality
     renderOrderRow(order) {
         const receivingStatus = order.receiving_summary.status;
         const progressPercent = order.receiving_summary.receiving_progress_percent;
         const hasDiscrepancies = order.discrepancies_summary.has_pending_discrepancies;
-
+        
+        // NEW: Determine invoice display
         let invoiceDisplay = '-';
         if (order.invoiced) {
             invoiceDisplay = `
@@ -1023,7 +1027,7 @@ class PurchaseOrdersReceivingManager {
         const tbody = document.getElementById('orders-tbody');
         if (!tbody) return;
         
-        if (!orders || orders.length === 0) {
+        if (orders.length === 0) {
             tbody.innerHTML = `
                 <tr>
                     <td colspan="13" class="text-center">
@@ -1090,18 +1094,18 @@ class PurchaseOrdersReceivingManager {
             <div class="receiving-details-content">
                 <div class="receiving-section">
                     <h4><span class="material-symbols-outlined">inventory</span>Sesiuni de Primire</h4>
-                    ${this.renderReceivingSessions(data.sessions)}
+                    ${this.renderReceivingSessions(data.receiving_sessions)}
                 </div>
                 <div class="receiving-section">
                     <h4><span class="material-symbols-outlined">list_alt</span>Detalii Produse</h4>
-                    ${this.renderItemsDetails(data.items)}
+                    ${this.renderItemsDetails(data.items_detail)}
                 </div>
-                ${data.discrepancies && data.discrepancies.length > 0 ? `
+                ${data.discrepancies.length > 0 ? `
                     <div class="receiving-section">
                         <h4><span class="material-symbols-outlined">warning</span>Discrepanțe</h4>
                         ${this.renderDiscrepancies(data.discrepancies)}
                     </div>
-                ` : ''}$
+                ` : ''}
                 <div class="summary-stats">
                     ${this.renderSummaryStats(data.summary_stats)}
                 </div>
@@ -1110,7 +1114,7 @@ class PurchaseOrdersReceivingManager {
     }
 
     renderReceivingSessions(sessions) {
-        if (!sessions || sessions.length === 0) {
+        if (sessions.length === 0) {
             return '<p>Nu există sesiuni de primire înregistrate.</p>';
         }
         
@@ -1170,7 +1174,7 @@ class PurchaseOrdersReceivingManager {
     }
 
     renderDiscrepancies(discrepancies) {
-        if (!discrepancies || discrepancies.length === 0) {
+        if (discrepancies.length === 0) {
             return '<p>Nu există discrepanțe înregistrate.</p>';
         }
         

@@ -27,6 +27,10 @@ let currentFilters = {
 function initializeReceivingFunctionality() {
     purchaseOrdersManager = new PurchaseOrdersReceivingManager();
     console.log('🚛 Purchase Orders Receiving functionality initialized');
+    // Load the purchase orders table immediately
+    if (purchaseOrdersManager && typeof purchaseOrdersManager.loadPurchaseOrdersWithReceiving === 'function') {
+        purchaseOrdersManager.loadPurchaseOrdersWithReceiving();
+    }
 }
 
 // Initialize date fields with today's date

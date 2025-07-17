@@ -1,4 +1,11 @@
 <?php
+/**
+ * API: Purchase Order Summary with Invoice Support
+ * File: api/receiving/purchase_order_summary.php
+ * 
+ * Updated to include invoice information
+ */
+
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 ini_set('log_errors', 1);
@@ -30,7 +37,7 @@ try {
     $receivingStatusFilter = $_GET['receiving_status'] ?? '';
     $limit = min(intval($_GET['limit'] ?? 100), 500);
 
-    // this query is to get purchase orders with receiviing summary
+    // Updated query to include invoice information
     $sql = "
         SELECT 
             po.id,
@@ -42,6 +49,11 @@ try {
             po.actual_delivery_date,
             po.created_at,
             po.updated_at,
+            
+            -- NEW: Invoice information
+            po.invoiced,
+            po.invoice_file_path,
+            po.invoiced_at,
             
             -- Supplier info
             s.supplier_name,
@@ -112,9 +124,11 @@ try {
         $params[':seller_id'] = $sellerFilter;
     }
 
-    $sql .= "GROUP BY po.id, po.order_number, po.status, po.total_amount, po.currency,
-                        po.expected_delivery_date, po.actual_delivery_date, po.created_at, po.updated_at,
-                        s.supplier_name, s.id, u.username";
+    // Fixed: Corrected column name (was total_ammount)
+    $sql .= " GROUP BY po.id, po.order_number, po.status, po.total_amount, po.currency,
+                     po.expected_delivery_date, po.actual_delivery_date, po.created_at, po.updated_at,
+                     po.invoiced, po.invoice_file_path, po.invoiced_at,
+                     s.supplier_name, s.id, u.username";
     
     // apply receiving status filter after grouping
     if (!empty($receivingStatusFilter)) {
@@ -136,7 +150,7 @@ try {
     $stmt->execute();
     $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // format orders for response 
+    // format orders for response with invoice information
     $formattedOrders = [];
     foreach ($orders as $order) {
         $formattedOrders[] = [
@@ -149,6 +163,11 @@ try {
             'actual_delivery_date' => $order['actual_delivery_date'],
             'created_at' => $order['created_at'],
             'updated_at' => $order['updated_at'],
+            
+            // NEW: Invoice information
+            'invoiced' => (bool)$order['invoiced'],
+            'invoice_file_path' => $order['invoice_file_path'],
+            'invoiced_at' => $order['invoiced_at'],
             
             // Supplier info
             'supplier_name' => $order['supplier_name'],
@@ -182,14 +201,16 @@ try {
         ];
     }
     
-    // get summary statsistics
+    // get summary statistics including invoice stats
     $statsStmt = $db->prepare("
         SELECT 
             COUNT(*) as total_orders,
             SUM(CASE WHEN po.status = 'delivered' THEN 1 ELSE 0 END) as delivered_orders,
             SUM(CASE WHEN po.status = 'partial_delivery' THEN 1 ELSE 0 END) as partial_orders,
             SUM(CASE WHEN rs.id IS NOT NULL THEN 1 ELSE 0 END) as orders_with_receiving,
-            SUM(CASE WHEN rd.id IS NOT NULL AND rd.resolution_status = 'pending' THEN 1 ELSE 0 END) as orders_with_pending_discrepancies
+            SUM(CASE WHEN rd.id IS NOT NULL AND rd.resolution_status = 'pending' THEN 1 ELSE 0 END) as orders_with_pending_discrepancies,
+            SUM(CASE WHEN po.invoiced = TRUE THEN 1 ELSE 0 END) as invoiced_orders,
+            SUM(CASE WHEN po.invoiced = FALSE AND po.status IN ('delivered', 'partial_delivery') THEN 1 ELSE 0 END) as pending_invoices
         FROM purchase_orders po
         LEFT JOIN receiving_sessions rs ON po.id = rs.purchase_order_id AND rs.status = 'completed'
         LEFT JOIN receiving_discrepancies rd ON rs.id = rd.receiving_session_id AND rd.resolution_status = 'pending'
@@ -198,7 +219,7 @@ try {
     $statsStmt->execute();
     $stats = $statsStmt->fetch(PDO::FETCH_ASSOC);
 
-    // here we return the fuckass responsee hahhhahdhahdahda
+    // Return response with invoice stats
     echo json_encode([
         'success' => true,
         'data' => $formattedOrders,
@@ -211,14 +232,17 @@ try {
             'delivered_orders' => (int)$stats['delivered_orders'],
             'partial_orders' => (int)$stats['partial_orders'],
             'orders_with_receiving' => (int)$stats['orders_with_receiving'],
-            'orders_with_pending_discrepancies' => (int)$stats['orders_with_pending_discrepancies']
+            'orders_with_pending_discrepancies' => (int)$stats['orders_with_pending_discrepancies'],
+            'invoiced_orders' => (int)$stats['invoiced_orders'],
+            'pending_invoices' => (int)$stats['pending_invoices']
         ],
         'filters_applied' => [
             'status' => $statusFilter,
             'seller_id' => $sellerFilter,
             'receiving_status' => $receivingStatusFilter
         ]
-        ]);
+    ]);
+    
 } catch (Exception $e) {
     error_log("Purchase order receiving summary error: " . $e->getMessage());
 

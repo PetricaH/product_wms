@@ -880,8 +880,9 @@ require_once __DIR__ . '/includes/header.php';
                                 <option value="draft">Draft</option>
                                 <option value="sent">Trimis</option>
                                 <option value="confirmed">Confirmat</option>
+                                <option value="partial_delivery">Livrare Parțială</option>
                                 <option value="delivered">Livrat</option>
-                                <option value="invoiced">Facturat</option>
+                                <!-- REMOVED: <option value="invoiced">Facturat</option> -->
                                 <option value="completed">Finalizat</option>
                                 <option value="cancelled">Anulat</option>
                             </select>
@@ -890,6 +891,47 @@ require_once __DIR__ . '/includes/header.php';
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" onclick="closeModal('statusModal')">Anulează</button>
                         <button type="submit" class="btn btn-primary">Actualizează</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Invoice Upload Modal -->
+    <div class="modal" id="invoiceUploadModal">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 class="modal-title">Încarcă Factura</h3>
+                    <button class="modal-close" onclick="closeModal('invoiceUploadModal')">
+                        <span class="material-symbols-outlined">close</span>
+                    </button>
+                </div>
+                <form id="invoiceUploadForm" method="POST" enctype="multipart/form-data">
+                    <div class="modal-body">
+                        <input type="hidden" name="action" value="upload_invoice">
+                        <input type="hidden" name="order_id" id="invoiceOrderId">
+                        
+                        <div class="form-group">
+                            <label for="invoice_file" class="form-label">Fișier Factură *</label>
+                            <input type="file" name="invoice_file" id="invoice_file" class="form-control" 
+                                accept=".pdf,.jpg,.jpeg,.png" required>
+                            <small class="form-text text-muted">
+                                Formater acceptate: PDF, JPG, PNG (max 5MB)
+                            </small>
+                        </div>
+                        
+                        <div class="alert alert-info">
+                            <span class="material-symbols-outlined">info</span>
+                            <strong>Notă:</strong> Odată încărcată factura, comanda va fi marcată automat ca "Facturată".
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" onclick="closeModal('invoiceUploadModal')">Anulează</button>
+                        <button type="submit" class="btn btn-primary">
+                            <span class="material-symbols-outlined">upload</span>
+                            Încarcă Factura
+                        </button>
                     </div>
                 </form>
             </div>

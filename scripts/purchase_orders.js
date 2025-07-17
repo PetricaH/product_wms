@@ -548,20 +548,10 @@ function openDeliveryModal(orderId) {
 }
 
 // Invoice modal
-function openInvoiceModal(orderId) {
+function openInvoiceUploadModal(orderId) {
     document.getElementById('invoiceOrderId').value = orderId;
-    
-    // Set invoice date to today
-    const today = new Date().toISOString().split('T')[0];
-    const invoiceDate = document.getElementById('invoice_date');
-    if (invoiceDate) {
-        invoiceDate.value = today;
-    }
-    
-    // Load order items for invoice recording
-    loadOrderItemsForInvoice(orderId);
-    
-    openModal('invoiceModal');
+    document.getElementById('invoiceUploadForm').reset();
+    openModal('invoiceUploadModal');
 }
 
 // Load order items for delivery recording
@@ -637,107 +627,81 @@ function updateInvoiceTotal() {
 // purhcase orders receiving manager  class
 class PurchaseOrdersReceivingManager {
     constructor() {
-        this.bindEvents();
-        this.loadPurchaseOrdersWithReceiving();
+        this.initializeInvoiceUpload();
     }
 
-    bindEvents() {
-        // filter change handlers
-        const statusFilter = document.getElementById('status');
-        const sellerFilter = document.getElementById('seller_id');
-        const receivingStatusFilter = document.getElementById('receiving-status-filter');
-
-        if (statusFilter) {
-            statusFilter.addEventListener('change', () =>  this.handleFilterChange());
+    initializeInvoiceUpload() {
+        const form = document.getElementById('invoiceUploadForm');
+        if (form) {
+            form.addEventListener('submit', this.handleInvoiceUpload.bind(this));
         }
-
-        if (sellerFilter) {
-            sellerFilter.addEventListener('change', () => this.handleFilterChange());
-        }
-
-        if (receivingStatusFilter) {
-            receivingStatusFilter.addEventListener('change', () => this.handleFilterChange());
-        }
-
-        // modal close events
-        document.addEventListener('click', (e) => {
-            if (e.target.id === 'receiving-details-modal') {
-                this.closeReceivingModal();
-            }
-        });
-
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') {
-                this.closeReceivingModal();
-            }
-        });
     }
 
-    handleFilterChange() {
-        // update current filters
-        currentFilters.status = document.getElementById('status')?.value || '';
-        currentFilters.seller_id = document.getElementById('selller_id')?.value || '';
-        currentFilters.receiving_status = document.getElementById('receiving-status-filter')?.value || '';
-
-        // reload data with new filters
-        this.loadPurchaseOrdersWithReceiving();
-    }
-
-    async loadPurchaseOrdersWithReceiving() {
+    async handleInvoiceUpload(e) {
+        e.preventDefault();
+        
+        const formData = new FormData(e.target);
+        const submitButton = e.target.querySelector('button[type="submit"]');
+        
+        // Show loading state
+        submitButton.disabled = true;
+        submitButton.innerHTML = '<span class="material-symbols-outlined spinning">sync</span> Încarcă...';
+        
         try {
-            this.showLoading(true);
+            const response = await fetch('api/receiving/upload_invoice.php', {
+                method: 'POST',
+                body: formData
+            });
             
-            // Build query parameters
-            const params = new URLSearchParams();
-            if (currentFilters.status) params.append('status', currentFilters.status);
-            if (currentFilters.seller_id) params.append('seller_id', currentFilters.seller_id);
-            if (currentFilters.receiving_status) params.append('receiving_status', currentFilters.receiving_status);
-            params.append('limit', '100');
+            const result = await response.json();
             
-            const response = await fetch(`api/receiving/purchase_order_summary.php?${params.toString()}`);
-            const data = await response.json();
-            
-            if (data.success) {
-                ordersData = data.data;
-                this.renderOrdersTable(data.data);
-                this.updateSummaryStats(data.summary_stats);
+            if (result.success) {
+                // Close modal and refresh table
+                closeModal('invoiceUploadModal');
+                this.loadPurchaseOrdersWithReceiving();
+                
+                // Show success message
+                this.showNotification('Factura a fost încărcată cu succes!', 'success');
             } else {
-                throw new Error(data.message || 'Failed to load purchase orders');
+                this.showNotification(result.message || 'Eroare la încărcarea facturii', 'error');
             }
-            
         } catch (error) {
-            console.error('Error loading purchase orders:', error);
-            this.showError('Eroare la încărcarea comenzilor: ' + error.message);
+            console.error('Error uploading invoice:', error);
+            this.showNotification('Eroare la încărcarea facturii', 'error');
         } finally {
-            this.showLoading(false);
+            // Restore button state
+            submitButton.disabled = false;
+            submitButton.innerHTML = '<span class="material-symbols-outlined">upload</span> Încarcă Factura';
         }
     }
 
-    renderOrdersTable(orders) {
-        const tbody = document.getElementById('orders-tbody');
-        if (!tbody) return;
-        
-        if (orders.length === 0) {
-            tbody.innerHTML = `
-                <tr>
-                    <td colspan="12" class="text-center">
-                        <div style="padding: 40px; color: var(--text-secondary);">
-                            <span class="material-symbols-outlined" style="font-size: 48px; opacity: 0.5;">inventory_2</span>
-                            <p>Nu există comenzi de achiziție care să corespundă filtrelor selectate</p>
-                        </div>
-                    </td>
-                </tr>
-            `;
-            return;
-        }
-        
-        tbody.innerHTML = orders.map(order => this.renderOrderRow(order)).join('');
-    }
-    
     renderOrderRow(order) {
         const receivingStatus = order.receiving_summary.status;
         const progressPercent = order.receiving_summary.receiving_progress_percent;
         const hasDiscrepancies = order.discrepancies_summary.has_pending_discrepancies;
+
+        let invoiceDisplay = '-';
+        if (order.invoiced) {
+            invoiceDisplay = `
+                <div class="invoice-container">
+                    <div class="invoice-date-badge">
+                        Primit Factura La: ${this.formatDate(order.invoiced_at)}
+                    </div>
+                    <a href="${order.invoice_file_path}" target="_blank" class="invoice-file-link">
+                        <span class="material-symbols-outlined">description</span>
+                        Factura
+                    </a>
+                </div>
+            `;
+        } else if (order.po_status === 'delivered' || order.po_status === 'partial_delivery') {
+            invoiceDisplay = `
+                <button class="btn btn-sm btn-success" onclick="openInvoiceUploadModal(${order.id})" 
+                        title="Încarcă Factura">
+                    <span class="material-symbols-outlined">upload</span>
+                    Încarcă Factura
+                </button>
+            `;
+        }
         
         return `
             <tr data-order-id="${order.id}">
@@ -748,6 +712,7 @@ class PurchaseOrdersReceivingManager {
                 </td>
                 <td>
                     <strong>${this.escapeHtml(order.order_number)}</strong>
+                    ${order.invoiced ? '<span class="invoiced-badge">Facturat</span>' : ''}
                 </td>
                 <td>${this.escapeHtml(order.supplier_name)}</td>
                 <td>${order.total_amount} ${order.currency}</td>
@@ -781,6 +746,7 @@ class PurchaseOrdersReceivingManager {
                     ${order.pdf_path ? `<a href="storage/purchase_order_pdfs/${order.pdf_path}" target="_blank">PDF</a>` : '-'}
                 </td>
                 <td>${order.actual_delivery_date || '-'}</td>
+                <td>${invoiceDisplay}</td>
                 <td>
                     <div class="action-buttons">
                         <button class="btn btn-info btn-sm" onclick="purchaseOrdersManager.showReceivingDetails(${order.id})" 
@@ -791,7 +757,7 @@ class PurchaseOrdersReceivingManager {
                 </td>
             </tr>
             <tr class="expandable-row" data-order-id="${order.id}" style="display: none;">
-                <td colspan="12">
+                <td colspan="13">
                     <div class="expandable-content" id="expandable-${order.id}">
                         <div class="loading-spinner">
                             <span class="material-symbols-outlined spinning">refresh</span>
@@ -802,7 +768,282 @@ class PurchaseOrdersReceivingManager {
             </tr>
         `;
     }
-    
+
+    // NEW: Updated summary stats to include invoice information
+    updateSummaryStats(stats) {
+        const elements = {
+            'total-orders': stats.total_orders_last_30_days,
+            'delivered-orders': stats.delivered_orders,
+            'partial-orders': stats.partial_orders,
+            'orders-with-receiving': stats.orders_with_receiving,
+            'orders-with-discrepancies': stats.orders_with_pending_discrepancies,
+            'invoiced-orders': stats.invoiced_orders,
+            'pending-invoices': stats.pending_invoices
+        };
+        
+        Object.entries(elements).forEach(([id, value]) => {
+            const element = document.getElementById(id);
+            if (element) {
+                element.textContent = value || 0;
+            }
+        });
+    }
+
+    // NEW: Notification system
+    showNotification(message, type) {
+        // Remove existing notifications
+        const existingNotifications = document.querySelectorAll('.notification');
+        existingNotifications.forEach(notification => notification.remove());
+        
+        // Create new notification
+        const notification = document.createElement('div');
+        notification.className = `notification ${type}`;
+        notification.textContent = message;
+        notification.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 15px 20px;
+            border-radius: 5px;
+            color: white;
+            font-weight: 500;
+            z-index: 10000;
+            ${type === 'success' ? 'background-color: #28a745;' : 'background-color: #dc3545;'}
+        `;
+        
+        document.body.appendChild(notification);
+        
+        // Auto-remove after 3 seconds
+        setTimeout(() => {
+            notification.remove();
+        }, 3000);
+    }
+
+    // Updated methods with invoice support
+    async showReceivingDetails(orderId) {
+        // Create modal if it doesn't exist
+        if (!document.getElementById('receiving-details-modal')) {
+            this.createReceivingModal();
+        }
+        
+        const modal = document.getElementById('receiving-details-modal');
+        const modalBody = document.getElementById('modal-body');
+        
+        // Show loading state
+        modalBody.innerHTML = `
+            <div class="loading-spinner" style="text-align: center; padding: 40px;">
+                <span class="material-symbols-outlined spinning">refresh</span>
+                <p>Se încarcă detaliile...</p>
+            </div>
+        `;
+        
+        // Show modal
+        modal.style.display = 'flex';
+        
+        try {
+            const response = await fetch(`api/receiving/purchase_order_details.php?order_id=${orderId}`);
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                modalBody.innerHTML = this.renderReceivingDetails(data);
+            } else {
+                modalBody.innerHTML = `
+                    <div class="error-message" style="padding: 20px; background: #fee; border: 1px solid #fcc; border-radius: 4px; color: #c44;">
+                        <h4>Eroare la încărcarea detaliilor</h4>
+                        <p><strong>Mesaj:</strong> ${data.message || 'Unable to fetch purchase order receiving details'}</p>
+                    </div>
+                `;
+            }
+        } catch (error) {
+            console.error('Error fetching details:', error);
+            modalBody.innerHTML = `
+                <div class="error-message" style="padding: 20px; background: #fee; border: 1px solid #fcc; border-radius: 4px; color: #c44;">
+                    <h4>Eroare de conectare</h4>
+                    <p><strong>Mesaj:</strong> ${error.message}</p>
+                </div>
+            `;
+        }
+    }
+
+    // Existing methods remain the same...
+    async loadPurchaseOrdersWithReceiving() {
+        try {
+            this.showLoading(true);
+            
+            const params = new URLSearchParams();
+            if (currentFilters.status) params.append('status', currentFilters.status);
+            if (currentFilters.seller_id) params.append('seller_id', currentFilters.seller_id);
+            if (currentFilters.receiving_status) params.append('receiving_status', currentFilters.receiving_status);
+            params.append('limit', '100');
+            
+            const response = await fetch(`api/receiving/purchase_order_summary.php?${params.toString()}`);
+            const data = await response.json();
+            
+            if (data.success) {
+                ordersData = data.data;
+                this.renderOrdersTable(data.data);
+                this.updateSummaryStats(data.summary_stats);
+            } else {
+                throw new Error(data.message || 'Failed to load purchase orders');
+            }
+            
+        } catch (error) {
+            console.error('Error loading purchase orders:', error);
+            this.showError('Eroare la încărcarea comenzilor: ' + error.message);
+        } finally {
+            this.showLoading(false);
+        }
+    }
+
+    // Helper methods
+    formatDate(dateString) {
+        if (!dateString) return '-';
+        return new Date(dateString).toLocaleDateString('ro-RO');
+    }
+
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    translateStatus(status) {
+        const statusMap = {
+            'draft': 'Draft',
+            'sent': 'Trimis',
+            'confirmed': 'Confirmat',
+            'partial_delivery': 'Livrare Parțială',
+            'delivered': 'Livrat',
+            'completed': 'Finalizat',
+            'cancelled': 'Anulat'
+        };
+        return statusMap[status] || status;
+    }
+
+    translateReceivingStatus(status) {
+        const statusMap = {
+            'not_received': 'Nu este primit',
+            'partial': 'Parțial',
+            'complete': 'Complet',
+            'with_discrepancies': 'Cu discrepanțe'
+        };
+        return statusMap[status] || status;
+    }
+
+    getProgressClass(percent) {
+        if (percent === 0) return 'none';
+        if (percent === 100) return 'complete';
+        return 'partial';
+    }
+
+    createReceivingModal() {
+        const existingModal = document.getElementById('receiving-details-modal');
+        if (existingModal) {
+            existingModal.remove();
+        }
+        
+        const modal = document.createElement('div');
+        modal.id = 'receiving-details-modal';
+        modal.className = 'modal';
+        modal.style.display = 'none';
+        modal.innerHTML = `
+            <div class="modal-content modal-lg">
+                <div class="modal-header">
+                    <h3 id="modal-title">Detalii Primire Comandă</h3>
+                    <button type="button" class="close-btn" onclick="closeReceivingModal()" style="background: none; border: none; font-size: 24px; cursor: pointer;">
+                        <span class="material-symbols-outlined">close</span>
+                    </button>
+                </div>
+                <div class="modal-body" id="modal-body">
+                    <!-- Content loaded via JavaScript -->
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+        
+        // Add click outside to close
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                closeReceivingModal();
+            }
+        });
+    }
+
+    closeReceivingModal() {
+        const modal = document.getElementById('receiving-details-modal');
+        if (modal) {
+            modal.style.display = 'none';
+        }
+    }
+
+    showLoading(show) {
+        const tbody = document.getElementById('orders-tbody');
+        if (!tbody) return;
+        
+        if (show) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="13" class="text-center">
+                        <div class="loading-spinner">
+                            <span class="material-symbols-outlined spinning">refresh</span>
+                            Se încarcă comenzile...
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }
+    }
+
+    showError(message) {
+        const tbody = document.getElementById('orders-tbody');
+        if (!tbody) return;
+        
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="13" class="text-center">
+                    <div class="error-message" style="padding: 20px; color: #dc3545;">
+                        <span class="material-symbols-outlined">error</span>
+                        <p>${message}</p>
+                    </div>
+                </td>
+            </tr>
+        `;
+    }
+
+    renderOrdersTable(orders) {
+        const tbody = document.getElementById('orders-tbody');
+        if (!tbody) return;
+        
+        if (orders.length === 0) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="13" class="text-center">
+                        <div style="padding: 40px; color: var(--text-secondary);">
+                            <span class="material-symbols-outlined" style="font-size: 48px; opacity: 0.5;">inventory_2</span>
+                            <p>Nu există comenzi de achiziție care să corespundă filtrelor selectate</p>
+                        </div>
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+        
+        tbody.innerHTML = orders.map(order => this.renderOrderRow(order)).join('');
+    }
+
+    handleFilterChange() {
+        currentFilters.status = document.getElementById('status')?.value || '';
+        currentFilters.seller_id = document.getElementById('seller_id')?.value || '';
+        currentFilters.receiving_status = document.getElementById('receiving-status-filter')?.value || '';
+        
+        this.loadPurchaseOrdersWithReceiving();
+    }
+
     async toggleRowExpansion(orderId) {
         const row = document.querySelector(`tr.expandable-row[data-order-id="${orderId}"]`);
         const expandBtn = document.querySelector(`tr[data-order-id="${orderId}"] .expand-btn`);
@@ -811,23 +1052,20 @@ class PurchaseOrdersReceivingManager {
         if (!row || !expandBtn || !content) return;
         
         if (expandedRows.has(orderId)) {
-            // Collapse
             row.style.display = 'none';
             content.classList.remove('expanded');
             expandBtn.classList.remove('expanded');
             expandedRows.delete(orderId);
         } else {
-            // Expand
             row.style.display = 'table-row';
             expandBtn.classList.add('expanded');
             expandedRows.add(orderId);
             
-            // Load detailed receiving data
             await this.loadReceivingDetails(orderId, content);
             content.classList.add('expanded');
         }
     }
-    
+
     async loadReceivingDetails(orderId, contentElement) {
         try {
             const response = await fetch(`api/receiving/purchase_order_details.php?order_id=${orderId}`);
@@ -839,34 +1077,34 @@ class PurchaseOrdersReceivingManager {
                 contentElement.innerHTML = `<p class="error">Eroare: ${data.message}</p>`;
             }
         } catch (error) {
-            contentElement.innerHTML = `<p class="error">Eroare la încărcarea detaliilor: ${error.message}</p>`;
+            contentElement.innerHTML = `<p class="error">Eroare: ${error.message}</p>`;
         }
     }
-    
+
     renderReceivingDetails(data) {
         return `
-            <div class="receiving-details-grid">
+            <div class="receiving-details-content">
                 <div class="receiving-section">
                     <h4><span class="material-symbols-outlined">inventory</span>Sesiuni de Primire</h4>
-                    ${this.renderReceivingSessions(data.receiving_sessions)}
+                    ${this.renderReceivingSessions(data.sessions)}
                 </div>
                 <div class="receiving-section">
-                    <h4><span class="material-symbols-outlined">checklist</span>Detalii Produse</h4>
-                    ${this.renderItemsDetails(data.items_detail)}
+                    <h4><span class="material-symbols-outlined">list_alt</span>Detalii Produse</h4>
+                    ${this.renderItemsDetails(data.items)}
                 </div>
-            </div>
-            ${data.discrepancies.length > 0 ? `
-                <div class="receiving-section">
-                    <h4><span class="material-symbols-outlined">warning</span>Discrepanțe</h4>
-                    ${this.renderDiscrepancies(data.discrepancies)}
+                ${data.discrepancies.length > 0 ? `
+                    <div class="receiving-section">
+                        <h4><span class="material-symbols-outlined">warning</span>Discrepanțe</h4>
+                        ${this.renderDiscrepancies(data.discrepancies)}
+                    </div>
+                ` : ''}
+                <div class="summary-stats">
+                    ${this.renderSummaryStats(data.summary_stats)}
                 </div>
-            ` : ''}
-            <div class="summary-stats">
-                ${this.renderSummaryStats(data.summary_stats)}
             </div>
         `;
     }
-    
+
     renderReceivingSessions(sessions) {
         if (sessions.length === 0) {
             return '<p>Nu există sesiuni de primire înregistrate.</p>';
@@ -890,7 +1128,7 @@ class PurchaseOrdersReceivingManager {
             </ul>
         `;
     }
-    
+
     renderItemsDetails(items) {
         if (items.length === 0) {
             return '<p>Nu există detalii despre produse.</p>';
@@ -916,8 +1154,8 @@ class PurchaseOrdersReceivingManager {
                             <td>${item.ordered_quantity}</td>
                             <td>${item.received_quantity}</td>
                             <td>
-                                <span class="item-status-${item.receiving_status}">
-                                    ${this.translateItemStatus(item.receiving_status)}
+                                <span class="receiving-status ${item.receiving_status}">
+                                    ${this.translateReceivingStatus(item.receiving_status)}
                                 </span>
                             </td>
                         </tr>
@@ -926,195 +1164,73 @@ class PurchaseOrdersReceivingManager {
             </table>
         `;
     }
-    
+
     renderDiscrepancies(discrepancies) {
+        if (discrepancies.length === 0) {
+            return '<p>Nu există discrepanțe înregistrate.</p>';
+        }
+        
         return `
-            <ul class="discrepancies-list">
-                ${discrepancies.map(disc => `
-                    <li class="discrepancy-item">
-                        <div class="discrepancy-header">
-                            <span class="discrepancy-type">${disc.discrepancy_type}</span>
-                            <span class="discrepancy-status ${disc.resolution_status}">${disc.resolution_status}</span>
-                        </div>
-                        <div>
-                            <strong>${this.escapeHtml(disc.product_name)}</strong><br>
-                            ${disc.description}
-                        </div>
-                    </li>
-                `).join('')}
-            </ul>
+            <table class="discrepancies-table">
+                <thead>
+                    <tr>
+                        <th>Produs</th>
+                        <th>Tip Discrepanță</th>
+                        <th>Descriere</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${discrepancies.map(discrepancy => `
+                        <tr>
+                            <td>
+                                <strong>${this.escapeHtml(discrepancy.product_name)}</strong><br>
+                                <small>${discrepancy.sku}</small>
+                            </td>
+                            <td>${discrepancy.discrepancy_type}</td>
+                            <td>${this.escapeHtml(discrepancy.description)}</td>
+                            <td>
+                                <span class="discrepancy-status ${discrepancy.resolution_status}">
+                                    ${discrepancy.resolution_status}
+                                </span>
+                            </td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
         `;
     }
-    
+
     renderSummaryStats(stats) {
         return `
-            <div class="stat-card">
-                <div class="stat-value">${stats.total_sessions}</div>
-                <div class="stat-label">Sesiuni</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value">${stats.received_items}</div>
-                <div class="stat-label">Produse</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value">${stats.pending_discrepancies}</div>
-                <div class="stat-label">Discrepanțe</div>
-            </div>
-        `;
-    }
-    
-    async showReceivingDetails(orderId) {
-        const modal = document.getElementById('receiving-details-modal');
-        if (!modal) {
-            // Create modal if it doesn't exist
-            this.createReceivingModal();
-        }
-        
-        const modalBody = document.getElementById('modal-body');
-        modalBody.innerHTML = `
-            <div class="loading-spinner">
-                <span class="material-symbols-outlined spinning">refresh</span>
-                Se încarcă detaliile...
-            </div>
-        `;
-        
-        document.getElementById('receiving-details-modal').style.display = 'flex';
-        
-        try {
-            const response = await fetch(`api/receiving/purchase_order_details.php?order_id=${orderId}`);
-            const data = await response.json();
-            
-            if (data.success) {
-                modalBody.innerHTML = this.renderReceivingDetails(data);
-            } else {
-                modalBody.innerHTML = `<p class="error">Eroare: ${data.message}</p>`;
-            }
-        } catch (error) {
-            modalBody.innerHTML = `<p class="error">Eroare: ${error.message}</p>`;
-        }
-    }
-    
-    createReceivingModal() {
-        const modal = document.createElement('div');
-        modal.id = 'receiving-details-modal';
-        modal.className = 'modal';
-        modal.innerHTML = `
-            <div class="modal-content modal-lg">
-                <div class="modal-header">
-                    <h3 id="modal-title">Detalii Primire Comandă</h3>
-                    <button type="button" class="close-btn" onclick="purchaseOrdersManager.closeReceivingModal()">
-                        <span class="material-symbols-outlined">close</span>
-                    </button>
+            <div class="stats-grid">
+                <div class="stat-item">
+                    <span class="stat-label">Total Sesiuni:</span>
+                    <span class="stat-value">${stats.total_sessions}</span>
                 </div>
-                <div class="modal-body" id="modal-body">
-                    <!-- Content loaded via JavaScript -->
+                <div class="stat-item">
+                    <span class="stat-label">Sesiuni Completate:</span>
+                    <span class="stat-value">${stats.completed_sessions}</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Total Produse:</span>
+                    <span class="stat-value">${stats.total_items}</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Produse Primite:</span>
+                    <span class="stat-value">${stats.received_items}</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Discrepanțe Pendente:</span>
+                    <span class="stat-value">${stats.pending_discrepancies}</span>
                 </div>
             </div>
         `;
-        document.body.appendChild(modal);
     }
-    
-    closeReceivingModal() {
-        const modal = document.getElementById('receiving-details-modal');
-        if (modal) {
-            modal.style.display = 'none';
-        }
-    }
-    
-    showLoading(show) {
-        const tbody = document.getElementById('orders-tbody');
-        if (!tbody) return;
-        
-        if (show) {
-            tbody.innerHTML = `
-                <tr>
-                    <td colspan="12" class="text-center">
-                        <div class="loading-spinner">
-                            <span class="material-symbols-outlined spinning">refresh</span>
-                            Se încarcă comenzile...
-                        </div>
-                    </td>
-                </tr>
-            `;
-        }
-    }
-    
-    showError(message) {
-        const tbody = document.getElementById('orders-tbody');
-        if (tbody) {
-            tbody.innerHTML = `
-                <tr>
-                    <td colspan="12" class="text-center">
-                        <div style="padding: 40px; color: #dc3545;">
-                            <span class="material-symbols-outlined" style="font-size: 48px;">error</span>
-                            <p>${this.escapeHtml(message)}</p>
-                        </div>
-                    </td>
-                </tr>
-            `;
-        }
-    }
-    
-    updateSummaryStats(stats) {
-        // You can add summary stats display here if needed
-        console.log('Summary stats:', stats);
-    }
-    
-    // Utility functions
-    escapeHtml(text) {
-        if (!text) return '';
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
-    }
-    
-    formatDate(dateString) {
-        if (!dateString) return '-';
-        return new Date(dateString).toLocaleDateString('ro-RO');
-    }
-    
+
     formatDateTime(dateString) {
         if (!dateString) return '-';
         return new Date(dateString).toLocaleString('ro-RO');
-    }
-    
-    translateStatus(status) {
-        const translations = {
-            'draft': 'Draft',
-            'sent': 'Trimis',
-            'confirmed': 'Confirmat',
-            'delivered': 'Livrat',
-            'partial_delivery': 'Parțial',
-            'invoiced': 'Facturat',
-            'completed': 'Finalizat',
-            'cancelled': 'Anulat'
-        };
-        return translations[status] || status;
-    }
-    
-    translateReceivingStatus(status) {
-        const translations = {
-            'not_received': 'Neprimit',
-            'partial': 'Parțial',
-            'complete': 'Complet',
-            'with_discrepancies': 'Cu Discrepanțe'
-        };
-        return translations[status] || status;
-    }
-    
-    translateItemStatus(status) {
-        const translations = {
-            'not_received': 'Neprimit',
-            'partial': 'Parțial',
-            'complete': 'Complet'
-        };
-        return translations[status] || status;
-    }
-    
-    getProgressClass(percent) {
-        if (percent === 0) return 'none';
-        if (percent === 100) return 'complete';
-        return 'partial';
     }
 }
 
@@ -1126,6 +1242,12 @@ function clearAllFilters() {
     
     if (purchaseOrdersManager) {
         purchaseOrdersManager.handleFilterChange();
+    }
+}
+
+function closeReceivingModal() {
+    if (window.purchaseOrdersManager) {
+        window.purchaseOrdersManager.closeReceivingModal();
     }
 }
 
@@ -1176,7 +1298,8 @@ window.closeModal = closeModal;
 window.openStatusModal = openStatusModal;
 window.openSendEmailModal = openSendEmailModal;
 window.openDeliveryModal = openDeliveryModal;
-window.openInvoiceModal = openInvoiceModal;
+window.openInvoiceUploadModal = openInvoiceUploadModal;
+window.closeReceivingModal = closeReceivingModal;
 window.calculateInvoiceItemTotal = calculateInvoiceItemTotal;
 window.purchaseOrdersManager = purchaseOrdersManager;
 

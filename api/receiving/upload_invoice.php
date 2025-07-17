@@ -12,10 +12,11 @@ header('Access-Control-Allow-Methods: POST');
 header('Access-Control-Allow-Headers: Content-Type');
 
 if (!defined('BASE_PATH')) {
-    define('BASE_PATH', dirname(__DIR__));
+    define('BASE_PATH', dirname(__DIR__, 2));
 }
 
 require_once BASE_PATH . '/bootstrap.php';
+
 // Only allow POST
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
@@ -102,7 +103,7 @@ try {
             updated_at = NOW()
         WHERE id = ?
     ");
-    $stmt->execute(['storage/invoices/' . $filename, $orderId]);
+    $stmt->execute(['/storage/invoices/' . $filename, $orderId]);
     
     // Log the activity
     $stmt = $db->prepare("
@@ -130,7 +131,7 @@ try {
         'data' => [
             'order_id' => $orderId,
             'order_number' => $order['order_number'],
-            'invoice_file_path' => 'storage/invoices/' . $filename,
+            'invoice_file_path' => '/storage/invoices/' . $filename,
             'invoiced_at' => date('Y-m-d H:i:s'),
             'uploaded_by' => $_SESSION['username'] ?? 'Unknown'
         ]

@@ -654,7 +654,7 @@ class PurchaseOrdersReceivingManager {
         submitButton.innerHTML = '<span class="material-symbols-outlined spinning">sync</span> Încarcă...';
         
         try {
-            const response = await fetch('api/upload_invoice.php', {
+            const response = await fetch('api/receiving/upload_invoice.php', {
                 method: 'POST',
                 body: formData
             });

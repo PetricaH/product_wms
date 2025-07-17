@@ -7,10 +7,27 @@ document.addEventListener('DOMContentLoaded', function() {
     initializeAmountCalculations();
     initializeStockPurchase();
     attachFormValidation();
+    if (typeof initializePurchaseOrdersExisting === 'function') {
+        initializePurchaseOrdersExisting();
+    }
+    initializeReceivingFunctionality();
 });
 
 // Global variables for stock purchase
 let productItemIndex = 1;
+let purchaseOrdersManager = null;
+let expandedRows = new Set();
+let ordersData = [];
+let currentFilters = {
+    status: '',
+    seller_id: '',
+    receiving_status: ''
+};
+
+function initializeReceivingFunctionality() {
+    purchaseOrdersManager = new PurchaseOrdersReceivingManager();
+    console.log('🚛 Purchase Orders Receiving functionality initialized');
+}
 
 // Initialize date fields with today's date
 function initializeDateFields() {
@@ -617,6 +634,501 @@ function updateInvoiceTotal() {
     }
 }
 
+// purhcase orders receiving manager  class
+class PurchaseOrdersReceivingManager {
+    constructor() {
+        this.bindEvents();
+        this.loadPurchaseOrdersWithReceiving();
+    }
+
+    bindEvents() {
+        // filter change handlers
+        const statusFilter = document.getElementById('status');
+        const sellerFilter = document.getElementById('seller_id');
+        const receivingStatusFilter = document.getElementById('receiving-status-filter');
+
+        if (statusFilter) {
+            statusFilter.addEventListener('change', () =>  this.handleFilterChange());
+        }
+
+        if (sellerFilter) {
+            sellerFilter.addEventListener('change', () => this.handleFilterChange());
+        }
+
+        if (receivingStatusFilter) {
+            receivingStatusFilter.addEventListener('change', () => this.handleFilterChange());
+        }
+
+        // modal close events
+        document.addEventListener('click', (e) => {
+            if (e.target.id === 'receiving-details-modal') {
+                this.closeReceivingModal();
+            }
+        });
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                this.closeReceivingModal();
+            }
+        });
+    }
+
+    handleFilterChange() {
+        // update current filters
+        currentFilters.status = document.getElementById('status')?.value || '';
+        currentFilters.seller_id = document.getElementById('selller_id')?.value || '';
+        currentFilters.receiving_status = document.getElementById('receiving-status-filter')?.value || '';
+
+        // reload data with new filters
+        this.loadPurchaseOrdersWithReceiving();
+    }
+
+    async loadPurchaseOrdersWithReceiving() {
+        try {
+            this.showLoading(true);
+            
+            // Build query parameters
+            const params = new URLSearchParams();
+            if (currentFilters.status) params.append('status', currentFilters.status);
+            if (currentFilters.seller_id) params.append('seller_id', currentFilters.seller_id);
+            if (currentFilters.receiving_status) params.append('receiving_status', currentFilters.receiving_status);
+            params.append('limit', '100');
+            
+            const response = await fetch(`api/receiving/purchase_order_summary.php?${params.toString()}`);
+            const data = await response.json();
+            
+            if (data.success) {
+                ordersData = data.data;
+                this.renderOrdersTable(data.data);
+                this.updateSummaryStats(data.summary_stats);
+            } else {
+                throw new Error(data.message || 'Failed to load purchase orders');
+            }
+            
+        } catch (error) {
+            console.error('Error loading purchase orders:', error);
+            this.showError('Eroare la încărcarea comenzilor: ' + error.message);
+        } finally {
+            this.showLoading(false);
+        }
+    }
+
+    renderOrdersTable(orders) {
+        const tbody = document.getElementById('orders-tbody');
+        if (!tbody) return;
+        
+        if (orders.length === 0) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="12" class="text-center">
+                        <div style="padding: 40px; color: var(--text-secondary);">
+                            <span class="material-symbols-outlined" style="font-size: 48px; opacity: 0.5;">inventory_2</span>
+                            <p>Nu există comenzi de achiziție care să corespundă filtrelor selectate</p>
+                        </div>
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+        
+        tbody.innerHTML = orders.map(order => this.renderOrderRow(order)).join('');
+    }
+    
+    renderOrderRow(order) {
+        const receivingStatus = order.receiving_summary.status;
+        const progressPercent = order.receiving_summary.receiving_progress_percent;
+        const hasDiscrepancies = order.discrepancies_summary.has_pending_discrepancies;
+        
+        return `
+            <tr data-order-id="${order.id}">
+                <td>
+                    <button class="expand-btn" onclick="purchaseOrdersManager.toggleRowExpansion(${order.id})">
+                        <span class="material-symbols-outlined">expand_more</span>
+                    </button>
+                </td>
+                <td>
+                    <strong>${this.escapeHtml(order.order_number)}</strong>
+                </td>
+                <td>${this.escapeHtml(order.supplier_name)}</td>
+                <td>${order.total_amount} ${order.currency}</td>
+                <td>
+                    <span class="status-badge status-${order.po_status.toLowerCase()}">
+                        ${this.translateStatus(order.po_status)}
+                    </span>
+                </td>
+                <td>
+                    <span class="receiving-status-badge receiving-status-${receivingStatus}">
+                        ${this.translateReceivingStatus(receivingStatus)}
+                    </span>
+                </td>
+                <td>
+                    <div class="progress-container">
+                        <div class="progress-bar progress-${this.getProgressClass(progressPercent)}" 
+                             style="width: ${progressPercent}%"></div>
+                    </div>
+                    <div class="progress-text">${progressPercent}%</div>
+                </td>
+                <td>
+                    <div class="discrepancy-indicator ${hasDiscrepancies ? 'has-discrepancies' : 'no-discrepancies'}">
+                        <span class="material-symbols-outlined">
+                            ${hasDiscrepancies ? 'warning' : 'check_circle'}
+                        </span>
+                        ${order.discrepancies_summary.pending_discrepancies || 0}
+                    </div>
+                </td>
+                <td>${this.formatDate(order.created_at)}</td>
+                <td>
+                    ${order.pdf_path ? `<a href="storage/purchase_order_pdfs/${order.pdf_path}" target="_blank">PDF</a>` : '-'}
+                </td>
+                <td>${order.actual_delivery_date || '-'}</td>
+                <td>
+                    <div class="action-buttons">
+                        <button class="btn btn-info btn-sm" onclick="purchaseOrdersManager.showReceivingDetails(${order.id})" 
+                                title="Detalii Primire">
+                            <span class="material-symbols-outlined">visibility</span>
+                        </button>
+                    </div>
+                </td>
+            </tr>
+            <tr class="expandable-row" data-order-id="${order.id}" style="display: none;">
+                <td colspan="12">
+                    <div class="expandable-content" id="expandable-${order.id}">
+                        <div class="loading-spinner">
+                            <span class="material-symbols-outlined spinning">refresh</span>
+                            Se încarcă detaliile...
+                        </div>
+                    </div>
+                </td>
+            </tr>
+        `;
+    }
+    
+    async toggleRowExpansion(orderId) {
+        const row = document.querySelector(`tr.expandable-row[data-order-id="${orderId}"]`);
+        const expandBtn = document.querySelector(`tr[data-order-id="${orderId}"] .expand-btn`);
+        const content = document.getElementById(`expandable-${orderId}`);
+        
+        if (!row || !expandBtn || !content) return;
+        
+        if (expandedRows.has(orderId)) {
+            // Collapse
+            row.style.display = 'none';
+            content.classList.remove('expanded');
+            expandBtn.classList.remove('expanded');
+            expandedRows.delete(orderId);
+        } else {
+            // Expand
+            row.style.display = 'table-row';
+            expandBtn.classList.add('expanded');
+            expandedRows.add(orderId);
+            
+            // Load detailed receiving data
+            await this.loadReceivingDetails(orderId, content);
+            content.classList.add('expanded');
+        }
+    }
+    
+    async loadReceivingDetails(orderId, contentElement) {
+        try {
+            const response = await fetch(`api/receiving/purchase_order_details.php?order_id=${orderId}`);
+            const data = await response.json();
+            
+            if (data.success) {
+                contentElement.innerHTML = this.renderReceivingDetails(data);
+            } else {
+                contentElement.innerHTML = `<p class="error">Eroare: ${data.message}</p>`;
+            }
+        } catch (error) {
+            contentElement.innerHTML = `<p class="error">Eroare la încărcarea detaliilor: ${error.message}</p>`;
+        }
+    }
+    
+    renderReceivingDetails(data) {
+        return `
+            <div class="receiving-details-grid">
+                <div class="receiving-section">
+                    <h4><span class="material-symbols-outlined">inventory</span>Sesiuni de Primire</h4>
+                    ${this.renderReceivingSessions(data.receiving_sessions)}
+                </div>
+                <div class="receiving-section">
+                    <h4><span class="material-symbols-outlined">checklist</span>Detalii Produse</h4>
+                    ${this.renderItemsDetails(data.items_detail)}
+                </div>
+            </div>
+            ${data.discrepancies.length > 0 ? `
+                <div class="receiving-section">
+                    <h4><span class="material-symbols-outlined">warning</span>Discrepanțe</h4>
+                    ${this.renderDiscrepancies(data.discrepancies)}
+                </div>
+            ` : ''}
+            <div class="summary-stats">
+                ${this.renderSummaryStats(data.summary_stats)}
+            </div>
+        `;
+    }
+    
+    renderReceivingSessions(sessions) {
+        if (sessions.length === 0) {
+            return '<p>Nu există sesiuni de primire înregistrate.</p>';
+        }
+        
+        return `
+            <ul class="sessions-list">
+                ${sessions.map(session => `
+                    <li class="session-item">
+                        <div class="session-header">
+                            <span class="session-number">${session.session_number}</span>
+                            <span class="session-status ${session.status}">${session.status}</span>
+                        </div>
+                        <div class="session-details">
+                            <strong>Document:</strong> ${session.supplier_document_number}<br>
+                            <strong>Primit de:</strong> ${session.received_by_name}<br>
+                            <strong>Data:</strong> ${this.formatDateTime(session.completed_at || session.created_at)}
+                        </div>
+                    </li>
+                `).join('')}
+            </ul>
+        `;
+    }
+    
+    renderItemsDetails(items) {
+        if (items.length === 0) {
+            return '<p>Nu există detalii despre produse.</p>';
+        }
+        
+        return `
+            <table class="receiving-items-table">
+                <thead>
+                    <tr>
+                        <th>Produs</th>
+                        <th>Comandat</th>
+                        <th>Primit</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${items.map(item => `
+                        <tr>
+                            <td>
+                                <strong>${this.escapeHtml(item.product_name)}</strong><br>
+                                <small>${item.sku}</small>
+                            </td>
+                            <td>${item.ordered_quantity}</td>
+                            <td>${item.received_quantity}</td>
+                            <td>
+                                <span class="item-status-${item.receiving_status}">
+                                    ${this.translateItemStatus(item.receiving_status)}
+                                </span>
+                            </td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        `;
+    }
+    
+    renderDiscrepancies(discrepancies) {
+        return `
+            <ul class="discrepancies-list">
+                ${discrepancies.map(disc => `
+                    <li class="discrepancy-item">
+                        <div class="discrepancy-header">
+                            <span class="discrepancy-type">${disc.discrepancy_type}</span>
+                            <span class="discrepancy-status ${disc.resolution_status}">${disc.resolution_status}</span>
+                        </div>
+                        <div>
+                            <strong>${this.escapeHtml(disc.product_name)}</strong><br>
+                            ${disc.description}
+                        </div>
+                    </li>
+                `).join('')}
+            </ul>
+        `;
+    }
+    
+    renderSummaryStats(stats) {
+        return `
+            <div class="stat-card">
+                <div class="stat-value">${stats.total_sessions}</div>
+                <div class="stat-label">Sesiuni</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">${stats.received_items}</div>
+                <div class="stat-label">Produse</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">${stats.pending_discrepancies}</div>
+                <div class="stat-label">Discrepanțe</div>
+            </div>
+        `;
+    }
+    
+    async showReceivingDetails(orderId) {
+        const modal = document.getElementById('receiving-details-modal');
+        if (!modal) {
+            // Create modal if it doesn't exist
+            this.createReceivingModal();
+        }
+        
+        const modalBody = document.getElementById('modal-body');
+        modalBody.innerHTML = `
+            <div class="loading-spinner">
+                <span class="material-symbols-outlined spinning">refresh</span>
+                Se încarcă detaliile...
+            </div>
+        `;
+        
+        document.getElementById('receiving-details-modal').style.display = 'flex';
+        
+        try {
+            const response = await fetch(`api/receiving/purchase_order_details.php?order_id=${orderId}`);
+            const data = await response.json();
+            
+            if (data.success) {
+                modalBody.innerHTML = this.renderReceivingDetails(data);
+            } else {
+                modalBody.innerHTML = `<p class="error">Eroare: ${data.message}</p>`;
+            }
+        } catch (error) {
+            modalBody.innerHTML = `<p class="error">Eroare: ${error.message}</p>`;
+        }
+    }
+    
+    createReceivingModal() {
+        const modal = document.createElement('div');
+        modal.id = 'receiving-details-modal';
+        modal.className = 'modal';
+        modal.innerHTML = `
+            <div class="modal-content modal-lg">
+                <div class="modal-header">
+                    <h3 id="modal-title">Detalii Primire Comandă</h3>
+                    <button type="button" class="close-btn" onclick="purchaseOrdersManager.closeReceivingModal()">
+                        <span class="material-symbols-outlined">close</span>
+                    </button>
+                </div>
+                <div class="modal-body" id="modal-body">
+                    <!-- Content loaded via JavaScript -->
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    }
+    
+    closeReceivingModal() {
+        const modal = document.getElementById('receiving-details-modal');
+        if (modal) {
+            modal.style.display = 'none';
+        }
+    }
+    
+    showLoading(show) {
+        const tbody = document.getElementById('orders-tbody');
+        if (!tbody) return;
+        
+        if (show) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="12" class="text-center">
+                        <div class="loading-spinner">
+                            <span class="material-symbols-outlined spinning">refresh</span>
+                            Se încarcă comenzile...
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }
+    }
+    
+    showError(message) {
+        const tbody = document.getElementById('orders-tbody');
+        if (tbody) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="12" class="text-center">
+                        <div style="padding: 40px; color: #dc3545;">
+                            <span class="material-symbols-outlined" style="font-size: 48px;">error</span>
+                            <p>${this.escapeHtml(message)}</p>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }
+    }
+    
+    updateSummaryStats(stats) {
+        // You can add summary stats display here if needed
+        console.log('Summary stats:', stats);
+    }
+    
+    // Utility functions
+    escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+    
+    formatDate(dateString) {
+        if (!dateString) return '-';
+        return new Date(dateString).toLocaleDateString('ro-RO');
+    }
+    
+    formatDateTime(dateString) {
+        if (!dateString) return '-';
+        return new Date(dateString).toLocaleString('ro-RO');
+    }
+    
+    translateStatus(status) {
+        const translations = {
+            'draft': 'Draft',
+            'sent': 'Trimis',
+            'confirmed': 'Confirmat',
+            'delivered': 'Livrat',
+            'partial_delivery': 'Parțial',
+            'invoiced': 'Facturat',
+            'completed': 'Finalizat',
+            'cancelled': 'Anulat'
+        };
+        return translations[status] || status;
+    }
+    
+    translateReceivingStatus(status) {
+        const translations = {
+            'not_received': 'Neprimit',
+            'partial': 'Parțial',
+            'complete': 'Complet',
+            'with_discrepancies': 'Cu Discrepanțe'
+        };
+        return translations[status] || status;
+    }
+    
+    translateItemStatus(status) {
+        const translations = {
+            'not_received': 'Neprimit',
+            'partial': 'Parțial',
+            'complete': 'Complet'
+        };
+        return translations[status] || status;
+    }
+    
+    getProgressClass(percent) {
+        if (percent === 0) return 'none';
+        if (percent === 100) return 'complete';
+        return 'partial';
+    }
+}
+
+// Global functions for onclick handlers
+function clearAllFilters() {
+    document.getElementById('status').value = '';
+    document.getElementById('seller_id').value = '';
+    document.getElementById('receiving-status-filter').value = '';
+    
+    if (purchaseOrdersManager) {
+        purchaseOrdersManager.handleFilterChange();
+    }
+}
+
 // Close modals when clicking outside
 document.addEventListener('click', function(e) {
     if (e.target.classList.contains('modal')) {
@@ -666,5 +1178,6 @@ window.openSendEmailModal = openSendEmailModal;
 window.openDeliveryModal = openDeliveryModal;
 window.openInvoiceModal = openInvoiceModal;
 window.calculateInvoiceItemTotal = calculateInvoiceItemTotal;
+window.purchaseOrdersManager = purchaseOrdersManager;
 
 console.log('Purchase Orders JS loaded with complete stock purchase functionality');

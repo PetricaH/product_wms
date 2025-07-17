@@ -23,7 +23,6 @@ function respond($data, int $code = 200) {
 }
 
 // Session and authentication check
-session_start();
 $allowedRoles = ['admin', 'warehouse', 'warehouse_worker'];
 if (!isset($_SESSION['user_id']) || !in_array($_SESSION['role'] ?? '', $allowedRoles, true)) {
     respond(['status' => 'error', 'message' => 'Access denied'], 403);

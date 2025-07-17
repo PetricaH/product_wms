@@ -12,15 +12,15 @@ require_once BASE_PATH . '/bootstrap.php';
 $config = require BASE_PATH . '/config/config.php';
 
 // Session and authentication check
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
+// if (session_status() === PHP_SESSION_NONE) {
+//     session_start();
+// }
 
-// Check if user is logged in and is admin
-if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
-    header('Location: ' . getNavUrl('login.php'));
-    exit;
-}
+// // Check if user is logged in and is admin
+// if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
+//     header('Location: ' . getNavUrl('login.php'));
+//     exit;
+// }
 
 // Database connection
 if (!isset($config['connection_factory']) || !is_callable($config['connection_factory'])) {

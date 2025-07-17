@@ -25,7 +25,6 @@ use PHPMailer\PHPMailer\Exception;
 
 $config = require BASE_PATH . '/config/config.php';
 
-
 // Session and authentication check
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
@@ -583,6 +582,7 @@ require_once __DIR__ . '/includes/header.php';
             <!-- Filters -->
             <div class="filters-container">
                 <form method="GET" class="filters-form">
+                    <!-- Existing filters -->
                     <div class="filter-group">
                         <label for="status">Status:</label>
                         <select name="status" id="status" onchange="this.form.submit()">
@@ -591,11 +591,13 @@ require_once __DIR__ . '/includes/header.php';
                             <option value="sent" <?= $statusFilter === 'sent' ? 'selected' : '' ?>>Trimis</option>
                             <option value="confirmed" <?= $statusFilter === 'confirmed' ? 'selected' : '' ?>>Confirmat</option>
                             <option value="delivered" <?= $statusFilter === 'delivered' ? 'selected' : '' ?>>Livrat</option>
+                            <option value="partial_delivery" <?= $statusFilter === 'partial_delivery' ? 'selected' : '' ?>>Livrare Parțială</option>
                             <option value="invoiced" <?= $statusFilter === 'invoiced' ? 'selected' : '' ?>>Facturat</option>
                             <option value="completed" <?= $statusFilter === 'completed' ? 'selected' : '' ?>>Finalizat</option>
                             <option value="cancelled" <?= $statusFilter === 'cancelled' ? 'selected' : '' ?>>Anulat</option>
                         </select>
                     </div>
+                    
                     <div class="filter-group">
                         <label for="seller_id">Furnizor:</label>
                         <select name="seller_id" id="seller_id" onchange="this.form.submit()">
@@ -607,69 +609,90 @@ require_once __DIR__ . '/includes/header.php';
                             <?php endforeach; ?>
                         </select>
                     </div>
+                    
+                    <!-- NEW: Receiving Status Filter -->
+                    <div class="filter-group">
+                        <label for="receiving_status">Status Primire:</label>
+                        <select name="receiving_status" id="receiving-status-filter">
+                            <option value="">Toate</option>
+                            <option value="not_received">Neprimite</option>
+                            <option value="partial">Parțial Primite</option>
+                            <option value="complete">Complet Primite</option>
+                            <option value="with_discrepancies">Cu Discrepanțe</option>
+                        </select>
+                    </div>
+                    
+                    <!-- NEW: Clear Filters Button -->
+                    <div class="filter-group">
+                        <button type="button" class="btn btn-secondary" onclick="clearAllFilters()">
+                            <span class="material-symbols-outlined">clear</span>
+                            Șterge Filtrele
+                        </button>
+                    </div>
                 </form>
             </div>
 
             <!-- Purchase Orders Table -->
             <div class="table-container">
-                <table class="data-table">
+                <table class="data-table" id="purchase-orders-table">
                     <thead>
                         <tr>
+                            <th></th> <!-- Expand button column -->
                             <th>Număr Comandă</th>
                             <th>Furnizor</th>
                             <th>Total</th>
-                            <th>Status</th>
+                            <th>Status Comandă</th>
+                            <th>Status Primire</th> <!-- NEW -->
+                            <th>Progres Primire</th> <!-- NEW -->
+                            <th>Discrepanțe</th> <!-- NEW -->
                             <th>Data Creării</th>
                             <th>PDF</th>
                             <th>Data Livrării</th>
                             <th>Acțiuni</th>
                         </tr>
                     </thead>
-                    <tbody>
-                        <?php if (empty($purchaseOrders)): ?>
-                            <tr>
-                                <td colspan="8" class="text-center">Nu există comenzi de achiziție</td>
-                            </tr>
-                        <?php else: ?>
-                            <?php foreach ($purchaseOrders as $order): ?>
-                                <tr>
-                                    <td><?= htmlspecialchars($order['order_number']) ?></td>
-                                    <td><?= htmlspecialchars($order['supplier_name']) ?></td>
-                                    <td><?= number_format($order['total_amount'], 2) ?> <?= $order['currency'] ?></td>
-                                    <td>
-                                        <span class="status-badge status-<?= strtolower($order['status']) ?>">
-                                            <?= ucfirst($order['status']) ?>
-                                        </span>
-                                    </td>
-                                    <td><?= date('d.m.Y H:i', strtotime($order['created_at'])) ?></td>
-                                    <td>
-                                        <?php if (!empty($order['pdf_path'])): ?>
-                                            <a href="storage/purchase_order_pdfs/<?= htmlspecialchars($order['pdf_path']) ?>" target="_blank">PDF</a>
-                                        <?php else: ?>-
-                                        <?php endif; ?>
-                                    </td>
-                                    <td><?= $order['expected_delivery_date'] ? date('d.m.Y', strtotime($order['expected_delivery_date'])) : '-' ?></td>
-                                    <td>
-                                        <div class="action-buttons">
-                                            <button class="btn btn-sm btn-primary" onclick="openStatusModal(<?= $order['id'] ?>, '<?= $order['status'] ?>')">
-                                                <span class="material-symbols-outlined">edit</span>
-                                            </button>
-                                            <button class="btn btn-sm btn-info" onclick="openSendEmailModal(<?= $order['id'] ?>, '<?= htmlspecialchars($order['supplier_name']) ?>')">
-                                                <span class="material-symbols-outlined">email</span>
-                                            </button>
-                                            <button class="btn btn-sm btn-success" onclick="openDeliveryModal(<?= $order['id'] ?>)">
-                                                <span class="material-symbols-outlined">local_shipping</span>
-                                            </button>
-                                            <button class="btn btn-sm btn-warning" onclick="openInvoiceModal(<?= $order['id'] ?>)">
-                                                <span class="material-symbols-outlined">receipt</span>
-                                            </button>
-                                        </div>
-                                    </td>
-                                </tr>
-                            <?php endforeach; ?>
-                        <?php endif; ?>
+                    <tbody id="orders-tbody">
+                        <!-- Content will be loaded via JavaScript -->
+                        <tr>
+                            <td colspan="12" class="text-center">
+                                <div class="loading-spinner">
+                                    <span class="material-symbols-outlined spinning">refresh</span>
+                                    Se încarcă comenzile...
+                                </div>
+                            </td>
+                        </tr>
                     </tbody>
                 </table>
+            </div>
+
+            <!-- Receiving Details Modal -->
+            <div id="receiving-details-modal" class="modal" style="display: none;">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3 id="modal-title">Detalii Primire Comandă</h3>
+                        <button type="button" class="close-btn" onclick="closeReceivingModal()">
+                            <span class="material-symbols-outlined">close</span>
+                        </button>
+                    </div>
+                    <div class="modal-body" id="modal-body">
+                        <!-- Content loaded via JavaScript -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Receiving Details Modal -->
+    <div id="receiving-details-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modal-title">Detalii Primire Comandă</h3>
+                <button type="button" class="close-btn" onclick="closeReceivingModal()">
+                    <span class="material-symbols-outlined">close</span>
+                </button>
+            </div>
+            <div class="modal-body" id="modal-body">
+                <!-- Content loaded via JavaScript -->
             </div>
         </div>
     </div>

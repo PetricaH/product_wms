@@ -16,14 +16,6 @@ if (!defined('BASE_PATH')) {
 
 require_once BASE_PATH . '/bootstrap.php';
 
-// Session and authentication check
-session_start();
-if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
-    http_response_code(403);
-    echo json_encode(['error' => 'Access denied']);
-    exit;
-}
-
 // Database connection
 $config = require BASE_PATH . '/config/config.php';
 $db = $config['connection_factory']();

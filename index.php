@@ -3,20 +3,21 @@ ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
 error_reporting(E_ALL);
 
-// Session check
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
+// // Session check
+// if (session_status() === PHP_SESSION_NONE) {
+//     session_start();
+// }
 
-// Authentication check
-if (!isset($_SESSION['user_id'])) {
-    header('Location: login.php');
-    exit;
-}
+// // Authentication check
+// if (!isset($_SESSION['user_id'])) {
+//     header('Location: login.php');
+//     exit;
+// }
 
 // Load configuration
+require_once __DIR__ . '/bootstrap.php';
 $config = require __DIR__ . '/config/config.php';
-define('BASE_PATH', __DIR__);
+// define('BASE_PATH', __DIR__);
 
 // Include helpers
 require_once __DIR__ . '/includes/helpers.php';

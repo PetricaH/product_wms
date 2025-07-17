@@ -15,7 +15,6 @@ if (!defined('BASE_PATH')) {
 require_once BASE_PATH . '/bootstrap.php';
 
 // Session and authentication check
-session_start();
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
     header('Location: login.php');
     exit;

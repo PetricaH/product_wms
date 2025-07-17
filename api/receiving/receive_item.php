@@ -23,15 +23,6 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
-// CSRF check
-$headers = apache_request_headers();
-$csrfToken = $headers['X-CSRF-Token'] ?? '';
-if (!$csrfToken || $csrfToken !== $_SESSION['csrf_token']) {
-    http_response_code(403);
-    echo json_encode(['success' => false, 'message' => 'Invalid CSRF token']);
-    exit;
-}
-
 // Only allow POST
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
@@ -257,67 +248,68 @@ try {
     
     // Check for discrepancies
     $expectedQuantity = (float)$orderItem['quantity'];
-    if ($receivedQuantity != $expectedQuantity) {
-        // Create discrepancy record
-        $discrepancyType = $receivedQuantity < $expectedQuantity ? 'shortage' : 'overage';
-        $discrepancyQuantity = abs($receivedQuantity - $expectedQuantity);
-        
-        // Check if discrepancy already exists
+if ($receivedQuantity != $expectedQuantity) {
+    // Create discrepancy record
+    $discrepancyType = $receivedQuantity < $expectedQuantity ? 'quantity_short' : 'quantity_over';
+    $discrepancyQuantity = abs($receivedQuantity - $expectedQuantity);
+    
+    // Create description for the discrepancy
+    $description = $notes ?: "Quantity discrepancy: Expected {$expectedQuantity}, received {$receivedQuantity}";
+    
+    // Check if discrepancy already exists for this session and product
+    $stmt = $db->prepare("
+        SELECT id FROM receiving_discrepancies 
+        WHERE receiving_session_id = :session_id 
+        AND product_id = :product_id
+    ");
+    $stmt->execute([
+        ':session_id' => $sessionId,
+        ':product_id' => $orderItem['main_product_id']
+    ]);
+    $existingDiscrepancy = $stmt->fetchColumn();
+    
+    if ($existingDiscrepancy) {
+        // Update existing discrepancy
         $stmt = $db->prepare("
-            SELECT id FROM receiving_discrepancies 
-            WHERE receiving_session_id = :session_id 
-            AND purchase_order_item_id = :item_id
+            UPDATE receiving_discrepancies SET
+                discrepancy_type = :discrepancy_type,
+                expected_quantity = :expected_quantity,
+                actual_quantity = :actual_quantity,
+                description = :description,
+                resolution_notes = :resolution_notes
+            WHERE id = :discrepancy_id
+        ");
+        $stmt->execute([
+            ':discrepancy_type' => $discrepancyType,
+            ':expected_quantity' => $expectedQuantity,
+            ':actual_quantity' => $receivedQuantity,
+            ':description' => $description,
+            ':resolution_notes' => $notes,
+            ':discrepancy_id' => $existingDiscrepancy
+        ]);
+    } else {
+        // Create new discrepancy record
+        $stmt = $db->prepare("
+            INSERT INTO receiving_discrepancies (
+                receiving_session_id, product_id,
+                discrepancy_type, expected_quantity, actual_quantity,
+                description, resolution_notes
+            ) VALUES (
+                :session_id, :product_id, :discrepancy_type,
+                :expected_quantity, :actual_quantity, :description, :resolution_notes
+            )
         ");
         $stmt->execute([
             ':session_id' => $sessionId,
-            ':item_id' => $itemId
+            ':product_id' => $orderItem['main_product_id'],
+            ':discrepancy_type' => $discrepancyType,
+            ':expected_quantity' => $expectedQuantity,
+            ':actual_quantity' => $receivedQuantity,
+            ':description' => $description,
+            ':resolution_notes' => $notes
         ]);
-        $existingDiscrepancy = $stmt->fetchColumn();
-        
-        if ($existingDiscrepancy) {
-            // Update existing discrepancy
-            $stmt = $db->prepare("
-                UPDATE receiving_discrepancies SET
-                    discrepancy_type = :discrepancy_type,
-                    expected_quantity = :expected_quantity,
-                    received_quantity = :received_quantity,
-                    discrepancy_quantity = :discrepancy_quantity,
-                    notes = :notes,
-                    updated_at = NOW()
-                WHERE id = :discrepancy_id
-            ");
-            $stmt->execute([
-                ':discrepancy_type' => $discrepancyType,
-                ':expected_quantity' => $expectedQuantity,
-                ':received_quantity' => $receivedQuantity,
-                ':discrepancy_quantity' => $discrepancyQuantity,
-                ':notes' => $notes,
-                ':discrepancy_id' => $existingDiscrepancy
-            ]);
-        } else {
-            // Create new discrepancy record
-            $stmt = $db->prepare("
-                INSERT INTO receiving_discrepancies (
-                    receiving_session_id, purchase_order_item_id, product_id,
-                    discrepancy_type, expected_quantity, received_quantity,
-                    discrepancy_quantity, notes
-                ) VALUES (
-                    :session_id, :item_id, :product_id, :discrepancy_type,
-                    :expected_quantity, :received_quantity, :discrepancy_quantity, :notes
-                )
-            ");
-            $stmt->execute([
-                ':session_id' => $sessionId,
-                ':item_id' => $itemId,
-                ':product_id' => $orderItem['main_product_id'],
-                ':discrepancy_type' => $discrepancyType,
-                ':expected_quantity' => $expectedQuantity,
-                ':received_quantity' => $receivedQuantity,
-                ':discrepancy_quantity' => $discrepancyQuantity,
-                ':notes' => $notes
-            ]);
-        }
     }
+}
     
     // Update session progress
     $stmt = $db->prepare("

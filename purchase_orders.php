@@ -697,7 +697,6 @@ require_once __DIR__ . '/includes/header.php';
         </div>
     </div>
 
-    <!-- Stock Purchase Modal - MOVED FROM transactions.php -->
     <div class="modal" id="stockPurchaseModal">
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
@@ -710,6 +709,7 @@ require_once __DIR__ . '/includes/header.php';
                 <form id="stockPurchaseForm" method="POST">
                     <div class="modal-body">
                         <input type="hidden" name="action" value="create_stock_purchase">
+                        <input type="hidden" name="order_status" id="order_status" value="">
                         
                         <!-- Seller Selection -->
                         <div class="form-group">
@@ -853,7 +853,12 @@ require_once __DIR__ . '/includes/header.php';
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" onclick="closeStockPurchaseModal()">Anulează</button>
-                        <button type="submit" class="btn btn-primary">Creează Comanda</button>
+                        <button type="button" class="btn btn-primary" onclick="submitStockPurchase('draft')">
+                            <span class="material-symbols-outlined">save</span> DRAFT
+                        </button>
+                        <button type="button" class="btn btn-success" onclick="submitStockPurchase('sent')">
+                            <span class="material-symbols-outlined">send</span> TRIMITE DIRECT
+                        </button>
                     </div>
                 </form>
             </div>

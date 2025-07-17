@@ -3,7 +3,7 @@
  * API: Upload Invoice
  * File: api/receiving/upload_invoice.php
  * 
- * Handles invoice file upload and marks purchase order as invoiced
+ * Handles invoice file upload and updates purchase order status to confirmed
  */
 
 header('Content-Type: application/json');
@@ -17,34 +17,29 @@ if (!defined('BASE_PATH')) {
 
 require_once BASE_PATH . '/bootstrap.php';
 
-// Only allow POST
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
     echo json_encode(['success' => false, 'message' => 'Method not allowed']);
     exit;
 }
 
-// Database connection
 $config = require BASE_PATH . '/config/config.php';
 $dbFactory = $config['connection_factory'];
 $db = $dbFactory();
 
 try {
-    // Get purchase order ID
     $orderId = (int)($_POST['order_id'] ?? 0);
     
     if (!$orderId) {
         throw new Exception('Order ID is required');
     }
     
-    // Check if file was uploaded
     if (!isset($_FILES['invoice_file']) || $_FILES['invoice_file']['error'] !== UPLOAD_ERR_OK) {
         throw new Exception('No file uploaded or upload error');
     }
     
     $file = $_FILES['invoice_file'];
     
-    // Validate file
     $allowedTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/jpg'];
     $maxSize = 5 * 1024 * 1024; // 5MB
     
@@ -61,7 +56,7 @@ try {
         SELECT po.*, s.supplier_name 
         FROM purchase_orders po 
         LEFT JOIN sellers s ON po.seller_id = s.id 
-        WHERE po.id = ? AND po.status IN ('delivered', 'partial_delivery', 'completed')
+        WHERE po.id = ? AND po.status IN ('sent', 'confirmed', 'delivered', 'partial_delivery', 'completed')
     ");
     $stmt->execute([$orderId]);
     $order = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -70,86 +65,60 @@ try {
         throw new Exception('Purchase order not found or not eligible for invoice');
     }
     
-    // Check if already invoiced
     if ($order['invoiced']) {
         throw new Exception('This purchase order is already invoiced');
     }
     
-    // Create upload directory if it doesn't exist
     $uploadDir = BASE_PATH . '/storage/invoices/';
     if (!file_exists($uploadDir)) {
         mkdir($uploadDir, 0755, true);
     }
     
-    // Generate unique filename
     $extension = pathinfo($file['name'], PATHINFO_EXTENSION);
     $filename = 'invoice_' . $orderId . '_' . date('Y-m-d_H-i-s') . '.' . $extension;
     $filepath = $uploadDir . $filename;
     
-    // Move uploaded file
     if (!move_uploaded_file($file['tmp_name'], $filepath)) {
         throw new Exception('Failed to save uploaded file');
     }
     
-    // Start transaction
     $db->beginTransaction();
     
-    // Update purchase order with invoice information
+    // Update purchase order with invoice info and set status to confirmed
     $stmt = $db->prepare("
-        UPDATE purchase_orders 
-        SET invoiced = TRUE,
-            invoice_file_path = ?,
+        UPDATE purchase_orders SET 
+            invoiced = TRUE,
+            invoice_file_path = :filepath,
             invoiced_at = NOW(),
+            status = 'confirmed',
             updated_at = NOW()
-        WHERE id = ?
+        WHERE id = :order_id
     ");
-    $stmt->execute(['/storage/invoices/' . $filename, $orderId]);
     
-    // Log the activity
-    $stmt = $db->prepare("
-        INSERT INTO activity_logs (
-            user_id, action, entity_type, entity_id, resource_type,
-            description, ip_address, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
-    ");
     $stmt->execute([
-        $_SESSION['user_id'],
-        'upload_invoice',
-        'purchase_order',
-        $orderId,
-        'invoice_file', 
-        "Invoice uploaded for purchase order {$order['order_number']}",
-        $_SERVER['REMOTE_ADDR'] ?? 'unknown'
+        ':filepath' => 'invoices/' . $filename,
+        ':order_id' => $orderId
     ]);
     
-    // Commit transaction
     $db->commit();
     
-    // Return success response
     echo json_encode([
         'success' => true,
-        'message' => 'Invoice uploaded successfully',
-        'data' => [
-            'order_id' => $orderId,
-            'order_number' => $order['order_number'],
-            'invoice_file_path' => '/storage/invoices/' . $filename,
-            'invoiced_at' => date('Y-m-d H:i:s'),
-            'uploaded_by' => $_SESSION['username'] ?? 'Unknown'
-        ]
+        'message' => 'Invoice uploaded successfully and order status updated to confirmed',
+        'invoice_filename' => $filename,
+        'new_status' => 'confirmed'
     ]);
     
 } catch (Exception $e) {
-    // Rollback transaction on error
     if ($db->inTransaction()) {
-        $db->rollBack();
+        $db->rollback();
     }
     
-    // Delete uploaded file if it exists
     if (isset($filepath) && file_exists($filepath)) {
         unlink($filepath);
     }
     
-    error_log("Upload invoice error: " . $e->getMessage());
+    error_log("Invoice upload error: " . $e->getMessage());
     
     http_response_code(400);
     echo json_encode([

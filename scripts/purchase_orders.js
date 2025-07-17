@@ -92,7 +92,7 @@ function attachFormValidation() {
 // Stock Purchase Modal functions
 function openStockPurchaseModal() {
     document.getElementById('stockPurchaseModal').classList.add('show');
-    // Set minimum delivery date to tomorrow
+    
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
     const expectedDeliveryDate = document.getElementById('expected_delivery_date');
@@ -104,7 +104,10 @@ function openStockPurchaseModal() {
 function closeStockPurchaseModal() {
     document.getElementById('stockPurchaseModal').classList.remove('show');
     document.getElementById('stockPurchaseForm').reset();
-    // Reset product items to just one
+    
+    // Clear the hidden status field
+    document.getElementById('order_status').value = '';
+    
     resetProductItems();
 }
 
@@ -427,16 +430,27 @@ function calculateOrderTotal() {
     }
 }
 
+function submitStockPurchase(status) {
+    if (!validateStockPurchaseForm()) {
+        return false;
+    }
+    
+    // Set the order status based on which button was clicked
+    document.getElementById('order_status').value = status;
+    
+    // Submit the form
+    document.getElementById('stockPurchaseForm').submit();
+}
+
 // FIXED: Form validation with proper checks
 function validateStockPurchaseForm() {
-    // Look specifically inside the modal, not the whole page
     const modal = document.getElementById('stockPurchaseModal');
     if (!modal) {
         console.error('Modal not found during validation');
         return false;
     }
     
-    // Check if seller is selected (in the modal)
+    // Check if seller is selected
     const sellerSelect = modal.querySelector('#seller_id');
     if (!sellerSelect || !sellerSelect.value || sellerSelect.value === '') {
         alert('Te rog selectează un furnizor.');
@@ -447,36 +461,28 @@ function validateStockPurchaseForm() {
     // Email subject and body required
     const subjectField = modal.querySelector('#email_subject');
     const messageField = modal.querySelector('#custom_message');
-    if (!subjectField || subjectField.value.trim() === '') {
+    if (subjectField && subjectField.value.trim() === '') {
         alert('Subiectul emailului este obligatoriu.');
         subjectField.focus();
         return false;
     }
-    if (!messageField || messageField.value.trim() === '') {
+    if (messageField && messageField.value.trim() === '') {
         alert('Mesajul emailului este obligatoriu.');
         messageField.focus();
         return false;
     }
     
-    console.log('Seller validation passed, selected:', sellerSelect.value);
-    
-    // Check if at least one product is added with valid data
-    const items = modal.querySelectorAll('.product-item'); // Also target modal specifically
+    // Check for valid products
+    const productItems = document.querySelectorAll('.product-item');
     let hasValidItems = false;
     
-    items.forEach((item) => {
-        const productNameField = item.querySelector('.product-name');
-        const quantityField = item.querySelector('.quantity');
-        const unitPriceField = item.querySelector('.unit-price');
+    productItems.forEach(item => {
+        const productName = item.querySelector('.product-name').value.trim();
+        const quantity = parseFloat(item.querySelector('.quantity').value) || 0;
+        const unitPrice = parseFloat(item.querySelector('.unit-price').value) || 0;
         
-        if (productNameField && quantityField && unitPriceField) {
-            const name = productNameField.value.trim();
-            const qty = parseFloat(quantityField.value) || 0;
-            const price = parseFloat(unitPriceField.value) || 0;
-            
-            if (name && qty > 0 && price > 0) {
-                hasValidItems = true;
-            }
+        if (productName && quantity > 0 && unitPrice > 0) {
+            hasValidItems = true;
         }
     });
     
@@ -485,7 +491,6 @@ function validateStockPurchaseForm() {
         return false;
     }
     
-    console.log('All validation passed!');
     return true;
 }
 
@@ -518,6 +523,41 @@ function closeModal(modalId) {
             if (invoiceItems) invoiceItems.innerHTML = '';
         }
     }
+}
+
+function updateStatusBadge(element, status) {
+    const statusClasses = {
+        'draft': 'status-draft',
+        'sent': 'status-sent', 
+        'confirmed': 'status-confirmed',
+        'partial_delivery': 'status-partial_delivery',
+        'delivered': 'status-delivered',
+        'cancelled': 'status-cancelled',
+        'returned': 'status-returned',
+        'completed': 'status-completed'
+    };
+    
+    // Remove all existing status classes
+    Object.values(statusClasses).forEach(cls => element.classList.remove(cls));
+    
+    // Add the new status class
+    if (statusClasses[status]) {
+        element.classList.add(statusClasses[status]);
+    }
+    
+    // Update text content
+    const statusTexts = {
+        'draft': 'DRAFT',
+        'sent': 'TRIMIS',
+        'confirmed': 'CONFIRMAT',
+        'partial_delivery': 'LIVRARE PARȚIALĂ',
+        'delivered': 'LIVRAT',
+        'cancelled': 'ANULAT',
+        'returned': 'RETURNAT',
+        'completed': 'COMPLET'
+    };
+    
+    element.textContent = statusTexts[status] || status.toUpperCase();
 }
 
 // Status update modal
@@ -554,7 +594,19 @@ function openDeliveryModal(orderId) {
 // Invoice modal
 function openInvoiceUploadModal(orderId) {
     document.getElementById('invoiceOrderId').value = orderId;
-    document.getElementById('invoiceUploadForm').reset();
+    
+    // Clear any previous file selection
+    const fileInput = document.getElementById('invoice_file');
+    if (fileInput) {
+        fileInput.value = '';
+    }
+    
+    // Show info about status change
+    const infoDiv = document.getElementById('invoice-upload-info');
+    if (infoDiv) {
+        infoDiv.innerHTML = '<i class="material-symbols-outlined">info</i> Încărcarea facturii va schimba statusul comenzii în "CONFIRMAT".';
+    }
+    
     openModal('invoiceUploadModal');
 }
 
@@ -686,7 +738,7 @@ class PurchaseOrdersReceivingManager {
         const progressPercent = order.receiving_summary.receiving_progress_percent;
         const hasDiscrepancies = order.discrepancies_summary.has_pending_discrepancies;
         
-        // NEW: Determine invoice display
+        // Updated invoice display logic - show button for all statuses except 'draft'
         let invoiceDisplay = '-';
         if (order.invoiced) {
             invoiceDisplay = `
@@ -700,7 +752,8 @@ class PurchaseOrdersReceivingManager {
                     </a>
                 </div>
             `;
-        } else if (order.po_status === 'delivered' || order.po_status === 'partial_delivery') {
+        } else if (order.po_status !== 'draft') {
+            // Show upload button for all statuses except 'draft'
             invoiceDisplay = `
                 <button class="btn btn-sm btn-success" onclick="openInvoiceUploadModal(${order.id})" 
                         title="Încarcă Factura">
@@ -775,7 +828,6 @@ class PurchaseOrdersReceivingManager {
             </tr>
         `;
     }
-
     // NEW: Updated summary stats to include invoice information
     updateSummaryStats(stats) {
         const elements = {
@@ -1309,5 +1361,8 @@ window.openInvoiceUploadModal = openInvoiceUploadModal;
 window.closeReceivingModal = closeReceivingModal;
 window.calculateInvoiceItemTotal = calculateInvoiceItemTotal;
 window.purchaseOrdersManager = purchaseOrdersManager;
+window.submitStockPurchase = submitStockPurchase;
+window.updateStatusBadge = updateStatusBadge;
+window.showNotification = showNotification;
 
 console.log('Purchase Orders JS loaded with complete stock purchase functionality');

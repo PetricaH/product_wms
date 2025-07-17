@@ -112,7 +112,7 @@ try {
         $params[':seller_id'] = $sellerFilter;
     }
 
-    $sql .= "GROUP BY po.id, po.order_number, po.status, po.total_ammount, po.currency,
+    $sql .= "GROUP BY po.id, po.order_number, po.status, po.total_amount, po.currency,
                         po.expected_delivery_date, po.actual_delivery_date, po.created_at, po.updated_at,
                         s.supplier_name, s.id, u.username";
     

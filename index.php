@@ -66,13 +66,19 @@ try {
     // Recent activity
     $recentOrders = $orders->getRecentOrders(5);
     $criticalStockAlerts = $inventory->getCriticalStockAlerts(5);
-    
+
     // Performance metrics
     $todayStats = [
         'orders_created' => $orders->countOrdersCreatedToday(),
         'orders_completed' => $completedOrdersToday,
         'items_moved' => $inventory->getItemsMovedToday(),
     ];
+
+    // Duration statistics
+    $pickingByOperator = $orders->getAverageProcessingTimeByOperator();
+    $pickingByCategory = $orders->getAverageProcessingTimeByCategory();
+    $receivingByOperator = $receivingSession->getAverageDurationByOperator();
+    $receivingByCategory = $receivingSession->getAverageDurationByCategory();
     
 } catch (Exception $e) {
     error_log("Dashboard data error: " . $e->getMessage());
@@ -83,6 +89,8 @@ try {
     $recentOrders = $criticalStockAlerts = [];
     $todayStats = ['orders_created' => 0, 'orders_completed' => 0, 'items_moved' => 0];
     $pendingQualityItems = 0;
+    $pickingByOperator = $pickingByCategory = [];
+    $receivingByOperator = $receivingByCategory = [];
 }
 ?>
 
@@ -296,9 +304,122 @@ try {
                                                 <span class="stock-min"><?= number_format($alert['min_stock_level']) ?></span>
                                             </div>
                                         </div>
-                                    <?php endforeach; ?>
+                    <?php endforeach; ?>
                                 </div>
                             <?php endif; ?>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Duration Statistics -->
+                <div class="duration-stats">
+                    <h3 class="section-title">
+                        <span class="material-symbols-outlined">schedule</span>
+                        Timp Mediu Procesare
+                    </h3>
+                    <div class="duration-grid">
+                        <div class="duration-card">
+                            <div class="card-header">
+                                <h3 class="card-title">
+                                    <span class="material-symbols-outlined">person</span>
+                                    Picking / Operator
+                                </h3>
+                            </div>
+                            <div class="card-content">
+                                <?php if (empty($pickingByOperator)): ?>
+                                    <div class="empty-state">
+                                        <span class="material-symbols-outlined">info</span>
+                                        <p>Fără date</p>
+                                    </div>
+                                <?php else: ?>
+                                    <div class="duration-list">
+                                        <?php foreach ($pickingByOperator as $row): ?>
+                                            <div class="duration-item">
+                                                <span><?= htmlspecialchars($row['operator']) ?></span>
+                                                <span class="duration-value"><?= number_format($row['avg_minutes'], 1) ?> min</span>
+                                            </div>
+                                        <?php endforeach; ?>
+                                    </div>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+
+                        <div class="duration-card">
+                            <div class="card-header">
+                                <h3 class="card-title">
+                                    <span class="material-symbols-outlined">category</span>
+                                    Picking / Categorie
+                                </h3>
+                            </div>
+                            <div class="card-content">
+                                <?php if (empty($pickingByCategory)): ?>
+                                    <div class="empty-state">
+                                        <span class="material-symbols-outlined">info</span>
+                                        <p>Fără date</p>
+                                    </div>
+                                <?php else: ?>
+                                    <div class="duration-list">
+                                        <?php foreach ($pickingByCategory as $row): ?>
+                                            <div class="duration-item">
+                                                <span><?= htmlspecialchars($row['category'] ?? 'N/A') ?></span>
+                                                <span class="duration-value"><?= number_format($row['avg_minutes'], 1) ?> min</span>
+                                            </div>
+                                        <?php endforeach; ?>
+                                    </div>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+
+                        <div class="duration-card">
+                            <div class="card-header">
+                                <h3 class="card-title">
+                                    <span class="material-symbols-outlined">person</span>
+                                    Recepție / Operator
+                                </h3>
+                            </div>
+                            <div class="card-content">
+                                <?php if (empty($receivingByOperator)): ?>
+                                    <div class="empty-state">
+                                        <span class="material-symbols-outlined">info</span>
+                                        <p>Fără date</p>
+                                    </div>
+                                <?php else: ?>
+                                    <div class="duration-list">
+                                        <?php foreach ($receivingByOperator as $row): ?>
+                                            <div class="duration-item">
+                                                <span><?= htmlspecialchars($row['operator']) ?></span>
+                                                <span class="duration-value"><?= number_format($row['avg_minutes'], 1) ?> min</span>
+                                            </div>
+                                        <?php endforeach; ?>
+                                    </div>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+
+                        <div class="duration-card">
+                            <div class="card-header">
+                                <h3 class="card-title">
+                                    <span class="material-symbols-outlined">category</span>
+                                    Recepție / Categorie
+                                </h3>
+                            </div>
+                            <div class="card-content">
+                                <?php if (empty($receivingByCategory)): ?>
+                                    <div class="empty-state">
+                                        <span class="material-symbols-outlined">info</span>
+                                        <p>Fără date</p>
+                                    </div>
+                                <?php else: ?>
+                                    <div class="duration-list">
+                                        <?php foreach ($receivingByCategory as $row): ?>
+                                            <div class="duration-item">
+                                                <span><?= htmlspecialchars($row['category'] ?? 'N/A') ?></span>
+                                                <span class="duration-value"><?= number_format($row['avg_minutes'], 1) ?> min</span>
+                                            </div>
+                                        <?php endforeach; ?>
+                                    </div>
+                                <?php endif; ?>
+                            </div>
                         </div>
                     </div>
                 </div>

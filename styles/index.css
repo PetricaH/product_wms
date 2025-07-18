@@ -402,6 +402,40 @@
     font-size: 0.9rem;
 }
 
+/* ===== DURATION STATS ===== */
+.duration-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 1rem;
+    margin-bottom: 2rem;
+}
+
+.duration-card {
+    background: var(--container-background);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    overflow: hidden;
+}
+
+.duration-list {
+    padding: 1rem;
+}
+
+.duration-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.4rem 0;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.duration-item:last-child {
+    border-bottom: none;
+}
+
+.duration-value {
+    font-weight: 600;
+}
+
 /* ===== QUICK ACTIONS ===== */
 .quick-actions {
     margin-top: 2rem;
@@ -488,6 +522,11 @@
     }
     
     .performance-stats {
+        grid-template-columns: 1fr;
+        gap: 0.75rem;
+    }
+
+    .duration-grid {
         grid-template-columns: 1fr;
         gap: 0.75rem;
     }

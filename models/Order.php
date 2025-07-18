@@ -946,7 +946,52 @@ class Order
         ");
         $stmt->execute();
         $stats['products_without_units'] = $stmt->fetch(PDO::FETCH_ASSOC)['count'];
-        
+
         return $stats;
+    }
+
+    /**
+     * Average processing time for picking orders by operator (in minutes)
+     */
+    public function getAverageProcessingTimeByOperator($days = 30) {
+        $sql = "
+            SELECT u.username AS operator,
+                   AVG(TIMESTAMPDIFF(MINUTE, o.assigned_at, o.updated_at)) AS avg_minutes
+            FROM orders o
+            JOIN users u ON o.assigned_to = u.id
+            WHERE o.status = 'completed'
+              AND o.type = 'outbound'
+              AND o.assigned_at IS NOT NULL
+              AND o.updated_at >= DATE_SUB(NOW(), INTERVAL :days DAY)
+            GROUP BY u.username
+            ORDER BY avg_minutes
+        ";
+        $stmt = $this->conn->prepare($sql);
+        $stmt->bindValue(':days', $days, PDO::PARAM_INT);
+        $stmt->execute();
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    /**
+     * Average processing time for picking orders by product category (in minutes)
+     */
+    public function getAverageProcessingTimeByCategory($days = 30) {
+        $sql = "
+            SELECT p.category AS category,
+                   AVG(TIMESTAMPDIFF(MINUTE, o.assigned_at, o.updated_at)) AS avg_minutes
+            FROM orders o
+            JOIN order_items oi ON o.id = oi.order_id
+            JOIN products p ON oi.product_id = p.product_id
+            WHERE o.status = 'completed'
+              AND o.type = 'outbound'
+              AND o.assigned_at IS NOT NULL
+              AND o.updated_at >= DATE_SUB(NOW(), INTERVAL :days DAY)
+            GROUP BY p.category
+            ORDER BY avg_minutes
+        ";
+        $stmt = $this->conn->prepare($sql);
+        $stmt->bindValue(':days', $days, PDO::PARAM_INT);
+        $stmt->execute();
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 }

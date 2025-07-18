@@ -23,10 +23,14 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
-// CSRF check
-$headers = apache_request_headers();
-$csrfToken = $headers['X-CSRF-Token'] ?? '';
-if (!$csrfToken || $csrfToken !== $_SESSION['csrf_token']) {
+// CSRF check with fallback for non-Apache servers
+$csrfToken = $_SERVER['HTTP_X_CSRF_TOKEN'] ?? '';
+if (function_exists('apache_request_headers')) {
+    $headers = array_change_key_case(apache_request_headers(), CASE_UPPER);
+    $csrfToken = $csrfToken ?: ($headers['X-CSRF-TOKEN'] ?? '');
+}
+
+if (!validateCsrfToken($csrfToken)) {
     http_response_code(403);
     echo json_encode(['success' => false, 'message' => 'Invalid CSRF token']);
     exit;
@@ -85,10 +89,11 @@ try {
             SUM(CASE WHEN ri.received_quantity > 0 THEN ri.received_quantity ELSE 0 END) as total_received_quantity,
             SUM(poi.quantity) as total_expected_quantity
         FROM purchase_order_items poi
-        LEFT JOIN receiving_items ri ON poi.id = ri.purchase_order_item_id 
-            AND ri.receiving_session_id = :session_id
-        LEFT JOIN receiving_discrepancies rd ON rd.receiving_session_id = :session_id 
+        LEFT JOIN purchasable_products pp ON poi.purchasable_product_id = pp.id
+        LEFT JOIN receiving_items ri ON poi.id = ri.purchase_order_item_id
             AND rd.product_id = poi.product_id
+        LEFT JOIN receiving_discrepancies rd ON rd.receiving_session_id = :session_id
+        AND rd.product_id = pp.internal_product_id
         WHERE poi.purchase_order_id = :purchase_order_id
     ");
     $stmt->execute([

@@ -23,10 +23,14 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
-// CSRF check
-$headers = apache_request_headers();
-$csrfToken = $headers['X-CSRF-Token'] ?? '';
-if (!$csrfToken || $csrfToken !== $_SESSION['csrf_token']) {
+// CSRF check with fallback for non-Apache servers
+$csrfToken = $_SERVER['HTTP_X_CSRF_TOKEN'] ?? '';
+if (function_exists('apache_request_headers')) {
+    $headers = array_change_key_case(apache_request_headers(), CASE_UPPER);
+    $csrfToken = $csrfToken ?: ($headers['X-CSRF-TOKEN'] ?? '');
+}
+
+if (!validateCsrfToken($csrfToken)) {
     http_response_code(403);
     echo json_encode(['success' => false, 'message' => 'Invalid CSRF token']);
     exit;

@@ -12,9 +12,9 @@ if (!isset($_SESSION['user_id'])) {
 }
 
 // Generate CSRF token
-if (!isset($_SESSION['csrf_token'])) {
-    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
-}
+// if (!isset($_SESSION['csrf_token'])) {
+//     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+// }
 
 // Database connection
 $config = require BASE_PATH . '/config/config.php';

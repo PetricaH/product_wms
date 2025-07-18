@@ -91,9 +91,9 @@ try {
         FROM purchase_order_items poi
         LEFT JOIN purchasable_products pp ON poi.purchasable_product_id = pp.id
         LEFT JOIN receiving_items ri ON poi.id = ri.purchase_order_item_id
-            AND rd.product_id = poi.product_id
+            AND ri.receiving_session_id = :session_id
         LEFT JOIN receiving_discrepancies rd ON rd.receiving_session_id = :session_id
-        AND rd.product_id = pp.internal_product_id
+            AND rd.product_id = pp.internal_product_id
         WHERE poi.purchase_order_id = :purchase_order_id
     ");
     $stmt->execute([

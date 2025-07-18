@@ -1,9 +1,16 @@
 <?php
-// File: includes/warehouse_footer.php - Loads JS from warehouse-js folder
+// File: includes/warehouse_footer.php - Enhanced with Timing Integration
 
 // The $currentPage variable should be defined in the main page file.
 if (!isset($currentPage)) {
     $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
+}
+
+// Load TimingManager first (required for timing integration)
+$timingManagerPath = BASE_PATH . '/scripts/TimingManager.js';
+if (file_exists($timingManagerPath)) {
+    $timingManagerUrl = in_prod() ? asset('scripts/TimingManager.js') : BASE_URL . 'scripts/TimingManager.js';
+    echo '<script src="' . $timingManagerUrl . '?v=' . filemtime($timingManagerPath) . '"></script>';
 }
 
 // Load universal warehouse script
@@ -17,8 +24,8 @@ if (file_exists($universalJsPath)) {
 $warehousePageJS = [
     'warehouse_orders' => 'warehouse_orders.js',
     'warehouse_hub' => 'warehouse_hub.js',
-    'mobile_picker' => 'mobile_picker.js',
-    'warehouse_receiving' => 'warehouse_receiving.js',
+    'mobile_picker' => 'mobile_picker.js',        // Will use silent timing
+    'warehouse_receiving' => 'warehouse_receiving.js',  // Will use silent timing
     'warehouse_inventory' => 'warehouse_inventory.js'
 ];
 
@@ -46,6 +53,15 @@ if (isset($warehousePageJS[$currentPage])) {
             echo '<script src="' . $jsUrl . '?v=' . filemtime($jsFilePath) . '"></script>';
         }
     }
+}
+
+// Initialize silent timing for compatible pages
+$timingCompatiblePages = ['mobile_picker', 'warehouse_receiving'];
+if (in_array($currentPage, $timingCompatiblePages)) {
+    echo '<script>';
+    echo 'console.log("⏱️ Silent timing integration active for ' . $currentPage . '");';
+    echo 'window.TIMING_ENABLED = true;';
+    echo '</script>';
 }
 ?>
 </body>

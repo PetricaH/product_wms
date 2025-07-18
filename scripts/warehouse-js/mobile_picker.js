@@ -1,4 +1,4 @@
-// File: scripts/warehouse-js/mobile_picker.js - Improved Mobile Picker
+// File: scripts/warehouse-js/mobile_picker.js - Enhanced with Silent Timing
 
 console.log("✅ Improved Mobile Picker Script Loaded!");
 
@@ -9,6 +9,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const API_BASE = window.WMS_CONFIG?.apiBase || '/api';
     const GET_ORDER_DETAILS_URL = `${API_BASE}/warehouse/order_details.php`;
     const UPDATE_PICK_URL = `${API_BASE}/picking/update_pick.php`;
+    
+    // SILENT TIMING INTEGRATION - Initialize TimingManager
+    const timingManager = new TimingManager('picking');
+    let currentTaskId = null; // Track current timing task silently
     
     // Global State
     let currentOrder = null;
@@ -315,10 +319,30 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Workflow Management Functions
-    function startPickingWorkflow(item, index) {
+    async function startPickingWorkflow(item, index) {
         currentItem = { ...item, index };
         scannedLocation = null;
         scannedProduct = null;
+
+        // SILENT TIMING INTEGRATION - Start timing when workflow begins
+        try {
+            const timingResult = await timingManager.startTiming({
+                order_id: currentOrder.id,
+                order_item_id: item.order_item_id || item.id,
+                product_id: item.product_id,
+                quantity_to_pick: item.quantity_ordered - (item.picked_quantity || 0),
+                location_id: item.location_id
+            });
+            
+            if (timingResult.success) {
+                currentTaskId = timingResult.task_id;
+                console.log('⏱️ Silent timing started for item:', item.id, 'Task ID:', currentTaskId);
+            } else {
+                console.warn('⚠️ Failed to start timing for item:', item.id);
+            }
+        } catch (error) {
+            console.warn('⚠️ Timing error (non-blocking):', error);
+        }
 
         // Show location step only if a location code exists
         if (item.location_code) {
@@ -591,6 +615,32 @@ document.addEventListener('DOMContentLoaded', () => {
             
             if (data.status === 'error') {
                 throw new Error(data.message);
+            }
+
+            // SILENT TIMING INTEGRATION - Complete timing when pick is confirmed
+            if (currentTaskId) {
+                try {
+                    const timingResult = await timingManager.completeTiming(currentTaskId, {
+                        quantity_picked: quantityToPick,
+                        notes: `Picked ${quantityToPick} items successfully`
+                    });
+                    
+                    if (timingResult.success) {
+                        console.log('⏱️ Silent timing completed for item:', currentItem.id, 
+                                   'Duration:', timingResult.task.duration_formatted);
+                        
+                        // Trigger dashboard refresh silently
+                        if (window.refreshDashboardStats) {
+                            window.refreshDashboardStats();
+                        }
+                    } else {
+                        console.warn('⚠️ Failed to complete timing for item:', currentItem.id);
+                    }
+                    
+                    currentTaskId = null; // Clear timing task
+                } catch (error) {
+                    console.warn('⚠️ Timing completion error (non-blocking):', error);
+                }
             }
             
             // Update local data

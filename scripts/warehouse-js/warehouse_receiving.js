@@ -248,7 +248,6 @@ class WarehouseReceiving {
             if (response.ok) {
                 this.receivingItems = result.items || [];
                 this.displayReceivingItems();
-                this.updateReceivingSummary();
             }
             
         } catch (error) {
@@ -299,32 +298,9 @@ class WarehouseReceiving {
 
     getLocationOptions() {
         const locations = this.config.locations || [];
-        return locations.map(loc =>
+        return locations.map(loc => 
             `<option value="${loc.location_code}">${loc.location_code} (${loc.zone})</option>`
         ).join('');
-    }
-
-    updateReceivingSummary() {
-        if (!this.currentReceivingSession) return;
-
-        const poNumberEl = document.getElementById('current-po-number');
-        const supplierEl = document.getElementById('current-supplier');
-        const receivedEl = document.getElementById('items-received');
-        const expectedEl = document.getElementById('items-expected');
-
-        if (poNumberEl) {
-            poNumberEl.textContent = this.currentReceivingSession.po_number || '-';
-        }
-
-        if (supplierEl) {
-            supplierEl.textContent = this.currentReceivingSession.supplier_name || '-';
-        }
-
-        const receivedCount = this.receivingItems.filter(item => item.status === 'received').length;
-        const expectedCount = this.receivingItems.length || this.currentReceivingSession.total_items_expected || 0;
-
-        if (receivedEl) receivedEl.textContent = receivedCount;
-        if (expectedEl) expectedEl.textContent = expectedCount;
     }
 
     async receiveItem(itemId) {
@@ -347,7 +323,7 @@ class WarehouseReceiving {
         }
 
         this.showLoading(true);
-        
+
         try {
             const response = await fetch(`${this.config.apiBase}/receiving/receive_item.php`, {
                 method: 'POST',

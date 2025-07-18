@@ -369,4 +369,45 @@ class ReceivingSession {
             return 0;
         }
     }
+
+    /**
+     * Average duration of receiving sessions by operator (in minutes)
+     */
+    public function getAverageDurationByOperator($days = 30) {
+        $sql = "
+            SELECT u.username AS operator,
+                   AVG(TIMESTAMPDIFF(MINUTE, rs.created_at, rs.completed_at)) AS avg_minutes
+            FROM receiving_sessions rs
+            JOIN users u ON rs.received_by = u.id
+            WHERE rs.status = 'completed'
+              AND rs.completed_at >= DATE_SUB(NOW(), INTERVAL :days DAY)
+            GROUP BY u.username
+            ORDER BY avg_minutes
+        ";
+        $stmt = $this->db->prepare($sql);
+        $stmt->bindValue(':days', $days, PDO::PARAM_INT);
+        $stmt->execute();
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    /**
+     * Average duration of receiving sessions by product category (in minutes)
+     */
+    public function getAverageDurationByCategory($days = 30) {
+        $sql = "
+            SELECT p.category AS category,
+                   AVG(TIMESTAMPDIFF(MINUTE, rs.created_at, rs.completed_at)) AS avg_minutes
+            FROM receiving_sessions rs
+            JOIN receiving_items ri ON rs.id = ri.receiving_session_id
+            JOIN products p ON ri.product_id = p.product_id
+            WHERE rs.status = 'completed'
+              AND rs.completed_at >= DATE_SUB(NOW(), INTERVAL :days DAY)
+            GROUP BY p.category
+            ORDER BY avg_minutes
+        ";
+        $stmt = $this->db->prepare($sql);
+        $stmt->bindValue(':days', $days, PDO::PARAM_INT);
+        $stmt->execute();
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
 }

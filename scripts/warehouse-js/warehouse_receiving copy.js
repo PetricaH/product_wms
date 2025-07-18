@@ -1,10 +1,9 @@
 /**
- * Warehouse Receiving - Production JavaScript with TimingManager Integration
+ * Warehouse Receiving - Production JavaScript
  * File: scripts/warehouse-js/warehouse_receiving.js
  * 
  * Handles complete receiving workflow with supplier document matching
  * Following WMS patterns and real-world receiving process
- * Enhanced with silent timing tracking for performance analytics
  */
 
 class WarehouseReceiving {
@@ -17,11 +16,6 @@ class WarehouseReceiving {
         this.scanner = null;
         this.scannerActive = false;
         
-        // TIMING INTEGRATION - Silent timing for performance tracking
-        this.timingManager = null;
-        this.activeTimingTasks = new Map(); // receiving_item_id -> task_id
-        this.isTimingEnabled = window.TIMING_ENABLED || false;
-        
         this.init();
     }
 
@@ -29,74 +23,8 @@ class WarehouseReceiving {
         this.bindEvents();
         this.initializeCurrentStep();
         this.loadRecentSessions();
-        this.initializeTiming();
         
         console.log('🚛 Warehouse Receiving initialized');
-    }
-
-    /**
-     * Initialize TimingManager for silent timing
-     */
-    initializeTiming() {
-        if (this.isTimingEnabled && window.TimingManager) {
-            this.timingManager = new TimingManager('receiving');
-            console.log('⏱️ Silent timing enabled for receiving operations');
-        } else {
-            console.log('⏱️ Timing disabled or TimingManager not available');
-        }
-    }
-
-    /**
-     * Start timing for a receiving item silently
-     */
-    async startItemTiming(receivingItem) {
-        if (!this.timingManager || !this.isTimingEnabled) return;
-        
-        try {
-            const timingData = {
-                receiving_session_id: this.currentReceivingSession?.id,
-                receiving_item_id: receivingItem.id,
-                product_id: receivingItem.product_id,
-                quantity_to_receive: receivingItem.expected_quantity,
-                location_id: receivingItem.location_id
-            };
-
-            const result = await this.timingManager.startTiming(timingData);
-            
-            if (result.success) {
-                this.activeTimingTasks.set(receivingItem.id, result.task_id);
-                console.log(`⏱️ Silent timing started for item ${receivingItem.id}`);
-            }
-        } catch (error) {
-            console.error('Error starting item timing:', error);
-        }
-    }
-
-    /**
-     * Complete timing for a receiving item silently
-     */
-    async completeItemTiming(receivingItemId, quantityReceived, notes = '') {
-        if (!this.timingManager || !this.isTimingEnabled) return;
-        
-        const taskId = this.activeTimingTasks.get(receivingItemId);
-        if (!taskId) return;
-        
-        try {
-            const completionData = {
-                quantity_received: quantityReceived,
-                quality_check_notes: notes,
-                discrepancy_notes: notes
-            };
-
-            const result = await this.timingManager.completeTiming(taskId, completionData);
-            
-            if (result.success) {
-                this.activeTimingTasks.delete(receivingItemId);
-                console.log(`⏱️ Silent timing completed for item ${receivingItemId}`);
-            }
-        } catch (error) {
-            console.error('Error completing item timing:', error);
-        }
     }
 
     bindEvents() {
@@ -394,12 +322,6 @@ class WarehouseReceiving {
             return;
         }
 
-        // Find the item to start timing
-        const item = this.receivingItems.find(i => i.id == itemId);
-        if (item) {
-            await this.startItemTiming(item);
-        }
-
         this.showLoading(true);
         
         try {
@@ -424,9 +346,6 @@ class WarehouseReceiving {
             if (!response.ok) {
                 throw new Error(result.message || 'Eroare la primirea produsului');
             }
-
-            // Complete timing silently
-            await this.completeItemTiming(itemId, receivedQty);
 
             // Update item status
             this.updateItemStatus(itemId, result.status);
@@ -520,11 +439,6 @@ class WarehouseReceiving {
             this.displayCompletionSummary(result.summary);
             this.showStep(4);
             this.showSuccess('Recepția a fost finalizată cu succes');
-            
-            // Trigger dashboard refresh if timing is enabled
-            if (this.timingManager) {
-                this.timingManager.triggerDashboardRefresh();
-            }
             
         } catch (error) {
             console.error('Error completing receiving:', error);

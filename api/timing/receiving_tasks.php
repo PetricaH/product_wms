@@ -1,6 +1,6 @@
 <?php
 /**
- * Receiving Tasks Timing API
+ * Receiving Tasks Timing API - Fixed Version
  * File: api/timing/receiving_tasks.php
  * 
  * Handles starting, stopping, and managing receiving task timing
@@ -168,10 +168,7 @@ function completeReceivingTask($db) {
         WHERE id = ? AND operator_id = ? AND status IN ('active', 'quality_check')
     ");
     
-    $result = $stmt->execute([
-        $quantityReceived, $qualityCheckNotes, $discrepancyNotes, 
-        $taskId, $operatorId
-    ]);
+    $result = $stmt->execute([$quantityReceived, $qualityCheckNotes, $discrepancyNotes, $taskId, $operatorId]);
     
     if ($stmt->rowCount() === 0) {
         http_response_code(404);
@@ -179,24 +176,7 @@ function completeReceivingTask($db) {
         return;
     }
     
-    // Get the completed task details
-    $getStmt = $db->prepare("
-        SELECT rt.*, p.name as product_name, 
-               TIMESTAMPDIFF(SECOND, rt.start_time, rt.end_time) as duration_seconds
-        FROM receiving_tasks rt
-        JOIN products p ON rt.product_id = p.product_id
-        WHERE rt.id = ?
-    ");
-    $getStmt->execute([$taskId]);
-    $task = $getStmt->fetch(PDO::FETCH_ASSOC);
-    
-    echo json_encode([
-        'success' => true,
-        'task' => $task,
-        'message' => 'Receiving task completed',
-        'duration_seconds' => $task['duration_seconds'],
-        'duration_formatted' => formatDuration($task['duration_seconds'])
-    ]);
+    echo json_encode(['success' => true, 'message' => 'Task completed successfully']);
 }
 
 /**
@@ -231,96 +211,6 @@ function qualityCheckReceivingTask($db) {
     }
     
     echo json_encode(['success' => true, 'message' => 'Task moved to quality check']);
-}
-
-/**
- * Get active receiving tasks for current operator
- */
-function getActiveReceivingTasks($db) {
-    $operatorId = $_SESSION['user_id'];
-    
-    $stmt = $db->prepare("
-        SELECT rt.*, p.name as product_name, p.sku, l.location_code,
-               TIMESTAMPDIFF(SECOND, rt.start_time, NOW()) as elapsed_seconds
-        FROM receiving_tasks rt
-        JOIN products p ON rt.product_id = p.product_id
-        LEFT JOIN locations l ON rt.location_id = l.id
-        WHERE rt.operator_id = ? AND rt.status IN ('active', 'quality_check')
-        ORDER BY rt.start_time ASC
-    ");
-    
-    $stmt->execute([$operatorId]);
-    $tasks = $stmt->fetchAll(PDO::FETCH_ASSOC);
-    
-    foreach ($tasks as &$task) {
-        $task['elapsed_formatted'] = formatDuration($task['elapsed_seconds']);
-    }
-    
-    echo json_encode([
-        'success' => true,
-        'tasks' => $tasks
-    ]);
-}
-
-/**
- * Get receiving analytics
- */
-function getReceivingAnalytics($db) {
-    $operatorId = $_GET['operator_id'] ?? $_SESSION['user_id'];
-    $days = $_GET['days'] ?? 7;
-    $productId = $_GET['product_id'] ?? null;
-    
-    $whereClause = "WHERE rt.operator_id = ? AND rt.status = 'completed' 
-                   AND rt.start_time >= DATE_SUB(NOW(), INTERVAL ? DAY)";
-    $params = [$operatorId, $days];
-    
-    if ($productId) {
-        $whereClause .= " AND rt.product_id = ?";
-        $params[] = $productId;
-    }
-    
-    // Get detailed analytics
-    $stmt = $db->prepare("
-        SELECT 
-            COUNT(*) as total_tasks,
-            SUM(rt.quantity_received) as total_items_received,
-            AVG(rt.duration_seconds) as avg_duration_seconds,
-            MIN(rt.duration_seconds) as min_duration_seconds,
-            MAX(rt.duration_seconds) as max_duration_seconds,
-            AVG(rt.quantity_received) as avg_items_per_task,
-            SUM(rt.duration_seconds) as total_duration_seconds,
-            COUNT(CASE WHEN rt.discrepancy_notes IS NOT NULL THEN 1 END) as tasks_with_discrepancies
-        FROM receiving_tasks rt
-        $whereClause
-    ");
-    
-    $stmt->execute($params);
-    $analytics = $stmt->fetch(PDO::FETCH_ASSOC);
-    
-    // Get per-product breakdown
-    $productStmt = $db->prepare("
-        SELECT 
-            p.product_id, p.name as product_name, p.category,
-            COUNT(*) as task_count,
-            SUM(rt.quantity_received) as total_received,
-            AVG(rt.duration_seconds) as avg_duration_seconds,
-            COUNT(CASE WHEN rt.discrepancy_notes IS NOT NULL THEN 1 END) as discrepancy_count
-        FROM receiving_tasks rt
-        JOIN products p ON rt.product_id = p.product_id
-        $whereClause
-        GROUP BY p.product_id
-        ORDER BY avg_duration_seconds DESC
-    ");
-    
-    $productStmt->execute($params);
-    $productBreakdown = $productStmt->fetchAll(PDO::FETCH_ASSOC);
-    
-    echo json_encode([
-        'success' => true,
-        'analytics' => $analytics,
-        'product_breakdown' => $productBreakdown,
-        'period_days' => $days
-    ]);
 }
 
 /**
@@ -383,6 +273,72 @@ function resumeReceivingTask($db) {
     }
     
     echo json_encode(['success' => true, 'message' => 'Task resumed']);
+}
+
+/**
+ * Get active receiving tasks for current operator
+ */
+function getActiveReceivingTasks($db) {
+    $operatorId = $_SESSION['user_id'];
+    
+    $stmt = $db->prepare("
+        SELECT rt.*, p.name as product_name, p.sku, l.location_code,
+               TIMESTAMPDIFF(SECOND, rt.start_time, NOW()) as elapsed_seconds
+        FROM receiving_tasks rt
+        JOIN products p ON rt.product_id = p.product_id
+        LEFT JOIN locations l ON rt.location_id = l.id
+        WHERE rt.operator_id = ? AND rt.status IN ('active', 'quality_check')
+        ORDER BY rt.start_time ASC
+    ");
+    
+    $stmt->execute([$operatorId]);
+    $tasks = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    
+    foreach ($tasks as &$task) {
+        $task['elapsed_formatted'] = formatDuration($task['elapsed_seconds']);
+    }
+    
+    echo json_encode([
+        'success' => true,
+        'tasks' => $tasks
+    ]);
+}
+
+/**
+ * Get receiving analytics
+ */
+function getReceivingAnalytics($db) {
+    $operatorId = $_GET['operator_id'] ?? $_SESSION['user_id'];
+    $days = $_GET['days'] ?? 7;
+    $productId = $_GET['product_id'] ?? null;
+    
+    $whereClause = "WHERE rt.operator_id = ? AND rt.status = 'completed' 
+                   AND rt.start_time >= DATE_SUB(NOW(), INTERVAL ? DAY)";
+    $params = [$operatorId, $days];
+    
+    if ($productId) {
+        $whereClause .= " AND rt.product_id = ?";
+        $params[] = $productId;
+    }
+    
+    $stmt = $db->prepare("
+        SELECT 
+            COUNT(*) as total_tasks,
+            AVG(rt.duration_seconds) as avg_duration,
+            MIN(rt.duration_seconds) as min_duration,
+            MAX(rt.duration_seconds) as max_duration,
+            SUM(rt.quantity_received) as total_quantity
+        FROM receiving_tasks rt
+        $whereClause
+    ");
+    
+    $stmt->execute($params);
+    $analytics = $stmt->fetch(PDO::FETCH_ASSOC);
+    
+    echo json_encode([
+        'success' => true,
+        'analytics' => $analytics
+    ]);
 }
 
 /**

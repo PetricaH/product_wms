@@ -410,4 +410,25 @@ class ReceivingSession {
         $stmt->execute();
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
+
+    /**
+     * Average duration of receiving sessions by product (in minutes)
+     */
+    public function getAverageDurationByProduct($days = 30) {
+        $sql = "
+            SELECT p.name AS product,
+                   AVG(TIMESTAMPDIFF(MINUTE, rs.created_at, rs.completed_at)) AS avg_minutes
+            FROM receiving_sessions rs
+            JOIN receiving_items ri ON rs.id = ri.receiving_session_id
+            JOIN products p ON ri.product_id = p.product_id
+            WHERE rs.status = 'completed'
+              AND rs.completed_at >= DATE_SUB(NOW(), INTERVAL :days DAY)
+            GROUP BY p.product_id
+            ORDER BY avg_minutes
+        ";
+        $stmt = $this->db->prepare($sql);
+        $stmt->bindValue(':days', $days, PDO::PARAM_INT);
+        $stmt->execute();
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
 }

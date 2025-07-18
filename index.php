@@ -64,7 +64,7 @@ try {
     $warehouseOccupationPercent = $totalLocations > 0 ? round(($occupiedLocations / $totalLocations) * 100, 1) : 0;
     
     // Recent activity
-    $recentOrders = $orders->getRecentOrders(5);
+    $recentOrders = $orders->getRecentOrders(10);
     $criticalStockAlerts = $inventory->getCriticalStockAlerts(5);
 
     // Performance metrics
@@ -76,9 +76,9 @@ try {
 
     // Duration statistics - Updated to use timing tables
     $pickingByOperator = [];
-    $pickingByCategory = [];
+    $pickingByProduct = [];
     $receivingByOperator = [];
-    $receivingByCategory = [];
+    $receivingByProduct = [];
     
     try {
         // Get picking statistics by operator from timing tables
@@ -99,10 +99,10 @@ try {
         $pickingByOperatorStmt->execute();
         $pickingByOperator = $pickingByOperatorStmt->fetchAll(PDO::FETCH_ASSOC);
 
-        // Get picking statistics by category from timing tables
-        $pickingByCategoryStmt = $db->prepare("
-            SELECT 
-                p.category,
+        // Get picking statistics by product from timing tables
+    $pickingByProductStmt = $db->prepare("
+            SELECT
+                p.name as product,
                 AVG(pt.duration_seconds) / 60 as avg_minutes,
                 COUNT(*) as total_tasks
             FROM picking_tasks pt
@@ -110,12 +110,12 @@ try {
             WHERE pt.status = 'completed'
             AND pt.end_time IS NOT NULL
             AND pt.start_time >= DATE_SUB(NOW(), INTERVAL 30 DAY)
-            GROUP BY p.category
+            GROUP BY p.product_id
             ORDER BY avg_minutes ASC
             LIMIT 10
         ");
-        $pickingByCategoryStmt->execute();
-        $pickingByCategory = $pickingByCategoryStmt->fetchAll(PDO::FETCH_ASSOC);
+        $pickingByProductStmt->execute();
+        $pickingByProduct = $pickingByProductStmt->fetchAll(PDO::FETCH_ASSOC);
 
         // Get receiving statistics by operator from timing tables
         $receivingByOperatorStmt = $db->prepare("
@@ -135,10 +135,10 @@ try {
         $receivingByOperatorStmt->execute();
         $receivingByOperator = $receivingByOperatorStmt->fetchAll(PDO::FETCH_ASSOC);
 
-        // Get receiving statistics by category from timing tables
-        $receivingByCategoryStmt = $db->prepare("
-            SELECT 
-                p.category,
+        // Get receiving statistics by product from timing tables
+    $receivingByProductStmt = $db->prepare("
+            SELECT
+                p.name as product,
                 AVG(rt.duration_seconds) / 60 as avg_minutes,
                 COUNT(*) as total_tasks
             FROM receiving_tasks rt
@@ -146,12 +146,12 @@ try {
             WHERE rt.status = 'completed'
             AND rt.end_time IS NOT NULL
             AND rt.start_time >= DATE_SUB(NOW(), INTERVAL 30 DAY)
-            GROUP BY p.category
+            GROUP BY p.product_id
             ORDER BY avg_minutes ASC
             LIMIT 10
         ");
-        $receivingByCategoryStmt->execute();
-        $receivingByCategory = $receivingByCategoryStmt->fetchAll(PDO::FETCH_ASSOC);
+        $receivingByProductStmt->execute();
+        $receivingByProduct = $receivingByProductStmt->fetchAll(PDO::FETCH_ASSOC);
 
         // Get today's task counts for the performance section
         $todayTasksStmt = $db->prepare("
@@ -168,9 +168,9 @@ try {
         // If timing tables don't exist yet, fall back to old methods
         error_log("Timing tables not available, using fallback: " . $e->getMessage());
         $pickingByOperator = $orders->getAverageProcessingTimeByOperator();
-        $pickingByCategory = $orders->getAverageProcessingTimeByCategory();
+        $pickingByProduct = $orders->getAverageProcessingTimeByProduct();
         $receivingByOperator = $receivingSession->getAverageDurationByOperator();
-        $receivingByCategory = $receivingSession->getAverageDurationByCategory();
+        $receivingByProduct = $receivingSession->getAverageDurationByProduct();
         $todayTaskCounts = ['picking_tasks_today' => 0, 'receiving_tasks_today' => 0, 'active_picking_tasks' => 0, 'active_receiving_tasks' => 0];
     }
     
@@ -183,8 +183,8 @@ try {
     $recentOrders = $criticalStockAlerts = [];
     $todayStats = ['orders_created' => 0, 'orders_completed' => 0, 'items_moved' => 0];
     $pendingQualityItems = 0;
-    $pickingByOperator = $pickingByCategory = [];
-    $receivingByOperator = $receivingByCategory = [];
+    $pickingByOperator = $pickingByProduct = [];
+    $receivingByOperator = $receivingByProduct = [];
     $todayTaskCounts = ['picking_tasks_today' => 0, 'receiving_tasks_today' => 0, 'active_picking_tasks' => 0, 'active_receiving_tasks' => 0];
 }
 ?>
@@ -366,20 +366,22 @@ try {
                                     <p>Nu există comenzi recente</p>
                                 </div>
                             <?php else: ?>
-                                <div class="order-list">
-                                    <?php foreach ($recentOrders as $order): ?>
-                                        <div class="order-item">
-                                            <div class="order-info">
-                                                <div class="order-id">#<?= htmlspecialchars($order['id']) ?></div>
-                                                <div class="order-customer"><?= htmlspecialchars($order['customer_name'] ?? 'N/A') ?></div>
+                                <div class="order-list-container">
+                                    <div class="order-list">
+                                        <?php foreach ($recentOrders as $order): ?>
+                                            <div class="order-item">
+                                                <div class="order-info">
+                                                    <div class="order-id">#<?= htmlspecialchars($order['id']) ?></div>
+                                                    <div class="order-customer"><?= htmlspecialchars($order['customer_name'] ?? 'N/A') ?></div>
+                                                </div>
+                                                <div class="order-status">
+                                                    <span class="status-badge status-<?= strtolower($order['status']) ?>">
+                                                        <?= ucfirst($order['status']) ?>
+                                                    </span>
+                                                </div>
                                             </div>
-                                            <div class="order-status">
-                                                <span class="status-badge status-<?= strtolower($order['status']) ?>">
-                                                    <?= ucfirst($order['status']) ?>
-                                                </span>
-                                            </div>
-                                        </div>
-                                    <?php endforeach; ?>
+                                        <?php endforeach; ?>
+                                    </div>
                                 </div>
                             <?php endif; ?>
                         </div>
@@ -458,20 +460,20 @@ try {
                             <div class="card-header">
                                 <h3 class="card-title">
                                     <span class="material-symbols-outlined">category</span>
-                                    Picking / Categorie
+                                    Picking / Produs
                                 </h3>
                             </div>
                             <div class="card-content">
-                                <?php if (empty($pickingByCategory)): ?>
+                                <?php if (empty($pickingByProduct)): ?>
                                     <div class="empty-state">
                                         <span class="material-symbols-outlined">info</span>
                                         <p>Fără date</p>
                                     </div>
                                 <?php else: ?>
                                     <div class="duration-list">
-                                        <?php foreach ($pickingByCategory as $row): ?>
+                                        <?php foreach ($pickingByProduct as $row): ?>
                                             <div class="duration-item">
-                                                <span><?= htmlspecialchars($row['category'] ?? 'N/A') ?></span>
+                                                <span><?= htmlspecialchars($row['product'] ?? 'N/A') ?></span>
                                                 <span class="duration-value"><?= number_format($row['avg_minutes'], 1) ?> min</span>
                                             </div>
                                         <?php endforeach; ?>
@@ -510,20 +512,20 @@ try {
                             <div class="card-header">
                                 <h3 class="card-title">
                                     <span class="material-symbols-outlined">category</span>
-                                    Recepție / Categorie
+                                    Recepție / Produs
                                 </h3>
                             </div>
                             <div class="card-content">
-                                <?php if (empty($receivingByCategory)): ?>
+                                <?php if (empty($receivingByProduct)): ?>
                                     <div class="empty-state">
                                         <span class="material-symbols-outlined">info</span>
                                         <p>Fără date</p>
                                     </div>
                                 <?php else: ?>
                                     <div class="duration-list">
-                                        <?php foreach ($receivingByCategory as $row): ?>
+                                        <?php foreach ($receivingByProduct as $row): ?>
                                             <div class="duration-item">
-                                                <span><?= htmlspecialchars($row['category'] ?? 'N/A') ?></span>
+                                                <span><?= htmlspecialchars($row['product'] ?? 'N/A') ?></span>
                                                 <span class="duration-value"><?= number_format($row['avg_minutes'], 1) ?> min</span>
                                             </div>
                                         <?php endforeach; ?>

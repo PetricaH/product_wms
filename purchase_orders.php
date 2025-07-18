@@ -187,7 +187,7 @@ function sendPurchaseOrderEmail(array $smtp, string $to, string $subject, string
         }
         
         // Recipients and content
-        $mail->setFrom($smtp['smtp_user'], 'WMS - Comanda Achizitie');
+        $mail->setFrom($smtp['smtp_user'], 'Wartung Tratamente Speciale SRL');
         $mail->addAddress($to);
         $mail->Subject = $subject;
         $mail->Body = $body;
@@ -390,16 +390,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $message = 'Comanda a fost creată cu succes (' . $orderInfo['order_number'] . '), dar emailul nu a fost trimis - configurați setările SMTP în profilul dvs.';
                         $messageType = 'warning';
                     } else {
-                        // Prepare email content
-                        $emailBody = "Bună ziua,\n\n";
-                        $emailBody .= "Vă transmitem comanda de achiziție " . $orderInfo['order_number'] . ".\n\n";
-                        if (!empty($customMessage)) {
-                            $emailBody .= $customMessage . "\n\n";
-                        }
-                        $emailBody .= "Vă mulțumim!\n";
-                        $emailBody .= "Echipa WMS";
-                        
-                        $finalSubject = !empty($emailSubject) ? $emailSubject : 'Comanda ' . $orderInfo['order_number'];
+                        // Prepare email content using user-provided subject and body only
+                        $emailBody = $customMessage;
+                        $finalSubject = $emailSubject;
                         
                         // Send email
                         $emailResult = sendPurchaseOrderEmail($smtpSettings, $emailRecipient, $finalSubject, $emailBody, $pdfFile);

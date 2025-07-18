@@ -741,12 +741,15 @@ class PurchaseOrdersReceivingManager {
         // Updated invoice display logic - show button for all statuses except 'draft'
         let invoiceDisplay = '-';
         if (order.invoiced) {
+            const invoiceUrl = order.invoice_file_path.startsWith('storage/')
+                ? order.invoice_file_path
+                : `storage/${order.invoice_file_path}`;
             invoiceDisplay = `
                 <div class="invoice-container">
                     <div class="invoice-date-badge">
                         Primit Factura La: ${this.formatDate(order.invoiced_at)}
                     </div>
-                    <a href="${order.invoice_file_path}" target="_blank" class="invoice-file-link">
+                    <a href="${invoiceUrl}" target="_blank" class="invoice-file-link">
                         <span class="material-symbols-outlined">description</span>
                         Factura
                     </a>

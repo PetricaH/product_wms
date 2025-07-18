@@ -24,7 +24,7 @@ if (!isset($_SESSION['csrf_token'])) {
 }
 
 $pageTitle = 'Control Calitate';
-$currentPage = 'qc-management';
+$currentPage = 'qc_management';
 
 // Include header
 require_once __DIR__ . '/includes/header.php';

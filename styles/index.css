@@ -300,6 +300,23 @@
     flex-shrink: 0;
 }
 
+.order-list-container {
+    max-height: 250px;
+    overflow-y: auto;
+    position: relative;
+}
+
+.order-list-container::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 2rem;
+    pointer-events: none;
+    background: linear-gradient(to bottom, rgba(255, 255, 255, 0), var(--container-background));
+}
+
 
 .alert-item {
     display: flex;

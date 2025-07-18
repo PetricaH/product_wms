@@ -994,4 +994,27 @@ class Order
         $stmt->execute();
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
+
+    /**
+     * Average processing time for picking orders by product (in minutes)
+     */
+    public function getAverageProcessingTimeByProduct($days = 30) {
+        $sql = "
+            SELECT p.name AS product,
+                   AVG(TIMESTAMPDIFF(MINUTE, o.assigned_at, o.updated_at)) AS avg_minutes
+            FROM orders o
+            JOIN order_items oi ON o.id = oi.order_id
+            JOIN products p ON oi.product_id = p.product_id
+            WHERE o.status = 'completed'
+              AND o.type = 'outbound'
+              AND o.assigned_at IS NOT NULL
+              AND o.updated_at >= DATE_SUB(NOW(), INTERVAL :days DAY)
+            GROUP BY p.product_id
+            ORDER BY avg_minutes
+        ";
+        $stmt = $this->conn->prepare($sql);
+        $stmt->bindValue(':days', $days, PDO::PARAM_INT);
+        $stmt->execute();
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
 }

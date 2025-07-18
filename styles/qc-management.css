@@ -1,0 +1,450 @@
+/**
+ * QC Management Styles
+ * File: styles/qc-management.css
+ * 
+ * Stylesheet pentru interfața de management control calitate
+ */
+
+/* === STATISTICS GRID === */
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+    margin-bottom: 2rem;
+}
+
+.stat-card {
+    background: var(--card-background);
+    padding: 1.5rem;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    text-align: center;
+    transition: all 0.2s ease;
+}
+
+.stat-card:hover {
+    border-color: var(--primary-color);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.stat-number {
+    font-size: 2rem;
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+    display: block;
+}
+
+.stat-number.pending { color: #f59e0b; }
+.stat-number.approved { color: #10b981; }
+.stat-number.rejected { color: #ef4444; }
+.stat-number.total { color: var(--primary-color); }
+
+.stat-label {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+}
+
+/* === BULK ACTIONS === */
+.bulk-actions {
+    position: sticky;
+    top: 0;
+    background: var(--background-color);
+    padding: 1rem;
+    border-bottom: 1px solid var(--border-color);
+    z-index: 100;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-radius: 8px;
+    margin-bottom: 1rem;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.bulk-info {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.bulk-buttons {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.bulk-buttons .btn {
+    font-size: 0.9rem;
+    padding: 0.5rem 1rem;
+}
+
+/* === FILTER SECTION === */
+.filter-section {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+    margin-bottom: 2rem;
+    padding: 1.5rem;
+    background: var(--card-background);
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+}
+
+.filter-section .form-group {
+    margin-bottom: 0;
+}
+
+.filter-section label {
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: 0.5rem;
+    display: block;
+    font-size: 0.9rem;
+}
+
+/* === QC ITEM CARDS === */
+.qc-item-card {
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin-bottom: 1rem;
+    background: var(--card-background);
+    transition: all 0.2s ease;
+    position: relative;
+}
+
+.qc-item-card:hover {
+    border-color: var(--primary-color);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    transform: translateY(-1px);
+}
+
+.qc-item-card.selected {
+    border-color: var(--primary-color);
+    background: rgba(var(--primary-color-rgb), 0.05);
+    box-shadow: 0 0 0 2px rgba(var(--primary-color-rgb), 0.2);
+}
+
+.qc-item-card .item-checkbox {
+    position: absolute;
+    top: 1rem;
+    left: 1rem;
+    width: 20px;
+    height: 20px;
+    cursor: pointer;
+}
+
+.qc-item-card .item-content {
+    margin-left: 2.5rem;
+}
+
+/* === ITEM HEADER === */
+.item-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.item-title {
+    font-weight: 600;
+    font-size: 1.1rem;
+    color: var(--text-primary);
+    margin: 0;
+}
+
+.item-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.item-actions .btn {
+    font-size: 0.8rem;
+    padding: 0.25rem 0.75rem;
+}
+
+/* === ITEM DETAILS === */
+.item-details {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 1rem;
+}
+
+.detail-group h4 {
+    margin: 0 0 0.5rem 0;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+}
+
+.detail-group p {
+    margin: 0.25rem 0;
+    font-size: 0.95rem;
+    color: var(--text-primary);
+}
+
+.detail-group .detail-value {
+    font-weight: 500;
+}
+
+/* === STATUS BADGES === */
+.status-badge {
+    padding: 0.25rem 0.75rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    display: inline-block;
+}
+
+.status-pending { 
+    background: #fef3c7; 
+    color: #92400e; 
+    border: 1px solid #f59e0b;
+}
+
+.status-approved { 
+    background: #d1fae5; 
+    color: #065f46; 
+    border: 1px solid #10b981;
+}
+
+.status-rejected { 
+    background: #fee2e2; 
+    color: #991b1b; 
+    border: 1px solid #ef4444;
+}
+
+/* === CONDITION INDICATORS === */
+.condition-good { 
+    color: #10b981; 
+    font-weight: 600;
+}
+
+.condition-damaged { 
+    color: #ef4444; 
+    font-weight: 600;
+}
+
+.condition-defective { 
+    color: #f59e0b; 
+    font-weight: 600;
+}
+
+/* === DISCREPANCY WARNING === */
+.discrepancy-warning {
+    background: #fef3c7;
+    border: 1px solid #f59e0b;
+    padding: 0.75rem;
+    border-radius: 6px;
+    margin: 0.75rem 0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.discrepancy-warning .material-symbols-outlined {
+    color: #f59e0b;
+    font-size: 1.2rem;
+}
+
+.discrepancy-warning .discrepancy-text {
+    font-size: 0.9rem;
+    color: #92400e;
+    font-weight: 500;
+}
+
+/* === QUANTITY COMPARISON === */
+.quantity-comparison {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-family: 'Courier New', monospace;
+}
+
+.quantity-expected {
+    color: var(--text-secondary);
+}
+
+.quantity-received {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.quantity-arrow {
+    color: var(--text-secondary);
+}
+
+.quantity-difference {
+    font-weight: 600;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+}
+
+.quantity-difference.over {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.quantity-difference.short {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+/* === LOADING OVERLAY === */
+.loading-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0,0,0,0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.loading-content {
+    background: var(--card-background);
+    padding: 2rem;
+    border-radius: 8px;
+    text-align: center;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+}
+
+.loading-content .material-symbols-outlined {
+    font-size: 2rem;
+    color: var(--primary-color);
+    margin-bottom: 1rem;
+}
+
+.loading-content p {
+    margin: 0;
+    color: var(--text-primary);
+    font-weight: 500;
+}
+
+/* === PAGINATION === */
+.pagination-wrapper {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 1rem;
+    margin-top: 2rem;
+    padding: 1rem;
+}
+
+.pagination-info {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+.pagination-controls {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.pagination-controls .btn {
+    padding: 0.5rem 1rem;
+    font-size: 0.9rem;
+}
+
+/* === EMPTY STATE === */
+.empty-state {
+    text-align: center;
+    padding: 3rem 1rem;
+    color: var(--text-secondary);
+}
+
+.empty-state .material-symbols-outlined {
+    font-size: 4rem;
+    color: var(--text-tertiary);
+    margin-bottom: 1rem;
+}
+
+.empty-state h3 {
+    margin: 0 0 0.5rem 0;
+    color: var(--text-secondary);
+}
+
+.empty-state p {
+    margin: 0;
+    font-size: 0.9rem;
+}
+
+/* === MODAL ENHANCEMENTS === */
+.modal-content {
+    max-width: 600px;
+}
+
+.approval-summary,
+.rejection-summary {
+    background: var(--background-secondary);
+    padding: 1rem;
+    border-radius: 6px;
+    border-left: 4px solid var(--primary-color);
+    margin-top: 1rem;
+}
+
+.rejection-summary {
+    border-left-color: #ef4444;
+}
+
+.rejection-summary .warning {
+    color: #991b1b;
+    font-weight: 500;
+    margin: 0;
+}
+
+/* === RESPONSIVE DESIGN === */
+@media (max-width: 768px) {
+    .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    
+    .filter-section {
+        grid-template-columns: 1fr;
+    }
+    
+    .item-details {
+        grid-template-columns: 1fr;
+    }
+    
+    .item-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.5rem;
+    }
+    
+    .bulk-actions {
+        flex-direction: column;
+        gap: 1rem;
+    }
+    
+    .bulk-buttons {
+        width: 100%;
+        justify-content: center;
+    }
+}
+
+@media (max-width: 480px) {
+    .stats-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .qc-item-card {
+        padding: 1rem;
+    }
+    
+    .qc-item-card .item-content {
+        margin-left: 2rem;
+    }
+}

@@ -16,6 +16,7 @@ if (!defined('BASE_PATH')) {
 }
 
 require_once BASE_PATH . '/bootstrap.php';
+require_once BASE_PATH . '/includes/qc_helpers.php';
 
 if (!isset($_SESSION['user_id'])) {
     http_response_code(401);

@@ -144,6 +144,18 @@ if (isset($_SESSION['username'])) {
             </a>
         </li>
 
+         <!-- Quality Control Management -->
+        <?php if (isset($_SESSION['role']) && in_array($_SESSION['role'], ['admin', 'supervisor'])): ?>
+        <li class="sidebar__item">
+            <a href="<?= getNavUrl('qc_management.php') ?>" 
+               class="sidebar__link <?= getActiveClass('qc_management.php') ?>"
+               data-tooltip="Control Calitate">
+                <span class="material-symbols-outlined">verified</span>
+                <span class="link-text">Control Calitate</span>
+            </a>
+        </li>
+        <?php endif; ?>
+
         <!-- SmartBill Sync -->
         <li class="sidebar__item">
             <a href="<?= getNavUrl('smartbill-sync.php') ?>"

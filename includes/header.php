@@ -30,7 +30,8 @@ $pageSpecificCSS = [
     'sellers' => 'sellers.css',
     'purchase_orders' => 'purchase_orders.css',
     'product-units' => 'product-units.css',
-    'printer-management' => 'printer-management.css'
+    'printer-management' => 'printer-management.css',
+    'qc_management' => 'qc-management.css'
 ];
 
 // Create a list of CSS files to load: start with global ones

@@ -60,6 +60,7 @@ try {
     $itemsQuery = "
         SELECT
             oi.id as order_item_id,
+            oi.product_id,
             oi.quantity as quantity_ordered,
             oi.picked_quantity,
             oi.unit_price,
@@ -68,6 +69,7 @@ try {
             p.name AS product_name,
             p.sku,
             p.barcode as product_barcode,
+            i.location_id,
             COALESCE(l.location_code, 'N/A') AS location_code
         FROM order_items oi
         JOIN products p ON oi.product_id = p.product_id
@@ -126,17 +128,19 @@ try {
             // Order items
             'items' => array_map(function($item) {
                 return [
-                    'order_item_id' => (int)$item['order_item_id'],
-                    'product_name' => $item['product_name'],
-                    'sku' => $item['sku'],
+                    'order_item_id'   => (int)$item['order_item_id'],
+                    'product_id'      => (int)$item['product_id'],
+                    'product_name'    => $item['product_name'],
+                    'sku'             => $item['sku'],
                     'product_barcode' => $item['product_barcode'],
                     'quantity_ordered' => (int)$item['quantity_ordered'],
-                    'picked_quantity' => (int)$item['picked_quantity'],
+                    'picked_quantity'   => (int)$item['picked_quantity'],
                     'remaining_to_pick' => (int)$item['remaining_to_pick'],
-                    'unit_price' => number_format((float)$item['unit_price'], 2),
-                    'line_total' => number_format((float)$item['line_total'], 2),
-                    'location_code' => $item['location_code'],
-                    'is_complete' => ((int)$item['remaining_to_pick'] === 0)
+                    'unit_price'        => number_format((float)$item['unit_price'], 2),
+                    'line_total'        => number_format((float)$item['line_total'], 2),
+                    'location_id'       => $item['location_id'] !== null ? (int)$item['location_id'] : null,
+                    'location_code'     => $item['location_code'],
+                    'is_complete'       => ((int)$item['remaining_to_pick'] === 0)
                 ];
             }, $items)
         ]

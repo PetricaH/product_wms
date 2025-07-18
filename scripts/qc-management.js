@@ -246,6 +246,250 @@ const QCManager = {
             this.showAlert('Eroare la încărcarea articolelor în așteptare', 'error');
         }
     },
+
+    // Load approved items
+    async loadApprovedItems() {
+        try {
+            const params = new URLSearchParams({
+                path: 'pending-items',
+                status: 'approved',
+                limit: this.state.pagination.limit,
+                offset: this.state.pagination.offset,
+                ...this.state.filters
+            });
+
+            const response = await fetch(`${this.api.qcManagement}?${params}`);
+            const data = await response.json();
+
+            if (!data.success) {
+                throw new Error(data.message || 'Failed to load approved items');
+            }
+
+            this.renderApprovedItems(data.data);
+            this.renderPagination(data.pagination);
+            this.state.pagination.total = data.total;
+
+        } catch (error) {
+            console.error('Error loading approved items:', error);
+            this.showAlert('Eroare la încărcarea articolelor aprobate', 'error');
+        }
+    },
+
+    // Render approved items
+    renderApprovedItems(items) {
+        if (!this.elements.approvedContainer) return;
+
+        if (!items || items.length === 0) {
+            this.elements.approvedContainer.innerHTML = `
+                <div class="empty-state">
+                    <span class="material-symbols-outlined">check_circle</span>
+                    <h3>Nu există articole aprobate</h3>
+                </div>`;
+            return;
+        }
+
+        const itemsHtml = items.map(item => {
+            return `<div class="qc-item-card" data-item-id="${item.id}">
+                <div class="item-content">
+                    <div class="item-header">
+                        <h3 class="item-title">${this.escapeHtml(item.product_name || item.internal_product_name)}</h3>
+                        <span class="status-badge status-approved">Aprobat</span>
+                    </div>
+                    <div class="item-details">
+                        <div class="detail-group">
+                            <h4>Informații Produs</h4>
+                            <p><strong>Cod:</strong> ${this.escapeHtml(item.product_code || item.internal_sku || 'N/A')}</p>
+                            <p><strong>Comandă:</strong> ${this.escapeHtml(item.order_number || 'N/A')}</p>
+                            <p><strong>Furnizor:</strong> ${this.escapeHtml(item.supplier_name || 'N/A')}</p>
+                        </div>
+                        <div class="detail-group">
+                            <h4>Cantitate Aprobată</h4>
+                            <p class="detail-value">${item.received_quantity}</p>
+                        </div>
+                    </div>
+                </div>
+            </div>`;
+        }).join('');
+
+        this.elements.approvedContainer.innerHTML = itemsHtml;
+    },
+
+    // Load rejected items
+    async loadRejectedItems() {
+        try {
+            const params = new URLSearchParams({
+                path: 'pending-items',
+                status: 'rejected',
+                limit: this.state.pagination.limit,
+                offset: this.state.pagination.offset,
+                ...this.state.filters
+            });
+
+            const response = await fetch(`${this.api.qcManagement}?${params}`);
+            const data = await response.json();
+
+            if (!data.success) {
+                throw new Error(data.message || 'Failed to load rejected items');
+            }
+
+            this.renderRejectedItems(data.data);
+            this.renderPagination(data.pagination);
+            this.state.pagination.total = data.total;
+
+        } catch (error) {
+            console.error('Error loading rejected items:', error);
+            this.showAlert('Eroare la încărcarea articolelor respinse', 'error');
+        }
+    },
+
+    // Render rejected items
+    renderRejectedItems(items) {
+        if (!this.elements.rejectedContainer) return;
+
+        if (!items || items.length === 0) {
+            this.elements.rejectedContainer.innerHTML = `
+                <div class="empty-state">
+                    <span class="material-symbols-outlined">block</span>
+                    <h3>Nu există articole respinse</h3>
+                </div>`;
+            return;
+        }
+
+        const itemsHtml = items.map(item => {
+            return `<div class="qc-item-card" data-item-id="${item.id}">
+                <div class="item-content">
+                    <div class="item-header">
+                        <h3 class="item-title">${this.escapeHtml(item.product_name || item.internal_product_name)}</h3>
+                        <span class="status-badge status-rejected">Respins</span>
+                    </div>
+                    <div class="item-details">
+                        <div class="detail-group">
+                            <h4>Motiv</h4>
+                            <p class="detail-value">${this.escapeHtml(item.rejection_reason || 'N/A')}</p>
+                        </div>
+                        <div class="detail-group">
+                            <h4>Cantitate</h4>
+                            <p class="detail-value">${item.received_quantity}</p>
+                        </div>
+                    </div>
+                </div>
+            </div>`;
+        }).join('');
+
+        this.elements.rejectedContainer.innerHTML = itemsHtml;
+    },
+
+    // Load decision history
+    async loadDecisionHistory() {
+        try {
+            const params = new URLSearchParams({
+                path: 'decision-history',
+                limit: this.state.pagination.limit,
+                offset: this.state.pagination.offset
+            });
+
+            const response = await fetch(`${this.api.qcManagement}?${params}`);
+            const data = await response.json();
+
+            if (!data.success) {
+                throw new Error(data.message || 'Failed to load decision history');
+            }
+
+            this.renderDecisionHistory(data.history);
+            this.renderPagination({
+                limit: this.state.pagination.limit,
+                offset: this.state.pagination.offset,
+                has_next: data.history.length === this.state.pagination.limit
+            });
+
+        } catch (error) {
+            console.error('Error loading decision history:', error);
+            this.showAlert('Eroare la încărcarea istoricului deciziilor', 'error');
+        }
+    },
+
+    // Render decision history
+    renderDecisionHistory(history) {
+        if (!this.elements.historyContainer) return;
+
+        if (!history || history.length === 0) {
+            this.elements.historyContainer.innerHTML = `
+                <div class="empty-state">
+                    <span class="material-symbols-outlined">history</span>
+                    <h3>Nu există decizii înregistrate</h3>
+                </div>`;
+            return;
+        }
+
+        const rows = history.map(item => {
+            return `<div class="qc-item-card" data-item-id="${item.receiving_item_id}">
+                <div class="item-content">
+                    <div class="item-header">
+                        <h3 class="item-title">${this.escapeHtml(item.product_name || '')}</h3>
+                        <span class="status-badge status-${item.decision}">${this.escapeHtml(item.decision)}</span>
+                    </div>
+                    <div class="item-details">
+                        <div class="detail-group">
+                            <h4>Decis de</h4>
+                            <p class="detail-value">${this.escapeHtml(item.decided_by_name)}</p>
+                        </div>
+                        <div class="detail-group">
+                            <h4>Data</h4>
+                            <p class="detail-value">${this.formatDate(item.created_at)}</p>
+                        </div>
+                        ${item.decision_reason ? `<div class="detail-group"><h4>Motiv</h4><p class="detail-value">${this.escapeHtml(item.decision_reason)}</p></div>` : ''}
+                        ${item.supervisor_notes ? `<div class="detail-group"><h4>Note</h4><p class="detail-value">${this.escapeHtml(item.supervisor_notes)}</p></div>` : ''}
+                    </div>
+                </div>
+            </div>`;
+        }).join('');
+
+        this.elements.historyContainer.innerHTML = rows;
+    },
+
+    // Render pagination controls
+    renderPagination(pagination) {
+        if (!this.elements.paginationContainer) return;
+
+        const { limit, offset, has_next } = pagination;
+        const total = this.state.pagination.total || 0;
+
+        const start = total === 0 ? 0 : offset + 1;
+        const end = Math.min(offset + limit, total);
+
+        const prevDisabled = offset === 0 ? 'disabled' : '';
+        const nextDisabled = !has_next ? 'disabled' : '';
+
+        const html = `
+            <div class="pagination-info">Afișare ${start}-${end} din ${total}</div>
+            <div class="pagination-controls">
+                <button class="btn btn-secondary prev-page" ${prevDisabled}>Anterior</button>
+                <button class="btn btn-secondary next-page" ${nextDisabled}>Următor</button>
+            </div>`;
+
+        this.elements.paginationContainer.innerHTML = html;
+
+        const prevBtn = this.elements.paginationContainer.querySelector('.prev-page');
+        const nextBtn = this.elements.paginationContainer.querySelector('.next-page');
+
+        if (prevBtn) {
+            prevBtn.addEventListener('click', () => {
+                if (this.state.pagination.offset >= limit) {
+                    this.state.pagination.offset -= limit;
+                    this.loadTabData(this.state.currentTab);
+                }
+            });
+        }
+
+        if (nextBtn) {
+            nextBtn.addEventListener('click', () => {
+                if (has_next) {
+                    this.state.pagination.offset += limit;
+                    this.loadTabData(this.state.currentTab);
+                }
+            });
+        }
+    },
     
     // Render pending items
     renderPendingItems(items) {

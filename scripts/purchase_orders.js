@@ -734,9 +734,9 @@ class PurchaseOrdersReceivingManager {
 
     // NEW: Updated renderOrderRow with invoice functionality
     renderOrderRow(order) {
-        const receivingStatus = order.receiving_summary.status;
-        const progressPercent = order.receiving_summary.receiving_progress_percent;
+        const progressPercent = order.receiving_summary.quantity_progress_percent;
         const hasDiscrepancies = order.discrepancies_summary.has_pending_discrepancies;
+        const qtyDiscrepancy = this.getQuantityDiscrepancyType(order);
         
         // Updated invoice display logic - show button for all statuses except 'draft'
         let invoiceDisplay = '-';
@@ -782,11 +782,6 @@ class PurchaseOrdersReceivingManager {
                     </span>
                 </td>
                 <td>
-                    <span class="receiving-status-badge receiving-status-${receivingStatus}">
-                        ${this.translateReceivingStatus(receivingStatus)}
-                    </span>
-                </td>
-                <td>
                     <div class="progress-container">
                         <div class="progress-bar progress-${this.getProgressClass(progressPercent)}" 
                              style="width: ${progressPercent}%"></div>
@@ -794,9 +789,9 @@ class PurchaseOrdersReceivingManager {
                     <div class="progress-text">${progressPercent}%</div>
                 </td>
                 <td>
-                    <div class="discrepancy-indicator ${hasDiscrepancies ? 'has-discrepancies' : 'no-discrepancies'}">
+                    <div class="discrepancy-indicator ${qtyDiscrepancy === 'quantity_over' ? 'overdelivery' : qtyDiscrepancy === 'quantity_short' ? 'underdelivery' : (hasDiscrepancies ? 'has-discrepancies' : 'no-discrepancies')}">
                         <span class="material-symbols-outlined">
-                            ${hasDiscrepancies ? 'warning' : 'check_circle'}
+                            ${qtyDiscrepancy === 'quantity_over' ? 'add' : qtyDiscrepancy === 'quantity_short' ? 'remove' : (hasDiscrepancies ? 'warning' : 'check_circle')}
                         </span>
                         ${order.discrepancies_summary.pending_discrepancies || 0}
                     </div>
@@ -817,7 +812,7 @@ class PurchaseOrdersReceivingManager {
                 </td>
             </tr>
             <tr class="expandable-row" data-order-id="${order.id}" style="display: none;">
-                <td colspan="13">
+                <td colspan="12">
                     <div class="expandable-content" id="expandable-${order.id}">
                         <div class="loading-spinner">
                             <span class="material-symbols-outlined spinning">refresh</span>
@@ -1000,6 +995,25 @@ class PurchaseOrdersReceivingManager {
         return 'partial';
     }
 
+    getQuantityDiscrepancyType(order) {
+        const diff = (order.receiving_summary.total_quantity_received || 0) -
+                     (order.order_summary.total_quantity_ordered || 0);
+        if (diff > 0) return 'quantity_over';
+        if (diff < 0) return 'quantity_short';
+        return null;
+    }
+
+    translateDiscrepancyType(type) {
+        const map = {
+            'quantity_short': 'Mai Puțină Cantitate',
+            'quantity_over': 'Mai Multă Cantitate',
+            'quality_issue': 'Problemă Calitate',
+            'missing_item': 'Articol Lipsă',
+            'unexpected_item': 'Articol Neașteptat'
+        };
+        return map[type] || type;
+    }
+
     createReceivingModal() {
         const existingModal = document.getElementById('receiving-details-modal');
         if (existingModal) {
@@ -1047,7 +1061,7 @@ class PurchaseOrdersReceivingManager {
         if (show) {
             tbody.innerHTML = `
                 <tr>
-                    <td colspan="13" class="text-center">
+                    <td colspan="12" class="text-center">
                         <div class="loading-spinner">
                             <span class="material-symbols-outlined spinning">refresh</span>
                             Se încarcă comenzile...
@@ -1064,7 +1078,7 @@ class PurchaseOrdersReceivingManager {
         
         tbody.innerHTML = `
             <tr>
-                <td colspan="13" class="text-center">
+                <td colspan="12" class="text-center">
                     <div class="error-message" style="padding: 20px; color: #dc3545;">
                         <span class="material-symbols-outlined">error</span>
                         <p>${message}</p>
@@ -1081,7 +1095,7 @@ class PurchaseOrdersReceivingManager {
         if (orders.length === 0) {
             tbody.innerHTML = `
                 <tr>
-                    <td colspan="13" class="text-center">
+                    <td colspan="12" class="text-center">
                         <div style="padding: 40px; color: var(--text-secondary);">
                             <span class="material-symbols-outlined" style="font-size: 48px; opacity: 0.5;">inventory_2</span>
                             <p>Nu există comenzi de achiziție care să corespundă filtrelor selectate</p>
@@ -1246,7 +1260,7 @@ class PurchaseOrdersReceivingManager {
                                 <strong>${this.escapeHtml(discrepancy.product_name)}</strong><br>
                                 <small>${discrepancy.sku}</small>
                             </td>
-                            <td>${discrepancy.discrepancy_type}</td>
+                            <td>${discrepancy.discrepancy_type_label || this.translateDiscrepancyType(discrepancy.discrepancy_type)}</td>
                             <td>${this.escapeHtml(discrepancy.description)}</td>
                             <td>
                                 <span class="discrepancy-status ${discrepancy.resolution_status}">

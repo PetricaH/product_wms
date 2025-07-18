@@ -325,7 +325,6 @@ class WarehouseReceiving {
         this.showLoading(true);
         
         try {
-            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || this.config.csrfToken;
             const response = await fetch(`${this.config.apiBase}/receiving/receive_item.php`, {
                 method: 'POST',
                 credentials: 'same-origin',
@@ -340,15 +339,15 @@ class WarehouseReceiving {
                     location_id: locationId
                 })
             });
-
+    
             const result = await response.json();
             
             if (!response.ok) {
                 throw new Error(result.message || 'Eroare la primirea produsului');
             }
-
-            // Update item status
-            this.updateItemStatus(itemId, result.status);
+    
+            // **FIX: Always mark as 'received' on successful API response**
+            this.updateItemStatus(itemId, 'received');
             this.updateReceivingSummary();
             this.showSuccess('Produs primit cu succes');
             
@@ -377,22 +376,25 @@ class WarehouseReceiving {
         }
     }
 
-    updateReceivingSummary() {
-        if (!this.currentReceivingSession) return;
+    updateItemStatus(itemId, status) {
+        const itemElement = document.querySelector(`[data-item-id="${itemId}"]`);
+        if (!itemElement) return;
         
-        const poNumberEl = document.getElementById('current-po-number');
-        const supplierEl = document.getElementById('current-supplier');
-        const itemsReceivedEl = document.getElementById('items-received');
-        const itemsExpectedEl = document.getElementById('items-expected');
+        const statusElement = itemElement.querySelector('.item-status');
+        if (statusElement) {
+            statusElement.className = `item-status status-${status}`;
+            statusElement.textContent = this.getItemStatusText(status);
+        }
         
-        if (poNumberEl) poNumberEl.textContent = this.currentReceivingSession.po_number || '-';
-        if (supplierEl) supplierEl.textContent = this.currentReceivingSession.supplier_name || '-';
+        // Update the item in our array
+        const item = this.receivingItems.find(i => i.id == itemId);
+        if (item) {
+            item.status = status;
+        }
         
-        const receivedCount = this.receivingItems.filter(item => item.status === 'received').length;
-        const expectedCount = this.receivingItems.length;
-        
-        if (itemsReceivedEl) itemsReceivedEl.textContent = receivedCount;
-        if (itemsExpectedEl) itemsExpectedEl.textContent = expectedCount;
+        if (status === 'received' || status === 'success') {
+            item.status = 'received';
+        }
     }
 
     async completeReceiving() {

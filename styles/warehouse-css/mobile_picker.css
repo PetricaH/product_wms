@@ -515,6 +515,11 @@ body {
   font-size: 0.75rem;
 }
 
+#print-invoice-btn {
+    width: 100%;
+    margin-top: .5rem;
+}
+
 /* ===== FORM CONTROLS ===== */
 .form-control {
   width: 100%;

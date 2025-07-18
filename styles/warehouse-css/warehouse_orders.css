@@ -50,21 +50,21 @@ body {
     margin-bottom: 0;
 }
 
-/* ===== STATS SECTION (matching warehouse_hub.css) ===== */
-.stats-section {
+/* ===== STATS SECTION ===== */
+/* .stats-section {
     margin-bottom: 3rem;
-}
+} */
 
 .stats-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
     gap: 1.5rem;
-    margin-bottom: 2rem;
+    margin-bottom: 1rem;
 }
 
 .stat-card {
     background-color: var(--dark-gray);
-    padding: 2rem 1.5rem;
+    padding: 1rem .5rem;
     border-radius: 6px;
     text-align: center;
     border: 1px solid rgba(255, 255, 255, 0.1);
@@ -88,7 +88,7 @@ body {
 }
 
 .stat-icon {
-    font-size: 2.5rem;
+    font-size: 1.5rem;
     color: var(--white);
     margin-bottom: 1rem;
 }
@@ -115,7 +115,7 @@ body {
     background-color: var(--dark-gray);
     padding: 1.5rem;
     border-radius: 6px;
-    margin-bottom: 2rem;
+    margin-bottom: 1rem;
     border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
@@ -422,8 +422,15 @@ body {
     }
     
     .stats-grid {
-        grid-template-columns: 1fr;
-        gap: 1rem;
+        display: flex;
+        width: 100%;
+        gap: 0.75rem;
+        flex-direction: row;
+        flex-wrap: nowrap;
+    }
+
+    .stat-card {
+        flex-grow: 1;
     }
     
     .filter-row {

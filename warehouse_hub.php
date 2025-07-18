@@ -21,11 +21,11 @@ if (!isset($_SESSION['user_id'])) {
 
     <!-- Main Container -->
     <div class="main-container">
-        <div class="page-header">
+        <!-- <div class="page-header">
             <h1 class="page-title">Hub Operații Depozit</h1>
             <p class="page-subtitle">Selectează operația dorită pentru a începe lucrul</p>
             <a href="biometric-setup.php">Setup Biometric Auth</a>
-        </div>
+        </div> -->
 
         <div class="operations-grid">
             <!-- Picking -->
@@ -69,7 +69,7 @@ if (!isset($_SESSION['user_id'])) {
             </div>
 
             <!-- Inventory -->
-            <div class="operation-card inventory-card" data-operation="inventory">
+            <!-- <div class="operation-card inventory-card" data-operation="inventory">
                 <div class="status-indicator" id="inventory-status"></div>
                 <span class="material-symbols-outlined operation-icon">inventory</span>
                 <h2 class="operation-title">Căutare Stoc</h2>
@@ -86,10 +86,10 @@ if (!isset($_SESSION['user_id'])) {
                         <span class="stat-label">Stoc scăzut</span>
                     </div>
                 </div>
-            </div>
+            </div> -->
 
             <!-- Cycle Count -->
-            <div class="operation-card cycle-count-card" data-operation="cycle-count">
+            <!-- <div class="operation-card cycle-count-card" data-operation="cycle-count">
                 <div class="status-indicator" id="cycle-count-status"></div>
                 <span class="material-symbols-outlined operation-icon">fact_check</span>
                 <h2 class="operation-title">Inventariere Ciclică</h2>
@@ -106,7 +106,7 @@ if (!isset($_SESSION['user_id'])) {
                         <span class="stat-label">Diferențe</span>
                     </div>
                 </div>
-            </div>
+            </div> -->
         </div>
     </div>
 

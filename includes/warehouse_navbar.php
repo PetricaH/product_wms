@@ -42,9 +42,11 @@ $pageTitle = $pageTitles[$currentPage] ?? 'WMS Warehouse';
             </div>
         </div>
         <ul class="nav-menu" id="nav-menu">
-            <li class="nav-item"><a href="warehouse_orders.php" class="nav-link">Comenzi</a></li>
+            <li class="nav-item"><a href="warehouse_orders.php" class="nav-link">Pregătire Marfă</a></li>
+            <li class="nav-item"><a href="warehouse_receiving.php" class="nav-link">Recepție Marfă</a></li>
             <li class="nav-item"><a href="warehouse_inventory.php" class="nav-link">Stoc</a></li>
             <li class="nav-item"><a href="warehouse_hub.php" class="nav-link">Hub</a></li>
+            <li class="nav-item"><a href="biometric-setup.php" class="nav-link">Setare Amprentă</a></li>
         </ul>
     </div>
 </div>

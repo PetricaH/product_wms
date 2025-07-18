@@ -110,10 +110,10 @@ try {
     
     <!-- Main Container (matching existing warehouse design) -->
     <div class="main-container">
-        <div class="page-header">
+        <!-- <div class="page-header">
             <h1 class="page-title">Comenzi Depozit</h1>
             <p class="page-subtitle">Gestionează și procesează comenzile din depozit rapid și eficient</p>
-        </div>
+        </div> -->
 
         <!-- Alert Messages -->
         <?php if (!empty($message)): ?>

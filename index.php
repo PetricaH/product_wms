@@ -74,11 +74,105 @@ try {
         'items_moved' => $inventory->getItemsMovedToday(),
     ];
 
-    // Duration statistics
-    $pickingByOperator = $orders->getAverageProcessingTimeByOperator();
-    $pickingByCategory = $orders->getAverageProcessingTimeByCategory();
-    $receivingByOperator = $receivingSession->getAverageDurationByOperator();
-    $receivingByCategory = $receivingSession->getAverageDurationByCategory();
+    // Duration statistics - Updated to use timing tables
+    $pickingByOperator = [];
+    $pickingByCategory = [];
+    $receivingByOperator = [];
+    $receivingByCategory = [];
+    
+    try {
+        // Get picking statistics by operator from timing tables
+        $pickingByOperatorStmt = $db->prepare("
+            SELECT 
+                u.username as operator,
+                AVG(pt.duration_seconds) / 60 as avg_minutes,
+                COUNT(*) as total_tasks
+            FROM picking_tasks pt
+            JOIN users u ON pt.operator_id = u.id
+            WHERE pt.status = 'completed'
+            AND pt.end_time IS NOT NULL
+            AND pt.start_time >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+            GROUP BY u.username
+            ORDER BY avg_minutes ASC
+            LIMIT 10
+        ");
+        $pickingByOperatorStmt->execute();
+        $pickingByOperator = $pickingByOperatorStmt->fetchAll(PDO::FETCH_ASSOC);
+
+        // Get picking statistics by category from timing tables
+        $pickingByCategoryStmt = $db->prepare("
+            SELECT 
+                p.category,
+                AVG(pt.duration_seconds) / 60 as avg_minutes,
+                COUNT(*) as total_tasks
+            FROM picking_tasks pt
+            JOIN products p ON pt.product_id = p.product_id
+            WHERE pt.status = 'completed'
+            AND pt.end_time IS NOT NULL
+            AND pt.start_time >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+            GROUP BY p.category
+            ORDER BY avg_minutes ASC
+            LIMIT 10
+        ");
+        $pickingByCategoryStmt->execute();
+        $pickingByCategory = $pickingByCategoryStmt->fetchAll(PDO::FETCH_ASSOC);
+
+        // Get receiving statistics by operator from timing tables
+        $receivingByOperatorStmt = $db->prepare("
+            SELECT 
+                u.username as operator,
+                AVG(rt.duration_seconds) / 60 as avg_minutes,
+                COUNT(*) as total_tasks
+            FROM receiving_tasks rt
+            JOIN users u ON rt.operator_id = u.id
+            WHERE rt.status = 'completed'
+            AND rt.end_time IS NOT NULL
+            AND rt.start_time >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+            GROUP BY u.username
+            ORDER BY avg_minutes ASC
+            LIMIT 10
+        ");
+        $receivingByOperatorStmt->execute();
+        $receivingByOperator = $receivingByOperatorStmt->fetchAll(PDO::FETCH_ASSOC);
+
+        // Get receiving statistics by category from timing tables
+        $receivingByCategoryStmt = $db->prepare("
+            SELECT 
+                p.category,
+                AVG(rt.duration_seconds) / 60 as avg_minutes,
+                COUNT(*) as total_tasks
+            FROM receiving_tasks rt
+            JOIN products p ON rt.product_id = p.product_id
+            WHERE rt.status = 'completed'
+            AND rt.end_time IS NOT NULL
+            AND rt.start_time >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+            GROUP BY p.category
+            ORDER BY avg_minutes ASC
+            LIMIT 10
+        ");
+        $receivingByCategoryStmt->execute();
+        $receivingByCategory = $receivingByCategoryStmt->fetchAll(PDO::FETCH_ASSOC);
+
+        // Get today's task counts for the performance section
+        $todayTasksStmt = $db->prepare("
+            SELECT 
+                (SELECT COUNT(*) FROM picking_tasks WHERE DATE(start_time) = CURDATE() AND status = 'completed') as picking_tasks_today,
+                (SELECT COUNT(*) FROM receiving_tasks WHERE DATE(start_time) = CURDATE() AND status = 'completed') as receiving_tasks_today,
+                (SELECT COUNT(*) FROM picking_tasks WHERE status = 'active') as active_picking_tasks,
+                (SELECT COUNT(*) FROM receiving_tasks WHERE status = 'active') as active_receiving_tasks
+        ");
+        $todayTasksStmt->execute();
+        $todayTaskCounts = $todayTasksStmt->fetch(PDO::FETCH_ASSOC);
+
+    } catch (Exception $e) {
+        // If timing tables don't exist yet, fall back to old methods
+        error_log("Timing tables not available, using fallback: " . $e->getMessage());
+        $pickingByOperator = $orders->getAverageProcessingTimeByOperator();
+        $pickingByCategory = $orders->getAverageProcessingTimeByCategory();
+        $receivingByOperator = $receivingSession->getAverageDurationByOperator();
+        $receivingByCategory = $receivingSession->getAverageDurationByCategory();
+        $todayTaskCounts = ['picking_tasks_today' => 0, 'receiving_tasks_today' => 0, 'active_picking_tasks' => 0, 'active_receiving_tasks' => 0];
+    }
     
 } catch (Exception $e) {
     error_log("Dashboard data error: " . $e->getMessage());
@@ -91,6 +185,7 @@ try {
     $pendingQualityItems = 0;
     $pickingByOperator = $pickingByCategory = [];
     $receivingByOperator = $receivingByCategory = [];
+    $todayTaskCounts = ['picking_tasks_today' => 0, 'receiving_tasks_today' => 0, 'active_picking_tasks' => 0, 'active_receiving_tasks' => 0];
 }
 ?>
 
@@ -235,6 +330,21 @@ try {
                                 <div class="perf-stat">
                                     <div class="perf-value"><?= number_format($todayStats['items_moved']) ?></div>
                                     <div class="perf-label">Articole Procesate</div>
+                                </div>
+                            </div>
+                            <!-- Added tracking data -->
+                            <div class="performance-stats" style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border-color);">
+                                <div class="perf-stat">
+                                    <div class="perf-value"><?= number_format($todayTaskCounts['picking_tasks_today']) ?></div>
+                                    <div class="perf-label">Picking Tasks</div>
+                                </div>
+                                <div class="perf-stat">
+                                    <div class="perf-value"><?= number_format($todayTaskCounts['receiving_tasks_today']) ?></div>
+                                    <div class="perf-label">Receiving Tasks</div>
+                                </div>
+                                <div class="perf-stat">
+                                    <div class="perf-value"><?= number_format($todayTaskCounts['active_picking_tasks'] + $todayTaskCounts['active_receiving_tasks']) ?></div>
+                                    <div class="perf-label">Active Tasks</div>
                                 </div>
                             </div>
                         </div>
@@ -463,6 +573,11 @@ try {
                 subtitle.textContent = `Sumar activitate depozit - ${timeStr}`;
             }
         }, 30000);
+
+        // Pass tracking data to JavaScript for updates
+        window.TRACKING_DATA = {
+            todayTaskCounts: <?= json_encode($todayTaskCounts) ?>
+        };
     </script>
 </body>
 </html>

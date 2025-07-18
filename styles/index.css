@@ -112,6 +112,7 @@
 .metric-card.secondary::before { background: var(--info-color); }
 .metric-card.info::before { background: var(--warning-color); }
 .metric-card.success::before { background: var(--success-color); }
+.metric-card.warning::before { background: var(--attention-color); }
 
 .metric-card:hover {
     transform: translateY(-2px);

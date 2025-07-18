@@ -157,14 +157,14 @@ if (isset($_SESSION['username'])) {
         <?php endif; ?>
 
         <!-- SmartBill Sync -->
-        <li class="sidebar__item">
+        <!-- <li class="sidebar__item">
             <a href="<?= getNavUrl('smartbill-sync.php') ?>"
                class="sidebar__link <?= getActiveClass('smartbill-sync.php') ?>"
                data-tooltip="SmartBill Sync">
                 <span class="material-symbols-outlined">sync</span>
                 <span class="link-text">SmartBill Sync</span>
             </a>
-        </li>
+        </li> -->
 
         <!-- Printers -->
         <li class="sidebar__item">

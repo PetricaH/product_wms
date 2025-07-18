@@ -875,6 +875,16 @@
     color: #dc3545;
 }
 
+.discrepancy-indicator.overdelivery {
+    background: rgba(0, 123, 255, 0.1);
+    color: #007bff;
+}
+
+.discrepancy-indicator.underdelivery {
+    background: rgba(220, 53, 69, 0.1);
+    color: #dc3545;
+}
+
 .discrepancy-indicator .material-symbols-outlined {
     font-size: 14px;
 }

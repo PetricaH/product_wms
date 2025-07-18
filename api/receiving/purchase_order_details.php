@@ -90,8 +90,8 @@ try {
     $stmt = $db->prepare("
         SELECT 
             poi.id as item_id,
-            pp.supplier_product_name as product_name,
-            pp.supplier_product_code as sku,
+            COALESCE(pp.supplier_product_name, p.name) as product_name,
+            COALESCE(pp.supplier_product_code, p.sku) as sku,
             poi.quantity as ordered_quantity,
             poi.unit_price,
             poi.total_price,
@@ -140,16 +140,16 @@ try {
     $stmt = $db->prepare("
         SELECT 
             rd.*,
-            pp.supplier_product_name as product_name,
-            pp.supplier_product_code as sku,
+            COALESCE(pp.supplier_product_name, p.name) as product_name,
+            COALESCE(pp.supplier_product_code, p.sku) as sku,
             rs.session_number,
             rs.supplier_document_number,
             u1.username as received_by_name,
             u2.username as resolved_by_name
         FROM receiving_discrepancies rd
         JOIN receiving_sessions rs ON rd.receiving_session_id = rs.id
-        LEFT JOIN purchase_order_items poi ON rd.purchase_order_item_id = poi.id
-        LEFT JOIN purchasable_products pp ON poi.purchasable_product_id = pp.id
+        LEFT JOIN products p ON rd.product_id = p.product_id
+        LEFT JOIN purchasable_products pp ON pp.internal_product_id = p.product_id
         LEFT JOIN users u1 ON rs.received_by = u1.id
         LEFT JOIN users u2 ON rd.resolved_by = u2.id
         WHERE rs.purchase_order_id = :order_id
@@ -217,11 +217,20 @@ try {
         }, $items),
         
         'discrepancies' => array_map(function($discrepancy) {
+            $typeMap = [
+                'quantity_short' => 'Mai Puțină Cantitate',
+                'quantity_over' => 'Mai Multă Cantitate',
+                'quality_issue' => 'Problemă Calitate',
+                'missing_item' => 'Articol Lipsă',
+                'unexpected_item' => 'Articol Neașteptat'
+            ];
+
             return [
                 'id' => (int)$discrepancy['id'],
                 'product_name' => $discrepancy['product_name'],
                 'sku' => $discrepancy['sku'],
                 'discrepancy_type' => $discrepancy['discrepancy_type'],
+                'discrepancy_type_label' => $typeMap[$discrepancy['discrepancy_type']] ?? $discrepancy['discrepancy_type'],
                 'expected_quantity' => (float)$discrepancy['expected_quantity'],
                 'actual_quantity' => (float)$discrepancy['actual_quantity'],
                 'description' => $discrepancy['description'],

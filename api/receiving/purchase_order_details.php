@@ -6,6 +6,9 @@
  * Returns detailed receiving information for a specific purchase order
  * Used for expandable rows in the admin purchase orders page
  */
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
+ini_set('log_errors', 1);
 
 header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *');
@@ -126,6 +129,7 @@ try {
             
         FROM purchase_order_items poi
         LEFT JOIN purchasable_products pp ON poi.purchasable_product_id = pp.id
+        LEFT JOIN products p ON pp.internal_product_id = p.product_id
         LEFT JOIN receiving_items ri ON poi.id = ri.purchase_order_item_id
         LEFT JOIN receiving_sessions rs ON ri.receiving_session_id = rs.id
         LEFT JOIN locations l ON ri.location_id = l.id

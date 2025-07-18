@@ -76,7 +76,7 @@ class CreateCompleteWmsSchemaMigration {
                     id INT PRIMARY KEY AUTO_INCREMENT,
                     location_code VARCHAR(50) UNIQUE NOT NULL,
                     zone VARCHAR(50) NOT NULL,
-                    type ENUM('warehouse', 'zone', 'rack', 'shelf', 'bin') DEFAULT 'bin',
+                    type ENUM('warehouse', 'zone', 'rack', 'shelf', 'bin', 'qc_hold', 'quarantine', 'pending_approval') DEFAULT 'bin',
                     levels INT DEFAULT 3,
                     parent_location_id INT NULL,
                     capacity INT DEFAULT 0,

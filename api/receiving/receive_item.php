@@ -37,6 +37,13 @@ $db = $dbFactory();
 require_once BASE_PATH . '/models/Product.php';
 require_once BASE_PATH . '/models/PurchasableProduct.php';
 
+function getDefaultLocationId(PDO $db, string $type): ?int {
+    $stmt = $db->prepare("SELECT id FROM locations WHERE type = :type LIMIT 1");
+    $stmt->execute([':type' => $type]);
+    $id = $stmt->fetchColumn();
+    return $id ? (int)$id : null;
+}
+
 try {
     $productModel = new Product($db);
     $purchasableModel = new PurchasableProduct($db);
@@ -125,10 +132,22 @@ try {
     $stmt = $db->prepare("SELECT id, location_code FROM locations WHERE location_code = :location_code AND status = 'active'");
     $stmt->execute([':location_code' => $locationCode]);
     $location = $stmt->fetch(PDO::FETCH_ASSOC);
-    
+
     if (!$location) {
         throw new Exception('Location not found or inactive');
     }
+
+    $expectedQuantity = (float)$orderItem['quantity'];
+    $approvalStatus = 'approved';
+    $targetLocationId = $location['id'];
+    if ($conditionStatus !== 'good') {
+        $approvalStatus = 'pending';
+        $targetLocationId = getDefaultLocationId($db, 'quarantine') ?? $location['id'];
+    } elseif ($receivedQuantity != $expectedQuantity) {
+        $approvalStatus = 'pending';
+        $targetLocationId = getDefaultLocationId($db, 'qc_hold') ?? $location['id'];
+    }
+    $location['id'] = $targetLocationId;
     
     // Start transaction
     $db->beginTransaction();
@@ -155,6 +174,7 @@ try {
                 batch_number = :batch_number,
                 expiry_date = :expiry_date,
                 location_id = :location_id,
+                approval_status = :approval_status,
                 notes = :notes,
                 updated_at = NOW()
             WHERE id = :receiving_item_id
@@ -165,6 +185,7 @@ try {
             ':batch_number' => $batchNumber ?: null,
             ':expiry_date' => $expiryDate ?: null,
             ':location_id' => $location['id'],
+            ':approval_status' => $approvalStatus,
             ':notes' => $notes,
             ':receiving_item_id' => $existingReceiving['id']
         ]);
@@ -175,11 +196,13 @@ try {
             INSERT INTO receiving_items (
                 receiving_session_id, product_id, purchase_order_item_id,
                 expected_quantity, received_quantity, unit_price,
-                condition_status, batch_number, expiry_date, location_id, notes
+                condition_status, batch_number, expiry_date, location_id,
+                approval_status, notes
             ) VALUES (
                 :session_id, :product_id, :item_id, :expected_quantity,
                 :received_quantity, :unit_price, :condition_status,
-                :batch_number, :expiry_date, :location_id, :notes
+                :batch_number, :expiry_date, :location_id,
+                :approval_status, :notes
             )
         ");
         $stmt->execute([
@@ -193,13 +216,14 @@ try {
             ':batch_number' => $batchNumber ?: null,
             ':expiry_date' => $expiryDate ?: null,
             ':location_id' => $location['id'],
+            ':approval_status' => $approvalStatus,
             ':notes' => $notes
         ]);
         $receivingItemId = $db->lastInsertId();
     }
     
-    // Update inventory if condition is good
-    if ($conditionStatus === 'good') {
+    // Update inventory only for approved good items
+    if ($approvalStatus === 'approved' && $conditionStatus === 'good') {
         // Check if inventory record exists for this product/location
         $stmt = $db->prepare("
             SELECT id, quantity 
@@ -247,7 +271,6 @@ try {
     }
     
     // Check for discrepancies
-    $expectedQuantity = (float)$orderItem['quantity'];
 if ($receivedQuantity != $expectedQuantity) {
     // Create discrepancy record
     $discrepancyType = $receivedQuantity < $expectedQuantity ? 'quantity_short' : 'quantity_over';
@@ -342,7 +365,8 @@ if ($receivedQuantity != $expectedQuantity) {
             'condition_status' => $conditionStatus,
             'batch_number' => $batchNumber,
             'expiry_date' => $expiryDate,
-            'discrepancy' => $receivedQuantity != $expectedQuantity
+            'discrepancy' => $receivedQuantity != $expectedQuantity,
+            'approval_status' => $approvalStatus
         ]
     ]);
     

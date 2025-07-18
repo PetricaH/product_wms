@@ -53,6 +53,7 @@ class CreateReceivingTablesMigration {
                 batch_number VARCHAR(100),
                 expiry_date DATE,
                 location_id INT,
+                approval_status ENUM('approved', 'pending', 'rejected') DEFAULT 'approved',
                 notes TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

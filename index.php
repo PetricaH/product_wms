@@ -44,6 +44,7 @@ $users = new Users($db);
 $location = new Location($db);
 $inventory = new Inventory($db);
 $orders = new Order($db);
+$receivingSession = new ReceivingSession($db);
 
 // Get Dashboard Data
 try {
@@ -56,6 +57,7 @@ try {
     $activeOrders = $orders->countActiveOrders();
     $pendingOrders = $orders->countPendingOrders();
     $completedOrdersToday = $orders->countCompletedToday();
+    $pendingQualityItems = $receivingSession->countPendingQualityItems();
     
     // Calculate warehouse occupation percentage
     $warehouseOccupationPercent = $totalLocations > 0 ? round(($occupiedLocations / $totalLocations) * 100, 1) : 0;
@@ -79,6 +81,7 @@ try {
     $warehouseOccupationPercent = 0;
     $recentOrders = $criticalStockAlerts = [];
     $todayStats = ['orders_created' => 0, 'orders_completed' => 0, 'items_moved' => 0];
+    $pendingQualityItems = 0;
 }
 ?>
 
@@ -184,6 +187,17 @@ try {
                             <div class="detail-item">
                                 <span class="detail-label">Finalizate azi:</span>
                                 <span class="detail-value text-success"><?= number_format($todayStats['orders_completed']) ?></span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- QC Pending -->
+                    <div class="metric-card warning">
+                        <div class="metric-header">
+                            <span class="material-symbols-outlined">fact_check</span>
+                            <div class="metric-values">
+                                <div class="metric-primary"><?= number_format($pendingQualityItems) ?></div>
+                                <div class="metric-label">QC în Așteptare</div>
                             </div>
                         </div>
                     </div>

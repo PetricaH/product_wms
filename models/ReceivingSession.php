@@ -353,4 +353,20 @@ class ReceivingSession {
         $stmt->execute($params);
         return $stmt->fetch(PDO::FETCH_ASSOC);
     }
+
+    /**
+     * Count items that require quality approval
+     * @return int Pending approval count
+     */
+    public function countPendingQualityItems(): int {
+        $sql = "SELECT COUNT(*) FROM receiving_items WHERE approval_status = 'pending'";
+        try {
+            $stmt = $this->db->prepare($sql);
+            $stmt->execute();
+            return (int) $stmt->fetchColumn();
+        } catch (PDOException $e) {
+            error_log('Error counting pending quality items: ' . $e->getMessage());
+            return 0;
+        }
+    }
 }

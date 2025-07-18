@@ -737,6 +737,15 @@ class PurchaseOrdersReceivingManager {
         const progressPercent = order.receiving_summary.quantity_progress_percent;
         const hasDiscrepancies = order.discrepancies_summary.has_pending_discrepancies;
         const qtyDiscrepancy = this.getQuantityDiscrepancyType(order);
+        const pendingShort = order.discrepancies_summary.pending_items_short || 0;
+        const pendingOver = order.discrepancies_summary.pending_items_over || 0;
+        const pendingItems = order.discrepancies_summary.pending_discrepant_items || 0;
+        let discrepancyCount = pendingItems;
+        if (qtyDiscrepancy === 'quantity_short' && pendingShort) {
+            discrepancyCount = `-${pendingShort}`;
+        } else if (qtyDiscrepancy === 'quantity_over' && pendingOver) {
+            discrepancyCount = `+${pendingOver}`;
+        }
         
         // Updated invoice display logic - show button for all statuses except 'draft'
         let invoiceDisplay = '-';
@@ -796,7 +805,7 @@ class PurchaseOrdersReceivingManager {
                         <span class="material-symbols-outlined">
                             ${qtyDiscrepancy === 'quantity_over' ? 'add' : qtyDiscrepancy === 'quantity_short' ? 'remove' : (hasDiscrepancies ? 'warning' : 'check_circle')}
                         </span>
-                        ${order.discrepancies_summary.pending_discrepancies || 0}
+                        ${discrepancyCount}
                     </div>
                 </td>
                 <td>${this.formatDate(order.created_at)}</td>

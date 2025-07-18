@@ -833,6 +833,83 @@ const QCManager = {
             this.hideLoading();
         }
     },
+
+    // Approve a single item
+    async approveSingleItem(itemId) {
+        if (!itemId) return;
+
+        if (!confirm('Sunteți sigur că doriți să aprobați acest articol?')) {
+            return;
+        }
+
+        try {
+            this.showLoading();
+
+            const response = await fetch(`${this.api.qcManagement}?path=approve-items`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': window.CSRF_TOKEN
+                },
+                body: JSON.stringify({ item_ids: [itemId] })
+            });
+
+            const data = await response.json();
+
+            if (!data.success) {
+                throw new Error(data.error || 'Failed to approve item');
+            }
+
+            this.showAlert('Articol aprobat cu succes', 'success');
+            await this.refreshData();
+
+        } catch (error) {
+            console.error('Error approving item:', error);
+            this.showAlert('Eroare la aprobarea articolului: ' + error.message, 'error');
+        } finally {
+            this.hideLoading();
+        }
+    },
+
+    // Reject a single item
+    async rejectSingleItem(itemId) {
+        if (!itemId) return;
+
+        const reason = prompt('Introduceți motivul respingerii:');
+        if (!reason) {
+            this.showAlert('Respingere anulată - motivul este obligatoriu', 'warning');
+            return;
+        }
+        const notes = prompt('Note suplimentare (opțional):', '') || '';
+
+        try {
+            this.showLoading();
+
+            const response = await fetch(`${this.api.qcManagement}?path=reject-items`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': window.CSRF_TOKEN
+                },
+                body: JSON.stringify({ item_ids: [itemId], rejection_reason: reason, supervisor_notes: notes })
+            });
+
+            const data = await response.json();
+
+            if (!data.success) {
+                throw new Error(data.error || 'Failed to reject item');
+            }
+
+            this.showAlert('Articol respins', 'success');
+            await this.refreshData();
+
+        } catch (error) {
+            console.error('Error rejecting item:', error);
+            this.showAlert('Eroare la respingerea articolului: ' + error.message, 'error');
+        } finally {
+            this.hideLoading();
+        }
+    },
     
     // Apply filters
     applyFilters() {

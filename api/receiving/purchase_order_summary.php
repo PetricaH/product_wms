@@ -78,6 +78,9 @@ try {
             COUNT(DISTINCT rd.id) as total_discrepancies,
             SUM(CASE WHEN rd.resolution_status = 'pending' THEN 1 ELSE 0 END) as pending_discrepancies,
             SUM(CASE WHEN rd.resolution_status = 'resolved' THEN 1 ELSE 0 END) as resolved_discrepancies,
+            COUNT(DISTINCT CASE WHEN rd.resolution_status = 'pending' THEN rd.product_id END) as pending_discrepant_items,
+            COUNT(DISTINCT CASE WHEN rd.resolution_status = 'pending' AND rd.discrepancy_type = 'quantity_short' THEN rd.product_id END) as pending_items_short,
+            COUNT(DISTINCT CASE WHEN rd.resolution_status = 'pending' AND rd.discrepancy_type = 'quantity_over' THEN rd.product_id END) as pending_items_over,
             
             -- Calculate receiving status
             CASE 
@@ -196,6 +199,9 @@ try {
                 'total_discrepancies' => (int)$order['total_discrepancies'],
                 'pending_discrepancies' => (int)$order['pending_discrepancies'],
                 'resolved_discrepancies' => (int)$order['resolved_discrepancies'],
+                'pending_discrepant_items' => (int)$order['pending_discrepant_items'],
+                'pending_items_short' => (int)$order['pending_items_short'],
+                'pending_items_over' => (int)$order['pending_items_over'],
                 'has_pending_discrepancies' => (int)$order['pending_discrepancies'] > 0
             ]
         ];

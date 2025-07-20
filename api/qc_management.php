@@ -353,12 +353,13 @@ function approveItems($db, $input) {
                 } else {
                     // Create new inventory record
                     $stmt = $db->prepare("
-                        INSERT INTO inventory (product_id, location_id, quantity, batch_number, expiry_date, received_at)
-                        VALUES (:product_id, :location_id, :quantity, :batch_number, :expiry_date, NOW())
+                        INSERT INTO inventory (product_id, location_id, shelf_level, quantity, batch_number, expiry_date, received_at)
+                        VALUES (:product_id, :location_id, :shelf_level, :quantity, :batch_number, :expiry_date, NOW())
                     ");
                     $stmt->execute([
                         ':product_id' => $productId,
                         ':location_id' => $targetLocationId,
+                        ':shelf_level' => 'middle',
                         ':quantity' => $item['received_quantity'],
                         ':batch_number' => $item['batch_number'],
                         ':expiry_date' => $item['expiry_date']

@@ -349,5 +349,4 @@ $currentPage = 'warehouse_receiving';
             }, $locations)) ?>
         };
     </script>
-
     <?php require_once BASE_PATH . '/includes/warehouse_footer.php'; ?>

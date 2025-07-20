@@ -595,7 +595,7 @@ class Inventory {
      * @param int $quantity Quantity to move
      * @return bool Success status
      */
-    public function moveStock(int $productId, int $fromLocationId, int $toLocationId, int $quantity): bool {
+    public function moveStock(int $productId, int $fromLocationId, int $toLocationId, int $quantity, ?int $inventoryId = null): bool {
         if ($quantity <= 0) {
             error_log("Move stock failed: Invalid quantity");
             return false;
@@ -604,13 +604,46 @@ class Inventory {
         try {
             $this->conn->beginTransaction();
 
-            // Remove stock from source location within transaction
-            if (!$this->removeStock($productId, $quantity, $fromLocationId, false)) {
-                $this->conn->rollBack();
-                return false;
+            if ($inventoryId !== null) {
+                // Fetch the specific inventory record
+                $checkQuery = "SELECT quantity FROM {$this->inventoryTable} WHERE id = :id AND product_id = :pid AND location_id = :lid";
+                $checkStmt = $this->conn->prepare($checkQuery);
+                $checkStmt->bindValue(':id', $inventoryId, PDO::PARAM_INT);
+                $checkStmt->bindValue(':pid', $productId, PDO::PARAM_INT);
+                $checkStmt->bindValue(':lid', $fromLocationId, PDO::PARAM_INT);
+                $checkStmt->execute();
+                $record = $checkStmt->fetch(PDO::FETCH_ASSOC);
+
+                if (!$record || (int)$record['quantity'] < $quantity) {
+                    $this->conn->rollBack();
+                    error_log("Move stock failed: Record not found or insufficient quantity");
+                    return false;
+                }
+
+                // Update or delete the record based on remaining quantity
+                $remaining = (int)$record['quantity'] - $quantity;
+                if ($remaining > 0) {
+                    $updateQuery = "UPDATE {$this->inventoryTable} SET quantity = :q WHERE id = :id";
+                    $updateStmt = $this->conn->prepare($updateQuery);
+                    $updateStmt->bindValue(':q', $remaining, PDO::PARAM_INT);
+                    $updateStmt->bindValue(':id', $inventoryId, PDO::PARAM_INT);
+                    $updateStmt->execute();
+                } else {
+                    $delQuery = "DELETE FROM {$this->inventoryTable} WHERE id = :id";
+                    $delStmt = $this->conn->prepare($delQuery);
+                    $delStmt->bindValue(':id', $inventoryId, PDO::PARAM_INT);
+                    $delStmt->execute();
+                }
+                $this->updateProductTotalQuantity($productId);
+            } else {
+                // Remove stock via FIFO if no specific record provided
+                if (!$this->removeStock($productId, $quantity, $fromLocationId, false)) {
+                    $this->conn->rollBack();
+                    return false;
+                }
             }
 
-            // Add stock to destination location within transaction
+            // Add stock to destination location
             $addData = [
                 'product_id' => $productId,
                 'location_id' => $toLocationId,

@@ -147,29 +147,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     break;
                                     
                                 case 'activate':
-                                    // Use quantity > 0 as "active" status
                                     error_log("Attempting to activate product ID: $productId");
-                                    $product = $productModel->findById($productId);
-                                    if ($product) {
-                                        // If quantity is 0, set it to 1 to "activate"
-                                        $newQuantity = max(1, $product['quantity']);
-                                        if ($productModel->updateProduct($productId, ['quantity' => $newQuantity])) {
-                                            $successCount++;
-                                            error_log("Successfully activated product ID: $productId");
-                                        } else {
-                                            $errorCount++;
-                                            error_log("Failed to activate product ID: $productId");
-                                        }
+                                    if ($productModel->updateStatus($productId, 'active')) {
+                                        $successCount++;
+                                        error_log("Successfully activated product ID: $productId");
                                     } else {
                                         $errorCount++;
-                                        error_log("Product not found for activation: $productId");
+                                        error_log("Failed to activate product ID: $productId");
                                     }
                                     break;
-                                    
+
                                 case 'deactivate':
-                                    // Set quantity to 0 to "deactivate"
                                     error_log("Attempting to deactivate product ID: $productId");
-                                    if ($productModel->updateProduct($productId, ['quantity' => 0])) {
+                                    if ($productModel->updateStatus($productId, 'inactive')) {
                                         $successCount++;
                                         error_log("Successfully deactivated product ID: $productId");
                                     } else {

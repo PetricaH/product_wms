@@ -794,6 +794,42 @@ class Product {
     }
 
     /**
+     * Update product status
+     * @param int $productId Product ID
+     * @param string $status New status (active/inactive/discontinued)
+     * @return bool Success status
+     */
+    public function updateStatus(int $productId, string $status): bool {
+        $query = "UPDATE {$this->table} SET status = :status, updated_at = NOW() WHERE product_id = :id";
+
+        try {
+            $old = $this->findById($productId);
+            $stmt = $this->conn->prepare($query);
+            $stmt->bindValue(':id', $productId, PDO::PARAM_INT);
+            $stmt->bindValue(':status', $status);
+            $result = $stmt->execute();
+
+            if ($result) {
+                $userId = $_SESSION['user_id'] ?? 0;
+                logActivity(
+                    $userId,
+                    'update',
+                    'product',
+                    $productId,
+                    'Status updated',
+                    ['status' => $old['status'] ?? null],
+                    ['status' => $status]
+                );
+            }
+
+            return $result;
+        } catch (PDOException $e) {
+            error_log("Error updating product status: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
      * Delete a product
      * @param int $productId Product ID
      * @return bool Success status

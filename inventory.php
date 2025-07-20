@@ -95,12 +95,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $fromLocationId = intval($_POST['from_location_id'] ?? 0);
             $newLocationId  = intval($_POST['new_location_id'] ?? 0);
             $moveQuantity   = intval($_POST['move_quantity'] ?? 0);
+            $inventoryId    = intval($_POST['inventory_id'] ?? 0) ?: null;
 
             if ($productId <= 0 || $fromLocationId <= 0 || $newLocationId <= 0 || $moveQuantity <= 0) {
                 $message = 'Toate câmpurile sunt obligatorii pentru mutarea stocului.';
                 $messageType = 'error';
             } else {
-                if ($inventoryModel->moveStock($productId, $fromLocationId, $newLocationId, $moveQuantity)) {
+                if ($inventoryModel->moveStock($productId, $fromLocationId, $newLocationId, $moveQuantity, $inventoryId)) {
                     $message = 'Stocul a fost mutat cu succes.';
                     $messageType = 'success';
                 } else {

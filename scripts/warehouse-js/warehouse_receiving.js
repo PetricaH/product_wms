@@ -286,14 +286,24 @@ class WarehouseReceiving {
     displayProducts(products) {
         const container = document.getElementById('prod-search-results');
         if (!container) return;
+        
         container.innerHTML = products.map(p => `
-            <div class="purchase-order-item" onclick="receivingSystem.selectProduct(${p.id}, ${JSON.stringify(p.name)})">
+            <div class="purchase-order-item" data-product-id="${p.id}" data-product-name="${this.escapeHtml(p.name)}">
                 <div class="po-header">
                     <div class="po-number">${this.escapeHtml(p.sku || p.code)}</div>
                 </div>
                 <div class="po-details">${this.escapeHtml(p.name)}</div>
             </div>
         `).join('');
+        
+        // Add event listener for product selection
+        container.querySelectorAll('.purchase-order-item').forEach(item => {
+            item.addEventListener('click', () => {
+                const productId = item.getAttribute('data-product-id');
+                const productName = item.getAttribute('data-product-name');
+                this.selectProduct(productId, productName);
+            });
+        });
     }
 
     selectProduct(id, name) {
@@ -306,39 +316,59 @@ class WarehouseReceiving {
 
     async printProductionLabels() {
         if (!this.productionMode) return;
+        
         const qty = parseInt(document.getElementById('prod-qty').value) || 0;
         const batch = document.getElementById('prod-batch-number').value;
         const date = document.getElementById('prod-date').value;
+        const locationId = this.config.defaultLocation || 1; // Add location_id
+        
         if (!this.selectedProductId || qty <= 0) {
             this.showError('Selectează produsul și cantitatea');
             return;
         }
+        
         if (!confirm('Confirmi printarea etichetelor?')) return;
+        
         try {
             const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content') || this.config.csrfToken;
+            
+            const requestData = {
+                product_id: this.selectedProductId,
+                quantity: qty,
+                batch_number: batch,
+                produced_at: date,
+                location_id: locationId  // Add this line
+            };
+            
+            console.log('Sending production receipt data:', requestData); // Debug logging
+            
             const response = await fetch(`${this.config.apiBase}/receiving/record_production_receipt.php`, {
                 method: 'POST',
                 credentials: 'same-origin',
-                headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
-                body: JSON.stringify({
-                    product_id: this.selectedProductId,
-                    quantity: qty,
-                    batch_number: batch,
-                    produced_at: date
-                })
+                headers: { 
+                    'Content-Type': 'application/json', 
+                    'X-CSRF-Token': csrfToken 
+                },
+                body: JSON.stringify(requestData)
             });
+
             const result = await response.json();
+            
+            console.log('API Response:', result); // Debug logging
+            
             if (!response.ok || !result.success) {
                 throw new Error(result.message || 'Eroare la imprimare');
             }
+
             this.showSuccess('Etichetele au fost trimise la imprimantă');
             this.initProductionDefaults();
+            
         } catch (err) {
             console.error('Print error:', err);
             this.showError('Eroare: ' + err.message);
         }
     }
-
+    
     async startReceivingFromSearch(poId) {
         this.showLoading(true);
 

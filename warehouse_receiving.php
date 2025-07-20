@@ -159,6 +159,10 @@ $currentPage = 'warehouse_receiving';
                     </div>
                 <?php endif; ?>
 
+                <div class="form-actions" style="margin-bottom: 1rem;">
+                    <button type="button" id="toggle-production" class="btn btn-secondary">Recepție Producție</button>
+                </div>
+
                  <!-- Step 1: Order Search -->
                 <div id="step-1" class="step-section active">
                     <div class="step-header">
@@ -175,6 +179,40 @@ $currentPage = 'warehouse_receiving';
                             <input type="text" id="po-search-input" class="form-input" placeholder="ex: PO-2024-001 sau Furnizor">
                         </div>
                         <div id="po-search-results" class="purchase-orders-list"></div>
+                    </div>
+                </div>
+
+                <!-- Production Receipt Section -->
+                <div id="production-section" class="step-section" style="display:none;">
+                    <div class="step-header">
+                        <h2 class="step-title">
+                            <span class="material-symbols-outlined">factory</span>
+                            Recepție Producție
+                        </h2>
+                        <p class="step-subtitle">Înregistrează produsele fabricate intern</p>
+                    </div>
+                    <div class="step-content">
+                        <div class="form-group">
+                            <label class="form-label">Număr Lot</label>
+                            <input type="text" id="prod-batch-number" class="form-input" readonly>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Data Producției</label>
+                            <input type="datetime-local" id="prod-date" class="form-input">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Caută Produs</label>
+                            <input type="text" id="prod-search-input" class="form-input" placeholder="Nume sau SKU">
+                            <div id="prod-search-results" class="purchase-orders-list"></div>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Cantitate (bucăți)</label>
+                            <input type="number" id="prod-qty" class="form-input" min="1" value="1">
+                        </div>
+                        <button type="button" class="btn btn-primary" id="print-labels-btn">
+                            <span class="material-symbols-outlined">print</span>
+                            Printează Etichete
+                        </button>
                     </div>
                 </div>
 

@@ -18,7 +18,7 @@ class WarehouseReceiving {
         this.scanner = null;
         this.scannerActive = false;
         this.productionMode = false;
-        
+    
         // TIMING INTEGRATION - Silent timing for performance tracking
         this.timingManager = null;
         this.activeTimingTasks = new Map(); // receiving_item_id -> task_id

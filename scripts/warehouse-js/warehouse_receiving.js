@@ -10,6 +10,7 @@
 class WarehouseReceiving {
     constructor() {
         this.config = window.WMS_CONFIG || { baseUrl: '', apiBase: '/api' };
+        this.defaultLocation = this.config.defaultLocation || (this.config.locations && this.config.locations.length ? this.config.locations[0].location_code : '');
         this.currentStep = 1;
         this.currentReceivingSession = null;
         this.selectedPurchaseOrder = null;
@@ -462,7 +463,9 @@ class WarehouseReceiving {
         const container = document.getElementById('expected-items-list');
         if (!container) return;
 
-        container.innerHTML = this.receivingItems.map(item => `
+        container.innerHTML = this.receivingItems.map(item => {
+            const selectedLoc = item.location_code || this.defaultLocation;
+            return `
             <div class="expected-item" data-item-id="${item.id}">
                 <div class="item-header">
                     <div>
@@ -487,7 +490,7 @@ class WarehouseReceiving {
                         <label class="form-label">Locație</label>
                         <select class="location-select" id="location-${item.id}">
                             <option value="">Selectează locația</option>
-                            ${this.getLocationOptions()}
+                            ${this.getLocationOptions(selectedLoc)}
                         </select>
                     </div>
                     <button type="button" class="receive-item-btn" onclick="receivingSystem.receiveItem(${item.id})">
@@ -496,13 +499,13 @@ class WarehouseReceiving {
                     </button>
                 </div>
             </div>
-        `).join('');
+        `}).join('');
     }
 
-    getLocationOptions() {
+    getLocationOptions(selectedCode = '') {
         const locations = this.config.locations || [];
-        return locations.map(loc => 
-            `<option value="${loc.location_code}">${loc.location_code} (${loc.zone})</option>`
+        return locations.map(loc =>
+            `<option value="${loc.location_code}" ${loc.location_code === selectedCode ? 'selected' : ''}>${loc.location_code} (${loc.zone})</option>`
         ).join('');
     }
 

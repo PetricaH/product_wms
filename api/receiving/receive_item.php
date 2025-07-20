@@ -45,6 +45,12 @@ function getDefaultLocationId(PDO $db, string $type): ?int {
     return $id ? (int)$id : null;
 }
 
+function getFirstActiveLocation(PDO $db): ?array {
+    $stmt = $db->query("SELECT id, location_code FROM locations WHERE status = 'active' ORDER BY id LIMIT 1");
+    $loc = $stmt->fetch(PDO::FETCH_ASSOC);
+    return $loc ?: null;
+}
+
 try {
     $productModel = new Product($db);
     $purchasableModel = new PurchasableProduct($db);
@@ -64,8 +70,14 @@ try {
         throw new Exception('Session ID, item ID and received quantity (>0) are required');
     }
     
+    $location = null;
     if (!$locationCode) {
-        throw new Exception('Location is required');
+        $location = getFirstActiveLocation($db);
+        if ($location) {
+            $locationCode = $location['location_code'];
+        } else {
+            throw new Exception('Location is required');
+        }
     }
     
     // Validate session exists and is active
@@ -129,13 +141,15 @@ try {
         $orderItem['main_product_id'] = $newProductId;
     }
     
-    // Validate location exists
-    $stmt = $db->prepare("SELECT id, location_code FROM locations WHERE location_code = :location_code AND status = 'active'");
-    $stmt->execute([':location_code' => $locationCode]);
-    $location = $stmt->fetch(PDO::FETCH_ASSOC);
-
+    // Validate location exists if not already determined
     if (!$location) {
-        throw new Exception('Location not found or inactive');
+        $stmt = $db->prepare("SELECT id, location_code FROM locations WHERE location_code = :location_code AND status = 'active'");
+        $stmt->execute([':location_code' => $locationCode]);
+        $location = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$location) {
+            throw new Exception('Location not found or inactive');
+        }
     }
 
     $expectedQuantity = (float)$orderItem['quantity'];

@@ -384,7 +384,8 @@ $currentPage = 'warehouse_receiving';
                     'zone' => $loc['zone'],
                     'type' => $loc['type']
                 ];
-            }, $locations)) ?>
+            }, $locations)) ?>,
+            defaultLocation: '<?= htmlspecialchars($locations[0]['location_code'] ?? '') ?>'
         };
     </script>
     <?php require_once BASE_PATH . '/includes/warehouse_footer.php'; ?>

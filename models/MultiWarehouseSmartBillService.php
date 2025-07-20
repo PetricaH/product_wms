@@ -222,14 +222,13 @@ class MultiWarehouseSmartBillService extends SmartBillService {
             $locationId = $this->getOrCreateWarehouseLocation($warehouse);
             
             $query = "INSERT INTO inventory (
-                        product_id,
-                        location_id,
-                        shelf_level,
-                        quantity,
+                        product_id, 
+                        location_id, 
+                        quantity, 
                         received_at,
                         batch_number
-                    ) VALUES (?, ?, 'middle', ?, NOW(), ?)
-                    ON DUPLICATE KEY UPDATE
+                    ) VALUES (?, ?, ?, NOW(), ?)
+                    ON DUPLICATE KEY UPDATE 
                         quantity = VALUES(quantity),
                         received_at = NOW()";
             

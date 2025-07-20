@@ -268,17 +268,16 @@ try {
             // Create new inventory record
             $stmt = $db->prepare("
                 INSERT INTO inventory (
-                    product_id, location_id, shelf_level, quantity, batch_number,
+                    product_id, location_id, quantity, batch_number, 
                     expiry_date, received_at
                 ) VALUES (
-                    :product_id, :location_id, :shelf_level, :quantity, :batch_number,
+                    :product_id, :location_id, :quantity, :batch_number,
                     :expiry_date, NOW()
                 )
             ");
             $stmt->execute([
                 ':product_id' => $orderItem['main_product_id'],
                 ':location_id' => $location['id'],
-                ':shelf_level' => 'middle',
                 ':quantity' => $receivedQuantity,
                 ':batch_number' => $batchNumber ?: null,
                 ':expiry_date' => $expiryDate ?: null

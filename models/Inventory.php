@@ -191,13 +191,6 @@ class Inventory {
         $batchNumber = $data['batch_number'] ?? null;
         $lotNumber   = $data['lot_number']   ?? null;
         $expiryDate  = $data['expiry_date']  ?? null;
-        $shelfLevel  = $data['shelf_level']  ?? 'middle';
-
-        // Validate shelf level
-        $validLevels = ['top', 'middle', 'bottom'];
-        if (!in_array($shelfLevel, $validLevels)) {
-            $shelfLevel = 'middle';
-        }
 
         // Handle empty strings as null for date fields
         if (empty($expiryDate)) {
@@ -210,14 +203,13 @@ class Inventory {
             }
 
             // Insert inventory record
-            $query = "INSERT INTO {$this->inventoryTable}
-                      (product_id, location_id, shelf_level, quantity, batch_number, lot_number, expiry_date, received_at)
-                      VALUES (:product_id, :location_id, :shelf_level, :quantity, :batch_number, :lot_number, :expiry_date, :received_at)";
+            $query = "INSERT INTO {$this->inventoryTable} 
+                      (product_id, location_id, quantity, batch_number, lot_number, expiry_date, received_at) 
+                      VALUES (:product_id, :location_id, :quantity, :batch_number, :lot_number, :expiry_date, :received_at)";
 
             $stmt = $this->conn->prepare($query);
             $stmt->bindParam(':product_id', $data['product_id'], PDO::PARAM_INT);
             $stmt->bindParam(':location_id', $data['location_id'], PDO::PARAM_INT);
-            $stmt->bindParam(':shelf_level', $shelfLevel, PDO::PARAM_STR);
             $stmt->bindParam(':quantity', $data['quantity'], PDO::PARAM_INT);
             $stmt->bindParam(':batch_number', $batchNumber, PDO::PARAM_STR);
             $stmt->bindParam(':lot_number', $lotNumber, PDO::PARAM_STR);

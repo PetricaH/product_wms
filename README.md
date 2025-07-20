@@ -54,6 +54,24 @@ php migrate.php migrate
 Then each user can configure their personal SMTP credentials from the profile
 page at `views/users/profile.php`.
 
+### Location dimensions and shelf configuration
+
+New columns were added to the `locations` table to track physical size and weight limits:
+
+* `length_mm`
+* `depth_mm`
+* `height_mm`
+* `max_weight_kg`
+
+Run migrations after pulling the code to add these fields.
+
+The warehouse configuration page (`warehouse_settings.php`) allows administrators to set:
+
+* pallets per shelf level
+* barrels per pallet for 5 L, 10 L and 25 L containers
+
+These values are stored in the `settings` table and used when calculating capacity.
+
 ## Running automated tests
 
 A simple test script is provided to verify the API endpoints:

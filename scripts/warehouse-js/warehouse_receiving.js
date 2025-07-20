@@ -14,8 +14,10 @@ class WarehouseReceiving {
         this.currentReceivingSession = null;
         this.selectedPurchaseOrder = null;
         this.receivingItems = [];
+        this.selectedProductId = null;
         this.scanner = null;
         this.scannerActive = false;
+        this.productionMode = false;
         
         // TIMING INTEGRATION - Silent timing for performance tracking
         this.timingManager = null;
@@ -116,7 +118,7 @@ class WarehouseReceiving {
         const scanBarcodeBtn = document.getElementById('scan-barcode-btn');
         const startScannerBtn = document.getElementById('start-scanner');
         const stopScannerBtn = document.getElementById('stop-scanner');
-        
+
         if (scanBarcodeBtn) {
             scanBarcodeBtn.addEventListener('click', () => this.openScannerModal());
         }
@@ -134,6 +136,21 @@ class WarehouseReceiving {
                 this.closeScannerModal();
             }
         });
+
+        const toggleBtn = document.getElementById('toggle-production');
+        if (toggleBtn) {
+            toggleBtn.addEventListener('click', () => this.toggleProductionMode());
+        }
+
+        const prodSearch = document.getElementById('prod-search-input');
+        if (prodSearch) {
+            prodSearch.addEventListener('input', (e) => this.searchProducts(e.target.value));
+        }
+
+        const printBtn = document.getElementById('print-labels-btn');
+        if (printBtn) {
+            printBtn.addEventListener('click', () => this.printProductionLabels());
+        }
     }
 
     initializeCurrentStep() {
@@ -152,6 +169,47 @@ class WarehouseReceiving {
             currentStepElement.classList.add('active');
             this.currentStep = stepNumber;
         }
+    }
+
+    toggleProductionMode() {
+        this.productionMode = !this.productionMode;
+        const prodSection = document.getElementById('production-section');
+        const step1 = document.getElementById('step-1');
+        const step3 = document.getElementById('step-3');
+        const step4 = document.getElementById('step-4');
+        const toggleBtn = document.getElementById('toggle-production');
+
+        if (this.productionMode) {
+            if (prodSection) prodSection.style.display = 'block';
+            if (step1) step1.style.display = 'none';
+            if (step3) step3.style.display = 'none';
+            if (step4) step4.style.display = 'none';
+            if (toggleBtn) toggleBtn.textContent = 'Recepție Comandă';
+            this.initProductionDefaults();
+        } else {
+            if (prodSection) prodSection.style.display = 'none';
+            if (step1) step1.style.display = '';
+            if (step3) step3.style.display = '';
+            if (step4) step4.style.display = '';
+            if (toggleBtn) toggleBtn.textContent = 'Recepție Producție';
+        }
+    }
+
+    initProductionDefaults() {
+        const batchInput = document.getElementById('prod-batch-number');
+        const dateInput = document.getElementById('prod-date');
+        if (batchInput) {
+            batchInput.value = `PRD-${Date.now()}`;
+        }
+        if (dateInput) {
+            const now = new Date();
+            dateInput.value = now.toISOString().slice(0,16);
+        }
+        this.selectedProductId = null;
+        const searchRes = document.getElementById('prod-search-results');
+        if (searchRes) searchRes.innerHTML = '';
+        const searchInput = document.getElementById('prod-search-input');
+        if (searchInput) searchInput.value = '';
     }
 
     async quickSearchPO(query) {
@@ -205,6 +263,79 @@ class WarehouseReceiving {
                 </div>
             </div>
         `).join('');
+    }
+
+    async searchProducts(query) {
+        if (!query) {
+            const c = document.getElementById('prod-search-results');
+            if (c) c.innerHTML = '';
+            return;
+        }
+        try {
+            const resp = await fetch(`${this.config.apiBase}/products.php?search=${encodeURIComponent(query)}`);
+            const data = await resp.json();
+            if (resp.ok && Array.isArray(data)) {
+                this.displayProducts(data);
+            }
+        } catch (err) {
+            console.error('Product search error:', err);
+        }
+    }
+
+    displayProducts(products) {
+        const container = document.getElementById('prod-search-results');
+        if (!container) return;
+        container.innerHTML = products.map(p => `
+            <div class="purchase-order-item" onclick="receivingSystem.selectProduct(${p.id}, ${JSON.stringify(p.name)})">
+                <div class="po-header">
+                    <div class="po-number">${this.escapeHtml(p.sku || p.code)}</div>
+                </div>
+                <div class="po-details">${this.escapeHtml(p.name)}</div>
+            </div>
+        `).join('');
+    }
+
+    selectProduct(id, name) {
+        this.selectedProductId = id;
+        const searchInput = document.getElementById('prod-search-input');
+        if (searchInput) searchInput.value = name;
+        const container = document.getElementById('prod-search-results');
+        if (container) container.innerHTML = '';
+    }
+
+    async printProductionLabels() {
+        if (!this.productionMode) return;
+        const qty = parseInt(document.getElementById('prod-qty').value) || 0;
+        const batch = document.getElementById('prod-batch-number').value;
+        const date = document.getElementById('prod-date').value;
+        if (!this.selectedProductId || qty <= 0) {
+            this.showError('Selectează produsul și cantitatea');
+            return;
+        }
+        if (!confirm('Confirmi printarea etichetelor?')) return;
+        try {
+            const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content') || this.config.csrfToken;
+            const response = await fetch(`${this.config.apiBase}/receiving/record_production_receipt.php`, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
+                body: JSON.stringify({
+                    product_id: this.selectedProductId,
+                    quantity: qty,
+                    batch_number: batch,
+                    produced_at: date
+                })
+            });
+            const result = await response.json();
+            if (!response.ok || !result.success) {
+                throw new Error(result.message || 'Eroare la imprimare');
+            }
+            this.showSuccess('Etichetele au fost trimise la imprimantă');
+            this.initProductionDefaults();
+        } catch (err) {
+            console.error('Print error:', err);
+            this.showError('Eroare: ' + err.message);
+        }
     }
 
     async startReceivingFromSearch(poId) {

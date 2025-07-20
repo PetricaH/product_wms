@@ -628,12 +628,13 @@ class Inventory {
                     $updateStmt->bindValue(':q', $remaining, PDO::PARAM_INT);
                     $updateStmt->bindValue(':id', $inventoryId, PDO::PARAM_INT);
                     $updateStmt->execute();
+                    error_log('moveStock update affected rows: ' . $updateStmt->rowCount());
                 } else {
                     $delQuery = "DELETE FROM {$this->inventoryTable} WHERE id = :id";
                     $delStmt = $this->conn->prepare($delQuery);
                     $delStmt->bindValue(':id', $inventoryId, PDO::PARAM_INT);
                     $delStmt->execute();
-                }
+                    error_log('moveStock delete affected rows: ' . $delStmt->rowCount());                }
                 $this->updateProductTotalQuantity($productId);
             } else {
                 // Remove stock via FIFO if no specific record provided

@@ -1,21 +1,28 @@
 <?php
 
 // File: models/Location.php - Updated for locations page functionality
+require_once __DIR__ . '/Setting.php';
+
 class Location {
     private $conn;
     private $table = "locations";
 
-    // Storage geometry constants (in millimeters)
-    private const SHELF_LENGTH_MM = 2980;
-    private const SHELF_DEPTH_MM = 1000;
-    private const BARREL25_WIDTH_MM = 300;
-    private const BARREL25_DEPTH_MM = 239;
+    // Default geometry constants used when dimensions are missing
+    private const DEFAULT_LENGTH_MM = 1200;
+    private const DEFAULT_DEPTH_MM = 800;
     private const STANDARD_LEVELS = 3;
 
-    private function getLevelCapacity(): int {
-        $perRow = intdiv(self::SHELF_LENGTH_MM, self::BARREL25_WIDTH_MM);
-        $perCol = intdiv(self::SHELF_DEPTH_MM, self::BARREL25_DEPTH_MM);
-        return $perRow * $perCol;
+    private function getLevelCapacity(array $location = []): int {
+        $length = (int)($location['length_mm'] ?? self::DEFAULT_LENGTH_MM);
+        $depth  = (int)($location['depth_mm'] ?? self::DEFAULT_DEPTH_MM);
+
+        // Fallback pallet calculation using global settings
+        $settingsModel = new Setting($this->conn);
+        $pallets = (int)$settingsModel->get('pallets_per_level') ?: 1;
+        $barrelsPerPallet = (int)$settingsModel->get('barrels_per_pallet_25l') ?: 1;
+
+        $perRow = $pallets; // treat pallets_per_level as number of pallets that fit per level
+        return $perRow * $barrelsPerPallet;
     }
     
     public function __construct($db) {
@@ -220,8 +227,8 @@ class Location {
      */
     public function createLocation(array $locationData) {
         $query = "INSERT INTO {$this->table}
-                  (location_code, zone, type, levels, capacity, notes, status, created_at)
-                  VALUES (:location_code, :zone, :type, :levels, :capacity, :notes, :status, NOW())";
+                  (location_code, zone, type, levels, capacity, length_mm, depth_mm, height_mm, max_weight_kg, notes, status, created_at)
+                  VALUES (:location_code, :zone, :type, :levels, :capacity, :length_mm, :depth_mm, :height_mm, :max_weight_kg, :notes, :status, NOW())";
         
         try {
             // Check if location code already exists
@@ -240,6 +247,10 @@ class Location {
                 ':type' => $locationData['type'] ?: 'shelf',
                 ':levels' => $locationData['levels'] ?? self::STANDARD_LEVELS,
                 ':capacity' => $locationData['capacity'] ?: 0,
+                ':length_mm' => $locationData['length_mm'] ?? 0,
+                ':depth_mm' => $locationData['depth_mm'] ?? 0,
+                ':height_mm' => $locationData['height_mm'] ?? 0,
+                ':max_weight_kg' => $locationData['max_weight_kg'] ?? 0,
                 ':notes' => $locationData['description'] ?? '',
                 ':status' => $status
             ];
@@ -280,14 +291,18 @@ class Location {
             $statusMap = [0 => 'inactive', 1 => 'active', 2 => 'maintenance'];
             $status = $statusMap[$locationData['status'] ?? 1] ?? 'active';
             
-            $query = "UPDATE {$this->table} 
-                      SET location_code = :location_code, 
-                          zone = :zone, 
+            $query = "UPDATE {$this->table}
+                      SET location_code = :location_code,
+                          zone = :zone,
                           type = :type,
                           levels = :levels,
                           capacity = :capacity,
-                          notes = :notes, 
-                          status = :status, 
+                          length_mm = :length_mm,
+                          depth_mm = :depth_mm,
+                          height_mm = :height_mm,
+                          max_weight_kg = :max_weight_kg,
+                          notes = :notes,
+                          status = :status,
                           updated_at = NOW()
                       WHERE id = :id";
             
@@ -299,6 +314,10 @@ class Location {
                 ':type' => $locationData['type'] ?: 'shelf',
                 ':levels' => $locationData['levels'] ?? self::STANDARD_LEVELS,
                 ':capacity' => $locationData['capacity'] ?: 0,
+                ':length_mm' => $locationData['length_mm'] ?? 0,
+                ':depth_mm' => $locationData['depth_mm'] ?? 0,
+                ':height_mm' => $locationData['height_mm'] ?? 0,
+                ':max_weight_kg' => $locationData['max_weight_kg'] ?? 0,
                 ':notes' => $locationData['description'] ?? '',
                 ':status' => $status
             ];
@@ -652,7 +671,7 @@ public function getLocationDetails($locationId) {
         }
 
         $levels = (int)($data['levels'] ?? self::STANDARD_LEVELS);
-        $levelCapacity = $this->getLevelCapacity();
+        $levelCapacity = $this->getLevelCapacity($data);
         $data['level_capacity'] = $levelCapacity;
         $data['capacity'] = $levelCapacity * $levels;
         $totalCapacity = $data['capacity'];
@@ -843,7 +862,9 @@ public function getEnhancedWarehouseData($zoneFilter = '', $typeFilter = '', $se
         
         // Add level capacity information
         $levels = (int)($location['levels'] ?? self::STANDARD_LEVELS);
-        $location['level_capacity'] = $levels > 0 && $location['capacity'] > 0 ? $location['capacity'] / $levels : 0;
+        $levelCapacity = $this->getLevelCapacity($location);
+        $location['level_capacity'] = $levelCapacity;
+        $location['capacity'] = $levelCapacity * $levels;
         
         // Add items per level for enhanced visualization
         $location['items'] = [

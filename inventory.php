@@ -54,7 +54,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'batch_number' => trim($_POST['batch_number'] ?? ''),
                 'lot_number' => trim($_POST['lot_number'] ?? ''),
                 'expiry_date' => $_POST['expiry_date'] ?? null,
-                'received_at' => $_POST['received_at'] ?? date('Y-m-d H:i:s')
+                'received_at' => $_POST['received_at'] ?? date('Y-m-d H:i:s'),
+                'shelf_level' => $_POST['shelf_level'] ?? null
             ];
             
             if ($stockData['product_id'] <= 0 || $stockData['location_id'] <= 0 || $stockData['quantity'] <= 0) {
@@ -544,6 +545,15 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                         <?= htmlspecialchars($location['location_code']) ?>
                                     </option>
                                 <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="shelf_level" class="form-label">Nivel raft</label>
+                            <select id="shelf_level" name="shelf_level" class="form-control">
+                                <option value="">--</option>
+                                <option value="top">Top</option>
+                                <option value="middle">Middle</option>
+                                <option value="bottom">Bottom</option>
                             </select>
                         </div>
                         

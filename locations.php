@@ -354,12 +354,30 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                         <div class="row">
                             <div class="form-group">
                                 <label for="capacity" class="form-label">Capacitate</label>
-                                <input type="number" name="capacity" id="capacity" class="form-control"
-                                       min="0" placeholder="Nr. max articole">
+                                <input type="number" name="capacity" id="capacity" class="form-control" min="0" placeholder="Nr. max articole">
                             </div>
+                            <div class="form-group">
+                                <label for="length_mm" class="form-label">Lungime (mm)</label>
+                                <input type="number" name="length_mm" id="length_mm" class="form-control" min="0">
+                            </div>
+                            <div class="form-group">
+                                <label for="depth_mm" class="form-label">Adâncime (mm)</label>
+                                <input type="number" name="depth_mm" id="depth_mm" class="form-control" min="0">
+                            </div>
+                        </div>
+
+                        <div class="row">
                             <div class="form-group">
                                 <label for="levels" class="form-label">Niveluri</label>
                                 <input type="number" name="levels" id="levels" class="form-control" min="1" value="3">
+                            </div>
+                            <div class="form-group">
+                                <label for="height_mm" class="form-label">Înălțime (mm)</label>
+                                <input type="number" name="height_mm" id="height_mm" class="form-control" min="0">
+                            </div>
+                            <div class="form-group">
+                                <label for="max_weight_kg" class="form-label">Greutate maximă (kg)</label>
+                                <input type="number" step="0.01" name="max_weight_kg" id="max_weight_kg" class="form-control" min="0">
                             </div>
                             <div class="form-group">
                                 <label for="status" class="form-label">Status</label>

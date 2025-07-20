@@ -182,6 +182,13 @@ class Inventory {
             }
         }
 
+        // Shelf rule enforcement
+        $locationLevel = $data['shelf_level'] ?? $this->detectShelfLevel($data['location_id']);
+        if ($locationLevel && !$this->validateShelfRule($data['product_id'], $locationLevel)) {
+            error_log('Add stock failed: shelf rule violation');
+            return false;
+        }
+
         // Default received_at if not provided
         if (empty($data['received_at'])) {
             $data['received_at'] = date('Y-m-d H:i:s');
@@ -261,6 +268,42 @@ class Inventory {
             error_log("Add stock failed: " . $e->getMessage());
             return false;
         }
+    }
+
+    private function detectShelfLevel(int $locationId): ?string {
+        $stmt = $this->conn->prepare("SELECT location_code FROM locations WHERE id = ?");
+        $stmt->execute([$locationId]);
+        $code = $stmt->fetchColumn();
+        if (!$code) return null;
+        if (preg_match('/-(T|M|B)$/i', $code, $m)) {
+            return strtolower($m[1]) === 't' ? 'top' : (strtolower($m[1]) === 'm' ? 'middle' : 'bottom');
+        }
+        return null;
+    }
+
+    private function getProductVolume(int $productId): ?float {
+        $stmt = $this->conn->prepare("SELECT volume_per_unit FROM product_units WHERE product_id = ? LIMIT 1");
+        $stmt->execute([$productId]);
+        $val = $stmt->fetchColumn();
+        return $val !== false ? (float)$val : null;
+    }
+
+    private function getProductCategory(int $productId): ?string {
+        $stmt = $this->conn->prepare("SELECT category FROM products WHERE product_id = ?");
+        $stmt->execute([$productId]);
+        $val = $stmt->fetchColumn();
+        return $val !== false ? $val : null;
+    }
+
+    private function validateShelfRule(int $productId, string $level): bool {
+        $category = strtolower($this->getProductCategory($productId) ?? '');
+        $volume = $this->getProductVolume($productId);
+        return match($level) {
+            'top' => str_contains($category, 'gift'),
+            'middle' => in_array((int)$volume, [5,10], true),
+            'bottom' => (int)$volume === 25,
+            default => true,
+        };
     }
 
     /**

@@ -175,10 +175,20 @@ if (isset($_SESSION['username'])) {
                 <span class="link-text">Imprimante</span>
             </a>
         </li>
-        
+
+        <!-- Warehouse Settings -->
+        <li class="sidebar__item">
+            <a href="<?= getNavUrl('warehouse_settings.php') ?>"
+               class="sidebar__link <?= getActiveClass('warehouse_settings.php') ?>"
+               data-tooltip="Setări Depozit">
+                <span class="material-symbols-outlined">settings</span>
+                <span class="link-text">Setări Depozit</span>
+            </a>
+        </li>
+
         <!-- Activity Log -->
         <li class="sidebar__item">
-            <a href="<?= getNavUrl('activities.php') ?>" 
+            <a href="<?= getNavUrl('activities.php') ?>"
                class="sidebar__link <?= getActiveClass('activities.php') ?>"
                data-tooltip="Istoric Acțiuni">
                 <span class="material-symbols-outlined">history</span>

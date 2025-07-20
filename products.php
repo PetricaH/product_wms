@@ -397,6 +397,11 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                         title="Editează">
                                                     <span class="material-symbols-outlined">edit</span>
                                                 </button>
+                                                <button type="button" class="action-btn print-btn"
+                                                        onclick="printLabels(<?= $product['product_id'] ?? 0 ?>, '<?= htmlspecialchars(addslashes($product['name'] ?? 'Produs')) ?>')"
+                                                        title="Printează Etichete">
+                                                    <span class="material-symbols-outlined">local_printshop</span>
+                                                </button>
                                                 <button type="button" class="action-btn delete-btn" onclick="confirmDelete(<?= $product['product_id'] ?? 0 ?>, '<?= htmlspecialchars(addslashes($product['name'] ?? 'Produs')) ?>')"
                                                         title="Șterge">
                                                     <span class="material-symbols-outlined">delete</span>

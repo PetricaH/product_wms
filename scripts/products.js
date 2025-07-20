@@ -907,6 +907,58 @@ function addLog(message, type = 'info') {
     logsContainer.appendChild(logEntry);
     logsContainer.scrollTop = logsContainer.scrollHeight;
 }
+
+/**
+ * Send request to generate and print labels for a product
+ */
+function printLabels(productId, productName) {
+    const qtyInput = prompt(`Introduceți numărul de etichete pentru ${productName}:`, '1');
+    if (qtyInput === null) {
+        return;
+    }
+    const quantity = parseInt(qtyInput, 10);
+    if (isNaN(quantity) || quantity <= 0) {
+        showNotification('Cantitate invalidă', 'error');
+        return;
+    }
+
+    if (!confirm(`Printează ${quantity} etichete pentru ${productName}?`)) {
+        return;
+    }
+
+    const button = event.target.closest('button');
+    const original = button ? button.innerHTML : null;
+    if (button) {
+        button.disabled = true;
+        button.innerHTML = '<span class="material-symbols-outlined spinning">hourglass_empty</span>';
+    }
+
+    const formData = new FormData();
+    formData.append('product_id', productId);
+    formData.append('quantity', quantity);
+
+    fetch('api/labels/print.php', {
+        method: 'POST',
+        body: formData
+    })
+        .then(resp => resp.json())
+        .then(data => {
+            if (data.status === 'success') {
+                showNotification('Etichetele au fost trimise la imprimantă', 'success');
+            } else {
+                showNotification('Eroare: ' + data.message, 'error');
+            }
+        })
+        .catch(err => {
+            showNotification('Eroare la conectarea serverului: ' + err.message, 'error');
+        })
+        .finally(() => {
+            if (button) {
+                button.disabled = false;
+                button.innerHTML = original;
+            }
+        });
+}
 /**
  * Synchronize stock using SmartBill API
  */

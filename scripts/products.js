@@ -911,7 +911,31 @@ function addLog(message, type = 'info') {
 /**
  * Send request to generate and print labels for a product
  */
-function printLabels(productId, productName) {
+async function chooseLabelPrinter() {
+    try {
+        const resp = await fetch('api/printer_management.php?path=printers');
+        const printers = await resp.json();
+        const labels = printers.filter(p => p.printer_type === 'label' && p.is_active);
+        if (labels.length === 0) {
+            showNotification('Nicio imprimantă de etichete disponibilă', 'error');
+            return null;
+        }
+        if (labels.length === 1) {
+            return labels[0].network_identifier;
+        }
+        const choice = prompt('Selectează imprimanta:\n' + labels.map((p,i) => `${i+1}: ${p.name}`).join('\n'), '1');
+        if (choice === null) return null;
+        const index = parseInt(choice, 10) - 1;
+        if (isNaN(index) || index < 0 || index >= labels.length) return null;
+        return labels[index].network_identifier;
+    } catch (err) {
+        console.error('Printer fetch error', err);
+        showNotification('Eroare la încărcarea imprimantelor', 'error');
+        return null;
+    }
+}
+
+async function printLabels(productId, productName) {
     const qtyInput = prompt(`Introduceți numărul de etichete pentru ${productName}:`, '1');
     if (qtyInput === null) {
         return;
@@ -933,9 +957,19 @@ function printLabels(productId, productName) {
         button.innerHTML = '<span class="material-symbols-outlined spinning">hourglass_empty</span>';
     }
 
+    const printerName = await chooseLabelPrinter();
+    if (!printerName) {
+        if (button) {
+            button.disabled = false;
+            button.innerHTML = original;
+        }
+        return;
+    }
+
     const formData = new FormData();
     formData.append('product_id', productId);
     formData.append('quantity', quantity);
+    formData.append('printer', printerName);
 
     fetch('api/labels/print.php', {
         method: 'POST',

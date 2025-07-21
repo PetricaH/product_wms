@@ -331,13 +331,17 @@ class WarehouseReceiving {
         
         try {
             const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content') || this.config.csrfToken;
-            
+
+            const printerName = await chooseLabelPrinter();
+            if (!printerName) return;
+
             const requestData = {
                 product_id: this.selectedProductId,
                 quantity: qty,
                 batch_number: batch,
                 produced_at: date,
-                location_id: locationId  // Add this line
+                location_id: locationId, // Add this line
+                printer: printerName
             };
             
             console.log('Sending production receipt data:', requestData); // Debug logging
@@ -1024,5 +1028,29 @@ function viewReceivingHistory() {
 function closeScannerModal() {
     if (window.receivingSystem) {
         window.receivingSystem.closeScannerModal();
+    }
+}
+
+async function chooseLabelPrinter() {
+    try {
+        const resp = await fetch('api/printer_management.php?path=printers');
+        const printers = await resp.json();
+        const labels = printers.filter(p => p.printer_type === 'label' && p.is_active);
+        if (labels.length === 0) {
+            alert('Nicio imprimantă de etichete disponibilă');
+            return null;
+        }
+        if (labels.length === 1) {
+            return labels[0].network_identifier;
+        }
+        const choice = prompt('Selectează imprimanta:\n' + labels.map((p,i) => `${i+1}: ${p.name}`).join('\n'), '1');
+        if (choice === null) return null;
+        const index = parseInt(choice, 10) - 1;
+        if (isNaN(index) || index < 0 || index >= labels.length) return null;
+        return labels[index].network_identifier;
+    } catch (err) {
+        console.error('Printer fetch error', err);
+        alert('Eroare la încărcarea imprimantelor');
+        return null;
     }
 }

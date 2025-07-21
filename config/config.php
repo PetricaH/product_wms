@@ -114,8 +114,13 @@ return [
 
     // call this to get your PDO instance:
     'connection_factory' => $connectionFactory,
-    
+
+    // Print server configuration
+    'print_server_url' => getenv('PRINT_SERVER_URL') ?: 'http://86.124.196.102:3000/print_server.php',
+    'default_printer'  => getenv('DEFAULT_PRINTER') ?: 'godex',
+
     // Cargus API credentials (set via environment variables or directly here)
+    
     'cargus' => [
         'username' => getenv('CARGUS_USER') ?: '',
         'password' => getenv('CARGUS_PASS') ?: '',

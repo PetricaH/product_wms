@@ -225,18 +225,17 @@ try {
  * Creates a PDF overlay that adds barcode + tracking info to your existing PNG template
  */
 function generateCombinedTemplateLabel(PDO $db, int $productId, int $qty, string $batch, string $date): ?string {
-    // Include the rotation-enabled FPDF
-    $fpdfRotatePath = BASE_PATH . '/lib/fpdf_rotation.php';
-    if (file_exists($fpdfRotatePath)) {
-        require_once $fpdfRotatePath;
-    } else {
-        // Fallback to regular FPDF if rotation not available
-        $fpdfPath = BASE_PATH . '/lib/fpdf.php';
-        if (!file_exists($fpdfPath)) {
-            error_log("FPDF library not found at: " . $fpdfPath);
-            return null;
-        }
-        require_once $fpdfPath;
+    $fpdfPath = BASE_PATH . '/lib/fpdf.php';
+    if (!file_exists($fpdfPath)) {
+        error_log("FPDF library not found at: " . $fpdfPath);
+        return null;
+    }
+    
+    require_once $fpdfPath;
+    
+    if (!class_exists('FPDF')) {
+        error_log("FPDF class not available");
+        return null;
     }
 
     $productModel = new Product($db);
@@ -254,106 +253,98 @@ function generateCombinedTemplateLabel(PDO $db, int $productId, int $qty, string
     $filePath = $dir . '/' . $fileName;
 
     try {
-        // Template dimensions
-        $labelWidth = 101.6;   // mm
-        $labelHeight = 152.4;  // mm
+        // Template dimensions - match your actual PNG template size
+        $labelWidth = 101.6;   // mm - Godex label width
+        $labelHeight = 152.4;  // mm - Godex label height
         
-        // Use rotation-enabled PDF class if available
-        if (class_exists('PDF_RotatedText')) {
-            $pdf = new PDF_RotatedText('P', 'mm', [$labelWidth, $labelHeight]);
-        } else {
-            $pdf = new FPDF('P', 'mm', [$labelWidth, $labelHeight]);
-        }
-        
+        $pdf = new FPDF('P', 'mm', [$labelWidth, $labelHeight]);
         $pdf->SetMargins(5, 5, 5);
         $pdf->AddPage();
         
         $sku = $product['sku'] ?? 'N/A';
         $productName = $product['name'] ?? 'Unknown Product';
         
-        // Load template background
+        // === LOAD EXISTING PNG TEMPLATE AS BACKGROUND ===
         $templatePath = findProductTemplate($sku, $productName);
         if ($templatePath && file_exists($templatePath)) {
             $pdf->Image($templatePath, 0, 0, $labelWidth, $labelHeight);
             error_log("SUCCESS: Using template: $templatePath for SKU: $sku");
+        } else {
+            // Log all attempted paths for debugging
+            error_log("TEMPLATE NOT FOUND for SKU: $sku, Product: $productName");
+            error_log("Attempted path: " . ($templatePath ?? 'null'));
+            error_log("Template directory: " . BASE_PATH . '/storage/templates/product_labels/');
+            
+            // List existing files in template directory for debugging
+            $templateDir = BASE_PATH . '/storage/templates/product_labels/';
+            if (is_dir($templateDir)) {
+                $files = scandir($templateDir);
+                error_log("Available template files: " . implode(', ', array_filter($files, function($f) { return $f !== '.' && $f !== '..'; })));
+            } else {
+                error_log("Template directory does not exist: $templateDir");
+            }
         }
         
-        // Generate barcode
+        // Generate barcode that contains ONLY SKU (for scanning)
         $barcodePath = generateSKUBarcode($sku, $batch);
         
-        // === TRACKING BARCODE AND TEXT SECTION ===
-        $barcodeY = 85; // Middle vertical position
-        $barcodeX = 15; // Center-right area
-        $rotateBarcode = true; // Set to true for vertical barcode
+        // === TRACKING BARCODE SECTION ===
+        // Position barcode in center-right area to avoid template text and QR code
+        $barcodeY = 70; // Middle vertical position
+        $barcodeX = 20; // Moved to center-right area to avoid left-side text
+        $rotateBarcode = true; // Set to true for vertical barcode, false for horizontal
         
         if ($barcodePath && file_exists($barcodePath)) {
             if ($rotateBarcode) {
-                // Rotated barcode
+                // Create a rotated version of the barcode image
                 $rotatedBarcodePath = rotateImageFile($barcodePath, 90);
                 if ($rotatedBarcodePath) {
-                    $barcodeWidth = 5;
-                    $barcodeHeight = 30;
+                    // Use rotated image with swapped dimensions
+                    $barcodeWidth = 10; // Height becomes width after 90° rotation
+                    $barcodeHeight = 45; // Width becomes height after 90° rotation
                     $pdf->Image($rotatedBarcodePath, $barcodeX, $barcodeY, $barcodeWidth, $barcodeHeight);
-                    unlink($rotatedBarcodePath);
+                    unlink($rotatedBarcodePath); // Clean up rotated temp file
                 } else {
-                    // Fallback to original
+                    // Fallback to original if rotation fails
                     $barcodeWidth = 60;
                     $barcodeHeight = 15;
                     $pdf->Image($barcodePath, $barcodeX, $barcodeY, $barcodeWidth, $barcodeHeight);
-                    $rotateBarcode = false; // Disable rotation for text too
                 }
             } else {
-                // Horizontal barcode
+                // Use original horizontal barcode
                 $barcodeWidth = 60;
                 $barcodeHeight = 15;
                 $pdf->Image($barcodePath, $barcodeX, $barcodeY, $barcodeWidth, $barcodeHeight);
             }
-            unlink($barcodePath);
+            unlink($barcodePath); // Clean up original temp file
         }
         
-        // === TRACKING INFORMATION TEXT ===
-        $pdf->SetFont('Arial', '', 8);
-        
-        if (class_exists('PDF_RotatedText') && $rotateBarcode) {
-            // ROTATED TEXT (90 degrees clockwise to match barcode)
-            // Position text on RIGHT SIDE below the vertical barcode
-            $textX = $barcodeX - 20; // Slightly left of barcode to fit on label
-            $textY = $barcodeY + $barcodeHeight + 5; // Below the barcode
-            
-            // Rotate text 90 degrees clockwise
-            $rotationAngle = -90; // Negative for clockwise
-            $lineSpacing = 12; // Reduced spacing between lines (was 25)
-            
-            // Adjust starting X position for each line to create proper spacing
-            $currentX = $textX;
-            
-            // LOT number
-            if ($batch) {
-                $pdf->RotatedText($currentX, $textY, 'LOT: ' . $batch, $rotationAngle);
-                $currentX += $lineSpacing;
+        // === TRACKING INFORMATION SECTION ===
+        // Create and rotate text as image when barcode is rotated
+        if ($rotateBarcode) {
+            // Create text as an image first, then rotate it
+            $textImagePath = createTrackingTextImage($batch, $qty, $date);
+            if ($textImagePath) {
+                $rotatedTextPath = rotateImageFile($textImagePath, 90);
+                if ($rotatedTextPath) {
+                    // Position rotated text next to rotated barcode
+                    $textX = $barcodeX + $barcodeWidth + 2; // Right of vertical barcode (15mm + 2mm)
+                    $textY = $barcodeY; // Same Y as barcode
+                    $textWidth = 35; // Rotated text width (was height: 35)
+                    $textHeight = 120; // Rotated text height (was width: 120)
+                    
+                    $pdf->Image($rotatedTextPath, $textX, $textY, $textWidth, $textHeight);
+                    unlink($rotatedTextPath); // Clean up rotated text
+                }
+                unlink($textImagePath); // Clean up original text image
             }
-            
-            // Quantity
-            $pdf->RotatedText($currentX, $textY, 'CANTITATE: ' . $qty . ' buc', $rotationAngle);
-            $currentX += $lineSpacing;
-            
-            // Production date
-            $pdf->RotatedText($currentX, $textY, 'DATA: ' . date('d.m.Y H:i', strtotime($date)), $rotationAngle);
-            
         } else {
-            // FALLBACK: Regular horizontal text
-            $lineHeight = 4;
+            // Use regular horizontal text for horizontal barcode
+            $textStartX = $barcodeX;
+            $textStartY = $barcodeY + $barcodeHeight + 3; // Below horizontal barcode
             
-            if ($rotateBarcode && $barcodeWidth == 5) {
-                // Text next to vertical barcode (on right side)
-                $textStartX = $barcodeX + $barcodeWidth + 3;
-                $textStartY = $barcodeY;
-            } else {
-                // Text below horizontal barcode (on right side)
-                $textStartX = $barcodeX;
-                $textStartY = $barcodeY + $barcodeHeight + 3;
-            }
-            
+            $pdf->SetFont('Arial', '', 5); // Small font
+            $lineHeight = 3;
             $currentY = $textStartY;
             
             // Lot number
@@ -525,9 +516,65 @@ function rotateImageFile(string $imagePath, int $degrees): ?string {
 }
 
 /**
- * Find the appropriate PNG template for a product
- * Focuses on product codes from product names, not SKU matching
+ * Create tracking text as an image (for rotation)
  */
+function createTrackingTextImage(string $batch, int $qty, string $date): ?string {
+    try {
+        $tempDir = BASE_PATH . '/storage/temp';
+        if (!file_exists($tempDir)) {
+            mkdir($tempDir, 0777, true);
+        }
+        
+        $textImagePath = $tempDir . '/tracking_text_' . time() . '.png';
+        
+        $width = 120;  // Text image width
+        $height = 35;  // Text image height
+        
+        // Create image with white background (not transparent)
+        $image = imagecreate($width, $height);
+        if (!$image) return null;
+        
+        // Create colors
+        $white = imagecolorallocate($image, 255, 255, 255); // White background
+        $black = imagecolorallocate($image, 0, 0, 0);       // Black text
+        
+        // Fill with white background
+        imagefill($image, 0, 0, $white);
+        
+        // Set font and create text lines
+        $font = 2; // Built-in font size
+        $lineHeight = 10;
+        $startY = 2;
+        
+        // Draw text lines
+        $lines = [];
+        if ($batch) {
+            $lines[] = 'LOT: ' . $batch;
+        }
+        $lines[] = 'CANTITATE: ' . $qty . ' buc';
+        $lines[] = 'DATA: ' . date('d.m.Y H:i', strtotime($date));
+        
+        $currentY = $startY;
+        foreach ($lines as $line) {
+            imagestring($image, $font, 2, $currentY, $line, $black);
+            $currentY += $lineHeight;
+        }
+        
+        // Save the image
+        if (!imagepng($image, $textImagePath)) {
+            imagedestroy($image);
+            return null;
+        }
+        
+        imagedestroy($image);
+        return $textImagePath;
+        
+    } catch (Exception $e) {
+        error_log("Text image creation failed: " . $e->getMessage());
+        return null;
+    }
+}
+
 function findProductTemplate(string $sku, string $productName): ?string {
     $templateDir = BASE_PATH . '/storage/templates/product_labels/';
     
@@ -546,13 +593,6 @@ function findProductTemplate(string $sku, string $productName): ?string {
     return null; // No template found
 }
 
-/**
- * Extract product code template from product name
- * Examples:
- * - "AP.-800 CURATATOR UNIVERSAL LILLIOS 25 LITR" -> "LILLIOS-800.png"
- * - "CLEAN-PRO DETERGENT 500 ML" -> "CLEAN-PRO-500.png" 
- * - "CURATATOR UNIVERSAL 250L" -> "CURATATOR-250.png"
- */
 function extractProductCodeTemplate(string $productName, string $templateDir): ?string {
     error_log("Searching template for product: $productName");
     

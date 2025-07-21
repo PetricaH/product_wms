@@ -134,11 +134,11 @@ class PurchaseOrder {
             $query = "INSERT INTO {$this->table} (
                 order_number, seller_id, total_amount, currency, custom_message,
                 email_subject, status, expected_delivery_date, email_recipient,
-                notes, pdf_path, created_by
+                notes, pdf_path, tax_rate, created_by
             ) VALUES (
                 :order_number, :seller_id, :total_amount, :currency, :custom_message,
                 :email_subject, :status, :expected_delivery_date, :email_recipient,
-                :notes, :pdf_path, :created_by
+                :notes, :pdf_path, :tax_rate, :created_by
             )";
             
             $stmt = $this->conn->prepare($query);
@@ -153,6 +153,7 @@ class PurchaseOrder {
             $stmt->bindValue(':email_recipient', $orderData['email_recipient'] ?? null);
             $stmt->bindValue(':notes', $orderData['notes'] ?? null);
             $stmt->bindValue(':pdf_path', $orderData['pdf_path'] ?? null);
+            $stmt->bindValue(':tax_rate', $orderData['tax_rate'] ?? 19);
             $stmt->bindValue(':created_by', $_SESSION['user_id'], PDO::PARAM_INT);
             
             if (!$stmt->execute()) {

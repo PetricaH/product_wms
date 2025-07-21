@@ -32,6 +32,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 $productId = isset($_POST['product_id']) ? (int)$_POST['product_id'] : 0;
 $quantity  = isset($_POST['quantity']) ? (int)$_POST['quantity'] : 0;
+$printer   = $_POST['printer'] ?? null;
 
 if ($productId <= 0 || $quantity <= 0) {
     respond(['status' => 'error', 'message' => 'Invalid product_id or quantity'], 400);
@@ -72,17 +73,15 @@ try {
     $baseUrl = getBaseUrl();
     $pdfUrl  = $baseUrl . '/storage/label_pdfs/' . $fileName;
 
-    $printServerUrl = $baseUrl . '/print_server.php?url=' . urlencode($pdfUrl);
-    $response = @file_get_contents($printServerUrl);
-    if ($response === false) {
-        respond(['status' => 'error', 'message' => 'Failed to contact print server'], 500);
-    }
+    $printerName = $printer ?: ($config['default_printer'] ?? 'godex');
+    $printServerUrl = $config['print_server_url'] ?? 'http://86.124.196.102:3000/print_server.php';
+    $result = sendToPrintServer($printServerUrl, $pdfUrl, $printerName);
 
-    if (stripos($response, 'Trimis la imprimantă') !== false || stripos($response, 'sent to printer') !== false) {
+    if ($result['success']) {
         respond(['status' => 'success', 'message' => 'Labels sent to printer']);
     }
 
-    respond(['status' => 'error', 'message' => 'Print server response: ' . $response], 500);
+    respond(['status' => 'error', 'message' => $result['error']], 500);
 
 } catch (Exception $e) {
     respond(['status' => 'error', 'message' => $e->getMessage()], 500);
@@ -93,4 +92,34 @@ function getBaseUrl(): string {
     $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
     $path = dirname($_SERVER['SCRIPT_NAME'], 2); // from api/labels/
     return rtrim($protocol . $host . $path, '/');
+}
+
+function sendToPrintServer(string $url, string $pdfUrl, string $printer): array {
+    $requestUrl = $url . '?' . http_build_query([
+        'url'     => $pdfUrl,
+        'printer' => $printer
+    ]);
+
+    $context = stream_context_create([
+        'http' => [
+            'method'  => 'GET',
+            'timeout' => 15,
+            'ignore_errors' => true,
+            'user_agent' => 'WMS-PrintClient/1.0'
+        ]
+    ]);
+
+    $response = @file_get_contents($requestUrl, false, $context);
+
+    if ($response === false) {
+        return ['success' => false, 'error' => 'Failed to connect to print server'];
+    }
+
+    foreach (['Trimis la imprimantă', 'sent to printer', 'Print successful'] as $indicator) {
+        if (stripos($response, $indicator) !== false) {
+            return ['success' => true];
+        }
+    }
+
+    return ['success' => false, 'error' => 'Print server response: ' . $response];
 }

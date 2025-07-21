@@ -1,8 +1,14 @@
 <?php
 /**
  * API: Record Production Receipt and Print Labels
- * FIXED: Handles location_code conversion and provides detailed error logging
+ * UPDATED: Uses combined template labels with SKU barcode + tracking info
  */
+
+// Enable error logging for debugging
+ini_set('log_errors', 1);
+ini_set('error_log', '/var/www/notsowms.ro/logs/php_debug.log');
+error_log("=== PRODUCTION RECEIPT API CALLED ===");
+
 header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: POST');
@@ -182,11 +188,16 @@ try {
         throw new Exception('Failed to add inventory - database insert failed');
     }
 
-    // Generate and send label
-    $labelUrl = generateProductionLabel($db, $productId, $quantity, $batchNumber, $producedAt);
+    // Generate and send label using new combined template system
+    $labelUrl = generateCombinedTemplateLabel($db, $productId, $quantity, $batchNumber, $producedAt);
     if ($labelUrl) {
-        sendToPrintServer($labelUrl, $printer, $config);
-        error_log("Production Receipt Debug - Label generated: $labelUrl");
+        $headers = @get_headers($labelUrl);
+        if ($headers && strpos($headers[0], '200') !== false) {
+            sendToPrintServer($labelUrl, $printer, $config);
+            error_log("Production Receipt Debug - Combined template label generated: $labelUrl");
+        } else {
+            error_log("Label not available yet: $labelUrl");
+        }
     }
 
     echo json_encode([
@@ -209,8 +220,11 @@ try {
     echo json_encode(['success' => false, 'message' => $e->getMessage()]);
 }
 
-// Include the fixed label generation functions from previous artifact
-function generateProductionLabel(PDO $db, int $productId, int $qty, string $batch, string $date): ?string {
+/**
+ * Combined Template Label Generator for Godex Printer
+ * Creates a PDF overlay that adds barcode + tracking info to your existing PNG template
+ */
+function generateCombinedTemplateLabel(PDO $db, int $productId, int $qty, string $batch, string $date): ?string {
     $fpdfPath = BASE_PATH . '/lib/fpdf.php';
     if (!file_exists($fpdfPath)) {
         error_log("FPDF library not found at: " . $fpdfPath);
@@ -231,7 +245,7 @@ function generateProductionLabel(PDO $db, int $productId, int $qty, string $batc
         return null;
     }
 
-    $fileName = 'thermal_label_' . time() . '_' . $batch . '.pdf';
+    $fileName = 'combined_template_label_' . time() . '_' . $batch . '.pdf';
     $dir = BASE_PATH . '/storage/label_pdfs';
     if (!file_exists($dir)) {
         mkdir($dir, 0777, true);
@@ -239,43 +253,116 @@ function generateProductionLabel(PDO $db, int $productId, int $qty, string $batc
     $filePath = $dir . '/' . $fileName;
 
     try {
-        // Godex 500 thermal label dimensions
-        $pdf = new FPDF('P', 'mm', [101.6, 152.4]);
+        // Template dimensions - match your actual PNG template size
+        $labelWidth = 101.6;   // mm - Godex label width
+        $labelHeight = 152.4;  // mm - Godex label height
+        
+        $pdf = new FPDF('P', 'mm', [$labelWidth, $labelHeight]);
         $pdf->SetMargins(5, 5, 5);
         $pdf->AddPage();
         
         $sku = $product['sku'] ?? 'N/A';
-        $qrCodePath = generateProductionQRCode($sku, $batch);
+        $productName = $product['name'] ?? 'Unknown Product';
         
-        // Product info
-        $pdf->SetFont('Courier', 'B', 14);
-        $pdf->Cell(0, 8, $product['name'], 0, 1, 'C');
-        $pdf->Ln(2);
-        
-        $pdf->SetFont('Courier', 'B', 16);
-        $pdf->Cell(0, 10, 'SKU: ' . $sku, 0, 1, 'C');
-        $pdf->Ln(5);
-        
-        // QR Code
-        if ($qrCodePath && file_exists($qrCodePath)) {
-            $qrSize = 40;
-            $qrX = (101.6 - $qrSize) / 2;
-            $qrY = $pdf->GetY();
+        // === LOAD EXISTING PNG TEMPLATE AS BACKGROUND ===
+        $templatePath = findProductTemplate($sku, $productName);
+        if ($templatePath && file_exists($templatePath)) {
+            $pdf->Image($templatePath, 0, 0, $labelWidth, $labelHeight);
+            error_log("SUCCESS: Using template: $templatePath for SKU: $sku");
+        } else {
+            // Log all attempted paths for debugging
+            error_log("TEMPLATE NOT FOUND for SKU: $sku, Product: $productName");
+            error_log("Attempted path: " . ($templatePath ?? 'null'));
+            error_log("Template directory: " . BASE_PATH . '/storage/templates/product_labels/');
             
-            $pdf->Image($qrCodePath, $qrX, $qrY, $qrSize, $qrSize);
-            $pdf->SetY($qrY + $qrSize + 5);
-            unlink($qrCodePath);
+            // List existing files in template directory for debugging
+            $templateDir = BASE_PATH . '/storage/templates/product_labels/';
+            if (is_dir($templateDir)) {
+                $files = scandir($templateDir);
+                error_log("Available template files: " . implode(', ', array_filter($files, function($f) { return $f !== '.' && $f !== '..'; })));
+            } else {
+                error_log("Template directory does not exist: $templateDir");
+            }
         }
         
-        // Details
-        $pdf->SetFont('Courier', '', 12);
-        $pdf->Cell(0, 6, 'Lot: ' . $batch, 0, 1, 'C');
-        $pdf->Cell(0, 6, 'Quantity: ' . $qty, 0, 1, 'C');
-        $pdf->Cell(0, 6, 'Date: ' . date('d.m.Y H:i', strtotime($date)), 0, 1, 'C');
+        // Generate barcode that contains ONLY SKU (for scanning)
+        $barcodePath = generateSKUBarcode($sku, $batch);
         
-        $pdf->Ln(3);
-        $pdf->SetFont('Courier', 'B', 10);
-        $pdf->Cell(0, 5, 'SCAN CODE: ' . $sku, 0, 1, 'C');
+        // === TRACKING BARCODE SECTION ===
+        // Position barcode in center-right area to avoid template text and QR code
+        $barcodeY = 70; // Middle vertical position
+        $barcodeX = 20; // Moved to center-right area to avoid left-side text
+        $rotateBarcode = true; // Set to true for vertical barcode, false for horizontal
+        
+        if ($barcodePath && file_exists($barcodePath)) {
+            if ($rotateBarcode) {
+                // Create a rotated version of the barcode image
+                $rotatedBarcodePath = rotateImageFile($barcodePath, 90);
+                if ($rotatedBarcodePath) {
+                    // Use rotated image with swapped dimensions
+                    $barcodeWidth = 10; // Height becomes width after 90° rotation
+                    $barcodeHeight = 45; // Width becomes height after 90° rotation
+                    $pdf->Image($rotatedBarcodePath, $barcodeX, $barcodeY, $barcodeWidth, $barcodeHeight);
+                    unlink($rotatedBarcodePath); // Clean up rotated temp file
+                } else {
+                    // Fallback to original if rotation fails
+                    $barcodeWidth = 60;
+                    $barcodeHeight = 15;
+                    $pdf->Image($barcodePath, $barcodeX, $barcodeY, $barcodeWidth, $barcodeHeight);
+                }
+            } else {
+                // Use original horizontal barcode
+                $barcodeWidth = 60;
+                $barcodeHeight = 15;
+                $pdf->Image($barcodePath, $barcodeX, $barcodeY, $barcodeWidth, $barcodeHeight);
+            }
+            unlink($barcodePath); // Clean up original temp file
+        }
+        
+        // === TRACKING INFORMATION SECTION ===
+        // Create and rotate text as image when barcode is rotated
+        if ($rotateBarcode) {
+            // Create text as an image first, then rotate it
+            $textImagePath = createTrackingTextImage($batch, $qty, $date);
+            if ($textImagePath) {
+                $rotatedTextPath = rotateImageFile($textImagePath, 90);
+                if ($rotatedTextPath) {
+                    // Position rotated text next to rotated barcode
+                    $textX = $barcodeX + $barcodeWidth + 2; // Right of vertical barcode (15mm + 2mm)
+                    $textY = $barcodeY; // Same Y as barcode
+                    $textWidth = 35; // Rotated text width (was height: 35)
+                    $textHeight = 120; // Rotated text height (was width: 120)
+                    
+                    $pdf->Image($rotatedTextPath, $textX, $textY, $textWidth, $textHeight);
+                    unlink($rotatedTextPath); // Clean up rotated text
+                }
+                unlink($textImagePath); // Clean up original text image
+            }
+        } else {
+            // Use regular horizontal text for horizontal barcode
+            $textStartX = $barcodeX;
+            $textStartY = $barcodeY + $barcodeHeight + 3; // Below horizontal barcode
+            
+            $pdf->SetFont('Arial', '', 5); // Small font
+            $lineHeight = 3;
+            $currentY = $textStartY;
+            
+            // Lot number
+            if ($batch) {
+                $pdf->SetXY($textStartX, $currentY);
+                $pdf->Cell(30, $lineHeight, 'LOT: ' . $batch, 0, 0, 'L');
+                $currentY += $lineHeight;
+            }
+            
+            // Quantity  
+            $pdf->SetXY($textStartX, $currentY);
+            $pdf->Cell(30, $lineHeight, 'CANTITATE: ' . $qty . ' buc', 0, 0, 'L');
+            $currentY += $lineHeight;
+            
+            // Production date
+            $pdf->SetXY($textStartX, $currentY);
+            $pdf->Cell(30, $lineHeight, 'DATA: ' . date('d.m.Y H:i', strtotime($date)), 0, 0, 'L');
+        }
         
         $pdf->Output('F', $filePath);
 
@@ -283,49 +370,51 @@ function generateProductionLabel(PDO $db, int $productId, int $qty, string $batc
         return $baseUrl . '/storage/label_pdfs/' . $fileName;
         
     } catch (Exception $e) {
-        error_log("Error generating thermal label: " . $e->getMessage());
+        error_log("Error generating combined template label: " . $e->getMessage());
         return null;
     }
 }
 
-function generateProductionQRCode(string $sku, string $batch): ?string {
+function generateSKUBarcode(string $sku, string $batch): ?string {
     try {
         $tempDir = BASE_PATH . '/storage/temp';
         if (!file_exists($tempDir)) {
             mkdir($tempDir, 0777, true);
         }
         
-        $qrFileName = 'production_qr_' . $batch . '_' . time() . '.png';
-        $qrFilePath = $tempDir . '/' . $qrFileName;
+        $barcodeFileName = 'sku_barcode_' . $batch . '_' . time() . '.png';
+        $barcodeFilePath = $tempDir . '/' . $barcodeFileName;
         
-        $qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&format=png&data=' . urlencode($sku);
+        // Generate barcode with ONLY SKU (Code 128 format)
+        $barcodeUrl = 'https://barcode.tec-it.com/barcode.ashx?data=' . urlencode($sku) . '&code=Code128&multiplebarcodes=false&translate-esc=false&unit=Fit&dpi=96&imagetype=Png&rotation=0&color=%23000000&bgcolor=%23ffffff&qunit=Mm&quiet=0';
         
         $context = stream_context_create([
             'http' => [
                 'timeout' => 10,
-                'user_agent' => 'Mozilla/5.0 (compatible; WMS-Production-Labels)'
+                'user_agent' => 'Mozilla/5.0 (compatible; WMS-Template-Labels)'
             ]
         ]);
         
-        $qrData = @file_get_contents($qrUrl, false, $context);
+        $barcodeData = @file_get_contents($barcodeUrl, false, $context);
         
-        if ($qrData !== false) {
-            file_put_contents($qrFilePath, $qrData);
-            return $qrFilePath;
+        if ($barcodeData !== false) {
+            file_put_contents($barcodeFilePath, $barcodeData);
+            return $barcodeFilePath;
         }
         
-        return createProductionBarcodeFallback($sku, $qrFilePath);
+        // Fallback to manually generated barcode
+        return createSKUBarcodeFallback($sku, $barcodeFilePath);
         
     } catch (Exception $e) {
-        error_log("Production QR code generation failed: " . $e->getMessage());
+        error_log("SKU barcode generation failed: " . $e->getMessage());
         return null;
     }
 }
 
-function createProductionBarcodeFallback(string $sku, string $filePath): ?string {
+function createSKUBarcodeFallback(string $sku, string $filePath): ?string {
     try {
-        $width = 300;
-        $height = 100;
+        $width = 200;  // Standard barcode width
+        $height = 50;  // Standard barcode height
         
         $image = imagecreate($width, $height);
         if (!$image) return null;
@@ -335,19 +424,42 @@ function createProductionBarcodeFallback(string $sku, string $filePath): ?string
         
         imagefill($image, 0, 0, $white);
         
-        $font = 5;
-        $textX = ($width - strlen($sku) * imagefontwidth($font)) / 2;
-        $textY = ($height - imagefontheight($font)) / 2;
+        // Create Code 39-style barcode pattern for SKU
+        $barWidth = 2;
+        $barSpacing = 1;
+        $currentX = 10;
         
-        imagestring($image, $font, $textX, $textY, $sku, $black);
-        
-        for ($i = 0; $i < strlen($sku); $i++) {
-            $x = $textX + ($i * imagefontwidth($font));
-            imageline($image, $x, 10, $x, 25, $black);
-            imageline($image, $x, $height - 25, $x, $height - 10, $black);
+        // Start pattern
+        for ($i = 0; $i < 3; $i++) {
+            imagefilledrectangle($image, $currentX, 5, $currentX + $barWidth, 30, $black);
+            $currentX += $barWidth + $barSpacing;
         }
         
-        imagerectangle($image, 0, 0, $width-1, $height-1, $black);
+        // SKU data bars - simplified encoding
+        for ($i = 0; $i < strlen($sku); $i++) {
+            $char = $sku[$i];
+            $ascii = ord($char);
+            
+            // Create pattern based on character
+            for ($j = 0; $j < 4; $j++) {
+                if (($ascii + $j) % 2 == 0) {
+                    imagefilledrectangle($image, $currentX, 5, $currentX + $barWidth, 30, $black);
+                }
+                $currentX += $barWidth + $barSpacing;
+            }
+            $currentX += $barSpacing; // Extra space between characters
+        }
+        
+        // End pattern
+        for ($i = 0; $i < 3; $i++) {
+            imagefilledrectangle($image, $currentX, 5, $currentX + $barWidth, 30, $black);
+            $currentX += $barWidth + $barSpacing;
+        }
+        
+        // Add SKU text below barcode
+        $font = 3;
+        $textX = ($width - strlen($sku) * imagefontwidth($font)) / 2;
+        imagestring($image, $font, $textX, 35, $sku, $black);
         
         imagepng($image, $filePath);
         imagedestroy($image);
@@ -355,9 +467,188 @@ function createProductionBarcodeFallback(string $sku, string $filePath): ?string
         return $filePath;
         
     } catch (Exception $e) {
-        error_log("Production barcode fallback failed: " . $e->getMessage());
+        error_log("SKU barcode fallback failed: " . $e->getMessage());
         return null;
     }
+}
+
+/**
+ * Rotate an image file by specified degrees
+ */
+function rotateImageFile(string $imagePath, int $degrees): ?string {
+    try {
+        // Create image from file
+        $image = imagecreatefrompng($imagePath);
+        if (!$image) {
+            error_log("Failed to load image for rotation: $imagePath");
+            return null;
+        }
+        
+        // Rotate the image
+        $rotatedImage = imagerotate($image, -$degrees, 0); // Negative for clockwise rotation
+        if (!$rotatedImage) {
+            error_log("Failed to rotate image");
+            imagedestroy($image);
+            return null;
+        }
+        
+        // Create rotated file path
+        $rotatedPath = str_replace('.png', '_rotated.png', $imagePath);
+        
+        // Save rotated image
+        if (!imagepng($rotatedImage, $rotatedPath)) {
+            error_log("Failed to save rotated image");
+            imagedestroy($image);
+            imagedestroy($rotatedImage);
+            return null;
+        }
+        
+        // Clean up
+        imagedestroy($image);
+        imagedestroy($rotatedImage);
+        
+        return $rotatedPath;
+        
+    } catch (Exception $e) {
+        error_log("Image rotation failed: " . $e->getMessage());
+        return null;
+    }
+}
+
+/**
+ * Create tracking text as an image (for rotation)
+ */
+function createTrackingTextImage(string $batch, int $qty, string $date): ?string {
+    try {
+        $tempDir = BASE_PATH . '/storage/temp';
+        if (!file_exists($tempDir)) {
+            mkdir($tempDir, 0777, true);
+        }
+        
+        $textImagePath = $tempDir . '/tracking_text_' . time() . '.png';
+        
+        $width = 120;  // Text image width
+        $height = 35;  // Text image height
+        
+        // Create image with white background (not transparent)
+        $image = imagecreate($width, $height);
+        if (!$image) return null;
+        
+        // Create colors
+        $white = imagecolorallocate($image, 255, 255, 255); // White background
+        $black = imagecolorallocate($image, 0, 0, 0);       // Black text
+        
+        // Fill with white background
+        imagefill($image, 0, 0, $white);
+        
+        // Set font and create text lines
+        $font = 2; // Built-in font size
+        $lineHeight = 10;
+        $startY = 2;
+        
+        // Draw text lines
+        $lines = [];
+        if ($batch) {
+            $lines[] = 'LOT: ' . $batch;
+        }
+        $lines[] = 'CANTITATE: ' . $qty . ' buc';
+        $lines[] = 'DATA: ' . date('d.m.Y H:i', strtotime($date));
+        
+        $currentY = $startY;
+        foreach ($lines as $line) {
+            imagestring($image, $font, 2, $currentY, $line, $black);
+            $currentY += $lineHeight;
+        }
+        
+        // Save the image
+        if (!imagepng($image, $textImagePath)) {
+            imagedestroy($image);
+            return null;
+        }
+        
+        imagedestroy($image);
+        return $textImagePath;
+        
+    } catch (Exception $e) {
+        error_log("Text image creation failed: " . $e->getMessage());
+        return null;
+    }
+}
+
+function findProductTemplate(string $sku, string $productName): ?string {
+    $templateDir = BASE_PATH . '/storage/templates/product_labels/';
+    
+    // Strategy 1: Extract product code from product name (PRIMARY METHOD)
+    $templatePath = extractProductCodeTemplate($productName, $templateDir);
+    if ($templatePath && file_exists($templatePath)) {
+        return $templatePath;
+    }
+    
+    // Strategy 2: Generic template (fallback)
+    $templatePath = $templateDir . 'generic_template.png';
+    if (file_exists($templatePath)) {
+        return $templatePath;
+    }
+    
+    return null; // No template found
+}
+
+function extractProductCodeTemplate(string $productName, string $templateDir): ?string {
+    error_log("Searching template for product: $productName");
+    
+    // Method 1: Look for LILLIOS specifically (your example)
+    if (stripos($productName, 'LILLIOS') !== false) {
+        if (preg_match('/(\d+)/', $productName, $matches)) {
+            $number = $matches[1];
+            $templatePath = $templateDir . 'LILLIOS-' . $number . '.png';
+            error_log("Trying LILLIOS pattern: $templatePath");
+            return $templatePath;
+        }
+    }
+    
+    // Method 2: Extract brand name and number from product name
+    // Looks for: BRAND + number pattern
+    if (preg_match('/\b([A-Z][A-Z\-]*[A-Z])\b.*?(\d+)/i', $productName, $matches)) {
+        $brand = strtoupper($matches[1]);
+        $number = $matches[2];
+        $templatePath = $templateDir . $brand . '-' . $number . '.png';
+        error_log("Trying brand-number pattern: $templatePath");
+        return $templatePath;
+    }
+    
+    // Method 3: Look for common product patterns with numbers
+    // Pattern: "WORD-NUMBER" or "WORD NUMBER"
+    if (preg_match('/\b([A-Z]+(?:\-[A-Z]+)?)\s*[\-\s]*(\d+)/i', $productName, $matches)) {
+        $brand = strtoupper($matches[1]);
+        $number = $matches[2];
+        $templatePath = $templateDir . $brand . '-' . $number . '.png';
+        error_log("Trying word-number pattern: $templatePath");
+        return $templatePath;
+    }
+    
+    // Method 4: Extract from specific brand keywords (customize for your brands)
+    $brandPatterns = [
+        '/\bLILLIOS\b/i' => 'LILLIOS',
+        '/\bCURATATOR\b/i' => 'CURATATOR', 
+        '/\bCLEAN[\-\s]?PRO\b/i' => 'CLEAN-PRO',
+        '/\bDETERGENT\b/i' => 'DETERGENT',
+        '/\bUNIVERSAL\b/i' => 'UNIVERSAL'
+    ];
+    
+    foreach ($brandPatterns as $pattern => $brand) {
+        if (preg_match($pattern, $productName)) {
+            // Find any number in the product name
+            if (preg_match('/(\d+)/', $productName, $matches)) {
+                $number = $matches[1];
+                $templatePath = $templateDir . $brand . '-' . $number . '.png';
+                error_log("Trying brand pattern ($brand): $templatePath");
+                return $templatePath;
+            }
+        }
+    }
+    
+    error_log("No template pattern matched for: $productName");
+    return null;
 }
 
 function sendToPrintServer(string $pdfUrl, ?string $printer, array $config): void {

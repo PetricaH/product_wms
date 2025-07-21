@@ -40,6 +40,7 @@ $quantity = (int)($input['quantity'] ?? 0);
 $batchNumber = trim($input['batch_number'] ?? '');
 $producedAt = $input['produced_at'] ?? date('Y-m-d H:i:s');
 $locationInput = $input['location_id'] ?? null;
+$printer   = $input['printer'] ?? null;
 
 error_log("Production Receipt Debug - Input: " . json_encode($input));
 
@@ -184,7 +185,7 @@ try {
     // Generate and send label
     $labelUrl = generateProductionLabel($db, $productId, $quantity, $batchNumber, $producedAt);
     if ($labelUrl) {
-        sendToPrintServer($labelUrl);
+        sendToPrintServer($labelUrl, $printer, $config);
         error_log("Production Receipt Debug - Label generated: $labelUrl");
     }
 
@@ -359,13 +360,42 @@ function createProductionBarcodeFallback(string $sku, string $filePath): ?string
     }
 }
 
-function sendToPrintServer(string $pdfUrl): void {
-    try {
-        $serverUrl = getBaseUrl() . '/print_server.php?url=' . urlencode($pdfUrl);
-        @file_get_contents($serverUrl);
-    } catch (Exception $e) {
-        error_log("Error sending to print server: " . $e->getMessage());
+function sendToPrintServer(string $pdfUrl, ?string $printer, array $config): void {
+    $printerName = $printer ?: ($config['default_printer'] ?? 'godex');
+    $printServerUrl = $config['print_server_url'] ?? 'http://86.124.196.102:3000/print_server.php';
+    $result = sendPdfToServer($printServerUrl, $pdfUrl, $printerName);
+    if (!$result['success']) {
+        error_log('Label print failed: ' . $result['error']);
     }
+}
+
+function sendPdfToServer(string $url, string $pdfUrl, string $printer): array {
+    $requestUrl = $url . '?' . http_build_query([
+        'url' => $pdfUrl,
+        'printer' => $printer
+    ]);
+
+    $context = stream_context_create([
+        'http' => [
+            'method' => 'GET',
+            'timeout' => 15,
+            'ignore_errors' => true,
+            'user_agent' => 'WMS-PrintClient/1.0'
+        ]
+    ]);
+
+    $response = @file_get_contents($requestUrl, false, $context);
+    if ($response === false) {
+        return ['success' => false, 'error' => 'Failed to connect to print server'];
+    }
+
+    foreach (['Trimis la imprimantă', 'sent to printer', 'Print successful'] as $indicator) {
+        if (stripos($response, $indicator) !== false) {
+            return ['success' => true];
+        }
+    }
+
+    return ['success' => false, 'error' => 'Print server response: ' . $response];
 }
 
 function getBaseUrl(): string {

@@ -251,6 +251,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                             <th>Prioritate</th>
                                             <th>Valoare</th>
                                             <th>Produse</th>
+                                            <th>AWB</th> 
                                             <th>Acțiuni</th>
                                         </tr>
                                     </thead>
@@ -286,6 +287,24 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                 </td>
                                                 <td>
                                                     <span class="text-center"><?= $order['total_items'] ?? 0 ?> produse</span>
+                                                </td>
+                                                <td class="awb-column">
+                                                    <?php if (!empty($order['awb_barcode'])): ?>
+                                                        <div class="awb-info">
+                                                            <span class="awb-barcode"><?= htmlspecialchars($order['awb_barcode']) ?></span>
+                                                            <small>AWB generat</small>
+                                                            <?php if (!empty($order['awb_created_at'])): ?>
+                                                                <small><?= date('d.m.Y H:i', strtotime($order['awb_created_at'])) ?></small>
+                                                            <?php endif; ?>
+                                                        </div>
+                                                    <?php else: ?>
+                                                        <button type="button" class="generate-awb-btn" 
+                                                                data-order-id="<?= $order['id'] ?>"
+                                                                title="Generează AWB">
+                                                            <span class="material-symbols-outlined">local_shipping</span>
+                                                            Generează AWB
+                                                        </button>
+                                                    <?php endif; ?>
                                                 </td>
                                                 <td>
                                                     <div class="btn-group">
@@ -560,5 +579,6 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
             </div>
         </div>
     </div>
-
+    
+    <script src="scripts/orders_awb.js"></script>
     <?php require_once __DIR__ . '/includes/footer.php'; ?>

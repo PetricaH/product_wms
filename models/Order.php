@@ -846,6 +846,23 @@ class Order
         return $results;
     }
     
+    public function updateOrderField($orderId, $fields) {
+        $setParts = [];
+        $values = [];
+        
+        foreach ($fields as $field => $value) {
+            $setParts[] = "$field = ?";
+            $values[] = $value;
+        }
+        
+        $values[] = $orderId;
+        
+        $sql = "UPDATE orders SET " . implode(', ', $setParts) . " WHERE id = ?";
+        $stmt = $this->conn->prepare($sql);
+        
+        return $stmt->execute($values);
+    }
+
     /**
      * Get configuration value
      */

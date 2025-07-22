@@ -10,6 +10,7 @@ $hasOrderFromUrl = !empty($orderNumber);
 <html lang="ro">
 <head>
     <?php require_once __DIR__ . '/includes/warehouse_header.php'; ?>
+    <link rel="stylesheet" href="styles/awb_generation.css">
 </head>
 <body>
     <!-- Simple Header (matching existing warehouse_orders.php style) -->
@@ -68,6 +69,19 @@ $hasOrderFromUrl = !empty($orderNumber);
                 <!-- Items will be loaded here -->
             </div>
         </div>
+
+        <?php if (!empty($order['awb_barcode'])): ?>
+            <div class="awb-status">
+                <span class="material-symbols-outlined">local_shipping</span>
+                AWB: <?= htmlspecialchars($order['awb_barcode']) ?>
+            </div>
+        <?php else: ?>
+            <button type="button" class="generate-awb-btn" 
+                    data-order-id="<?= $order['id'] ?>">
+                <span class="material-symbols-outlined">local_shipping</span>
+                Generează AWB
+            </button>
+        <?php endif; ?>
 
         <!-- Picking Workflow Sections -->
         
@@ -234,7 +248,7 @@ $hasOrderFromUrl = !empty($orderNumber);
             hasOrderFromUrl: <?= json_encode($hasOrderFromUrl) ?>
         };
     </script>
-
+    <script src="scripts/orders_awb.js"></script>
     <?php require_once __DIR__ . '/includes/warehouse_footer.php'; ?>
 </body>
 </html>

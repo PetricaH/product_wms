@@ -1,0 +1,532 @@
+/* File: styles/awb_generation.css */
+/* Styles for AWB generation functionality */
+
+/* AWB Generation Button */
+.generate-awb-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    background-color: #0d6efd;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-decoration: none;
+    margin: 2px;
+}
+
+.generate-awb-btn:hover:not(:disabled) {
+    background-color: #0b5ed7;
+    transform: translateY(-1px);
+}
+
+.generate-awb-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.generate-awb-btn .material-symbols-outlined {
+    font-size: 16px;
+}
+
+/* AWB Status Display */
+.awb-info {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    min-width: 120px;
+}
+
+.awb-barcode {
+    font-family: 'Courier New', monospace;
+    font-weight: bold;
+    color: #198754;
+    font-size: 0.9rem;
+    margin-bottom: 2px;
+}
+
+.awb-info small {
+    color: #6c757d;
+    font-size: 0.75rem;
+    line-height: 1.2;
+}
+
+/* AWB Column in Tables */
+.awb-column {
+    text-align: center;
+    min-width: 140px;
+    padding: 8px 4px;
+}
+
+/* Modal Styles */
+.modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.modal-content {
+    background: white;
+    border-radius: 8px;
+    width: 90%;
+    max-width: 600px;
+    max-height: 90vh;
+    overflow: hidden;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
+}
+
+.modal-content.large-modal {
+    max-width: 900px;
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px;
+    border-bottom: 1px solid #e5e5e5;
+    background-color: #f8f9fa;
+}
+
+.modal-header h3 {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: #333;
+}
+
+.close-modal {
+    background: none;
+    border: none;
+    padding: 8px;
+    cursor: pointer;
+    color: #666;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.2s;
+}
+
+.close-modal:hover {
+    background-color: #e9ecef;
+}
+
+.modal-body {
+    padding: 20px;
+    max-height: 70vh;
+    overflow-y: auto;
+}
+
+.modal-actions {
+    display: flex;
+    gap: 12px;
+    justify-content: flex-end;
+    padding-top: 20px;
+    border-top: 1px solid #e5e5e5;
+    margin-top: 20px;
+}
+
+/* Form Styles */
+.form-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 24px;
+}
+
+.form-section {
+    background-color: #f8f9fa;
+    padding: 16px;
+    border-radius: 6px;
+    border: 1px solid #e9ecef;
+}
+
+.form-section h4 {
+    margin: 0 0 16px 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: #495057;
+    border-bottom: 1px solid #e9ecef;
+    padding-bottom: 8px;
+}
+
+.form-group {
+    margin-bottom: 16px;
+}
+
+.form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 4px;
+    font-weight: 500;
+    color: #333;
+    font-size: 0.9rem;
+}
+
+.form-group input,
+.form-group textarea,
+.form-group select {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+    font-size: 0.9rem;
+    transition: border-color 0.2s;
+    box-sizing: border-box;
+}
+
+.form-group input:focus,
+.form-group textarea:focus,
+.form-group select:focus {
+    outline: none;
+    border-color: #0d6efd;
+    box-shadow: 0 0 0 2px rgba(13, 110, 253, 0.25);
+}
+
+.form-group textarea {
+    resize: vertical;
+    min-height: 60px;
+}
+
+.form-group small {
+    display: block;
+    margin-top: 4px;
+    color: #6c757d;
+    font-size: 0.8rem;
+}
+
+.form-checkboxes {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.form-checkboxes label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: normal;
+    cursor: pointer;
+}
+
+.form-checkboxes input[type="checkbox"] {
+    width: auto;
+    margin: 0;
+}
+
+/* Alert Styles */
+.alert {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+    border-radius: 4px;
+    border: 1px solid;
+}
+
+.alert-info {
+    background-color: #d1ecf1;
+    border-color: #bee5eb;
+    color: #0c5460;
+}
+
+.alert-warning {
+    background-color: #fff3cd;
+    border-color: #ffecb5;
+    color: #664d03;
+}
+
+.alert-success {
+    background-color: #d1e7dd;
+    border-color: #badbcc;
+    color: #0f5132;
+}
+
+.alert-error {
+    background-color: #f8d7da;
+    border-color: #f5c2c7;
+    color: #842029;
+}
+
+/* Requirements List */
+.requirements-list {
+    margin: 16px 0;
+    padding-left: 20px;
+}
+
+.requirements-list li {
+    margin-bottom: 8px;
+    color: #dc3545;
+}
+
+/* Weight and Address Info */
+.weight-info,
+.address-info {
+    background-color: #f8f9fa;
+    padding: 12px;
+    border-radius: 4px;
+    margin: 16px 0;
+    border-left: 4px solid #0d6efd;
+}
+
+.weight-info p,
+.address-info p {
+    margin: 4px 0;
+}
+
+.weight-info .warning {
+    color: #856404;
+    font-style: italic;
+}
+
+.address-info ul {
+    margin: 8px 0 0 0;
+    padding-left: 20px;
+}
+
+/* Button Styles */
+.btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    border: none;
+    border-radius: 4px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    text-decoration: none;
+    transition: all 0.2s;
+    line-height: 1.5;
+}
+
+.btn-primary {
+    background-color: #0d6efd;
+    color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+    background-color: #0b5ed7;
+}
+
+.btn-secondary {
+    background-color: #6c757d;
+    color: white;
+}
+
+.btn-secondary:hover:not(:disabled) {
+    background-color: #5c636a;
+}
+
+.btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* Spinning animation */
+.spinning {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+/* Notification styles */
+.notifications-container {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 10000;
+    pointer-events: none;
+}
+
+.notification {
+    margin-bottom: 10px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    cursor: pointer;
+    animation: slideIn 0.3s ease-out;
+    pointer-events: auto;
+    border-radius: 4px;
+    background: white;
+}
+
+@keyframes slideIn {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+/* Orders table integration */
+.orders-table .awb-column {
+    vertical-align: middle;
+}
+
+.orders-table .generate-awb-btn {
+    font-size: 0.8rem;
+    padding: 4px 8px;
+}
+
+.orders-table .awb-barcode {
+    font-size: 0.85rem;
+}
+
+/* Card-style orders integration (picking interface) */
+.order-card .generate-awb-btn {
+    width: 100%;
+    justify-content: center;
+    margin-top: 8px;
+}
+
+.order-card .awb-info {
+    background-color: #e8f5e8;
+    padding: 8px;
+    border-radius: 4px;
+    margin-top: 8px;
+    border: 1px solid #c3e6c3;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .modal-content {
+        width: 95%;
+        margin: 20px;
+    }
+    
+    .modal-header {
+        padding: 16px;
+    }
+    
+    .modal-body {
+        padding: 16px;
+    }
+    
+    .form-grid {
+        grid-template-columns: 1fr;
+        gap: 20px;
+    }
+    
+    .form-row {
+        grid-template-columns: 1fr;
+        gap: 12px;
+    }
+    
+    .modal-actions {
+        flex-direction: column-reverse;
+        gap: 8px;
+    }
+    
+    .btn {
+        width: 100%;
+        justify-content: center;
+    }
+    
+    .notification {
+        min-width: auto;
+        max-width: calc(100vw - 40px);
+    }
+    
+    .generate-awb-btn {
+        font-size: 0.8rem;
+        padding: 6px 10px;
+    }
+    
+    .awb-column {
+        min-width: 100px;
+        font-size: 0.85rem;
+    }
+}
+
+/* Dark mode support (if theme supports it) */
+@media (prefers-color-scheme: dark) {
+    .modal-content {
+        background-color: #2d3748;
+        color: #e2e8f0;
+    }
+    
+    .modal-header {
+        background-color: #4a5568;
+        border-bottom-color: #4a5568;
+    }
+    
+    .form-section {
+        background-color: #374151;
+        border-color: #4a5568;
+    }
+    
+    .form-group input,
+    .form-group textarea,
+    .form-group select {
+        background-color: #374151;
+        border-color: #4a5568;
+        color: #e2e8f0;
+    }
+    
+    .notification {
+        background-color: #2d3748;
+        color: #e2e8f0;
+    }
+    
+    .alert-info {
+        background-color: #1e3a8a;
+        border-color: #3b82f6;
+        color: #dbeafe;
+    }
+    
+    .alert-warning {
+        background-color: #92400e;
+        border-color: #f59e0b;
+        color: #fef3c7;
+    }
+    
+    .alert-success {
+        background-color: #065f46;
+        border-color: #10b981;
+        color: #d1fae5;
+    }
+    
+    .alert-error {
+        background-color: #991b1b;
+        border-color: #ef4444;
+        color: #fee2e2;
+    }
+}
+
+/* Print styles (hide AWB buttons when printing) */
+@media print {
+    .generate-awb-btn,
+    .modal,
+    .notification {
+        display: none !important;
+    }
+    
+    .awb-info {
+        background: none !important;
+        border: 1px solid #000 !important;
+    }
+}

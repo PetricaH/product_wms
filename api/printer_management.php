@@ -181,7 +181,11 @@ function updatePrintServer(PDO $db) {
     foreach ($allowedFields as $field) {
         if (isset($input[$field])) {
             $fields[] = "$field = ?";
-            $values[] = $input[$field];
+            if ($field === 'is_default' || $field === 'is_active') {
+                $values[] = $input[$field] ? 1 : 0;
+            } else {
+                $values[] = $input[$field];
+            }
         }
     }
 
@@ -246,9 +250,14 @@ function createPrinter(PDO $db) {
         return;
     }
 
+    if (!empty($input['is_default'])) {
+        $reset = $db->prepare('UPDATE printers SET is_default = 0 WHERE printer_type = ?');
+        $reset->execute([$input['printer_type'] ?? 'invoice']);
+    }
+
     $stmt = $db->prepare('
-        INSERT INTO printers (name, network_identifier, print_server_id, printer_type, paper_size, notes) 
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO printers (name, network_identifier, print_server_id, printer_type, paper_size, notes, is_default)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
     ');
     
     $result = $stmt->execute([
@@ -257,7 +266,8 @@ function createPrinter(PDO $db) {
         $input['print_server_id'] ?? null,
         $input['printer_type'] ?? 'invoice',
         $input['paper_size'] ?? 'A4',
-        $input['notes'] ?? ''
+        $input['notes'] ?? '',
+        empty($input['is_default']) ? 0 : 1
     ]);
 
     if ($result) {
@@ -469,7 +479,7 @@ function updatePrinter(PDO $db) {
     $fields = [];
     $values = [];
 
-    $allowedFields = ['name', 'network_identifier', 'print_server_id', 'printer_type', 'paper_size', 'notes', 'is_active'];
+    $allowedFields = ['name', 'network_identifier', 'print_server_id', 'printer_type', 'paper_size', 'notes', 'is_active', 'is_default'];
     foreach ($allowedFields as $field) {
         if (isset($input[$field])) {
             $fields[] = "$field = ?";
@@ -481,6 +491,11 @@ function updatePrinter(PDO $db) {
         http_response_code(400);
         echo json_encode(['error' => 'No data to update']);
         return;
+    }
+
+    if (!empty($input['is_default'])) {
+        $reset = $db->prepare('UPDATE printers SET is_default = 0 WHERE printer_type = (SELECT printer_type FROM printers WHERE id = ?)');
+        $reset->execute([$input['id']]);
     }
 
     $values[] = $input['id'];

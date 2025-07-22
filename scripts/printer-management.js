@@ -59,6 +59,7 @@ const PrinterManagement = {
             printerForm: document.getElementById('printer-form'),
             printerModalTitle: document.getElementById('printer-modal-title'),
             printerServerSelect: document.getElementById('printer-server'),
+            printerDefaultCheckbox: document.getElementById('printer-default'),
             
             // Job elements
             jobsHistory: document.getElementById('jobs-history'),
@@ -419,6 +420,7 @@ const PrinterManagement = {
         this.elements.printerModalTitle.textContent = 'Add Printer';
         this.elements.printerForm.reset();
         document.getElementById('printer-id').value = '';
+        this.elements.printerDefaultCheckbox.checked = false;
         this.showModal('printer');
     },
     
@@ -434,6 +436,7 @@ const PrinterManagement = {
         document.getElementById('printer-type').value = printer.printer_type;
         document.getElementById('printer-paper-size').value = printer.paper_size;
         document.getElementById('printer-notes').value = printer.notes || '';
+        this.elements.printerDefaultCheckbox.checked = printer.is_default;
         this.showModal('printer');
     },
     
@@ -561,7 +564,8 @@ const PrinterManagement = {
             print_server_id: parseInt(document.getElementById('printer-server').value) || null,
             printer_type: document.getElementById('printer-type').value,
             paper_size: document.getElementById('printer-paper-size').value,
-            notes: document.getElementById('printer-notes').value.trim()
+            notes: document.getElementById('printer-notes').value.trim(),
+            is_default: this.elements.printerDefaultCheckbox.checked
         };
         
         // Validation

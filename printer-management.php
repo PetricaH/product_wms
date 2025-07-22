@@ -295,7 +295,7 @@ $currentPage = 'printer-management';
                                 <option value="document">Document</option>
                             </select>
                         </div>
-                        
+
                         <div class="form-group">
                             <label class="form-label" for="printer-paper-size">
                                 <span class="material-symbols-outlined">description</span>
@@ -309,7 +309,16 @@ $currentPage = 'printer-management';
                             </select>
                         </div>
                     </div>
-                    
+
+                    <div class="form-group">
+                        <label class="form-label" for="printer-default">
+                            <span class="material-symbols-outlined">star</span>
+                            Default Printer
+                        </label>
+                        <input type="checkbox" id="printer-default" class="form-check-input">
+                        <small class="form-hint">Use this printer by default when printing invoices</small>
+                    </div>
+
                     <div class="form-group">
                         <label class="form-label" for="printer-notes">
                             <span class="material-symbols-outlined">notes</span>

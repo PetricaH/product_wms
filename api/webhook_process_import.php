@@ -111,6 +111,9 @@ class ImportProcessor {
     /**
      * FIXED: Validate and process products with correct discount consolidation
      */
+    /**
+     * FIXED: Validate and process products with correct discount consolidation
+     */
     private function validateAndProcessProducts($products) {
         if (empty($products) || !is_array($products)) {
             return [];
@@ -134,6 +137,7 @@ class ImportProcessor {
             $code = trim($product['code'] ?? '');
             $name = trim($product['name']);
             $unit = $product['unit'] ?? 'bucata';
+            $isDiscount = strpos(strtolower($name), 'discount') !== false;
             
             if ($quantity <= 0) {
                 $this->warnings[] = "Invalid quantity for product: $name";
@@ -149,10 +153,10 @@ class ImportProcessor {
                 'quantity' => $quantity,
                 'unit_price' => $unitPrice,
                 'total_price' => $totalPrice,
-                'is_discount' => strpos(strtolower($name), 'discount') !== false
+                'is_discount' => $isDiscount
             ];
 
-            // FIXED: Consolidate by product code correctly
+            // Consolidate by product code correctly
             $productKey = $code ?: $name; // Use code if available, fallback to name
             
             if (!isset($consolidatedByCode[$productKey])) {
@@ -160,26 +164,33 @@ class ImportProcessor {
                     'code' => $code,
                     'name' => $this->getCleanProductName($name), // Remove discount markers
                     'unit' => $unit,
-                    'total_quantity' => 0,
+                    'physical_quantity' => 0, // <-- CHANGE: Track physical items separately
                     'total_price' => 0,
                     'lines' => [],
                     'has_discounts' => false
                 ];
             }
 
-            // Add to consolidation - ALL quantities are physical products
-            $consolidatedByCode[$productKey]['total_quantity'] += $quantity;
+            // --- LOGIC CHANGE ---
+            // Only add to the physical quantity if it is NOT a discount line.
+            if (!$isDiscount) {
+                $consolidatedByCode[$productKey]['physical_quantity'] += $quantity;
+            }
+            
+            // The total price is always adjusted.
             $consolidatedByCode[$productKey]['total_price'] += $totalPrice;
+            // --- END LOGIC CHANGE ---
+
             $consolidatedByCode[$productKey]['lines'][] = [
                 'line' => $index + 1,
                 'name' => $name,
                 'quantity' => $quantity,
                 'unit_price' => $unitPrice,
                 'total_price' => $totalPrice,
-                'is_discount' => strpos(strtolower($name), 'discount') !== false
+                'is_discount' => $isDiscount
             ];
 
-            if (strpos(strtolower($name), 'discount') !== false) {
+            if ($isDiscount) {
                 $consolidatedByCode[$productKey]['has_discounts'] = true;
             }
         }
@@ -189,23 +200,25 @@ class ImportProcessor {
         $this->debugInfo['consolidated_products'] = [];
         
         foreach ($consolidatedByCode as $productKey => $consolidated) {
-            // Skip products with zero or negative final quantity (shouldn't happen with new logic)
-            if ($consolidated['total_quantity'] <= 0) {
+            // Use the new physical_quantity field for calculations
+            $finalQuantity = $consolidated['physical_quantity'];
+
+            if ($finalQuantity <= 0) {
                 $this->warnings[] = "Product {$consolidated['name']} has zero or negative final quantity after consolidation";
                 continue;
             }
 
-            // Calculate effective unit price from total
-            $effectiveUnitPrice = $consolidated['total_quantity'] > 0 
-                ? ($consolidated['total_price'] / $consolidated['total_quantity']) 
+            // Calculate effective unit price from total and PHYSICAL quantity
+            $effectiveUnitPrice = $finalQuantity > 0 
+                ? ($consolidated['total_price'] / $finalQuantity) 
                 : 0;
 
-            // FIXED: Create single product entry
+            // Create single product entry
             $finalProduct = [
                 'code' => $consolidated['code'],
                 'name' => $consolidated['name'],
                 'unit' => $consolidated['unit'],
-                'net_quantity' => $consolidated['total_quantity'],
+                'net_quantity' => $finalQuantity, // <-- CHANGE: Use final physical quantity
                 'effective_unit_price' => $effectiveUnitPrice,
                 'net_total_price' => $consolidated['total_price'],
                 'original_items_count' => count($consolidated['lines']),
@@ -214,8 +227,7 @@ class ImportProcessor {
                 'debug_info' => [
                     'regular_items' => count(array_filter($consolidated['lines'], fn($l) => !$l['is_discount'])),
                     'discount_items' => count(array_filter($consolidated['lines'], fn($l) => $l['is_discount'])),
-                    'physical_quantity' => $consolidated['total_quantity'],
-                    'original_unit_price' => $consolidated['total_price'],
+                    'physical_quantity' => $finalQuantity, // <-- CHANGE
                     'total_payment_after_discounts' => $consolidated['total_price']
                 ]
             ];
@@ -817,13 +829,7 @@ class ImportProcessor {
      * Get import record from database
      */
     private function getImportRecord($importId) {
-        // Use FOR UPDATE to lock the row during processing and avoid
-        // concurrent conversions that could create duplicate order items
-        $query = "SELECT * FROM order_imports
-                  WHERE id = :import_id
-                    AND processing_status = 'pending'
-                  FOR UPDATE";
-
+        $query = "SELECT * FROM order_imports WHERE id = :import_id AND processing_status = 'pending'";
         $stmt = $this->db->prepare($query);
         $stmt->execute([':import_id' => $importId]);
         return $stmt->fetch(PDO::FETCH_ASSOC);

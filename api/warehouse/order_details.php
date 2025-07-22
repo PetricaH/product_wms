@@ -69,13 +69,15 @@ try {
             p.name AS product_name,
             p.sku,
             p.barcode as product_barcode,
-            i.location_id,
-            COALESCE(l.location_code, 'N/A') AS location_code
+            -- Use GROUP_CONCAT to list all locations without creating duplicate rows
+            GROUP_CONCAT(DISTINCT l.location_code ORDER BY l.location_code SEPARATOR ', ') AS location_code
         FROM order_items oi
         JOIN products p ON oi.product_id = p.product_id
         LEFT JOIN inventory i ON oi.product_id = i.product_id AND i.quantity > 0
         LEFT JOIN locations l ON i.location_id = l.id
         WHERE oi.order_id = :order_id
+        -- Add GROUP BY to ensure one row per order item
+        GROUP BY oi.id
         ORDER BY oi.id
     ";
 
@@ -138,7 +140,6 @@ try {
                     'remaining_to_pick' => (int)$item['remaining_to_pick'],
                     'unit_price'        => (float)$item['unit_price'],
                     'line_total'        => (float)$item['line_total'],
-                    'location_id'       => $item['location_id'] !== null ? (int)$item['location_id'] : null,
                     'location_code'     => $item['location_code'],
                     'is_complete'       => ((int)$item['remaining_to_pick'] === 0)
                 ];

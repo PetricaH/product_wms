@@ -88,22 +88,18 @@ try {
         respond(['status' => 'error', 'message' => 'Print server is not available'], 503);
     }
 
-    // Generate PDF invoice
-    $invoiceUrl = generateInvoicePDF($order, $db);
+    // Find existing invoice PDF
+    $invoiceUrl = findExistingInvoicePDF($order, $db);
     if (!$invoiceUrl) {
-        respond(['status' => 'error', 'message' => 'Failed to generate invoice PDF'], 500);
+        respond(['status' => 'error', 'message' => 'Failed to find invoice PDF'], 500);
     }
 
     // Create print job record
     $jobId = createPrintJob($db, $orderId, $printer['id'], $printer['print_server_id'] ?? null, $invoiceUrl);
 
-    // Send to print server
-    $printResult = sendToPrintServer(
-        $printer['ip_address'],
-        $printer['port'],
-        $invoiceUrl,
-        $printer['network_identifier']
-    );
+    // Send to print server - using same method as successful test print
+    $printServerUrl = "http://{$printer['ip_address']}:{$printer['port']}/print_server.php";
+    $printResult = sendToPrintServer($printServerUrl, $invoiceUrl);
 
     // Update print job status
     updatePrintJobStatus($db, $jobId, $printResult['success'], $printResult['error'] ?? null);
@@ -132,110 +128,119 @@ try {
     respond(['status' => 'error', 'message' => 'Internal error occurred'], 500);
 }
 
-function generateInvoicePDF($order, PDO $db): ?string {
+function findExistingInvoicePDF($order, PDO $db): ?string {
     try {
-        // Create storage directory for invoice PDFs
-        $storageDir = BASE_PATH . '/storage/invoice_pdfs';
-        if (!is_dir($storageDir)) {
-            @mkdir($storageDir, 0777, true);
+        // Look for existing invoice PDF in the order_pdf_invoices directory
+        $orderInvoicesDir = BASE_PATH . '/storage/order_pdf_invoices';
+        
+        if (!is_dir($orderInvoicesDir)) {
+            error_log("Order PDF invoices directory not found: " . $orderInvoicesDir);
+            return null;
         }
-
-        // Generate unique filename
-        $fileName = 'inv_' . $order['order_number'] . '_' . time() . '.pdf';
-        $filePath = $storageDir . '/' . $fileName;
-
-        // Generate PDF using FPDF
-        $pdf = new FPDF();
-        $pdf->AddPage();
-        $pdf->SetFont('Arial', 'B', 16);
-        $pdf->Cell(0, 10, 'FACTURA', 0, 1, 'C');
-
-        $pdf->SetFont('Arial', '', 12);
-        $pdf->Cell(0, 8, 'Comanda: ' . $order['order_number'], 0, 1);
-        $pdf->Cell(0, 8, 'Client: ' . $order['customer_name'], 0, 1);
-        $pdf->Cell(0, 8, 'Data: ' . date('d.m.Y H:i', strtotime($order['order_date'])), 0, 1);
-        $pdf->Ln(8);
-
-        // Table header
-        $pdf->SetFont('Arial', 'B', 10);
-        $pdf->Cell(80, 8, 'Produs', 1, 0, 'C');
-        $pdf->Cell(30, 8, 'Cantitate', 1, 0, 'C');
-        $pdf->Cell(30, 8, 'Pret', 1, 0, 'C');
-        $pdf->Cell(30, 8, 'Total', 1, 1, 'C');
-
-        // Table content
-        $pdf->SetFont('Arial', '', 9);
-        $total = 0;
-        foreach ($order['items'] as $item) {
-            $name = $item['product_name'] ?? '';
-            if (strlen($name) > 35) {
-                $name = substr($name, 0, 32) . '...';
-            }
-            $qty = (float)($item['quantity'] ?? 0);
-            $price = (float)($item['unit_price'] ?? 0);
-            $lineTotal = $qty * $price;
-            $total += $lineTotal;
+        
+        // Use invoice_reference instead of order_number for the PDF filename
+        $invoiceReference = $order['invoice_reference'];
+        
+        if (empty($invoiceReference)) {
+            error_log("ERROR: No invoice_reference found for order ID: " . $order['id']);
+            return null;
+        }
+        
+        error_log("DEBUG: Looking for invoice PDF for invoice reference: '" . $invoiceReference . "'");
+        error_log("DEBUG: Searching in directory: " . $orderInvoicesDir);
+        
+        // Since all invoices follow the format: factura-{invoice_reference}-cui-{CUI}.pdf
+        $pattern = $orderInvoicesDir . "/factura-{$invoiceReference}-cui-*.pdf";
+        error_log("DEBUG: Search pattern: " . $pattern);
+        
+        $matchingFiles = glob($pattern);
+        error_log("DEBUG: Matching files found: " . print_r(array_map('basename', $matchingFiles), true));
+        
+        if (empty($matchingFiles)) {
+            error_log("ERROR: No invoice PDF found for invoice reference: " . $invoiceReference);
+            error_log("Pattern used: " . $pattern);
             
-            $pdf->Cell(80, 8, $name, 1);
-            $pdf->Cell(30, 8, number_format($qty, 2), 1, 0, 'R');
-            $pdf->Cell(30, 8, number_format($price, 2), 1, 0, 'R');
-            $pdf->Cell(30, 8, number_format($lineTotal, 2), 1, 1, 'R');
+            // List all PDF files in directory for debugging
+            $allPdfs = glob($orderInvoicesDir . "/*.pdf");
+            error_log("DEBUG: All PDF files in directory: " . print_r(array_map('basename', $allPdfs), true));
+            
+            return null;
         }
-
-        // Total
-        $pdf->SetFont('Arial', 'B', 10);
-        $pdf->Cell(140, 8, 'TOTAL:', 1, 0, 'R');
-        $pdf->Cell(30, 8, number_format($total, 2) . ' RON', 1, 1, 'R');
-
-        // Save PDF
-        $pdf->Output('F', $filePath);
-
-        // Return public URL to the PDF
-        $baseUrl = getBaseUrl();
-        return $baseUrl . '/storage/invoice_pdfs/' . $fileName;
+        
+        // Get the first (and should be only) matching file
+        $foundPdfPath = $matchingFiles[0];
+        $foundFilename = basename($foundPdfPath);
+        
+        error_log("SUCCESS: Found invoice PDF: " . $foundFilename);
+        
+        // Use external IP URL directly
+        $externalUrl = getExternalBaseUrl() . '/storage/order_pdf_invoices/' . $foundFilename;
+        error_log("Using external IP URL: " . $externalUrl);
+        
+        return $externalUrl;
 
     } catch (Exception $e) {
-        error_log("PDF generation error: " . $e->getMessage());
+        error_log("PDF search error: " . $e->getMessage());
         return null;
     }
 }
 
-function sendToPrintServer(string $ip, int $port, string $pdfUrl, string $printerName): array {
+function createAccessiblePdfUrl(string $originalPdfPath, string $fileName): ?string {
     try {
-        $printServerUrl = "http://$ip:$port/print_server.php";
-        $requestUrl = $printServerUrl . '?' . http_build_query([
-            'url' => $pdfUrl,
-            'printer' => $printerName // Optional: if your print server supports printer selection
-        ]);
-
-        $context = stream_context_create([
-            'http' => [
-                'method' => 'GET',
-                'timeout' => 15,
-                'ignore_errors' => true,
-                'user_agent' => 'WMS-PrintClient/1.0'
-            ]
-        ]);
-
-        $response = @file_get_contents($requestUrl, false, $context);
+        // Create a publicly accessible temp directory
+        $publicTempDir = BASE_PATH . '/temp';
+        if (!is_dir($publicTempDir)) {
+            @mkdir($publicTempDir, 0755, true);
+        }
         
-        if ($response === false) {
-            return ['success' => false, 'error' => 'Failed to connect to print server'];
+        $publicTempPath = $publicTempDir . '/' . $fileName;
+        
+        // Copy existing PDF file to public location
+        if (!copy($originalPdfPath, $publicTempPath)) {
+            error_log("Failed to copy PDF to temp location: " . $originalPdfPath . " -> " . $publicTempPath);
+            return null;
         }
-
-        // Check for success indicators in response
-        $successIndicators = ['Trimis la imprimantă', 'sent to printer', 'Print successful'];
-        foreach ($successIndicators as $indicator) {
-            if (stripos($response, $indicator) !== false) {
-                return ['success' => true];
-            }
-        }
-
-        return ['success' => false, 'error' => 'Print server response: ' . $response];
-
+        
+        // Return external IP URL instead of localhost
+        $externalUrl = getExternalBaseUrl() . '/temp/' . $fileName;
+        error_log("Created accessible PDF URL: " . $externalUrl);
+        
+        return $externalUrl;
+        
     } catch (Exception $e) {
-        return ['success' => false, 'error' => 'Exception: ' . $e->getMessage()];
+        error_log("Failed to create accessible PDF URL: " . $e->getMessage());
+        return null;
     }
+}
+
+function sendToPrintServer(string $printServerUrl, string $pdfUrl): array {
+    // Use EXACT same method as working test print
+    $url = $printServerUrl . '?url=' . urlencode($pdfUrl);
+    
+    error_log("Sending to print server: " . $url);
+    
+    $context = stream_context_create([
+        'http' => [
+            'method' => 'GET',
+            'timeout' => 10,
+            'ignore_errors' => true
+        ]
+    ]);
+    
+    $response = @file_get_contents($url, false, $context);
+    
+    error_log("Print server response: " . ($response ?: 'NO RESPONSE'));
+    
+    if ($response === false) {
+        return ['success' => false, 'error' => 'Failed to connect to print server'];
+    }
+    
+    if (strpos($response, 'Trimis la imprimantă') !== false || 
+        strpos($response, 'sent to printer') !== false) {
+        return ['success' => true];
+    }
+    
+    return ['success' => false, 'error' => 'Print server returned: ' . $response];
 }
 
 function createPrintJob(PDO $db, int $orderId, int $printerId, ?int $printServerId, string $fileUrl): int {
@@ -282,83 +287,18 @@ function getBaseUrl(): string {
     $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
     $path = dirname($_SERVER['SCRIPT_NAME'], 2); // Go up 2 levels from api/invoices/
     
-    return $protocol . $host . $path;
+    $baseUrl = $protocol . $host . $path;
+    error_log("getBaseUrl() returned: " . $baseUrl);
+    
+    return $baseUrl;
 }
 
-// Enhanced print server script for your local machines
-function getEnhancedPrintServerScript(): string {
-    return '<?php
-// Enhanced print_server.php for local machines
-// Save this file in your local web server directory
-
-error_reporting(E_ALL);
-ini_set("display_errors", 1);
-
-// CORS headers for web requests
-header("Access-Control-Allow-Origin: *");
-header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
-header("Access-Control-Allow-Headers: Content-Type");
-
-if ($_SERVER["REQUEST_METHOD"] === "OPTIONS") {
-    exit(0);
+function getExternalBaseUrl(): string {
+    // Your web server's external IP that print servers can access
+    $externalHost = '195.133.74.33';
+    
+    $protocol = 'http://'; // Change to https:// if using SSL
+    
+    return $protocol . $externalHost;
 }
-
-// Log requests
-$logFile = __DIR__ . "/print_server.log";
-$timestamp = date("Y-m-d H:i:s");
-$logEntry = "[$timestamp] " . $_SERVER["REQUEST_METHOD"] . " " . $_SERVER["REQUEST_URI"] . "\n";
-file_put_contents($logFile, $logEntry, FILE_APPEND);
-
-if (!isset($_GET["url"])) {
-    http_response_code(400);
-    echo "Missing URL parameter.";
-    exit;
-}
-
-$url = $_GET["url"];
-$printer = $_GET["printer"] ?? "Brother_DCP_L3520CDW_series"; // Default printer
-
-try {
-    // Download PDF
-    $tempFile = sys_get_temp_dir() . "/invoice_" . time() . ".pdf";
-    $pdfContent = file_get_contents($url);
-    
-    if ($pdfContent === false) {
-        throw new Exception("Failed to download PDF from: $url");
-    }
-    
-    file_put_contents($tempFile, $pdfContent);
-    
-    // Print the file
-    if (PHP_OS_FAMILY === "Darwin") { // macOS
-        $cmd = "lp -d " . escapeshellarg($printer) . " " . escapeshellarg($tempFile);
-    } else { // Linux
-        $cmd = "lp -d " . escapeshellarg($printer) . " " . escapeshellarg($tempFile);
-    }
-    
-    $output = [];
-    $returnCode = 0;
-    exec($cmd . " 2>&1", $output, $returnCode);
-    
-    // Clean up temp file
-    @unlink($tempFile);
-    
-    if ($returnCode === 0) {
-        $logEntry = "[$timestamp] SUCCESS: Printed $url to $printer\n";
-        file_put_contents($logFile, $logEntry, FILE_APPEND);
-        echo "Trimis la imprimantă: $printer";
-    } else {
-        $error = implode("\n", $output);
-        $logEntry = "[$timestamp] ERROR: $error\n";
-        file_put_contents($logFile, $logEntry, FILE_APPEND);
-        throw new Exception("Print command failed: $error");
-    }
-    
-} catch (Exception $e) {
-    http_response_code(500);
-    $logEntry = "[$timestamp] EXCEPTION: " . $e->getMessage() . "\n";
-    file_put_contents($logFile, $logEntry, FILE_APPEND);
-    echo "Error: " . $e->getMessage();
-}
-?>';
-}
+?>

@@ -9,6 +9,7 @@ if (!defined('BASE_PATH')) {
     define('BASE_PATH', dirname(__DIR__, 2));
 }
 
+require_once BASE_PATH . '/bootstrap.php';
 require_once BASE_PATH . '/config/config.php';
 
 if (file_exists(BASE_PATH . '/vendor/autoload.php')) {

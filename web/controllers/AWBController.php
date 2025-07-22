@@ -20,7 +20,6 @@ class AWBController {
     }
     
     private function validateSession() {
-        
         if (!isset($_SESSION['user_id']) || !isset($_SESSION['role'])) {
             $this->error('Authentication required', 401);
         }
@@ -77,7 +76,7 @@ class AWBController {
             $result = $this->cargusService->generateAWB($order);
 
             if (!$result['success']) {
-                $code = $result['code'] ?? 500;
+                $code = isset($result['code']) && is_numeric($result['code']) ? (int)$result['code'] : 500;
                 throw new Exception('Cargus API error: ' . $result['error'], $code);
             }
             
@@ -99,10 +98,70 @@ class AWBController {
             ]);
             
         } catch (Exception $e) {
-            $raw = isset($result) && isset($result['raw']) ? $result['raw'] : '';
-            $this->logAction('awb_generation_failed', $orderId, $e->getMessage() . ($raw ? ' | ' . $raw : ''));
-            $this->error($e->getMessage(), $e->getCode() ?: 500);
+            // Log the original error
+            error_log("AWB Generation Error for Order $orderId: " . $e->getMessage());
+            
+            // Convert database errors to appropriate HTTP codes
+            $httpCode = $this->getHttpCodeFromException($e);
+            $message = $this->getUserFriendlyMessage($e);
+            
+            $this->logAction('awb_generation_failed', $orderId, $e->getMessage());
+            $this->error($message, $httpCode);
         }
+    }
+    
+    /**
+     * Convert exception codes to proper HTTP status codes
+     */
+    private function getHttpCodeFromException($e) {
+        $code = $e->getCode();
+        
+        // Handle database errors (SQLSTATE codes are strings)
+        if (is_string($code)) {
+            switch ($code) {
+                case '42S22': // Column doesn't exist
+                case '42S02': // Table doesn't exist
+                    return 500; // Internal server error
+                case '23000': // Integrity constraint violation
+                    return 400; // Bad request
+                default:
+                    return 500; // Generic database error
+            }
+        }
+        
+        // Handle HTTP codes
+        if (is_numeric($code) && $code >= 100 && $code <= 599) {
+            return (int)$code;
+        }
+        
+        // Default fallback
+        return 500;
+    }
+    
+    /**
+     * Convert technical errors to user-friendly messages
+     */
+    private function getUserFriendlyMessage($e) {
+        $message = $e->getMessage();
+        $code = $e->getCode();
+        
+        // Handle specific database errors
+        if (is_string($code)) {
+            switch ($code) {
+                case '42S22':
+                    if (strpos($message, 'recipient_postal') !== false) {
+                        return 'Database error: Missing postal code field. Please contact administrator.';
+                    }
+                    return 'Database error: Missing required field. Please contact administrator.';
+                case '42S02':
+                    return 'Database error: Missing table. Please contact administrator.';
+                case '23000':
+                    return 'Data validation error. Please check your input.';
+            }
+        }
+        
+        // Return original message for other errors
+        return $message;
     }
     
     private function validateAWBData($order) {
@@ -118,6 +177,11 @@ class AWBController {
             if (empty($order[$field])) {
                 $missing[] = $label;
             }
+        }
+        
+        // Check for postal code (might be NULL if column doesn't exist)
+        if (!isset($order['recipient_postal']) || empty($order['recipient_postal'])) {
+            $missing[] = 'Recipient postal code';
         }
         
         if (!empty($missing)) {
@@ -164,7 +228,10 @@ class AWBController {
     }
     
     private function error($message, $code = 500) {
-        http_response_code($code);
+        // Ensure $code is always an integer
+        $httpCode = is_numeric($code) && $code >= 100 && $code <= 599 ? (int)$code : 500;
+        
+        http_response_code($httpCode);
         header('Content-Type: application/json');
         echo json_encode([
             'success' => false,

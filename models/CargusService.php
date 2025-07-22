@@ -25,11 +25,15 @@ class CargusService
     private $tokenExpiry;
     private $config;
     private $conn;
+    private $orderModel;
     
     public function __construct($conn = null) {
         $this->conn = $conn ?: $this->getConnection();
         $this->loadEnvironmentConfiguration();
         $this->loadCachedToken();
+
+        require_once BASE_PATH . '/models/Order.php';
+        $this->orderModel = new Order($this->conn);
     }
     
     /**

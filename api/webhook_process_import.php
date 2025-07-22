@@ -817,7 +817,13 @@ class ImportProcessor {
      * Get import record from database
      */
     private function getImportRecord($importId) {
-        $query = "SELECT * FROM order_imports WHERE id = :import_id AND processing_status = 'pending'";
+        // Use FOR UPDATE to lock the row during processing and avoid
+        // concurrent conversions that could create duplicate order items
+        $query = "SELECT * FROM order_imports
+                  WHERE id = :import_id
+                    AND processing_status = 'pending'
+                  FOR UPDATE";
+
         $stmt = $this->db->prepare($query);
         $stmt->execute([':import_id' => $importId]);
         return $stmt->fetch(PDO::FETCH_ASSOC);

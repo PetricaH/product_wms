@@ -300,9 +300,10 @@ function generateAWB(orderId) {
     })
     .then(data => {
         console.log('Success response:', data);
-        
-        if (data.success) {
-            alert(`AWB ${data.awb_barcode} a fost generat cu succes! Pagina se va reîncărca.`);
+
+        if (data.success && data.data) {
+            const barcode = data.data.awb_barcode || data.data.barcode;
+            alert(`AWB ${barcode} a fost generat cu succes! Pagina se va reîncărca.`);
             location.reload();
         } else {
             alert(`Eroare la generarea AWB: ${data.error || 'Răspuns nevalid de la server.'}`);

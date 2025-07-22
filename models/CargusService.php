@@ -197,7 +197,7 @@ class CargusService
         }
         
         // Simple verification - try to make a lightweight request
-        $response = $this->makeRequest('GET', 'Services', null, true);
+        $response = $this->makeRequest('GET', 'TokenVerification', null, true);
         
         if ($response['success']) {
             return true;
@@ -303,6 +303,62 @@ class CargusService
         }
     }
     
+   
+    /**
+     * Generate ParcelCodes array to match Parcels + Envelopes count
+     */
+    private function generateParcelCodes($parcelsCount, $envelopesCount, $totalWeight, $calculatedData) {
+        $parcelCodes = [];
+        $codeIndex = 0;
+        
+        // Calculate weight per parcel (distribute total weight)
+        $totalItems = $parcelsCount + $envelopesCount;
+        $weightPerItem = $totalItems > 0 ? max(1, (int)($totalWeight / $totalItems)) : $totalWeight;
+        
+        // Generate codes for parcels
+        for ($i = 0; $i < $parcelsCount; $i++) {
+            $parcelCodes[] = [
+                'Code' => (string)$codeIndex,
+                'Type' => 1, // ✅ FIXED: Use Type 1 for parcels (not 0)
+                'Weight' => $weightPerItem,
+                'Length' => intval($calculatedData['package_length'] ?? 20),
+                'Width' => intval($calculatedData['package_width'] ?? 15),
+                'Height' => intval($calculatedData['package_height'] ?? 10),
+                'ParcelContent' => $calculatedData['package_content'] ?: 'Diverse produse'
+            ];
+            $codeIndex++;
+        }
+        
+        // Generate codes for envelopes (if any)
+        for ($i = 0; $i < $envelopesCount; $i++) {
+            $parcelCodes[] = [
+                'Code' => (string)$codeIndex,
+                'Type' => 2, // Type 2 for envelopes
+                'Weight' => 1, // Minimal weight for envelope (0.1kg)
+                'Length' => 30,
+                'Width' => 20,
+                'Height' => 1,
+                'ParcelContent' => 'Factura semnata' // Invoice envelope content
+            ];
+            $codeIndex++;
+        }
+        
+        // Ensure we have at least one item
+        if (empty($parcelCodes)) {
+            $parcelCodes[] = [
+                'Code' => '0',
+                'Type' => 1,
+                'Weight' => max(1, $totalWeight),
+                'Length' => 20,
+                'Width' => 15,
+                'Height' => 10,
+                'ParcelContent' => 'Diverse produse'
+            ];
+        }
+        
+        return $parcelCodes;
+    }
+
     /**
      * Map recipient address using address_location_mappings table
      */
@@ -520,6 +576,11 @@ class CargusService
      * Build complete AWB data for Cargus API
      */
     private function buildAWBData($order, $calculatedData, $senderLocation) {
+
+        $parcelsCount = (int)($calculatedData['parcels_count'] ?? 1);
+        $envelopesCount = (int)($order['envelopes_count'] ?? 0);
+        $totalWeight = (int)($calculatedData['total_weight'] * 10);
+
         return [
             'Sender' => [
                 'SenderClientId' => null,
@@ -558,7 +619,7 @@ class CargusService
             ],
             'Parcels' => $calculatedData['parcels_count'],
             'Envelopes' => $order['envelopes_count'] ?? 0,
-            'TotalWeight' => $calculatedData['total_weight'], // Already in Cargus units (kg * 10)
+            'TotalWeight' => (int)($calculatedData['total_weight'] * 10),
             'DeclaredValue' => intval($order['declared_value'] ?? $order['total_value'] ?? 0),
             'CashRepayment' => intval($order['cash_repayment'] ?? 0),
             'BankRepayment' => intval($order['bank_repayment'] ?? 0),
@@ -581,17 +642,7 @@ class CargusService
             'RecipientReference2' => $order['recipient_reference2'] ?? '',
             'InvoiceReference' => $order['invoice_reference'] ?? $order['invoice_number'] ?? '',
             'ServiceId' => $this->config['default_service_id'] ?? 34,
-            'ParcelCodes' => [
-                [
-                    'Code' => '0',
-                    'Type' => 0, // Parcel
-                    'Weight' => $calculatedData['total_weight'],
-                    'Length' => intval($calculatedData['package_length'] ?? 20),
-                    'Width' => intval($calculatedData['package_width'] ?? 15),
-                    'Height' => intval($calculatedData['package_height'] ?? 10),
-                    'ParcelContent' => $calculatedData['package_content'] ?: 'Diverse produse'
-                ]
-            ]
+            'ParcelCodes' => $this->generateParcelCodes($parcelsCount, $envelopesCount, $totalWeight, $calculatedData)
         ];
     }
     

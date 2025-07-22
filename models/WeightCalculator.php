@@ -122,10 +122,9 @@ class WeightCalculator
             SELECT 
                 oi.quantity,
                 oi.unit_measure,
-                oi.notes,
-                p.id as product_id,
+                p.product_id as product_id,   
                 p.name as product_name,
-                p.code as product_code,
+                p.sku as product_code,        
                 p.category as product_category,
                 COALESCE(pu.weight_per_unit, ut.default_weight_per_unit, 0.5) as weight_per_unit,
                 COALESCE(pu.volume_per_unit, 0) as volume_per_unit,
@@ -143,9 +142,10 @@ class WeightCalculator
                 COALESCE(ut.max_items_per_parcel, 10) as max_items_per_parcel,
                 COALESCE(ut.requires_separate_parcel, 0) as requires_separate_parcel
             FROM order_items oi
-            JOIN products p ON oi.product_id = p.id
-            LEFT JOIN product_units pu ON p.id = pu.product_id 
-            LEFT JOIN unit_types ut ON pu.unit_type_id = ut.id AND ut.unit_code = oi.unit_measure
+            JOIN products p ON oi.product_id = p.product_id  
+            LEFT JOIN product_units pu ON p.product_id = pu.product_id   
+            LEFT JOIN unit_types ut ON pu.unit_type_id = ut.id 
+                AND ut.unit_code COLLATE utf8mb4_general_ci = oi.unit_measure COLLATE utf8mb4_general_ci
             WHERE oi.order_id = ?
             ORDER BY 
                 ut.requires_separate_parcel DESC,

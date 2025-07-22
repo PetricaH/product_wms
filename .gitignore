@@ -9,6 +9,8 @@ node_modules/
 
 /src
 
+/storage
+
 # Ignore OS system files
 .DS_StoreThumbs.db
 # Ignore database backups

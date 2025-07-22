@@ -20,7 +20,6 @@ class AWBController {
     }
     
     private function validateSession() {
-        session_start();
         
         if (!isset($_SESSION['user_id']) || !isset($_SESSION['role'])) {
             $this->error('Authentication required', 401);

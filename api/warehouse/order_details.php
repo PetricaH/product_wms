@@ -136,8 +136,8 @@ try {
                     'quantity_ordered' => (int)$item['quantity_ordered'],
                     'picked_quantity'   => (int)$item['picked_quantity'],
                     'remaining_to_pick' => (int)$item['remaining_to_pick'],
-                    'unit_price'        => number_format((float)$item['unit_price'], 2),
-                    'line_total'        => number_format((float)$item['line_total'], 2),
+                    'unit_price'        => (float)$item['unit_price'],
+                    'line_total'        => (float)$item['line_total'],
                     'location_id'       => $item['location_id'] !== null ? (int)$item['location_id'] : null,
                     'location_code'     => $item['location_code'],
                     'is_complete'       => ((int)$item['remaining_to_pick'] === 0)

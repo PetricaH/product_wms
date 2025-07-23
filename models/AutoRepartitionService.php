@@ -295,6 +295,7 @@ class AutoRepartitionService {
                 
                 if ($moveQuantity > 0) {
                     $moves[] = [
+                        'location_id' => $locationId,
                         'product_id' => $product['product_id'],
                         'product_name' => $product['product_name'],
                         'from_level' => $fromLevel,
@@ -333,6 +334,7 @@ class AutoRepartitionService {
                 
                 if ($bestTarget) {
                     $moves[] = [
+                        'location_id' => $locationId,
                         'product_id' => $product['product_id'],
                         'product_name' => $product['product_name'],
                         'from_level' => $fromLevel,
@@ -375,6 +377,7 @@ class AutoRepartitionService {
             
             if ($bestTarget) {
                 $moves[] = [
+                    'location_id' => $locationId,
                     'product_id' => $productId,
                     'product_name' => $product['product_name'],
                     'from_level' => $fromLevel,

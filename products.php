@@ -49,7 +49,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'price' => floatval($_POST['price'] ?? 0),
                 'category' => trim($_POST['category'] ?? ''),
                 'unit' => trim($_POST['unit'] ?? 'pcs'),
-                'status' => isset($_POST['status']) ? 'active' : 'inactive'
+                'status' => isset($_POST['status']) ? 'active' : 'inactive',
+                'seller_id' => isset($_POST['seller_id']) ? intval($_POST['seller_id']) : null
             ];
             
             if (empty($productData['name']) || empty($productData['sku'])) {
@@ -67,32 +68,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             break;
             
-        case 'update':
-            $productId = intval($_POST['product_id'] ?? 0);
-            $productData = [
-                'name' => trim($_POST['name'] ?? ''),
-                'description' => trim($_POST['description'] ?? ''),
-                'sku' => trim($_POST['sku'] ?? ''),
-                'price' => floatval($_POST['price'] ?? 0),
-                'category' => trim($_POST['category'] ?? ''),
-                'unit' => trim($_POST['unit'] ?? 'pcs'),
-                'status' => isset($_POST['status']) ? 'active' : 'inactive'
-            ];
-            
-            if ($productId <= 0 || empty($productData['name']) || empty($productData['sku'])) {
-                $message = 'Date invalide pentru actualizarea produsului.';
-                $messageType = 'error';
-            } else {
-                $success = $productModel->updateProduct($productId, $productData);
-                if ($success) {
-                    $message = 'Produsul a fost actualizat cu succes.';
-                    $messageType = 'success';
-                } else {
-                    $message = 'Eroare la actualizarea produsului.';
+            case 'update':
+                $productId = intval($_POST['product_id'] ?? 0);
+                $productData = [
+                    'name' => trim($_POST['name'] ?? ''),
+                    'description' => trim($_POST['description'] ?? ''),
+                    'sku' => trim($_POST['sku'] ?? ''),
+                    'price' => floatval($_POST['price'] ?? 0),
+                    'category' => trim($_POST['category'] ?? ''),
+                    'unit' => trim($_POST['unit'] ?? 'pcs'),
+                    'status' => isset($_POST['status']) ? 'active' : 'inactive',
+                    'seller_id' => isset($_POST['seller_id']) ? intval($_POST['seller_id']) : null
+                ];
+                
+                if ($productId <= 0 || empty($productData['name']) || empty($productData['sku'])) {
+                    $message = 'Date invalide pentru actualizarea produsului.';
                     $messageType = 'error';
+                } else {
+                    $success = $productModel->updateProduct($productId, $productData);
+                    if ($success) {
+                        $message = 'Produsul a fost actualizat cu succes.';
+                        $messageType = 'success';
+                    } else {
+                        $message = 'Eroare la actualizarea produsului.';
+                        $messageType = 'error';
+                    }
                 }
-            }
-            break;
+                break;
             
         case 'delete':
             $productId = intval($_POST['product_id'] ?? 0);
@@ -249,10 +251,10 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                             <span class="material-symbols-outlined">cloud_upload</span>
                             Import Excel
                         </button>
-                        <button class="btn btn-secondary" onclick="syncSmartBillStock()">
+                        <!-- <button class="btn btn-secondary" onclick="syncSmartBillStock()">
                             <span class="material-symbols-outlined">sync</span>
                             Sincronizează Stoc
-                        </button>
+                        </button> -->
                         <button class="btn btn-primary" onclick="openCreateModal()">
                             <span class="material-symbols-outlined">add</span>
                             Nou Produs
@@ -357,8 +359,8 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    <?php if (!empty($products)): ?>
-                                        <?php foreach ($products as $product): ?>
+                                <?php if (!empty($allProducts)): ?>
+                                        <?php foreach ($allProducts as $product): ?>
                                             <tr>
                                                 <td>
                                                     <input type="checkbox" name="selected_products[]" 
@@ -401,6 +403,9 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                     <?php endif; ?>
                                                 </td>
                                                 <td>
+                                                    <span class="price-value"><?= number_format($product['price'], 2) ?> RON</span>
+                                                </td>
+                                                <td>
                                                     <div class="quantity-info">
                                                         <span class="quantity-value"><?= number_format($product['quantity']) ?></span>
                                                         <?php if ($product['quantity'] <= ($product['min_stock_level'] ?? 5)): ?>
@@ -409,9 +414,6 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                             </span>
                                                         <?php endif; ?>
                                                     </div>
-                                                </td>
-                                                <td>
-                                                    <span class="price-value"><?= number_format($product['price'], 2) ?> RON</span>
                                                 </td>
                                                 <td>
                                                     <span class="status-badge status-<?= $product['status'] ?? 'active' ?>">

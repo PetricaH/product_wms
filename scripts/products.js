@@ -1529,30 +1529,6 @@ function hideAllSellerResults() {
 }
 
 /**
- * Populate edit form with seller data
- * @param {object} productData - Product data including seller info
- */
-function populateEditFormWithSeller(productData) {
-    // Call existing populateEditForm function first
-    if (typeof populateEditForm === 'function') {
-        populateEditForm(productData);
-    }
-    
-    // Handle seller data
-    const sellerId = productData.seller_id;
-    const sellerName = productData.seller_name;
-    const sellerContact = productData.seller_contact;
-    
-    if (sellerId && sellerName) {
-        // Select the seller
-        selectSeller('edit', sellerId, sellerName, sellerContact || '', '', '');
-    } else {
-        // Clear seller selection
-        clearSelectedSeller('edit');
-    }
-}
-
-/**
  * Reset seller search for modal
  * @param {string} modalType - Modal type
  */
@@ -1654,6 +1630,45 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+/**
+ * Enhanced populateEditForm function with seller support
+ * This replaces the original function completely to avoid recursion
+ * @param {object} productData - Product data
+ */
+function populateEditForm(productData) {
+    try {
+        const product = typeof productData === 'string' ? JSON.parse(productData) : productData;
+        
+        // Handle both 'id' and 'product_id' field names
+        document.getElementById('edit-product-id').value = product.id || product.product_id || '';
+        document.getElementById('edit-name').value = product.name || '';
+        document.getElementById('edit-sku').value = product.sku || '';
+        document.getElementById('edit-description').value = product.description || '';
+        document.getElementById('edit-price').value = product.price || '';
+        document.getElementById('edit-category').value = product.category || '';
+        document.getElementById('edit-unit').value = product.unit || 'pcs';
+        document.getElementById('edit-status').checked = (product.status == undefined ? 1 : product.status) == 1;
+        
+        // Handle seller data
+        const sellerId = product.seller_id;
+        const sellerName = product.seller_name;
+        const sellerContact = product.seller_contact;
+        
+        if (sellerId && sellerName) {
+            // Select the seller
+            selectSeller('edit', sellerId, sellerName, sellerContact || '', '', '');
+        } else {
+            // Clear seller selection
+            clearSelectedSeller('edit');
+        }
+        
+    } catch (error) {
+        console.error('Error populating edit form:', error);
+        showNotification('Eroare la încărcarea datelor produsului.', 'error');
+        closeEditModal();
+    }
+}
+
 // Enhanced modal functions with seller search reset
 function resetCreateForm() {
     const form = document.getElementById('createProductModal')?.querySelector('form');
@@ -1677,18 +1692,6 @@ function resetEditForm() {
     // Reset seller search
     resetSellerSearch('edit');
 }
-
-// Override the existing populateEditForm function to include seller handling
-const originalPopulateEditForm = window.populateEditForm;
-window.populateEditForm = function(productData) {
-    // Call original function if it exists
-    if (originalPopulateEditForm) {
-        originalPopulateEditForm(productData);
-    }
-    
-    // Handle seller population
-    populateEditFormWithSeller(productData);
-};
 
 // Initialize when DOM is loaded
 document.addEventListener('DOMContentLoaded', function() {

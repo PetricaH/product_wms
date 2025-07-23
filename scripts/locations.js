@@ -71,62 +71,6 @@ function showZoneAutoFill(zone) {
     }, 3000);
 }
 
-// Modal functions (enhanced)
-function openCreateModal() {
-    document.getElementById('modalTitle').textContent = 'Adaugă Locație';
-    document.getElementById('formAction').value = 'create';
-    document.getElementById('locationId').value = '';
-    document.getElementById('submitBtn').textContent = 'Salvează';
-    
-    // Clear form and reset zone input styling
-    document.getElementById('locationForm').reset();
-    const zoneInput = document.getElementById('zone');
-    if (zoneInput) {
-        zoneInput.style.backgroundColor = '';
-    }
-    
-    // Clear any existing auto-fill messages
-    const existingMessage = document.querySelector('.zone-autofill-message');
-    if (existingMessage) {
-        existingMessage.remove();
-    }
-    
-    // Set default levels
-    const levelsField = document.getElementById('levels');
-    if (levelsField) levelsField.value = '3';
-    updateLocationQr();
-
-    // Show modal
-    document.getElementById('locationModal').classList.add('show');
-    
-    // Focus on location code input
-    setTimeout(() => {
-        const locationCodeInput = document.getElementById('location_code');
-        if (locationCodeInput) {
-            locationCodeInput.focus();
-        }
-    }, 100);
-
-function openEditModalById(id) {
-    fetch('locations.php', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({ action: 'get_location_details', id })
-    })
-    .then(resp => resp.json())
-    .then(data => {
-        if (data.success && data.location) {
-            openEditModal(data.location);
-        } else {
-            alert(data.message || 'Eroare la încărcarea detaliilor locației');
-        }
-    })
-    .catch(err => {
-        console.error('Failed to load location details', err);
-        alert('Eroare la încărcarea detaliilor locației');
-    });
-}
-
 function openEditModal(location) {
     document.getElementById('modalTitle').textContent = 'Editează Locație';
     document.getElementById('formAction').value = 'update';
@@ -642,7 +586,7 @@ class EnhancedWarehouseVisualization {
         // FIXED: Case insensitive type check
         const isShelf = location.type.toLowerCase() === 'shelf';
         
-            return `
+        return `
                 <tr>
                     <td><strong>${location.location_code}</strong></td>
                     <td>Zona ${location.zone}</td>
@@ -654,7 +598,10 @@ class EnhancedWarehouseVisualization {
                     <td>${location.items?.total || location.total_items || 0}</td>
                     <td>${location.unique_products || 0}</td>
                     <td>
-                        <button class="btn btn-sm btn-outline" onclick="openEditModalById(${location.id})" title="Editează">
+                        <button class="btn btn-sm btn-outline" onclick="
+                        
+                        
+                        ById(${location.id})" title="Editează">
                             <span class="material-symbols-outlined">edit</span>
                         </button>
                         <button class="btn btn-sm btn-outline-danger" onclick="openDeleteModal(${location.id}, '${location.location_code}')" title="Șterge">
@@ -1246,8 +1193,6 @@ function getLevelName(levelNumber) {
     }
 }
 
-// =================== EXISTING FUNCTIONALITY (PRESERVED) ===================
-
 /**
  * Enhanced openCreateModal to support level settings
  */
@@ -1361,6 +1306,26 @@ function openEditModal(location) {
     
     // Show modal
     document.getElementById('locationModal').classList.add('show');
+}
+
+function openEditModalById(id) {
+    fetch('locations.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ action: 'get_location_details', id })
+    })
+    .then(resp => resp.json())
+    .then(data => {
+        if (data.success && data.location) {
+            openEditModal(data.location);
+        } else {
+            alert(data.message || 'Eroare la încărcarea detaliilor locației');
+        }
+    })
+    .catch(err => {
+        console.error('Failed to load location details', err);
+        alert('Eroare la încărcarea detaliilor locației');
+    });
 }
 
 /**

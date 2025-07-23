@@ -41,7 +41,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'type' => trim($_POST['type'] ?? 'shelf'),
                 'capacity' => intval($_POST['capacity'] ?? 0),
                 'levels' => intval($_POST['levels'] ?? 3),
-                // Add new dimension fields
                 'length_mm' => intval($_POST['length_mm'] ?? 1000),
                 'depth_mm' => intval($_POST['depth_mm'] ?? 400),
                 'height_mm' => intval($_POST['height_mm'] ?? 900),
@@ -184,7 +183,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 echo json_encode(['success' => false, 'message' => 'Locația nu a fost găsită.']);
             }
-            break;
+            exit;
 
         case 'analyze_repartition_needs':
             $locationId = intval($_POST['location_id'] ?? 0);
@@ -544,7 +543,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" onclick="closeModal()">Anulează</button>
                         <button type="submit" class="btn btn-primary" id="submitBtn">Salvează</button>
-                        <button class="btn btn-sm btn-outline" onclick="analyzeRepartition(<?= $location['id'] ?>)" 
+                        <button class="btn btn-sm btn-outline" onclick="analyzeRepartition(document.getElementById('locationId').value)"
                                 title="Analizează Repartizare" style="margin-left: 0.5rem;">
                             <span class="material-symbols-outlined">analytics</span>
                         </button>

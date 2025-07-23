@@ -283,7 +283,7 @@ function generateCombinedTemplateLabel(PDO $db, int $productId, int $qty, string
         
         // === TRACKING BARCODE AND TEXT SECTION ===
         $barcodeY = 85; // Middle vertical position
-        $barcodeX = 15; // Center-right area
+        $barcodeX = 85; // Center-right area
         $rotateBarcode = true; // Set to true for vertical barcode
         
         if ($barcodePath && file_exists($barcodePath)) {
@@ -316,13 +316,12 @@ function generateCombinedTemplateLabel(PDO $db, int $productId, int $qty, string
         
         if (class_exists('PDF_RotatedText') && $rotateBarcode) {
             // ROTATED TEXT (90 degrees clockwise to match barcode)
-            // Position text on RIGHT SIDE below the vertical barcode
-            $textX = $barcodeX - 20; // Slightly left of barcode to fit on label
+            $textX = $barcodeX - 10; // Slightly left of barcode to fit on label
             $textY = $barcodeY + $barcodeHeight + 5; // Below the barcode
             
-            // Rotate text 90 degrees clockwise
+            // Rotate text 90 degrees clockwisWAe
             $rotationAngle = -90; // Negative for clockwise
-            $lineSpacing = 12; // Reduced spacing between lines (was 25)
+            $lineSpacing = 3; // Reduced spacing between lines (was 25)
             
             // Adjust starting X position for each line to create proper spacing
             $currentX = $textX;

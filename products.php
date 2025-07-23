@@ -49,7 +49,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'price' => floatval($_POST['price'] ?? 0),
                 'category' => trim($_POST['category'] ?? ''),
                 'unit' => trim($_POST['unit'] ?? 'pcs'),
-                'status' => isset($_POST['status']) ? 'active' : 'inactive'
+                'status' => isset($_POST['status']) ? 'active' : 'inactive',
+                'seller_id' => isset($_POST['seller_id']) ? intval($_POST['seller_id']) : null
             ];
             
             if (empty($productData['name']) || empty($productData['sku'])) {
@@ -76,7 +77,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'price' => floatval($_POST['price'] ?? 0),
                 'category' => trim($_POST['category'] ?? ''),
                 'unit' => trim($_POST['unit'] ?? 'pcs'),
-                'status' => isset($_POST['status']) ? 'active' : 'inactive'
+                'status' => isset($_POST['status']) ? 'active' : 'inactive',
+                'seller_id' => isset($_POST['seller_id']) ? intval($_POST['seller_id']) : null
             ];
             
             if ($productId <= 0 || empty($productData['name']) || empty($productData['sku'])) {

@@ -2,13 +2,10 @@
 
 // File: models/Product.php - Adapted for your existing database schema
 class Product {
-    // database connection property
     private $conn;
     
-    // database table name (matching your existing table)
     private $table = "products";
     
-    // Configurable fields for modular display (adapted to your schema)
     private $defaultFields = [
         'product_id', 'sku', 'name', 'description', 'category', 'quantity',
         'min_stock_level', 'price', 'weight', 'dimensions', 'barcode', 

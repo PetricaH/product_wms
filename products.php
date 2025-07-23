@@ -10,18 +10,6 @@ if (!defined('BASE_PATH')) {
 }
 require_once BASE_PATH . '/bootstrap.php';
 $config = require BASE_PATH . '/config/config.php';
-
-// Session and authentication check
-// if (session_status() === PHP_SESSION_NONE) {
-//     session_start();
-// }
-
-// // Check if user is logged in and is admin
-// if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
-//     header('Location: ' . getNavUrl('login.php'));
-//     exit;
-// }
-
 // Database connection
 if (!isset($config['connection_factory']) || !is_callable($config['connection_factory'])) {
     die("Database connection factory not configured correctly.");
@@ -206,18 +194,20 @@ $page = max(1, intval($_GET['page'] ?? 1));
 $pageSize = 25; // Compact pagination
 $search = trim($_GET['search'] ?? '');
 $category = trim($_GET['category'] ?? '');
+$sellerId = intval($_GET['seller_id'] ?? 0);
 
 // Get total count - THIS LINE WILL NOW WORK
-$totalCount = $productModel->getTotalCount($search, $category);
+$totalCount = $productModel->getTotalCountWithSellers($search, $category, $sellerId);
 $totalPages = max(1, ceil($totalCount / $pageSize));
 $offset = ($page - 1) * $pageSize;
 
 // Get products with pagination
-$allProducts = $productModel->getProductsPaginated($pageSize, $offset, $search, $category);
+$allProducts = $productModel->getProductsPaginatedWithSellers($pageSize, $offset, $search, $category, $sellerId);
 
 // Get unique categories for filter
 $categories = $productModel->getCategories();
-
+$category = trim($_GET['category'] ?? '');
+$sellerId = intval($_GET['seller_id'] ?? 0);
 // Define current page for footer
 $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
 ?>
@@ -388,7 +378,6 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                     <?php endif; ?>
                                                 </td>
                                                 <td>
-                                                    <!-- SELLER INFORMATION COLUMN -->
                                                     <?php if (!empty($product['seller_name'])): ?>
                                                         <div class="seller-info">
                                                             <strong class="seller-name"><?= htmlspecialchars($product['seller_name']) ?></strong>
@@ -434,13 +423,13 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                         </button>
                                                         
                                                         <!-- SmartBill sync button if product has no seller -->
-                                                        <?php if (empty($product['seller_id'])): ?>
+                                                        <!-- <?php if (empty($product['seller_id'])): ?>
                                                             <button type="button" class="btn btn-sm btn-info" 
                                                                     onclick="suggestSeller(<?= $product['product_id'] ?>)"
                                                                     title="Sugerează furnizor">
                                                                 <span class="material-symbols-outlined">auto_fix_high</span>
                                                             </button>
-                                                        <?php endif; ?>
+                                                        <?php endif; ?> -->
                                                         
                                                         <!-- Existing label printing and other actions -->
                                                         <button type="button" class="btn btn-sm btn-secondary" 
@@ -483,7 +472,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                 <div class="pagination-controls">
                                     <?php if ($page > 1): ?>
                                         <a href="?page=1&search=<?= urlencode($search) ?>&category=<?= urlencode($category) ?>" class="pagination-btn">Prima</a>
-                                        <a href="?page=<?= $page - 1 ?>&search=<?= urlencode($search) ?>&category=<?= urlencode($category) ?>" class="pagination-btn">‹</a>
+                                        <a href="?page=<?= $page - 1 ?>&search=<?= urlencode($search) ?>&category=<?= urlencode($category) ?>&seller_id=<?= $sellerId ?>" class="pagination-btn">‹</a>
                                     <?php endif; ?>
                                     
                                     <?php 

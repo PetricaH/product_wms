@@ -11,17 +11,6 @@ if (!defined('BASE_PATH')) {
 require_once BASE_PATH . '/bootstrap.php';
 $config = require BASE_PATH . '/config/config.php';
 
-// Session and authentication check
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
-
-// Check if user is logged in and is admin
-if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
-    header('Location: ' . getNavUrl('login.php'));
-    exit;
-}
-
 // Database connection
 if (!isset($config['connection_factory']) || !is_callable($config['connection_factory'])) {
     die("Database connection factory not configured correctly.");
@@ -31,8 +20,11 @@ $db = $dbFactory();
 
 // Include models
 require_once BASE_PATH . '/models/Location.php';
+require_once BASE_PATH . '/models/LocationLevelSettings.php';
+require_once BASE_PATH . '/models/LocationEnhanced.php';
 
-$locationModel = new Location($db);
+$locationModel = new LocationEnhanced($db);
+$levelSettingsModel = new LocationLevelSettings($db);
 
 // Handle operations
 $message = '';
@@ -46,57 +38,84 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $locationData = [
                 'location_code' => trim($_POST['location_code'] ?? ''),
                 'zone' => trim($_POST['zone'] ?? ''),
-                'type' => trim($_POST['type'] ?? 'Shelf'),
+                'type' => trim($_POST['type'] ?? 'shelf'),
                 'capacity' => intval($_POST['capacity'] ?? 0),
                 'levels' => intval($_POST['levels'] ?? 3),
+                // Add new dimension fields
+                'length_mm' => intval($_POST['length_mm'] ?? 1000),
+                'depth_mm' => intval($_POST['depth_mm'] ?? 400),
+                'height_mm' => intval($_POST['height_mm'] ?? 900),
+                'max_weight_kg' => floatval($_POST['max_weight_kg'] ?? 150),
                 'description' => trim($_POST['description'] ?? ''),
                 'status' => intval($_POST['status'] ?? 1)
             ];
             
-            // Validate location code format
-            $validation = $locationModel->validateLocationCode($locationData['location_code'], $locationData['type']);
-            
-            if (!$validation['valid']) {
-                $message = implode('. ', $validation['errors']);
-                $messageType = 'error';
-            } else {
-                // Use enhanced creation method with auto zone extraction
-                if ($locationModel->createLocationWithAutoZone($locationData)) {
-                    $message = 'Locația a fost creată cu succes.';
-                    $messageType = 'success';
-                } else {
-                    $message = 'Eroare la crearea locației. Verificați dacă codul nu există deja.';
-                    $messageType = 'error';
+            // Parse level settings data if provided
+            if (!empty($_POST['level_settings_data'])) {
+                try {
+                    $levelSettingsData = json_decode($_POST['level_settings_data'], true);
+                    if ($levelSettingsData) {
+                        $locationData['level_settings'] = $levelSettingsData;
+                    }
+                } catch (Exception $e) {
+                    error_log("Error parsing level settings: " . $e->getMessage());
                 }
+            }
+            
+            // Use enhanced creation method
+            $locationId = $locationModel->createLocationWithLevelSettings($locationData);
+            if ($locationId) {
+                $message = 'Locația a fost creată cu succes.';
+                $messageType = 'success';
+            } else {
+                $message = 'Eroare la crearea locației. Verificați dacă codul nu există deja.';
+                $messageType = 'error';
             }
             break;
             
-        case 'update':
-            $locationId = intval($_POST['location_id'] ?? 0);
-            $locationData = [
-                'location_code' => trim($_POST['location_code'] ?? ''),
-                'zone' => trim($_POST['zone'] ?? ''),
-                'type' => trim($_POST['type'] ?? 'Shelf'),
-                'capacity' => intval($_POST['capacity'] ?? 0),
-                'levels' => intval($_POST['levels'] ?? 3),
-                'description' => trim($_POST['description'] ?? ''),
-                'status' => intval($_POST['status'] ?? 1)
-            ];
-            
-            if ($locationId <= 0 || empty($locationData['location_code'])) {
-                $message = 'Date invalide pentru actualizare.';
-                $messageType = 'error';
-            } else {
-                // Use enhanced update method with auto zone extraction
-                if ($locationModel->updateLocationWithAutoZone($locationId, $locationData)) {
-                    $message = 'Locația a fost actualizată cu succes.';
-                    $messageType = 'success';
-                } else {
-                    $message = 'Eroare la actualizarea locației.';
-                    $messageType = 'error';
+            case 'update':
+                $locationId = intval($_POST['location_id'] ?? 0);
+                $locationData = [
+                    'location_code' => trim($_POST['location_code'] ?? ''),
+                    'zone' => trim($_POST['zone'] ?? ''),
+                    'type' => trim($_POST['type'] ?? 'shelf'),
+                    'capacity' => intval($_POST['capacity'] ?? 0),
+                    'levels' => intval($_POST['levels'] ?? 3),
+                    // Add new dimension fields
+                    'length_mm' => intval($_POST['length_mm'] ?? 1000),
+                    'depth_mm' => intval($_POST['depth_mm'] ?? 400),
+                    'height_mm' => intval($_POST['height_mm'] ?? 900),
+                    'max_weight_kg' => floatval($_POST['max_weight_kg'] ?? 150),
+                    'description' => trim($_POST['description'] ?? ''),
+                    'status' => intval($_POST['status'] ?? 1)
+                ];
+                
+                // Parse level settings data if provided
+                if (!empty($_POST['level_settings_data'])) {
+                    try {
+                        $levelSettingsData = json_decode($_POST['level_settings_data'], true);
+                        if ($levelSettingsData) {
+                            $locationData['level_settings'] = $levelSettingsData;
+                        }
+                    } catch (Exception $e) {
+                        error_log("Error parsing level settings: " . $e->getMessage());
+                    }
                 }
-            }
-            break;
+                
+                if ($locationId <= 0 || empty($locationData['location_code'])) {
+                    $message = 'Date invalide pentru actualizare.';
+                    $messageType = 'error';
+                } else {
+                    // Use enhanced update method
+                    if ($locationModel->updateLocationWithLevelSettings($locationId, $locationData)) {
+                        $message = 'Locația a fost actualizată cu succes.';
+                        $messageType = 'success';
+                    } else {
+                        $message = 'Eroare la actualizarea locației.';
+                        $messageType = 'error';
+                    }
+                }
+                break;            
             
         case 'delete':
             $locationId = intval($_POST['location_id'] ?? 0);
@@ -112,15 +131,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             break;
             
         case 'get_location_details':
-            // AJAX request for location details
             $locationId = intval($_POST['id'] ?? 0);
-            $details = $locationModel->getLocationDetails($locationId);
+            $details = $locationModel->getLocationWithLevelSettings($locationId);
             
             header('Content-Type: application/json');
             if ($details) {
                 echo json_encode(['success' => true, 'location' => $details]);
             } else {
                 echo json_encode(['success' => false, 'message' => 'Locația nu a fost găsită.']);
+            }
+            break;
+
+        case 'analyze_repartition_needs':
+            $locationId = intval($_POST['location_id'] ?? 0);
+            
+            if ($locationId > 0) {
+                try {
+                    require_once BASE_PATH . '/models/AutoRepartitionService.php';
+                    $repartitionService = new AutoRepartitionService($db, $levelSettingsModel);
+                    $repartitionService->setDryRun(true);
+                    
+                    $analysis = $repartitionService->processLocation($locationId);
+                    
+                    header('Content-Type: application/json');
+                    echo json_encode([
+                        'success' => true, 
+                        'analysis' => $analysis,
+                        'recommendations' => count($analysis['moves'])
+                    ]);
+                } catch (Exception $e) {
+                    header('Content-Type: application/json');
+                    echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+                }
+            } else {
+                header('Content-Type: application/json');
+                echo json_encode(['success' => false, 'message' => 'ID locație invalid.']);
             }
             exit;
     }
@@ -387,16 +432,71 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                 </select>
                             </div>
                         </div>
+
+                        <!-- Dimensions Section (add after existing form fields) -->
+                        <div class="form-group">
+                            <h4 class="form-section-title">
+                                <span class="material-symbols-outlined">straighten</span>
+                                Dimensiuni Fizice
+                            </h4>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="length_mm" class="form-label">Lungime (mm)</label>
+                                <input type="number" name="length_mm" id="length_mm" class="form-control" 
+                                    value="1000" min="100" max="10000">
+                            </div>
+                            <div class="form-group">
+                                <label for="depth_mm" class="form-label">Adâncime (mm)</label>
+                                <input type="number" name="depth_mm" id="depth_mm" class="form-control" 
+                                    value="400" min="100" max="2000">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="height_mm" class="form-label">Înălțime Totală (mm)</label>
+                                <input type="number" name="height_mm" id="height_mm" class="form-control" 
+                                    value="900" min="200" max="5000">
+                            </div>
+                            <div class="form-group">
+                                <label for="max_weight_kg" class="form-label">Greutate Maximă (kg)</label>
+                                <input type="number" name="max_weight_kg" id="max_weight_kg" class="form-control" 
+                                    value="150" min="10" max="2000" step="0.1">
+                            </div>
+                        </div>
                         
                         <div class="form-group">
                             <label for="description" class="form-label">Descriere</label>
                             <textarea name="description" id="description" class="form-control" 
                                       rows="3" placeholder="Detalii suplimentare despre locație..."></textarea>
                         </div>
+
+                        <!-- Level Settings Section (add before closing modal-body) -->
+                        <div id="level-settings-section" class="form-section" style="margin-top: 2rem;">
+                            <h4 class="form-section-title">
+                                <span class="material-symbols-outlined">layers</span>
+                                Configurare Niveluri Avansată
+                            </h4>
+                            <div class="form-check" style="margin-bottom: 1rem;">
+                                <input type="checkbox" id="enable_global_auto_repartition" name="enable_global_auto_repartition">
+                                <label for="enable_global_auto_repartition" class="form-label">
+                                    Activează repartizarea automată pentru toate nivelurile
+                                </label>
+                            </div>
+                            <div id="level-settings-container">
+                                <!-- Level settings will be generated dynamically by JavaScript -->
+                            </div>
+                        </div>
+                    
+                        <input type="hidden" name="level_settings_data" id="level_settings_data" value="">
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" onclick="closeModal()">Anulează</button>
                         <button type="submit" class="btn btn-primary" id="submitBtn">Salvează</button>
+                        <button class="btn btn-sm btn-outline" onclick="analyzeRepartition(<?= $location['id'] ?>)" 
+                                title="Analizează Repartizare" style="margin-left: 0.5rem;">
+                            <span class="material-symbols-outlined">analytics</span>
+                        </button>
                     </div>
                 </form>
             </div>
@@ -427,6 +527,36 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                         <button type="submit" class="btn btn-danger">Șterge Locația</button>
                     </div>
                 </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Repartition Analysis Modal (add after existing delete modal) -->
+    <div class="modal" id="repartitionModal">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 class="modal-title">Analiză Repartizare</h3>
+                    <button class="modal-close" onclick="closeRepartitionModal()">
+                        <span class="material-symbols-outlined">close</span>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div id="repartitionResults">
+                        <div class="loading-message">
+                            <span class="material-symbols-outlined">hourglass_empty</span>
+                            Se analizează necesitățile de repartizare...
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="closeRepartitionModal()">Închide</button>
+                    <button type="button" class="btn btn-primary" id="executeRepartitionBtn" 
+                            onclick="executeRepartition()" style="display: none;">
+                        <span class="material-symbols-outlined">auto_fix_high</span>
+                        Execută Repartizarea
+                    </button>
+                </div>
             </div>
         </div>
     </div>

@@ -1153,3 +1153,444 @@
         display: none !important;
     }
 }
+
+/* Form Sections */
+.form-section {
+    background-color: var(--surface-background);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.section-title {
+    color: var(--text-primary);
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 1.1rem;
+    font-weight: 600;
+}
+
+/* Level Settings Container */
+.level-settings-container {
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    margin-bottom: 1rem;
+    overflow: hidden;
+    background-color: var(--container-background);
+}
+
+.level-header {
+    background-color: var(--surface-background);
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+    transition: var(--transition);
+    user-select: none;
+}
+
+.level-header:hover {
+    background-color: var(--button-hover);
+}
+
+.level-header.active {
+    background-color: var(--success-color);
+    color: white;
+    border-bottom-color: var(--success-color);
+}
+
+.level-title {
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 1rem;
+}
+
+.level-occupancy {
+    font-size: 0.8rem;
+    background-color: var(--container-background);
+    color: var(--text-secondary);
+    padding: 0.2rem 0.5rem;
+    border-radius: 12px;
+    margin-left: 1rem;
+}
+
+.level-header.active .level-occupancy {
+    background-color: rgba(255, 255, 255, 0.2);
+    color: white;
+}
+
+.level-toggle {
+    font-size: 1.2rem;
+    transition: transform 0.3s ease;
+    color: inherit;
+}
+
+.level-content {
+    padding: 1.5rem;
+    display: none;
+    background-color: var(--container-background);
+    border-top: 1px solid var(--border-color);
+}
+
+.level-content.active {
+    display: block;
+}
+
+.level-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1.5rem;
+}
+
+/* Settings Sections within Levels */
+.settings-section {
+    background-color: var(--surface-background);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    padding: 1.25rem;
+    height: fit-content;
+}
+
+.settings-section h5 {
+    color: var(--text-primary);
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.95rem;
+    font-weight: 600;
+}
+
+/* Storage Policy Options */
+.storage-policy-options {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.policy-option {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    border: 2px solid var(--border-color);
+    border-radius: var(--border-radius);
+    cursor: pointer;
+    transition: var(--transition);
+    background-color: var(--container-background);
+}
+
+.policy-option:hover {
+    border-color: var(--border-color-strong);
+    background-color: var(--button-hover);
+}
+
+.policy-option.selected {
+    border-color: var(--success-color);
+    background-color: rgba(25, 135, 84, 0.1);
+}
+
+.policy-option input[type="radio"] {
+    margin-top: 0.2rem;
+    accent-color: var(--success-color);
+}
+
+.policy-option strong {
+    color: var(--text-primary);
+    font-size: 0.9rem;
+}
+
+.policy-description {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    margin-top: 0.25rem;
+    line-height: 1.3;
+}
+
+.policy-option.selected .policy-description {
+    color: var(--text-primary);
+}
+
+/* Category Restriction */
+.category-restriction {
+    background-color: var(--container-background);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    padding: 1rem;
+}
+
+/* Dimension and Constraint Inputs */
+.dimension-inputs,
+.constraint-inputs {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 1rem;
+}
+
+.dimension-inputs .form-group,
+.constraint-inputs .form-group {
+    margin-bottom: 0;
+}
+
+.dimension-inputs .form-label,
+.constraint-inputs .form-label {
+    font-size: 0.8rem;
+    font-weight: 500;
+    margin-bottom: 0.4rem;
+}
+
+.dimension-inputs .form-control,
+.constraint-inputs .form-control {
+    font-size: 0.85rem;
+    padding: 0.5rem;
+}
+
+/* Repartition Settings */
+.repartition-settings {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
+.repartition-settings .form-group {
+    margin-bottom: 0;
+}
+
+.repartition-settings .form-label {
+    font-size: 0.8rem;
+    margin-bottom: 0.4rem;
+}
+
+.repartition-settings .form-control {
+    font-size: 0.85rem;
+    padding: 0.5rem;
+}
+
+/* Enhanced Form Checks */
+.form-check {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+}
+
+.form-check input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--success-color);
+    margin: 0;
+}
+
+.form-check .form-label {
+    margin-bottom: 0;
+    cursor: pointer;
+    font-size: 0.9rem;
+}
+
+/* Help Text */
+.help-text {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    margin-top: 0.3rem;
+    line-height: 1.3;
+}
+
+/* Enhanced Modal for Level Settings */
+#locationModal .modal-dialog {
+    max-width: 1000px;
+    width: 95%;
+}
+
+#locationModal .modal-body {
+    max-height: 70vh;
+    overflow-y: auto;
+    padding: 2rem;
+}
+
+/* Responsive Design for Level Settings */
+@media (max-width: 768px) {
+    .level-grid {
+        grid-template-columns: 1fr;
+        gap: 1rem;
+    }
+    
+    .dimension-inputs,
+    .constraint-inputs {
+        grid-template-columns: 1fr 1fr;
+    }
+    
+    .repartition-settings {
+        grid-template-columns: 1fr;
+    }
+    
+    .level-header {
+        padding: 0.75rem 1rem;
+    }
+    
+    .level-content {
+        padding: 1rem;
+    }
+    
+    .settings-section {
+        padding: 1rem;
+    }
+    
+    #locationModal .modal-dialog {
+        width: 98%;
+        margin: 1rem auto;
+    }
+    
+    #locationModal .modal-body {
+        padding: 1rem;
+        max-height: 80vh;
+    }
+}
+
+@media (max-width: 480px) {
+    .dimension-inputs,
+    .constraint-inputs {
+        grid-template-columns: 1fr;
+    }
+    
+    .level-title {
+        font-size: 0.9rem;
+    }
+    
+    .settings-section h5 {
+        font-size: 0.85rem;
+    }
+    
+    .policy-option {
+        padding: 0.5rem;
+    }
+    
+    .policy-option strong {
+        font-size: 0.8rem;
+    }
+    
+    .policy-description {
+        font-size: 0.75rem;
+    }
+}
+
+/* Animations */
+.level-content {
+    animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        max-height: 0;
+        padding-top: 0;
+        padding-bottom: 0;
+    }
+    to {
+        opacity: 1;
+        max-height: 800px;
+        padding-top: 1.5rem;
+        padding-bottom: 1.5rem;
+    }
+}
+
+.level-header.active {
+    animation: highlightActive 0.3s ease-out;
+}
+
+@keyframes highlightActive {
+    0% { background-color: var(--surface-background); }
+    50% { background-color: rgba(25, 135, 84, 0.8); }
+    100% { background-color: var(--success-color); }
+}
+
+/* Enhanced validation states */
+.form-control.is-valid {
+    border-color: var(--success-color);
+    box-shadow: 0 0 0 2px rgba(25, 135, 84, 0.1);
+}
+
+.form-control.is-invalid {
+    border-color: #dc3545;
+    box-shadow: 0 0 0 2px rgba(220, 53, 69, 0.1);
+}
+
+.invalid-feedback {
+    color: #dc3545;
+    font-size: 0.75rem;
+    margin-top: 0.25rem;
+}
+
+/* Loading states */
+.level-settings-container.loading {
+    opacity: 0.6;
+    pointer-events: none;
+}
+
+.level-settings-container.loading::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 20px;
+    height: 20px;
+    margin: -10px 0 0 -10px;
+    border: 2px solid var(--border-color);
+    border-top-color: var(--success-color);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Accessibility improvements */
+.level-header:focus {
+    outline: 2px solid var(--success-color);
+    outline-offset: 2px;
+}
+
+.policy-option:focus-within {
+    outline: 2px solid var(--success-color);
+    outline-offset: 2px;
+}
+
+/* Dark theme enhancements */
+[data-theme="dark"] .level-settings-container {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+[data-theme="dark"] .settings-section {
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+}
+
+[data-theme="dark"] .policy-option.selected {
+    background-color: rgba(25, 135, 84, 0.15);
+    border-color: rgba(25, 135, 84, 0.8);
+}
+
+/* Print styles */
+@media print {
+    .level-settings-container {
+        break-inside: avoid;
+        page-break-inside: avoid;
+    }
+    
+    .level-header {
+        background-color: #f5f5f5 !important;
+        color: #000 !important;
+    }
+    
+    .level-content {
+        display: block !important;
+    }
+}

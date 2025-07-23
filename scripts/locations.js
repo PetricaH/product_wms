@@ -6,12 +6,6 @@
  */
 
 let qr = null;
-function updateLocationQr() {
-    if (qr) {
-        const codeInput = document.getElementById('location_code');
-        qr.set({ value: codeInput ? codeInput.value.trim() : '' });
-    }
-}
 
 document.addEventListener('DOMContentLoaded', function() {
     console.log('Enhanced Locations page loaded');
@@ -20,6 +14,9 @@ document.addEventListener('DOMContentLoaded', function() {
     if (typeof window.warehouseData !== 'undefined') {
         window.warehouseViz = new EnhancedWarehouseVisualization();
     }
+
+    initializeQRCode();
+    setupEventListeners();
     
     // Auto-populate zone when location_code changes
     const locationCodeInput = document.getElementById('location_code');
@@ -130,7 +127,11 @@ function openEditModal(location) {
     document.getElementById('status').value = statusValue;
     
     document.getElementById('description').value = location.notes || '';
-    updateLocationQr();
+    
+    // Update QR code with the location code
+    setTimeout(() => {
+        updateLocationQr();
+    }, 100);
     
     // Show modal
     document.getElementById('locationModal').classList.add('show');
@@ -154,16 +155,6 @@ function openDeleteModal(locationId, locationCode) {
 
 function closeDeleteModal() {
     document.getElementById('deleteModal').classList.remove('show');
-}
-
-function downloadLocationQr() {
-    const canvas = document.getElementById('locationQrCanvas');
-    if (!canvas) return;
-    const link = document.createElement('a');
-    const code = document.getElementById('location_code').value || 'location';
-    link.href = canvas.toDataURL('image/png');
-    link.download = `${code}_qr.png`;
-    link.click();
 }
 
 // Close modals when clicking outside
@@ -806,8 +797,6 @@ class EnhancedWarehouseVisualization {
 
 // Export for global access
 window.EnhancedWarehouseVisualization = EnhancedWarehouseVisualization;
-window.downloadLocationQr = downloadLocationQr;
-
 /**
  * Enhanced Locations Management JavaScript
  * Includes per-level configuration functionality
@@ -840,18 +829,6 @@ function checkLevelSettingsAvailability() {
     // Try to detect if enhanced models are available by checking for specific elements
     // This would be set by the PHP side if models are available
     levelSettingsEnabled = window.levelSettingsAvailable || false;
-}
-
-/**
- * Initialize existing functionality (preserve all current features)
- */
-function initializeExistingFunctionality() {
-    // QR Code generation
-    document.getElementById('location_code')?.addEventListener('input', updateLocationQr);
-    document.getElementById('location_code')?.addEventListener('input', extractZoneFromCode);
-    
-    // Level changes update QR
-    document.getElementById('levels')?.addEventListener('change', updateLocationQr);
 }
 
 /**
@@ -1277,6 +1254,11 @@ function openCreateModal() {
     // Set default levels
     const levelsField = document.getElementById('levels');
     if (levelsField) levelsField.value = '3';
+
+    // Update QR code after a short delay to ensure form is reset
+    setTimeout(() => {
+        updateLocationQr();
+    }, 100);
     
     // Initialize level settings if available
     if (levelSettingsEnabled) {
@@ -1289,8 +1271,6 @@ function openCreateModal() {
         switchLocationTab('basic');
     }
     
-    updateLocationQr();
-
     // Show modal
     document.getElementById('locationModal').classList.add('show');
     
@@ -1359,8 +1339,6 @@ function openEditModal(location) {
         // Switch to basic tab
         switchLocationTab('basic');
     }
-    
-    updateLocationQr();
     
     // Show modal
     document.getElementById('locationModal').classList.add('show');
@@ -1435,36 +1413,118 @@ function extractZoneFromCode() {
     }
 }
 
-function updateLocationQr() {
-    const locationCode = document.getElementById('location_code').value.trim();
-    const levels = document.getElementById('levels').value;
-    const qrContainer = document.getElementById('locationQrContainer');
+function initializeQRCode() {
+    const qrCanvas = document.getElementById('locationQrCanvas');
     
-    if (!qrContainer) return;
+    if (!qrCanvas) {
+        console.error('QR Canvas not found');
+        return;
+    }
     
-    if (locationCode) {
-        const qrText = `LOC:${locationCode}|LEVELS:${levels}`;
-        const canvas = document.getElementById('locationQrCanvas') || document.createElement('canvas');
-        canvas.id = 'locationQrCanvas';
-        canvas.width = 120;
-        canvas.height = 120;
+    if (!window.QRious) {
+        console.error('QRious library not loaded');
+        return;
+    }
+    
+    try {
+        // Get initial value from input
+        const locationCodeInput = document.getElementById('location_code');
+        const initialValue = locationCodeInput ? locationCodeInput.value.trim() : '';
         
-        try {
-            QRCode.toCanvas(canvas, qrText, {
-                width: 120,
-                height: 120,
-                colorDark: '#000000',
-                colorLight: '#ffffff',
-                margin: 1
-            });
+        // Initialize QRious
+        qr = new QRious({ 
+            element: qrCanvas, 
+            size: 150, 
+            value: initialValue || 'EMPTY',
+            foreground: '#000000',
+            background: '#ffffff'
+        });
+        
+        console.log('QR initialized with value:', initialValue || 'EMPTY');
+        
+    } catch (error) {
+        console.error('Error initializing QR code:', error);
+    }
+}
+
+function setupEventListeners() {
+    // Location code input listener
+    const locationCodeInput = document.getElementById('location_code');
+    const zoneInput = document.getElementById('zone');
+    
+    if (locationCodeInput) {
+        locationCodeInput.addEventListener('input', function() {
+            const code = this.value.trim();
+            console.log('Location code changed to:', code);
             
-            qrContainer.innerHTML = '';
-            qrContainer.appendChild(canvas);
-        } catch (error) {
-            qrContainer.innerHTML = '<div class="qr-placeholder">QR Code</div>';
+            // Update QR code immediately
+            updateLocationQr();
+            
+            // Also update zone extraction
+            if (zoneInput && code && code.includes('-')) {
+                const extractedZone = code.split('-')[0].toUpperCase();
+                zoneInput.value = extractedZone;
+                zoneInput.style.backgroundColor = 'var(--success-color-light, #d4edda)';
+                showZoneAutoFill(extractedZone);
+            } else if (zoneInput) {
+                zoneInput.value = '';
+                zoneInput.style.backgroundColor = '';
+            }
+        });
+    }
+    
+    // Levels input listener
+    const levelsInput = document.getElementById('levels');
+    if (levelsInput) {
+        levelsInput.addEventListener('change', updateLocationQr);
+    }
+}
+
+function updateLocationQr() {
+    if (!qr) {
+        console.error('QR object not initialized, trying to reinitialize...');
+        initializeQRCode();
+        return;
+    }
+    
+    const codeInput = document.getElementById('location_code');
+    const code = codeInput ? codeInput.value.trim() : '';
+    
+    console.log('Updating QR with code:', code);
+    
+    try {
+        if (code && code.length > 0) {
+            qr.set({ value: code });
+            console.log('✅ QR updated successfully with:', code);
+        } else {
+            qr.set({ value: 'EMPTY' });
+            console.log('QR updated with EMPTY placeholder');
         }
-    } else {
-        qrContainer.innerHTML = '<div class="qr-placeholder">QR Code</div>';
+    } catch (error) {
+        console.error('Error updating QR code:', error);
+    }
+}
+
+function downloadLocationQr() {
+    const canvas = document.getElementById('locationQrCanvas');
+    if (!canvas) {
+        console.error('Canvas not found for download');
+        return;
+    }
+    
+    const codeInput = document.getElementById('location_code');
+    const code = codeInput ? codeInput.value.trim() : 'location';
+    
+    try {
+        const link = document.createElement('a');
+        link.href = canvas.toDataURL('image/png');
+        link.download = `${code}_qr.png`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        console.log('QR download initiated for:', code);
+    } catch (error) {
+        console.error('Error downloading QR code:', error);
     }
 }
 
@@ -1511,16 +1571,6 @@ function openDeleteModal(locationId, locationCode) {
 
 function closeDeleteModal() {
     document.getElementById('deleteModal').classList.remove('show');
-}
-
-function downloadLocationQr() {
-    const canvas = document.getElementById('locationQrCanvas');
-    if (!canvas) return;
-    const link = document.createElement('a');
-    const code = document.getElementById('location_code').value || 'location';
-    link.href = canvas.toDataURL('image/png');
-    link.download = `${code}_qr.png`;
-    link.click();
 }
 
 // Close modals when clicking outside
@@ -1603,15 +1653,18 @@ document.getElementById('locationForm')?.addEventListener('submit', function(eve
 });
 
 // Make functions globally available
-window.openCreateModal = openCreateModal;
-window.openEditModal = openEditModal;
 window.closeModal = closeModal;
 window.openDeleteModal = openDeleteModal;
 window.closeDeleteModal = closeDeleteModal;
-window.downloadLocationQr = downloadLocationQr;
 window.switchLocationTab = switchLocationTab;
 window.updateLevelSettings = updateLevelSettings;
 window.toggleLevel = toggleLevel;
 window.selectStoragePolicy = selectStoragePolicy;
 window.distributeLevelHeights = distributeLevelHeights;
 window.distributeWeightCapacity = distributeWeightCapacity;
+
+// QR CODES
+window.updateLocationQr = updateLocationQr;
+window.downloadLocationQr = downloadLocationQr;
+window.openCreateModal = openCreateModal;
+window.openEditModal = openEditModal;

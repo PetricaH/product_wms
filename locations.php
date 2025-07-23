@@ -75,47 +75,91 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             case 'update':
                 $locationId = intval($_POST['location_id'] ?? 0);
+                
+                // Debug: Log all POST data
+                error_log("DEBUG: Update request for location ID: $locationId");
+                error_log("DEBUG: POST data: " . json_encode($_POST));
+                
+                // Helper function to get last value from array or single value
+                function getLastValue($value, $default) {
+                    if (is_array($value)) {
+                        return end($value);
+                    }
+                    return $value ?? $default;
+                }
+                
+                // Clean and validate the data
                 $locationData = [
                     'location_code' => trim($_POST['location_code'] ?? ''),
                     'zone' => trim($_POST['zone'] ?? ''),
                     'type' => trim($_POST['type'] ?? 'shelf'),
                     'capacity' => intval($_POST['capacity'] ?? 0),
                     'levels' => intval($_POST['levels'] ?? 3),
-                    // Add new dimension fields
-                    'length_mm' => intval($_POST['length_mm'] ?? 1000),
-                    'depth_mm' => intval($_POST['depth_mm'] ?? 400),
-                    'height_mm' => intval($_POST['height_mm'] ?? 900),
-                    'max_weight_kg' => floatval($_POST['max_weight_kg'] ?? 150),
+                    // Handle potential duplicate fields by getting the last value
+                    'length_mm' => intval(getLastValue($_POST['length_mm'] ?? null, 1000)),
+                    'depth_mm' => intval(getLastValue($_POST['depth_mm'] ?? null, 400)),
+                    'height_mm' => intval(getLastValue($_POST['height_mm'] ?? null, 900)),
+                    'max_weight_kg' => floatval(getLastValue($_POST['max_weight_kg'] ?? null, 150)),
                     'description' => trim($_POST['description'] ?? ''),
                     'status' => intval($_POST['status'] ?? 1)
                 ];
                 
-                // Parse level settings data if provided
-                if (!empty($_POST['level_settings_data'])) {
-                    try {
-                        $levelSettingsData = json_decode($_POST['level_settings_data'], true);
-                        if ($levelSettingsData) {
-                            $locationData['level_settings'] = $levelSettingsData;
-                        }
-                    } catch (Exception $e) {
-                        error_log("Error parsing level settings: " . $e->getMessage());
-                    }
-                }
+                // Debug: Log cleaned data
+                error_log("DEBUG: Cleaned location data: " . json_encode($locationData));
                 
+                // Validate required fields
                 if ($locationId <= 0 || empty($locationData['location_code'])) {
+                    error_log("DEBUG: Validation failed - ID: $locationId, Code: " . $locationData['location_code']);
                     $message = 'Date invalide pentru actualizare.';
                     $messageType = 'error';
                 } else {
-                    // Use enhanced update method
-                    if ($locationModel->updateLocationWithLevelSettings($locationId, $locationData)) {
-                        $message = 'Locația a fost actualizată cu succes.';
-                        $messageType = 'success';
-                    } else {
-                        $message = 'Eroare la actualizarea locației.';
+                    try {
+                        // Parse level settings data if provided
+                        if (!empty($_POST['level_settings_data'])) {
+                            try {
+                                $levelSettingsData = json_decode($_POST['level_settings_data'], true);
+                                if ($levelSettingsData) {
+                                    $locationData['level_settings'] = $levelSettingsData;
+                                    error_log("DEBUG: Level settings parsed successfully");
+                                }
+                            } catch (Exception $e) {
+                                error_log("ERROR: parsing level settings: " . $e->getMessage());
+                            }
+                        }
+                        
+                        // Check if we should use enhanced update or regular update
+                        $updateResult = false;
+                        if (method_exists($locationModel, 'updateLocationWithLevelSettings')) {
+                            error_log("DEBUG: Using enhanced update method");
+                            $updateResult = $locationModel->updateLocationWithLevelSettings($locationId, $locationData);
+                        } else {
+                            error_log("DEBUG: Using basic update method");
+                            $updateResult = $locationModel->updateLocation($locationId, $locationData);
+                        }
+                        
+                        if ($updateResult) {
+                            $message = 'Locația a fost actualizată cu succes.';
+                            $messageType = 'success';
+                            
+                            $location = $locationModel->getLocationById($locationId);
+                            if (!$location) {
+                                $location = []; // Fallback to prevent warnings
+                            }
+                        } else {
+                            error_log("DEBUG: Location update failed for ID: $locationId");
+                            $message = 'Eroare la actualizarea locației. Verificați logurile pentru detalii.';
+                            $messageType = 'error';
+                            $location = [];
+                        }
+                        
+                    } catch (Exception $e) {
+                        error_log("ERROR: Exception during location update: " . $e->getMessage());
+                        error_log("ERROR: Stack trace: " . $e->getTraceAsString());
+                        $message = 'Eroare la actualizarea locației: ' . $e->getMessage();
                         $messageType = 'error';
                     }
                 }
-                break;            
+                break;        
             
         case 'delete':
             $locationId = intval($_POST['location_id'] ?? 0);
@@ -169,6 +213,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             exit;
     }
+}
+
+function cleanArrayValue($value, $default = null) {
+    if (is_array($value)) {
+        return end($value); // Get the last value if it's an array
+    }
+    return $value ?? $default;
 }
 
 // Get filter parameters

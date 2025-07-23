@@ -106,6 +106,25 @@ function openCreateModal() {
             locationCodeInput.focus();
         }
     }, 100);
+
+function openEditModalById(id) {
+    fetch('locations.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ action: 'get_location_details', id })
+    })
+    .then(resp => resp.json())
+    .then(data => {
+        if (data.success && data.location) {
+            openEditModal(data.location);
+        } else {
+            alert(data.message || 'Eroare la încărcarea detaliilor locației');
+        }
+    })
+    .catch(err => {
+        console.error('Failed to load location details', err);
+        alert('Eroare la încărcarea detaliilor locației');
+    });
 }
 
 function openEditModal(location) {
@@ -623,27 +642,27 @@ class EnhancedWarehouseVisualization {
         // FIXED: Case insensitive type check
         const isShelf = location.type.toLowerCase() === 'shelf';
         
-        return `
-            <tr>
-                <td><strong>${location.location_code}</strong></td>
-                <td>Zona ${location.zone}</td>
-                <td>${location.type}</td>
-                <td><span class="occupancy-badge ${occupancyClass}">${Math.round(location.occupancy?.total || 0)}%</span></td>
-                <td>${isShelf ? Math.round(location.occupancy?.bottom || 0) + '%' : '-'}</td>
-                <td>${isShelf ? Math.round(location.occupancy?.middle || 0) + '%' : '-'}</td>
-                <td>${isShelf ? Math.round(location.occupancy?.top || 0) + '%' : '-'}</td>
-                <td>${location.items?.total || location.total_items || 0}</td>
-                <td>${location.unique_products || 0}</td>
-                <td>
-                    <button class="btn btn-sm btn-outline" onclick="openEditModal(${JSON.stringify(location).replace(/"/g, '&quot;')})" title="Editează">
-                        <span class="material-symbols-outlined">edit</span>
-                    </button>
-                    <button class="btn btn-sm btn-outline-danger" onclick="openDeleteModal(${location.id}, '${location.location_code}')" title="Șterge">
-                        <span class="material-symbols-outlined">delete</span>
-                    </button>
-                </td>
-            </tr>
-        `;
+            return `
+                <tr>
+                    <td><strong>${location.location_code}</strong></td>
+                    <td>Zona ${location.zone}</td>
+                    <td>${location.type}</td>
+                    <td><span class="occupancy-badge ${occupancyClass}">${Math.round(location.occupancy?.total || 0)}%</span></td>
+                    <td>${isShelf ? Math.round(location.occupancy?.bottom || 0) + '%' : '-'}</td>
+                    <td>${isShelf ? Math.round(location.occupancy?.middle || 0) + '%' : '-'}</td>
+                    <td>${isShelf ? Math.round(location.occupancy?.top || 0) + '%' : '-'}</td>
+                    <td>${location.items?.total || location.total_items || 0}</td>
+                    <td>${location.unique_products || 0}</td>
+                    <td>
+                        <button class="btn btn-sm btn-outline" onclick="openEditModalById(${location.id})" title="Editează">
+                            <span class="material-symbols-outlined">edit</span>
+                        </button>
+                        <button class="btn btn-sm btn-outline-danger" onclick="openDeleteModal(${location.id}, '${location.location_code}')" title="Șterge">
+                            <span class="material-symbols-outlined">delete</span>
+                        </button>
+                    </td>
+                </tr>
+            `;
     }).join('');
     
     // Update table info
@@ -1668,3 +1687,4 @@ window.updateLocationQr = updateLocationQr;
 window.downloadLocationQr = downloadLocationQr;
 window.openCreateModal = openCreateModal;
 window.openEditModal = openEditModal;
+window.openEditModalById = openEditModalById;

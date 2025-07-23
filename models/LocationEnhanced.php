@@ -3,6 +3,8 @@
  * Enhanced Location Model with Level Settings Integration
  * Extends the existing Location model with automatic repartition capabilities
  */
+
+
 class LocationEnhanced extends Location {
     private LocationLevelSettings $levelSettings;
     

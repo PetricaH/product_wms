@@ -4,7 +4,7 @@
 require_once __DIR__ . '/Setting.php';
 
 class Location {
-    private $conn;
+    protected $conn;
     private $table = "locations";
 
     // Default geometry constants used when dimensions are missing

@@ -231,6 +231,26 @@ document.getElementById('locationForm').addEventListener('submit', function(even
             }
         }
     }
+
+    if (levelSettingsEnabled && currentLevels > 0) {
+        const data = {};
+        for (let lvl = 1; lvl <= currentLevels; lvl++) {
+            data[lvl] = {
+                storage_policy: document.querySelector(`input[name="level_${lvl}_storage_policy"]:checked`)?.value || 'multiple_products',
+                height_mm: parseInt(document.getElementById(`level_${lvl}_height`)?.value) || 0,
+                max_weight_kg: parseFloat(document.getElementById(`level_${lvl}_weight`)?.value) || 0,
+                volume_min_liters: parseFloat(document.querySelector(`input[name="level_${lvl}_volume_min"]`)?.value) || null,
+                volume_max_liters: parseFloat(document.querySelector(`input[name="level_${lvl}_volume_max"]`)?.value) || null,
+                enable_auto_repartition: document.getElementById(`level_${lvl}_auto_repartition`)?.checked || false,
+                repartition_trigger_threshold: parseInt(document.querySelector(`input[name="level_${lvl}_threshold"]`)?.value) || 80,
+                priority_order: parseInt(document.querySelector(`input[name="level_${lvl}_priority"]`)?.value) || 1
+            };
+        }
+        const field = document.getElementById('level_settings_data');
+        if (field) {
+            field.value = JSON.stringify(data);
+        }
+    }
 });
 
 /**
@@ -1558,8 +1578,27 @@ document.getElementById('locationForm')?.addEventListener('submit', function(eve
             alert('Erori de validare:\n' + validationErrors.join('\n'));
             return false;
         }
+
+        // Collect level settings data and store in hidden field
+        const levelData = {};
+        for (let level = 1; level <= currentLevels; level++) {
+            levelData[level] = {
+                storage_policy: document.querySelector(`input[name="level_${level}_storage_policy"]:checked`)?.value || 'multiple_products',
+                height_mm: parseInt(document.getElementById(`level_${level}_height`)?.value) || 0,
+                max_weight_kg: parseFloat(document.getElementById(`level_${level}_weight`)?.value) || 0,
+                volume_min_liters: parseFloat(document.querySelector(`input[name="level_${level}_volume_min"]`)?.value) || null,
+                volume_max_liters: parseFloat(document.querySelector(`input[name="level_${level}_volume_max"]`)?.value) || null,
+                enable_auto_repartition: document.getElementById(`level_${level}_auto_repartition`)?.checked || false,
+                repartition_trigger_threshold: parseInt(document.querySelector(`input[name="level_${level}_threshold"]`)?.value) || 80,
+                priority_order: parseInt(document.querySelector(`input[name="level_${level}_priority"]`)?.value) || 1
+            };
+        }
+        const hiddenField = document.getElementById('level_settings_data');
+        if (hiddenField) {
+            hiddenField.value = JSON.stringify(levelData);
+        }
     }
-    
+
     return true;
 });
 

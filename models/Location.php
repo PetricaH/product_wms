@@ -327,12 +327,13 @@ class Location {
             
             $result = $stmt->execute($params);
             $rowCount = $stmt->rowCount();
-            
+
             error_log("DEBUG: Execute result: " . ($result ? 'true' : 'false'));
             error_log("DEBUG: Rows affected: $rowCount");
-            
-            // Return true only if at least 1 row was affected
-            return $result && $rowCount > 0;
+
+            // Consider the update successful if the statement executed without errors
+            // even when MySQL reports 0 affected rows (values unchanged)
+            return $result;
         } catch (PDOException $e) {
             error_log("Error updating location: " . $e->getMessage());
             return false;

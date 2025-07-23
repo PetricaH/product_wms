@@ -411,135 +411,113 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                     </button>
                 </div>
                 <form id="locationForm" method="POST">
-                    <div class="modal-body">
-                        <input type="hidden" name="action" id="formAction" value="create">
-                        <input type="hidden" name="location_id" id="locationId" value="">
-                        
-                        <div class="form-group">
-                            <label for="location_code" class="form-label">Cod Locație *</label>
-                            <input type="text" name="location_code" id="location_code" class="form-control"
-                                   placeholder="ex: MID-1A, LEFT-2B, RIGHT-3C" required>
-                            <small class="form-help">Format pentru rafturi: [ZONĂ]-[POZIȚIE] (ex: MID-1A)</small>
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">QR Code</label>
-                            <canvas id="locationQrCanvas" width="150" height="150" style="display:block;margin-bottom:0.5rem;"></canvas>
-                            <button type="button" class="btn btn-secondary" id="downloadQrBtn" onclick="downloadLocationQr()">Descarcă QR</button>
-                        </div>
-                        
-                        <div class="row">
-                            <div class="form-group">
-                                <label for="zone" class="form-label">Zonă *</label>
-                                <input type="text" name="zone" id="zone" class="form-control" 
-                                       placeholder="Se completează automat" required>
-                                <small class="form-help">Se extrage automat din codul locației</small>
-                            </div>
-                            <div class="form-group">
-                                <label for="type" class="form-label">Tip</label>
-                                <select name="type" id="type" class="form-control">
-                                    <option value="Warehouse">Warehouse</option>
-                                    <option value="Zone">Zone</option>
-                                    <option value="Rack">Rack</option>
-                                    <option value="Shelf" selected>Shelf</option>
-                                    <option value="Bin">Bin</option>
-                                </select>
-                            </div>
-                        </div>
-                        
-                        <div class="row">
-                            <div class="form-group">
-                                <label for="capacity" class="form-label">Capacitate</label>
-                                <input type="number" name="capacity" id="capacity" class="form-control" min="0" placeholder="Nr. max articole">
-                            </div>
-                            <div class="form-group">
-                                <label for="length_mm" class="form-label">Lungime (mm)</label>
-                                <input type="number" name="length_mm" id="length_mm" class="form-control" min="0">
-                            </div>
-                            <div class="form-group">
-                                <label for="depth_mm" class="form-label">Adâncime (mm)</label>
-                                <input type="number" name="depth_mm" id="depth_mm" class="form-control" min="0">
-                            </div>
-                        </div>
+                <div class="modal-body">
+                    <input type="hidden" name="action" id="formAction" value="create">
+                    <input type="hidden" name="location_id" id="locationId" value="">
 
-                        <div class="row">
-                            <div class="form-group">
-                                <label for="levels" class="form-label">Niveluri</label>
-                                <input type="number" name="levels" id="levels" class="form-control" min="1" value="3">
-                            </div>
-                            <div class="form-group">
-                                <label for="height_mm" class="form-label">Înălțime (mm)</label>
-                                <input type="number" name="height_mm" id="height_mm" class="form-control" min="0">
-                            </div>
-                            <div class="form-group">
-                                <label for="max_weight_kg" class="form-label">Greutate maximă (kg)</label>
-                                <input type="number" step="0.01" name="max_weight_kg" id="max_weight_kg" class="form-control" min="0">
-                            </div>
-                            <div class="form-group">
-                                <label for="status" class="form-label">Status</label>
-                                <select name="status" id="status" class="form-control">
-                                    <option value="1">Activ</option>
-                                    <option value="0">Inactiv</option>
-                                </select>
-                            </div>
-                        </div>
-
-                        <!-- Dimensions Section (add after existing form fields) -->
-                        <div class="form-group">
-                            <h4 class="form-section-title">
-                                <span class="material-symbols-outlined">straighten</span>
-                                Dimensiuni Fizice
-                            </h4>
-                        </div>
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label for="length_mm" class="form-label">Lungime (mm)</label>
-                                <input type="number" name="length_mm" id="length_mm" class="form-control" 
-                                    value="1000" min="100" max="10000">
-                            </div>
-                            <div class="form-group">
-                                <label for="depth_mm" class="form-label">Adâncime (mm)</label>
-                                <input type="number" name="depth_mm" id="depth_mm" class="form-control" 
-                                    value="400" min="100" max="2000">
-                            </div>
-                        </div>
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label for="height_mm" class="form-label">Înălțime Totală (mm)</label>
-                                <input type="number" name="height_mm" id="height_mm" class="form-control" 
-                                    value="900" min="200" max="5000">
-                            </div>
-                            <div class="form-group">
-                                <label for="max_weight_kg" class="form-label">Greutate Maximă (kg)</label>
-                                <input type="number" name="max_weight_kg" id="max_weight_kg" class="form-control" 
-                                    value="150" min="10" max="2000" step="0.1">
-                            </div>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label for="description" class="form-label">Descriere</label>
-                            <textarea name="description" id="description" class="form-control" 
-                                      rows="3" placeholder="Detalii suplimentare despre locație..."></textarea>
-                        </div>
-
-                        <!-- Level Settings Section (add before closing modal-body) -->
-                        <div id="level-settings-section" class="form-section" style="margin-top: 2rem;">
-                            <h4 class="form-section-title">
-                                <span class="material-symbols-outlined">layers</span>
-                                Configurare Niveluri Avansată
-                            </h4>
-                            <div class="form-check" style="margin-bottom: 1rem;">
-                                <input type="checkbox" id="enable_global_auto_repartition" name="enable_global_auto_repartition">
-                                <label for="enable_global_auto_repartition" class="form-label">
-                                    Activează repartizarea automată pentru toate nivelurile
-                                </label>
-                            </div>
-                            <div id="level-settings-container">
-                                <!-- Level settings will be generated dynamically by JavaScript -->
-                            </div>
-                        </div>
-                    
-                        <input type="hidden" name="level_settings_data" id="level_settings_data" value="">
+                    <div class="form-group">
+                        <label for="location_code" class="form-label">Cod Locație *</label>
+                        <input type="text" name="location_code" id="location_code" class="form-control"
+                            placeholder="ex: MID-1A, LEFT-2B, RIGHT-3C" required>
+                        <small class="form-help">Format pentru rafturi: [ZONĂ]-[POZIȚIE] (ex: MID-1A)</small>
                     </div>
+                    <div class="form-group">
+                        <label class="form-label">QR Code</label>
+                        <canvas id="locationQrCanvas" width="150" height="150" style="display:block;margin-bottom:0.5rem;"></canvas>
+                        <button type="button" class="btn btn-secondary" id="downloadQrBtn" onclick="downloadLocationQr()">Descarcă QR</button>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="zone" class="form-label">Zonă *</label>
+                            <input type="text" name="zone" id="zone" class="form-control" 
+                                placeholder="Se completează automat" required>
+                            <small class="form-help">Se extrage automat din codul locației</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="type" class="form-label">Tip</label>
+                            <select name="type" id="type" class="form-control">
+                                <option value="Warehouse">Warehouse</option>
+                                <option value="Zone">Zone</option>
+                                <option value="Rack">Rack</option>
+                                <option value="Shelf" selected>Shelf</option>
+                                <option value="Bin">Bin</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="status" class="form-label">Status</label>
+                            <select name="status" id="status" class="form-control">
+                                <option value="1">Activ</option>
+                                <option value="0">Inactiv</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="capacity" class="form-label">Capacitate</label>
+                            <input type="number" name="capacity" id="capacity" class="form-control" min="0" placeholder="Nr. max articole">
+                        </div>
+                        <div class="form-group">
+                            <label for="levels" class="form-label">Niveluri</label>
+                            <input type="number" name="levels" id="levels" class="form-control" min="1" value="3">
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <h4 class="form-section-title">
+                            <span class="material-symbols-outlined">straighten</span>
+                            Dimensiuni Fizice
+                        </h4>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="length_mm" class="form-label">Lungime (mm)</label>
+                            <input type="number" name="length_mm" id="length_mm" class="form-control" 
+                                value="1000" min="100" max="10000">
+                        </div>
+                        <div class="form-group">
+                            <label for="depth_mm" class="form-label">Adâncime (mm)</label>
+                            <input type="number" name="depth_mm" id="depth_mm" class="form-control" 
+                                value="400" min="100" max="2000">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="height_mm" class="form-label">Înălțime Totală (mm)</label>
+                            <input type="number" name="height_mm" id="height_mm" class="form-control" 
+                                value="900" min="200" max="5000">
+                        </div>
+                        <div class="form-group">
+                            <label for="max_weight_kg" class="form-label">Greutate Maximă (kg)</label>
+                            <input type="number" name="max_weight_kg" id="max_weight_kg" class="form-control" 
+                                value="150" min="10" max="2000" step="0.1">
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="description" class="form-label">Descriere</label>
+                        <textarea name="description" id="description" class="form-control" 
+                                rows="3" placeholder="Detalii suplimentare despre locație..."></textarea>
+                    </div>
+
+                    <div id="level-settings-section" class="form-section" style="margin-top: 2rem;">
+                        <h4 class="form-section-title">
+                            <span class="material-symbols-outlined">layers</span>
+                            Configurare Niveluri Avansată
+                        </h4>
+                        <div class="form-check" style="margin-bottom: 1rem;">
+                            <input type="checkbox" id="enable_global_auto_repartition" name="enable_global_auto_repartition">
+                            <label for="enable_global_auto_repartition" class="form-label">
+                                Activează repartizarea automată pentru toate nivelurile
+                            </label>
+                        </div>
+                        <div id="level-settings-container">
+                            </div>
+                    </div>
+
+                    <input type="hidden" name="level_settings_data" id="level_settings_data" value="">
+                </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" onclick="closeModal()">Anulează</button>
                         <button type="submit" class="btn btn-primary" id="submitBtn">Salvează</button>

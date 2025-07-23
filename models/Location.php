@@ -6,6 +6,7 @@ require_once __DIR__ . '/Setting.php';
 class Location {
     protected $conn;
     private $table = "locations";
+    private LocationLevelSettings $levelSettings;
 
     // Default geometry constants used when dimensions are missing
     private const DEFAULT_LENGTH_MM = 1200;
@@ -27,6 +28,7 @@ class Location {
     
     public function __construct($db) {
         $this->conn = $db;
+        $this->levelSettings = new LocationLevelSettings($this->conn);
     }
     
     /**
@@ -220,77 +222,80 @@ class Location {
         }
     }
     
-    /**
-     * Create a new location
-     * @param array $locationData
-     * @return int|false Location ID on success, false on failure
-     */
-    public function createLocation(array $locationData) {
-        $query = "INSERT INTO {$this->table}
-                  (location_code, zone, type, levels, capacity, length_mm, depth_mm, height_mm, max_weight_kg, notes, status, created_at)
-                  VALUES (:location_code, :zone, :type, :levels, :capacity, :length_mm, :depth_mm, :height_mm, :max_weight_kg, :notes, :status, NOW())";
-        
+    // FUNCTION TO CREATE A LOCATION IN LOCATIONS.PHP START
+
+    public function createLocation(array $locationData): int|false {
         try {
-            // Check if location code already exists
+            $this->conn->beginTransaction();
+
             if ($this->getLocationByCode($locationData['location_code'])) {
                 return false;
             }
+
+            $query = "INSERT INTO {$this->table}
+                        (location_code, zone, type, levels, capacity, length_mm, depth_mm, height_mm, max_weight_kg, notes, status, created_at)
+                        VALUES (:location_code, :zone, :type, :levels, :capacity, :length_mm, :depth_mm, :height_mm, :max_weight_kg, :notes, :status, NOW())";
             
-            // Convert status to enum string
             $statusMap = [0 => 'inactive', 1 => 'active', 2 => 'maintenance'];
             $status = $statusMap[$locationData['status'] ?? 1] ?? 'active';
-            
+
             $stmt = $this->conn->prepare($query);
             $params = [
                 ':location_code' => $locationData['location_code'],
                 ':zone' => $locationData['zone'],
-                ':type' => $locationData['type'] ?: 'shelf',
-                ':levels' => $locationData['levels'] ?? self::STANDARD_LEVELS,
-                ':capacity' => $locationData['capacity'] ?: 0,
+                ':type' => $locationData['type'] ?? 'shelf',
+                ':levels' => $locationData['levels'] ?? 3,
+                ':capacity' => $locationData['capacity'] ?? 0,
                 ':length_mm' => $locationData['length_mm'] ?? 0,
                 ':depth_mm' => $locationData['depth_mm'] ?? 0,
                 ':height_mm' => $locationData['height_mm'] ?? 0,
                 ':max_weight_kg' => $locationData['max_weight_kg'] ?? 0,
                 ':notes' => $locationData['description'] ?? '',
-                ':status' => $status
+                ':status' => $status 
             ];
-            
-            $success = $stmt->execute($params);
-            return $success ? $this->conn->lastInsertId() : false;
-        } catch (PDOException $e) {
-            error_log("Error creating location: " . $e->getMessage());
+
+            if (!$stmt->execute($params)) {
+                throw new Exception("Database error: faild to insert new location.");
+            }
+
+            $locationId = (int)$this->conn->lastInsertId();
+
+            if ($locationId === 0) {
+                throw new Exception("Failed to retrieve ID for new location.");
+            }
+
+            $levels = $locationData['levels'] ?? 3;
+            if (!$this->levelSettings->createDefaultSettings($locationId, $levels)) {
+                throw new Exception("failed to create default level settings.");
+            }
+
+            // if everythging succeded, commit the changes
+            $this->conn->commit();
+            return $locationId;
+
+        } catch (Exception $e) {
+            if ($this->conn->inTransaction()) {
+                $this->conn->rollBack();
+            }
+            error_log("Error in createLocation transaction: " . $e->getMessage());
             return false;
         }
     }
+
+    // FUNCTION TO CREATE A LOCATION IN LOCATIONS.PHP END
     
-    /**
-     * Update an existing location
-     * @param int $locationId
-     * @param array $locationData
-     * @return bool
-     */
-    public function updateLocation($locationId, array $locationData) {
-        // Get current location first
-        $currentLocation = $this->getLocationById($locationId);
-        if (!$currentLocation) {
-            error_log("DEBUG: Location $locationId not found");
-            return false;
-        }
-        
-        // Only check for duplicates if location code is actually changing
-        if ($currentLocation['location_code'] !== $locationData['location_code']) {
-            $existing = $this->getLocationByCode($locationData['location_code']);
-            if ($existing && $existing['id'] != $locationId) {
-                error_log("DEBUG: Duplicate location code detected");
-                return false;
-            }
-        }
-        
+    // FUNCTION TO UPDATE A LOCATION IN LOCATIONS.PHP START
+
+    public function updateLocation(int $locationId, array $locationData): bool {
+        // Wrap the entire operation in a transaction for safety.
+        // If any part fails, the entire update is cancelled.
         try {
-            // Convert status from integer to enum string
+            $this->conn->beginTransaction();
+    
+            // 1. UPDATE THE MAIN LOCATION DATA
             $statusMap = [0 => 'inactive', 1 => 'active', 2 => 'maintenance'];
             $status = $statusMap[$locationData['status'] ?? 1] ?? 'active';
-            
+    
             $query = "UPDATE {$this->table}
                       SET location_code = :location_code,
                           zone = :zone,
@@ -307,13 +312,14 @@ class Location {
                       WHERE id = :id";
             
             $stmt = $this->conn->prepare($query);
+            
             $params = [
                 ':id' => $locationId,
-                ':location_code' => $locationData['location_code'],
-                ':zone' => $locationData['zone'],
-                ':type' => $locationData['type'] ?: 'shelf',
-                ':levels' => $locationData['levels'] ?? self::STANDARD_LEVELS,
-                ':capacity' => $locationData['capacity'] ?: 0,
+                ':location_code' => $locationData['location_code'] ?? '',
+                ':zone' => $locationData['zone'] ?? '',
+                ':type' => $locationData['type'] ?? 'shelf',
+                ':levels' => $locationData['levels'] ?? 3,
+                ':capacity' => $locationData['capacity'] ?? 0,
                 ':length_mm' => $locationData['length_mm'] ?? 0,
                 ':depth_mm' => $locationData['depth_mm'] ?? 0,
                 ':height_mm' => $locationData['height_mm'] ?? 0,
@@ -321,25 +327,116 @@ class Location {
                 ':notes' => $locationData['description'] ?? '',
                 ':status' => $status
             ];
+    
+            // Execute the main update and throw an error if it fails.
+            if (!$stmt->execute($params)) {
+                throw new Exception("Failed to update base location data for ID: $locationId");
+            }
+    
+            // 2. UPDATE THE INDIVIDUAL LEVEL SETTINGS (if they were submitted)
+            if (isset($locationData['level_settings']) && is_array($locationData['level_settings'])) {
+                foreach ($locationData['level_settings'] as $levelNum => $settings) {
+                    if (!$this->levelSettings->updateLevelSettings($locationId, $levelNum, $settings)) {
+                        throw new Exception("Failed to update settings for level $levelNum on location ID: $locationId");
+                    }
+                }
+            }
             
-            error_log("DEBUG: Query: $query");
-            error_log("DEBUG: Params: " . print_r($params, true));
+            // 3. HANDLE CHANGES TO THE NUMBER OF LEVELS
+            if (isset($locationData['levels'])) {
+                $currentLevels = $this->getCurrentLevelsCount($locationId);
+                $newLevels = intval($locationData['levels']);
+                
+                if ($newLevels > $currentLevels) {
+                    // Add new default settings for the new levels
+                    for ($level = $currentLevels + 1; $level <= $newLevels; $level++) {
+                        $defaultSettings = $this->getDefaultLevelSettings($level, $newLevels);
+                        $this->levelSettings->updateLevelSettings($locationId, $level, $defaultSettings);
+                    }
+                } elseif ($newLevels < $currentLevels) {
+                    // Remove settings for levels that no longer exist
+                    for ($level = $newLevels + 1; $level <= $currentLevels; $level++) {
+                        $this->deleteLevelSettings($locationId, $level);
+                    }
+                }
+            }
+    
+            // If everything was successful, commit the changes to the database.
+            $this->conn->commit();
+            return true;
             
-            $result = $stmt->execute($params);
-            $rowCount = $stmt->rowCount();
-
-            error_log("DEBUG: Execute result: " . ($result ? 'true' : 'false'));
-            error_log("DEBUG: Rows affected: $rowCount");
-
-            // Consider the update successful if the statement executed without errors
-            // even when MySQL reports 0 affected rows (values unchanged)
-            return $result;
-        } catch (PDOException $e) {
-            error_log("Error updating location: " . $e->getMessage());
+        } catch (Exception $e) {
+            // If any error occurred, roll back all changes.
+            if ($this->conn->inTransaction()) {
+                $this->conn->rollback();
+            }
+            error_log("Error in updateLocation transaction: " . $e->getMessage());
             return false;
         }
     }
-    
+
+    // HELPER FUNCTIONS FOR UPDATE LOCATION MAIN FUNCTION START
+
+    private function getCurrentLevelsCount(int $locationId): int {
+        $query = "SELECT MAX(level_number) FROM location_level_settings WHERE location_id = :location_id";
+
+        try  {
+            $stmt = $this->conn->prepare($query);
+            $stmt->execute([':location_id' => $locationId]);
+            return intval($stmt->fetchColumn()) ?: 3;
+        } catch (PDOException $e) {
+            return 3;
+        }
+    }
+
+    private function getDefaultLevelSettings(int $levelNumber, int $totalLevels): array {
+        return [
+            'level_name' => match($levelNumber) {
+                1 => 'Bottom',
+                2 => 'Middle',
+                3 => 'Top',
+                default => "Level $levelNumber"
+            },
+            'storage_policy' => 'multiple_products',
+            'length_mm' => 1000,
+            'depth_mm' => 400,
+            'height_mm' => 300,
+            'max_weight_kg' => 50,
+            'enable_auto_repartition' => false,
+            'repartition_trigger_threshold' => 80,
+            'priority_order' => $totalLevels - $levelNumber + 1
+        ];
+    }
+
+    private function deleteLevelSettings(int $locationId, int $levelNumber): bool {
+        $query = "DELETE FROM location_level_settings
+                    WHERE location_id = :location_id AND level_number = :level_number";
+        
+        try {
+            $stmt = $this->conn->prepare($query);
+            return $stmt->execute([
+                ':location_id' => $locationId,
+                ':level_number' => $levelNumber
+            ]);
+        } catch (PDOException $e) {
+            error_log("Error deleting level settings.");
+            return false;
+        }
+    }
+
+    private function getLevelName(int $levelNumber): string {
+        return match($levelNumber) {
+            1 => 'bottom',
+            2 => 'middle',
+            3 => 'top',
+            default => 'middle'
+        };
+    }
+
+    // HELPER FUNCTIONS FOR UPDATE LOCATION MAIN FUNCTION END 
+
+    // FUNCTION TO UPDATE A LOCATION IN LOCATIONS.PHP END
+        
     /**
      * Delete a location
      * @param int $locationId
@@ -642,54 +739,20 @@ public function getWarehouseVisualizationData($zoneFilter = '', $typeFilter = ''
     }
 }
 
-/**
- * Get detailed location information for modal
- * @param int $locationId
- * @return array
- */
+// FUNCTION TO GET LOCATION DETAILS START
+
 public function getLocationDetails($locationId) {
     $query = "SELECT 
-                l.*,
-                COALESCE(SUM(i.quantity), 0) as total_items,
-                COALESCE(SUM(CASE WHEN i.shelf_level = 'bottom' THEN i.quantity ELSE 0 END), 0) as bottom_items,
-                COALESCE(SUM(CASE WHEN i.shelf_level = 'middle' THEN i.quantity ELSE 0 END), 0) as middle_items,
-                COALESCE(SUM(CASE WHEN i.shelf_level = 'top' THEN i.quantity ELSE 0 END), 0) as top_items,
-                COUNT(DISTINCT i.product_id) as unique_products,
-                GROUP_CONCAT(DISTINCT p.name SEPARATOR ', ') as product_names
-              FROM {$this->table} l
-              LEFT JOIN inventory i ON l.id = i.location_id
-              LEFT JOIN products p ON i.product_id = p.product_id
-              WHERE l.id = :id
-              GROUP BY l.id";
-    
-    try {
-        $stmt = $this->conn->prepare($query);
-        $stmt->bindValue(':id', $locationId, PDO::PARAM_INT);
-        $stmt->execute();
-        $data = $stmt->fetch(PDO::FETCH_ASSOC);
-        if (!$data) {
-            return false;
-        }
-
-        $levels = (int)($data['levels'] ?? self::STANDARD_LEVELS);
-        $levelCapacity = $this->getLevelCapacity($data);
-        $data['level_capacity'] = $levelCapacity;
-        $data['capacity'] = $levelCapacity * $levels;
-        $totalCapacity = $data['capacity'];
-
-        $data['occupancy'] = [
-            'total' => $totalCapacity > 0 ? round(($data['total_items'] / $totalCapacity) * 100, 1) : 0,
-            'bottom' => $levelCapacity > 0 ? round(($data['bottom_items'] / $levelCapacity) * 100, 1) : 0,
-            'middle' => $levelCapacity > 0 ? round(($data['middle_items'] / $levelCapacity) * 100, 1) : 0,
-            'top' => $levelCapacity > 0 ? round(($data['top_items'] / $levelCapacity) * 100, 1) : 0,
-        ];
-
-        return $data;
-    } catch (PDOException $e) {
-        error_log("Error getting location details: " . $e->getMessage());
-        return false;
-    }
+            l.*,
+            COALESCE(SUM(i.quantity), 0) as total_items,
+            COUNT(DISTINCT i.product_id) as unique_products
+        FROM {$this->table} l
+        LEFT JOIN inventory i on l.id = i.location_id
+        WHERE l.id = :id
+        GROUP BY l.id";
 }
+
+// FUNCTION TO GET LOCATION DETAILS END
 
 /**
  * Update inventory level for a specific location and shelf level

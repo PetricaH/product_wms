@@ -1,12 +1,16 @@
 /**
  * Complete Products Page JavaScript
- * Modal management, bulk operations, and basic interactions
+ * Modal management, bulk operations, Excel import, and basic interactions
  */
 
 // DOM Elements
 const createModal = document.getElementById('createProductModal');
 const editModal = document.getElementById('editProductModal');
 const deleteModal = document.getElementById('deleteProductModal');
+
+// Global variables
+let selectedFile = null;
+let importInProgress = false;
 
 /**
  * Initialize page functionality
@@ -16,6 +20,8 @@ document.addEventListener('DOMContentLoaded', function() {
     initializeSearch();
     autoHideAlerts();
     initializeBulkOperations();
+    initializeExcelImport();
+    initializeProductModals();
 });
 
 /**
@@ -103,6 +109,12 @@ function closeAllModals() {
             hideModal(modal);
         }
     });
+    
+    // Also close import modal if open
+    const importModal = document.getElementById('importProductModal');
+    if (importModal) {
+        closeImportModal();
+    }
 }
 
 /**
@@ -498,108 +510,20 @@ document.addEventListener('keydown', function(e) {
 });
 
 /**
- * Utility Functions
+ * ENHANCED EXCEL IMPORT FUNCTIONALITY
  */
-function showNotification(message, type = 'info') {
-    const notification = document.createElement('div');
-    notification.className = `notification notification-${type}`;
-    notification.innerHTML = `
-        <span class="material-symbols-outlined">
-            ${type === 'success' ? 'check_circle' : type === 'error' ? 'error' : 'info'}
-        </span>
-        ${message}
-    `;
-    
-    // Add compact notification styles
-    notification.style.cssText = `
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        background: var(--container-background);
-        color: var(--text-primary);
-        padding: 0.75rem 1rem;
-        border-radius: 6px;
-        box-shadow: var(--base-shadow);
-        border: 1px solid var(--border-color);
-        z-index: 9999;
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        font-size: 0.85rem;
-        max-width: 300px;
-        transition: all 0.3s ease;
-        transform: translateX(100%);
-    `;
-    
-    if (type === 'error') {
-        notification.style.borderColor = 'var(--danger-color)';
-        notification.style.color = 'var(--danger-color)';
-    }
-    
-    document.body.appendChild(notification);
-    
-    // Animate in
-    requestAnimationFrame(() => {
-        notification.style.transform = 'translateX(0)';
-    });
-    
-    // Auto-remove
-    setTimeout(() => {
-        notification.style.transform = 'translateX(100%)';
-        setTimeout(() => {
-            notification.remove();
-        }, 300);
-    }, 3000);
-}
 
 /**
- * Excel Import Functionality
- * Add this to your existing products.js file
+ * Initialize Excel Import Functionality
  */
-
-let selectedFile = null;
-let importedData = [];
-
-/**
- * Import Modal Management
- */
-function openImportModal() {
-    resetImportModal();
-    showModal(document.getElementById('importProductModal'));
-}
-
-function closeImportModal() {
-    hideModal(document.getElementById('importProductModal'));
-    resetImportModal();
-}
-
-function resetImportModal() {
-    selectedFile = null;
-    importedData = [];
-    
-    // Reset to step 1
-    document.getElementById('step-upload').style.display = 'flex';
-    document.getElementById('step-processing').style.display = 'none';
-    document.getElementById('step-results').style.display = 'none';
-    
-    // Reset file input and info
-    document.getElementById('excelFile').value = '';
-    document.getElementById('fileInfo').style.display = 'none';
-    
-    // Reset progress
-    document.getElementById('progressFill').style.width = '0%';
-    document.getElementById('processingLogs').innerHTML = '';
-    
-    // Hide results button
-    document.getElementById('viewProductsBtn').style.display = 'none';
-}
-
-/**
- * File Selection and Validation
- */
-document.addEventListener('DOMContentLoaded', function() {
+function initializeExcelImport() {
     const fileInput = document.getElementById('excelFile');
     const uploadArea = document.getElementById('uploadArea');
+    
+    if (!fileInput || !uploadArea) {
+        console.warn('Excel import elements not found');
+        return;
+    }
     
     // File input change handler
     fileInput.addEventListener('change', handleFileSelect);
@@ -607,35 +531,98 @@ document.addEventListener('DOMContentLoaded', function() {
     // Drag and drop functionality
     uploadArea.addEventListener('dragover', function(e) {
         e.preventDefault();
+        e.stopPropagation();
         uploadArea.classList.add('dragover');
     });
     
     uploadArea.addEventListener('dragleave', function(e) {
         e.preventDefault();
-        uploadArea.classList.remove('dragover');
+        e.stopPropagation();
+        if (!uploadArea.contains(e.relatedTarget)) {
+            uploadArea.classList.remove('dragover');
+        }
     });
     
     uploadArea.addEventListener('drop', function(e) {
         e.preventDefault();
+        e.stopPropagation();
         uploadArea.classList.remove('dragover');
         
         const files = e.dataTransfer.files;
         if (files.length > 0) {
-            fileInput.files = files;
-            handleFileSelect();
+            handleDroppedFile(files[0]);
         }
     });
-});
+    
+    // Click to upload
+    uploadArea.addEventListener('click', function(e) {
+        if (e.target === uploadArea || e.target.closest('.upload-content')) {
+            fileInput.click();
+        }
+    });
+}
 
+/**
+ * Initialize product modals (existing functionality)
+ */
+function initializeProductModals() {
+    // Product modal functionality
+    const addProductBtn = document.getElementById('addProductBtn');
+    const productModal = document.getElementById('productModal');
+    const closeModalBtns = document.querySelectorAll('.modal-close');
+    
+    if (addProductBtn) {
+        addProductBtn.addEventListener('click', () => openProductModal());
+    }
+    
+    closeModalBtns.forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const modal = e.target.closest('.modal');
+            if (modal) modal.style.display = 'none';
+        });
+    });
+    
+    // Close modal when clicking outside
+    window.addEventListener('click', (e) => {
+        if (e.target.classList.contains('modal')) {
+            e.target.style.display = 'none';
+        }
+    });
+}
+
+/**
+ * Handle file selection from input
+ */
 function handleFileSelect() {
     const fileInput = document.getElementById('excelFile');
     const file = fileInput.files[0];
     
     if (!file) {
-        document.getElementById('fileInfo').style.display = 'none';
+        hideFileInfo();
         return;
     }
     
+    validateAndShowFile(file);
+}
+
+/**
+ * Handle dropped file
+ */
+function handleDroppedFile(file) {
+    const fileInput = document.getElementById('excelFile');
+    
+    // Create a new FileList-like object
+    const dt = new DataTransfer();
+    dt.items.add(file);
+    fileInput.files = dt.files;
+    
+    validateAndShowFile(file);
+}
+
+/**
+ * Validate and display file information
+ */
+function validateAndShowFile(file) {
     // Validate file type
     const allowedTypes = [
         'application/vnd.ms-excel',
@@ -648,14 +635,56 @@ function handleFileSelect() {
         return;
     }
     
-    selectedFile = file;
+    // Validate file size (max 10MB)
+    const maxSize = 10 * 1024 * 1024; // 10MB
+    if (file.size > maxSize) {
+        showNotification('Fișierul este prea mare. Mărimea maximă permisă este 10MB.', 'error');
+        return;
+    }
     
-    // Show file info
-    document.getElementById('fileName').textContent = file.name;
-    document.getElementById('fileSize').textContent = formatFileSize(file.size);
-    document.getElementById('fileInfo').style.display = 'flex';
+    selectedFile = file;
+    showFileInfo(file);
+    
+    // Enable the process button
+    const processBtn = document.getElementById('processBtn');
+    if (processBtn) {
+        processBtn.disabled = false;
+        processBtn.textContent = 'Procesează Fișierul';
+    }
 }
 
+/**
+ * Show file information
+ */
+function showFileInfo(file) {
+    const fileInfo = document.getElementById('fileInfo');
+    const fileName = document.getElementById('fileName');
+    const fileSize = document.getElementById('fileSize');
+    
+    if (fileName) fileName.textContent = file.name;
+    if (fileSize) fileSize.textContent = formatFileSize(file.size);
+    if (fileInfo) fileInfo.style.display = 'flex';
+}
+
+/**
+ * Hide file information
+ */
+function hideFileInfo() {
+    const fileInfo = document.getElementById('fileInfo');
+    if (fileInfo) fileInfo.style.display = 'none';
+    
+    const processBtn = document.getElementById('processBtn');
+    if (processBtn) {
+        processBtn.disabled = true;
+        processBtn.textContent = 'Selectează un fișier';
+    }
+    
+    selectedFile = null;
+}
+
+/**
+ * Format file size for display
+ */
 function formatFileSize(bytes) {
     if (bytes === 0) return '0 Bytes';
     const k = 1024;
@@ -665,248 +694,374 @@ function formatFileSize(bytes) {
 }
 
 /**
- * Start Processing
+ * Start processing the Excel file
  */
 async function startProcessing() {
     if (!selectedFile) {
-        showNotification('Vă rog să selectați un fișier.', 'error');
+        showNotification('Vă rog să selectați un fișier Excel.', 'error');
         return;
     }
     
-    // Switch to processing step
-    document.getElementById('step-upload').style.display = 'none';
-    document.getElementById('step-processing').style.display = 'flex';
+    if (importInProgress) {
+        showNotification('Un import este deja în curs. Vă rog să așteptați.', 'warning');
+        return;
+    }
     
-    updateProgress(10, 'Citire fișier Excel...');
+    importInProgress = true;
     
     try {
-        // Read and parse Excel file
-        const excelData = await parseExcelFile(selectedFile);
-        updateProgress(30, 'Procesare date...');
+        // Show processing state
+        showProcessingState();
         
-        // Process and clean data
-        const processedData = processExcelData(excelData);
-        updateProgress(50, 'Validare produse...');
+        // Prepare form data
+        const formData = new FormData();
+        formData.append('excel_file', selectedFile);
+        formData.append('sync_smartbill', document.getElementById('syncSmartBill')?.checked || false);
+        formData.append('overwrite_existing', document.getElementById('overwriteExisting')?.checked || false);
         
-        // Send to backend for database insertion
-        await importToDatabase(processedData);
-        
-    } catch (error) {
-        console.error('Import error:', error);
-        addLog('Eroare: ' + error.message, 'error');
-        showNotification('Eroare la importul produselor: ' + error.message, 'error');
-    }
-}
-
-/**
- * Parse Excel File
- */
-async function parseExcelFile(file) {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = function(e) {
-            try {
-                // Use SheetJS to parse Excel
-                const data = new Uint8Array(e.target.result);
-                const workbook = XLSX.read(data, {type: 'array'});
-                
-                // Get first sheet
-                const sheetName = workbook.SheetNames[0];
-                const worksheet = workbook.Sheets[sheetName];
-                
-                // Convert to JSON with header row at index 9 (row 10)
-                const jsonData = XLSX.utils.sheet_to_json(worksheet, {header: 1});
-                
-                addLog(`Fișier citit: ${jsonData.length} rânduri găsite`, 'success');
-                resolve(jsonData);
-            } catch (error) {
-                reject(new Error('Eroare la citirea fișierului Excel: ' + error.message));
-            }
-        };
-        reader.onerror = () => reject(new Error('Eroare la citirea fișierului'));
-        reader.readAsArrayBuffer(file);
-    });
-}
-
-/**
- * Process Excel Data
- */
-function processExcelData(jsonData) {
-    const processedProducts = new Map(); // Use Map to handle duplicates
-    let validRows = 0;
-    let skippedRows = 0;
-    
-    // Headers are at row 10 (index 9): ["Gestiune","Produs","Cod","U.M.","Stoc final","Cost unitar","Sold final"]
-    const headers = jsonData[9];
-    addLog(`Headers găsite: ${headers.join(', ')}`, 'info');
-    
-    // Process data starting from row 11 (index 10)
-    for (let i = 10; i < jsonData.length; i++) {
-        const row = jsonData[i];
-        
-        // Skip empty rows
-        if (!row || row.length < 3 || !row[1] || !row[2]) {
-            skippedRows++;
-            continue;
-        }
-        
-        try {
-            const product = {
-                gestiune: row[0] || 'Marfa',
-                produs: row[1],
-                cod: row[2],
-                um: row[3] || 'bucata',
-                stoc_final: parseInt(row[4]) || 0,
-                cost_unitar: parseFloat(row[5]) || 0,
-                sold_final: parseFloat(row[6]) || 0
-            };
-            
-            // Clean product data
-            const cleanProduct = cleanProductData(product);
-            
-            // Handle duplicates by summing quantities
-            if (processedProducts.has(cleanProduct.sku)) {
-                const existing = processedProducts.get(cleanProduct.sku);
-                existing.quantity += cleanProduct.quantity;
-                addLog(`Actualizat SKU duplicat ${cleanProduct.sku}: cantitate totală ${existing.quantity}`, 'warning');
-            } else {
-                processedProducts.set(cleanProduct.sku, cleanProduct);
-                validRows++;
-            }
-            
-        } catch (error) {
-            addLog(`Eroare la rândul ${i + 1}: ${error.message}`, 'error');
-            skippedRows++;
-        }
-    }
-    
-    const finalProducts = Array.from(processedProducts.values());
-    addLog(`Procesare completă: ${finalProducts.length} produse unice, ${skippedRows} rânduri omise`, 'success');
-    
-    return finalProducts;
-}
-
-/**
- * Clean Product Data
- */
-function cleanProductData(rawProduct) {
-    // Extract clean product name (remove code prefix)
-    let productName = rawProduct.produs.trim();
-    const match = productName.match(/^[A-Z0-9\-\.]+\s*-\s*(.+)$/);
-    if (match) {
-        productName = match[1].trim();
-    }
-    
-    // Map units
-    const unitMap = {
-        'bucata': 'pcs',
-        'bucati': 'pcs',
-        'litru': 'l',
-        'litri': 'l',
-        'kg': 'kg',
-        'set': 'set'
-    };
-    
-    const unit = unitMap[rawProduct.um.toLowerCase()] || rawProduct.um;
-    
-    return {
-        name: productName,
-        sku: rawProduct.cod.trim(),
-        description: rawProduct.produs.trim(),
-        price: rawProduct.cost_unitar,
-        category: rawProduct.gestiune || 'Imported',
-        unit: unit,
-        quantity: rawProduct.stoc_final,
-        status: 'active'
-    };
-}
-
-/**
- * Import to Database
- */
-async function importToDatabase(products) {
-    updateProgress(60, 'Trimitere către server...');
-    
-    try {
-        const response = await fetch('import_handler.php', {
+        // Upload and process
+        const response = await fetch('api/excel_import.php', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                action: 'import_products',
-                products: products
-            })
+            body: formData
         });
         
         const result = await response.json();
         
-        if (!response.ok) {
-            throw new Error(result.message || 'Eroare de server');
+        if (result.success) {
+            showImportResults(result);
+            
+            // Refresh the products table if on products page
+            if (typeof refreshProductsTable === 'function') {
+                refreshProductsTable();
+            }
+            
+            // Reset form after short delay
+            setTimeout(() => {
+                resetImportForm();
+            }, 3000);
+            
+        } else {
+            showImportError(result);
         }
         
-        updateProgress(100, 'Import finalizat!');
-        
-        // Show results
-        setTimeout(() => {
-            showResults(result);
-        }, 1000);
-        
     } catch (error) {
-        throw new Error('Eroare la comunicarea cu serverul: ' + error.message);
+        console.error('Import error:', error);
+        showNotification('Eroare la procesarea fișierului: ' + error.message, 'error');
+        hideProcessingState();
+    } finally {
+        importInProgress = false;
     }
 }
 
 /**
- * Show Results
+ * Show processing state
  */
-function showResults(result) {
-    // Switch to results step
-    document.getElementById('step-processing').style.display = 'none';
-    document.getElementById('step-results').style.display = 'flex';
+function showProcessingState() {
+    const processBtn = document.getElementById('processBtn');
+    const progressBar = document.getElementById('progressBar');
+    const progressContainer = document.getElementById('progressContainer');
     
-    // Update stats
-    document.getElementById('createdCount').textContent = result.created || 0;
-    document.getElementById('updatedCount').textContent = result.updated || 0;
-    document.getElementById('skippedCount').textContent = result.skipped || 0;
-    document.getElementById('errorCount').textContent = result.errors?.length || 0;
+    if (processBtn) {
+        processBtn.disabled = true;
+        processBtn.innerHTML = '<span class="material-symbols-outlined spinning">refresh</span> Procesez...';
+    }
+    
+    if (progressContainer) {
+        progressContainer.style.display = 'block';
+    }
+    
+    if (progressBar) {
+        progressBar.style.width = '50%';
+    }
+}
+
+/**
+ * Hide processing state
+ */
+function hideProcessingState() {
+    const processBtn = document.getElementById('processBtn');
+    const progressContainer = document.getElementById('progressContainer');
+    
+    if (processBtn) {
+        processBtn.disabled = false;
+        processBtn.innerHTML = 'Procesează Fișierul';
+    }
+    
+    if (progressContainer) {
+        progressContainer.style.display = 'none';
+    }
+}
+
+/**
+ * Show import results
+ */
+function showImportResults(result) {
+    const resultsDiv = document.getElementById('importResults');
+    const progressBar = document.getElementById('progressBar');
+    
+    if (progressBar) {
+        progressBar.style.width = '100%';
+    }
+    
+    let html = `
+        <div class="import-summary ${result.success ? 'success' : 'error'}">
+            <h4><span class="material-symbols-outlined">${result.success ? 'check_circle' : 'error'}</span> 
+                ${result.success ? 'Import Finalizat' : 'Import Eșuat'}</h4>
+            <p>${result.message}</p>
+            
+            <div class="import-stats">
+                <div class="stat-item">
+                    <span class="stat-number">${result.processed || 0}</span>
+                    <span class="stat-label">Procesate</span>
+                </div>
+                <div class="stat-item success">
+                    <span class="stat-number">${result.imported || 0}</span>
+                    <span class="stat-label">Importate</span>
+                </div>
+                <div class="stat-item warning">
+                    <span class="stat-number">${result.updated || 0}</span>
+                    <span class="stat-label">Actualizate</span>
+                </div>
+                <div class="stat-item info">
+                    <span class="stat-number">${result.skipped || 0}</span>
+                    <span class="stat-label">Omise</span>
+                </div>
+                ${result.smartbill_synced ? `
+                <div class="stat-item smartbill">
+                    <span class="stat-number">${result.smartbill_synced}</span>
+                    <span class="stat-label">SmartBill Sync</span>
+                </div>
+                ` : ''}
+            </div>
+        </div>
+    `;
     
     // Show errors if any
     if (result.errors && result.errors.length > 0) {
-        const errorList = document.getElementById('errorList');
-        errorList.innerHTML = '';
-        result.errors.forEach(error => {
-            const li = document.createElement('li');
-            li.textContent = error;
-            errorList.appendChild(li);
-        });
-        document.getElementById('importErrors').style.display = 'block';
+        html += `
+            <div class="import-errors">
+                <h5><span class="material-symbols-outlined">warning</span> Erori (${result.errors.length})</h5>
+                <ul>
+                    ${result.errors.slice(0, 10).map(error => `<li>${error}</li>`).join('')}
+                    ${result.errors.length > 10 ? `<li>... și încă ${result.errors.length - 10} erori</li>` : ''}
+                </ul>
+            </div>
+        `;
     }
     
-    // Show view products button
-    document.getElementById('viewProductsBtn').style.display = 'inline-block';
+    // Show warnings if any
+    if (result.warnings && result.warnings.length > 0) {
+        html += `
+            <div class="import-warnings">
+                <h5><span class="material-symbols-outlined">info</span> Avertismente (${result.warnings.length})</h5>
+                <ul>
+                    ${result.warnings.slice(0, 5).map(warning => `<li>${warning}</li>`).join('')}
+                </ul>
+            </div>
+        `;
+    }
     
-    // Show success notification
-    const totalProcessed = (result.created || 0) + (result.updated || 0);
-    showNotification(`Import finalizat! ${totalProcessed} produse procesate cu succes.`, 'success');
+    if (resultsDiv) {
+        resultsDiv.innerHTML = html;
+        resultsDiv.style.display = 'block';
+    }
+    
+    hideProcessingState();
+    showNotification(result.message, result.success ? 'success' : 'error');
 }
 
 /**
- * Progress and Logging
+ * Show import error
  */
-function updateProgress(percentage, status) {
-    document.getElementById('progressFill').style.width = percentage + '%';
-    document.getElementById('processingStatus').textContent = status;
+function showImportError(result) {
+    const message = result.message || 'Eroare necunoscută la procesarea fișierului';
+    showNotification(message, 'error');
+    
+    const resultsDiv = document.getElementById('importResults');
+    if (resultsDiv) {
+        resultsDiv.innerHTML = `
+            <div class="import-summary error">
+                <h4><span class="material-symbols-outlined">error</span> Import Eșuat</h4>
+                <p>${message}</p>
+                ${result.errors && result.errors.length > 0 ? `
+                    <div class="import-errors">
+                        <h5>Detalii erori:</h5>
+                        <ul>
+                            ${result.errors.map(error => `<li>${error}</li>`).join('')}
+                        </ul>
+                    </div>
+                ` : ''}
+            </div>
+        `;
+        resultsDiv.style.display = 'block';
+    }
+    
+    hideProcessingState();
 }
 
-function addLog(message, type = 'info') {
-    const logsContainer = document.getElementById('processingLogs');
-    const logEntry = document.createElement('div');
-    logEntry.className = `log-entry log-${type}`;
-    logEntry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
-    logsContainer.appendChild(logEntry);
-    logsContainer.scrollTop = logsContainer.scrollHeight;
+/**
+ * Reset import form
+ */
+function resetImportForm() {
+    selectedFile = null;
+    const fileInput = document.getElementById('excelFile');
+    if (fileInput) fileInput.value = '';
+    
+    hideFileInfo();
+    
+    const resultsDiv = document.getElementById('importResults');
+    if (resultsDiv) {
+        resultsDiv.style.display = 'none';
+    }
+    
+    const progressContainer = document.getElementById('progressContainer');
+    if (progressContainer) {
+        progressContainer.style.display = 'none';
+    }
 }
+
+/**
+ * Open import modal
+ */
+function openImportModal() {
+    const modal = document.getElementById('importProductModal');
+    if (modal) {
+        modal.style.display = 'flex';
+        resetImportForm();
+    }
+}
+
+/**
+ * Close import modal
+ */
+function closeImportModal() {
+    const modal = document.getElementById('importProductModal');
+    if (modal) {
+        modal.style.display = 'none';
+        resetImportForm();
+    }
+}
+
+/**
+ * Refresh products table (if function exists)
+ */
+function refreshProductsTable() {
+    // Reload the page to show updated products
+    setTimeout(() => {
+        window.location.reload();
+    }, 2000);
+}
+
+/**
+ * Download sample Excel template
+ */
+function downloadSampleTemplate() {
+    // Create sample data
+    const sampleData = [
+        ['SKU', 'Nume Produs', 'Descriere', 'Categorie', 'Cantitate', 'Pret', 'Stoc Minim', 'Unitate Masura', 'Furnizor'],
+        ['PROD001', 'Produs Exemplu 1', 'Descriere produs 1', 'Categoria A', '100', '25.50', '10', 'bucata', 'Furnizor ABC'],
+        ['PROD002', 'Produs Exemplu 2', 'Descriere produs 2', 'Categoria B', '50', '15.00', '5', 'kg', 'Furnizor XYZ'],
+        ['PROD003', 'Produs Exemplu 3', 'Descriere produs 3', 'Categoria A', '200', '8.75', '20', 'litru', 'Furnizor DEF']
+    ];
+    
+    // Convert to CSV format
+    const csvContent = sampleData.map(row => 
+        row.map(cell => `"${cell}"`).join(',')
+    ).join('\n');
+    
+    // Create and download file
+    const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = 'template_produse.csv';
+    link.click();
+}
+
+/**
+ * Utility Functions
+ */
+function showNotification(message, type = 'info') {
+    // Create notification element
+    const notification = document.createElement('div');
+    notification.className = `notification ${type}`;
+    notification.innerHTML = `
+        <span class="material-symbols-outlined">
+            ${type === 'success' ? 'check_circle' : 
+              type === 'error' ? 'error' : 
+              type === 'warning' ? 'warning' : 'info'}
+        </span>
+        <span>${message}</span>
+        <button onclick="this.parentElement.remove()">
+            <span class="material-symbols-outlined">close</span>
+        </button>
+    `;
+    
+    // Add notification styles
+    notification.style.cssText = `
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 12px 16px;
+        margin: 8px 0;
+        border-radius: 6px;
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        z-index: 10000;
+        min-width: 300px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        animation: slideIn 0.3s ease-out;
+        font-size: 14px;
+    `;
+    
+    // Apply type-specific styles
+    if (type === 'success') {
+        notification.style.background = '#d4edda';
+        notification.style.color = '#155724';
+        notification.style.border = '1px solid #c3e6cb';
+    } else if (type === 'error') {
+        notification.style.background = '#f8d7da';
+        notification.style.color = '#721c24';
+        notification.style.border = '1px solid #f5c6cb';
+    } else if (type === 'warning') {
+        notification.style.background = '#fff3cd';
+        notification.style.color = '#856404';
+        notification.style.border = '1px solid #ffeaa7';
+    } else {
+        notification.style.background = '#d1ecf1';
+        notification.style.color = '#0c5460';
+        notification.style.border = '1px solid #bee5eb';
+    }
+    
+    // Style the close button
+    const closeButton = notification.querySelector('button');
+    if (closeButton) {
+        closeButton.style.cssText = `
+            background: none;
+            border: none;
+            cursor: pointer;
+            padding: 2px;
+            margin-left: auto;
+            color: inherit;
+        `;
+    }
+    
+    // Add to page
+    const container = document.getElementById('notifications') || document.body;
+    container.appendChild(notification);
+    
+    // Auto remove after 5 seconds
+    setTimeout(() => {
+        if (notification.parentElement) {
+            notification.style.animation = 'slideOut 0.3s ease-in';
+            setTimeout(() => notification.remove(), 300);
+        }
+    }, 5000);
+}
+
+/**
+ * LABEL PRINTING FUNCTIONALITY
+ */
 
 /**
  * Send request to generate and print labels for a product
@@ -993,6 +1148,11 @@ async function printLabels(productId, productName) {
             }
         });
 }
+
+/**
+ * SMARTBILL SYNC FUNCTIONALITY
+ */
+
 /**
  * Synchronize stock using SmartBill API
  */
@@ -1022,3 +1182,539 @@ async function syncSmartBillStock() {
         button.innerHTML = original;
     }
 }
+
+/**
+ * Seller Search Functionality for Products
+ * Handles real-time search and selection of sellers
+ */
+
+// Global variables for seller search
+let sellerSearchTimeouts = {};
+let currentSellerRequests = {};
+let selectedSellers = {};
+
+/**
+ * Initialize seller search functionality
+ */
+function initializeSellerSearch() {
+    // Initialize for both create and edit modals
+    initializeSellerSearchForModal('create');
+    initializeSellerSearchForModal('edit');
+    
+    // Close search results when clicking outside
+    document.addEventListener('click', function(e) {
+        if (!e.target.closest('.seller-search-container')) {
+            hideAllSellerResults();
+        }
+    });
+}
+
+/**
+ * Initialize seller search for a specific modal
+ * @param {string} modalType - 'create' or 'edit'
+ */
+function initializeSellerSearchForModal(modalType) {
+    const searchInput = document.getElementById(`${modalType}-seller-search`);
+    const resultsContainer = document.getElementById(`${modalType}-seller-results`);
+    
+    if (!searchInput || !resultsContainer) {
+        return;
+    }
+    
+    // Input event listener with debouncing
+    searchInput.addEventListener('input', function(e) {
+        const query = e.target.value.trim();
+        
+        // Clear previous timeout
+        if (sellerSearchTimeouts[modalType]) {
+            clearTimeout(sellerSearchTimeouts[modalType]);
+        }
+        
+        // Hide results if query is too short
+        if (query.length < 2) {
+            hideSellerResults(modalType);
+            return;
+        }
+        
+        // Debounce the search
+        sellerSearchTimeouts[modalType] = setTimeout(() => {
+            searchSellers(query, modalType);
+        }, 300);
+    });
+    
+    // Focus event - show results if we have a query
+    searchInput.addEventListener('focus', function(e) {
+        const query = e.target.value.trim();
+        if (query.length >= 2) {
+            searchSellers(query, modalType);
+        }
+    });
+    
+    // Keyboard navigation
+    searchInput.addEventListener('keydown', function(e) {
+        handleSellerSearchKeydown(e, modalType);
+    });
+}
+
+/**
+ * Search for sellers via API
+ * @param {string} query - Search query
+ * @param {string} modalType - Modal type (create/edit)
+ */
+async function searchSellers(query, modalType) {
+    const resultsContainer = document.getElementById(`${modalType}-seller-results`);
+    
+    if (!resultsContainer) {
+        return;
+    }
+    
+    // Cancel previous request if exists
+    if (currentSellerRequests[modalType]) {
+        currentSellerRequests[modalType].abort();
+    }
+    
+    // Show loading state
+    showSellerResults(modalType);
+    resultsContainer.innerHTML = '<div class="seller-search-loading">Se caută...</div>';
+    
+    try {
+        // Create new AbortController for this request
+        const controller = new AbortController();
+        currentSellerRequests[modalType] = controller;
+        
+        const response = await fetch(`api/seller_search.php?q=${encodeURIComponent(query)}&limit=10`, {
+            signal: controller.signal
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        // Clear the request reference
+        delete currentSellerRequests[modalType];
+        
+        if (data.success) {
+            displaySellerResults(data.sellers, modalType);
+        } else {
+            throw new Error(data.error || 'Search failed');
+        }
+        
+    } catch (error) {
+        // Don't show error if request was aborted (user typed something else)
+        if (error.name !== 'AbortError') {
+            console.error('Seller search error:', error);
+            resultsContainer.innerHTML = '<div class="no-results">Eroare la căutare. Încercați din nou.</div>';
+        }
+        
+        // Clear the request reference
+        delete currentSellerRequests[modalType];
+    }
+}
+
+/**
+ * Display seller search results
+ * @param {Array} sellers - Array of seller objects
+ * @param {string} modalType - Modal type
+ */
+function displaySellerResults(sellers, modalType) {
+    const resultsContainer = document.getElementById(`${modalType}-seller-results`);
+    
+    if (!resultsContainer) {
+        return;
+    }
+    
+    if (sellers.length === 0) {
+        resultsContainer.innerHTML = '<div class="no-results">Nu s-au găsit furnizori</div>';
+        return;
+    }
+    
+    let html = '';
+    sellers.forEach((seller, index) => {
+        html += `
+            <div class="seller-search-item" 
+                 data-seller-id="${seller.id}" 
+                 data-index="${index}"
+                 onclick="selectSeller('${modalType}', ${seller.id}, '${escapeHtml(seller.name)}', '${escapeHtml(seller.contact_person || '')}', '${escapeHtml(seller.email || '')}', '${escapeHtml(seller.phone || '')}')">
+                <span class="seller-item-name">${escapeHtml(seller.name)}</span>
+                <div class="seller-item-details">
+                    ${seller.contact_person ? `<span class="seller-item-contact">${escapeHtml(seller.contact_person)}</span>` : ''}
+                    ${seller.city ? `<span class="seller-item-city">${escapeHtml(seller.city)}</span>` : ''}
+                    ${seller.phone ? `<span class="seller-item-phone">${escapeHtml(seller.phone)}</span>` : ''}
+                </div>
+            </div>
+        `;
+    });
+    
+    resultsContainer.innerHTML = html;
+}
+
+/**
+ * Select a seller from search results
+ * @param {string} modalType - Modal type
+ * @param {number} sellerId - Seller ID
+ * @param {string} sellerName - Seller name
+ * @param {string} contactPerson - Contact person
+ * @param {string} email - Email
+ * @param {string} phone - Phone
+ */
+function selectSeller(modalType, sellerId, sellerName, contactPerson, email, phone) {
+    // Set hidden field value
+    const sellerIdInput = document.getElementById(`${modalType}-seller-id`);
+    const searchInput = document.getElementById(`${modalType}-seller-search`);
+    const selectedContainer = document.getElementById(`${modalType}-selected-seller`);
+    const selectedNameElement = selectedContainer?.querySelector('.selected-seller-name');
+    const selectedContactElement = selectedContainer?.querySelector('.selected-seller-contact');
+    
+    if (sellerIdInput) {
+        sellerIdInput.value = sellerId;
+    }
+    
+    // Hide search input and show selected seller
+    if (searchInput) {
+        searchInput.style.display = 'none';
+        searchInput.value = sellerName;
+    }
+    
+    if (selectedContainer) {
+        selectedContainer.style.display = 'flex';
+    }
+    
+    if (selectedNameElement) {
+        selectedNameElement.textContent = sellerName;
+    }
+    
+    if (selectedContactElement) {
+        const contactText = contactPerson || email || phone || '';
+        selectedContactElement.textContent = contactText;
+        selectedContactElement.style.display = contactText ? 'block' : 'none';
+    }
+    
+    // Store selected seller data
+    selectedSellers[modalType] = {
+        id: sellerId,
+        name: sellerName,
+        contact_person: contactPerson,
+        email: email,
+        phone: phone
+    };
+    
+    // Hide results
+    hideSellerResults(modalType);
+}
+
+/**
+ * Clear selected seller
+ * @param {string} modalType - Modal type
+ */
+function clearSelectedSeller(modalType) {
+    const sellerIdInput = document.getElementById(`${modalType}-seller-id`);
+    const searchInput = document.getElementById(`${modalType}-seller-search`);
+    const selectedContainer = document.getElementById(`${modalType}-selected-seller`);
+    
+    if (sellerIdInput) {
+        sellerIdInput.value = '';
+    }
+    
+    if (searchInput) {
+        searchInput.style.display = 'block';
+        searchInput.value = '';
+        searchInput.focus();
+    }
+    
+    if (selectedContainer) {
+        selectedContainer.style.display = 'none';
+    }
+    
+    // Clear stored data
+    delete selectedSellers[modalType];
+    
+    // Hide results
+    hideSellerResults(modalType);
+}
+
+/**
+ * Handle keyboard navigation in seller search
+ * @param {KeyboardEvent} e - Keyboard event
+ * @param {string} modalType - Modal type
+ */
+function handleSellerSearchKeydown(e, modalType) {
+    const resultsContainer = document.getElementById(`${modalType}-seller-results`);
+    
+    if (!resultsContainer || !resultsContainer.classList.contains('show')) {
+        return;
+    }
+    
+    const items = resultsContainer.querySelectorAll('.seller-search-item');
+    const highlighted = resultsContainer.querySelector('.seller-search-item.highlighted');
+    let currentIndex = highlighted ? parseInt(highlighted.dataset.index) : -1;
+    
+    switch (e.key) {
+        case 'ArrowDown':
+            e.preventDefault();
+            currentIndex = Math.min(currentIndex + 1, items.length - 1);
+            highlightSellerItem(modalType, currentIndex);
+            break;
+            
+        case 'ArrowUp':
+            e.preventDefault();
+            currentIndex = Math.max(currentIndex - 1, 0);
+            highlightSellerItem(modalType, currentIndex);
+            break;
+            
+        case 'Enter':
+            e.preventDefault();
+            if (highlighted) {
+                highlighted.click();
+            }
+            break;
+            
+        case 'Escape':
+            e.preventDefault();
+            hideSellerResults(modalType);
+            break;
+    }
+}
+
+/**
+ * Highlight a seller search item
+ * @param {string} modalType - Modal type
+ * @param {number} index - Item index to highlight
+ */
+function highlightSellerItem(modalType, index) {
+    const resultsContainer = document.getElementById(`${modalType}-seller-results`);
+    const items = resultsContainer?.querySelectorAll('.seller-search-item');
+    
+    if (!items) return;
+    
+    // Remove existing highlights
+    items.forEach(item => item.classList.remove('highlighted'));
+    
+    // Add highlight to specified item
+    if (items[index]) {
+        items[index].classList.add('highlighted');
+        items[index].scrollIntoView({ block: 'nearest' });
+    }
+}
+
+/**
+ * Show seller search results
+ * @param {string} modalType - Modal type
+ */
+function showSellerResults(modalType) {
+    const resultsContainer = document.getElementById(`${modalType}-seller-results`);
+    if (resultsContainer) {
+        resultsContainer.classList.add('show');
+    }
+}
+
+/**
+ * Hide seller search results
+ * @param {string} modalType - Modal type
+ */
+function hideSellerResults(modalType) {
+    const resultsContainer = document.getElementById(`${modalType}-seller-results`);
+    if (resultsContainer) {
+        resultsContainer.classList.remove('show');
+    }
+}
+
+/**
+ * Hide all seller search results
+ */
+function hideAllSellerResults() {
+    hideSellerResults('create');
+    hideSellerResults('edit');
+}
+
+/**
+ * Populate edit form with seller data
+ * @param {object} productData - Product data including seller info
+ */
+function populateEditFormWithSeller(productData) {
+    // Call existing populateEditForm function first
+    if (typeof populateEditForm === 'function') {
+        populateEditForm(productData);
+    }
+    
+    // Handle seller data
+    const sellerId = productData.seller_id;
+    const sellerName = productData.seller_name;
+    const sellerContact = productData.seller_contact;
+    
+    if (sellerId && sellerName) {
+        // Select the seller
+        selectSeller('edit', sellerId, sellerName, sellerContact || '', '', '');
+    } else {
+        // Clear seller selection
+        clearSelectedSeller('edit');
+    }
+}
+
+/**
+ * Reset seller search for modal
+ * @param {string} modalType - Modal type
+ */
+function resetSellerSearch(modalType) {
+    // Clear inputs
+    const sellerIdInput = document.getElementById(`${modalType}-seller-id`);
+    const searchInput = document.getElementById(`${modalType}-seller-search`);
+    const selectedContainer = document.getElementById(`${modalType}-selected-seller`);
+    
+    if (sellerIdInput) {
+        sellerIdInput.value = '';
+    }
+    
+    if (searchInput) {
+        searchInput.style.display = 'block';
+        searchInput.value = '';
+    }
+    
+    if (selectedContainer) {
+        selectedContainer.style.display = 'none';
+    }
+    
+    // Clear stored data
+    delete selectedSellers[modalType];
+    
+    // Hide results
+    hideSellerResults(modalType);
+    
+    // Clear timeouts
+    if (sellerSearchTimeouts[modalType]) {
+        clearTimeout(sellerSearchTimeouts[modalType]);
+        delete sellerSearchTimeouts[modalType];
+    }
+    
+    // Cancel pending requests
+    if (currentSellerRequests[modalType]) {
+        currentSellerRequests[modalType].abort();
+        delete currentSellerRequests[modalType];
+    }
+}
+
+/**
+ * Suggest seller for product (SmartBill integration)
+ * @param {number} productId - Product ID
+ */
+async function suggestSeller(productId) {
+    try {
+        showNotification('Se caută furnizori sugerați...', 'info');
+        
+        const response = await fetch(`api/suggest_seller.php?product_id=${productId}`);
+        const data = await response.json();
+        
+        if (data.success && data.suggestions.length > 0) {
+            const suggestion = data.suggestions[0];
+            const confirmMessage = `Am găsit un furnizor potrivit pentru acest produs:\n\n` +
+                                 `Furnizor: ${suggestion.name}\n` +
+                                 `Contact: ${suggestion.contact_person || 'N/A'}\n\n` +
+                                 `Doriți să atribuiți acest furnizor produsului?`;
+            
+            if (confirm(confirmMessage)) {
+                // Update product with suggested seller
+                const updateResponse = await fetch('api/update_product_seller.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        product_id: productId,
+                        seller_id: suggestion.id
+                    })
+                });
+                
+                const updateData = await updateResponse.json();
+                
+                if (updateData.success) {
+                    showNotification('Furnizor atribuit cu succes!', 'success');
+                    setTimeout(() => window.location.reload(), 1500);
+                } else {
+                    showNotification('Eroare la atribuirea furnizorului', 'error');
+                }
+            }
+        } else {
+            showNotification('Nu s-au găsit furnizori sugerați pentru acest produs', 'warning');
+        }
+        
+    } catch (error) {
+        console.error('Suggest seller error:', error);
+        showNotification('Eroare la căutarea furnizorilor sugerați', 'error');
+    }
+}
+
+/**
+ * Escape HTML to prevent XSS
+ * @param {string} text - Text to escape
+ * @return {string} Escaped text
+ */
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// Enhanced modal functions with seller search reset
+function resetCreateForm() {
+    const form = document.getElementById('createProductModal')?.querySelector('form');
+    if (form) {
+        form.reset();
+        // Set defaults
+        document.getElementById('create-unit').value = 'pcs';
+        document.getElementById('create-status').checked = true;
+    }
+    
+    // Reset seller search
+    resetSellerSearch('create');
+}
+
+function resetEditForm() {
+    const form = document.getElementById('editProductModal')?.querySelector('form');
+    if (form) {
+        form.reset();
+    }
+    
+    // Reset seller search
+    resetSellerSearch('edit');
+}
+
+// Override the existing populateEditForm function to include seller handling
+const originalPopulateEditForm = window.populateEditForm;
+window.populateEditForm = function(productData) {
+    // Call original function if it exists
+    if (originalPopulateEditForm) {
+        originalPopulateEditForm(productData);
+    }
+    
+    // Handle seller population
+    populateEditFormWithSeller(productData);
+};
+
+// Initialize when DOM is loaded
+document.addEventListener('DOMContentLoaded', function() {
+    initializeSellerSearch();
+});
+
+// CSS animations for notifications
+const notificationStyles = document.createElement('style');
+notificationStyles.textContent = `
+@keyframes slideIn {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes slideOut {
+    from { transform: translateX(0); opacity: 1; }
+    to { transform: translateX(100%); opacity: 0; }
+}
+
+.spinning {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+`;
+document.head.appendChild(notificationStyles);

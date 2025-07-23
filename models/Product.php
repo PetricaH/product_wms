@@ -12,7 +12,7 @@ class Product {
     private $defaultFields = [
         'product_id', 'sku', 'name', 'description', 'category', 'quantity',
         'min_stock_level', 'price', 'weight', 'dimensions', 'barcode', 
-        'image_url', 'status', 'created_at', 'updated_at', 'smartbill_product_id'
+        'image_url', 'status', 'seller_id', 'created_at', 'updated_at', 'smartbill_product_id'
     ];
     
     // Essential fields that should always be included
@@ -20,6 +20,382 @@ class Product {
     
     public function __construct($db) {
         $this->conn = $db;
+    }
+
+    /**
+     * Get all products with seller information joined
+     * @param array $fields Fields to select
+     * @param array $filters Filters to apply
+     * @param int $limit Limit for pagination
+     * @param int $offset Offset for pagination
+     * @return PDOStatement|false
+     */
+    public function getAllWithSellers($fields = null, $filters = [], $limit = null, $offset = 0) {
+        // Build the query with seller join
+        $query = "SELECT 
+                    p.*,
+                    s.supplier_name as seller_name,
+                    s.contact_person as seller_contact,
+                    s.email as seller_email,
+                    s.phone as seller_phone
+                  FROM {$this->table} p
+                  LEFT JOIN sellers s ON p.seller_id = s.id";
+        
+        $params = [];
+        
+        // Add WHERE conditions
+        $whereConditions = $this->buildWhereConditions($filters, $params);
+        if (!empty($whereConditions)) {
+            $query .= " WHERE " . implode(' AND ', $whereConditions);
+        }
+        
+        // Add ordering
+        $query .= " ORDER BY p.created_at DESC";
+        
+        // Add pagination
+        if ($limit !== null) {
+            $query .= " LIMIT :limit";
+            if ($offset > 0) {
+                $query .= " OFFSET :offset";
+            }
+            $params[':limit'] = $limit;
+            if ($offset > 0) {
+                $params[':offset'] = $offset;
+            }
+        }
+        
+        try {
+            $stmt = $this->conn->prepare($query);
+            
+            // Bind parameters with proper types
+            foreach ($params as $key => $value) {
+                if ($key === ':limit' || $key === ':offset') {
+                    $stmt->bindValue($key, $value, PDO::PARAM_INT);
+                } else {
+                    $stmt->bindValue($key, $value, PDO::PARAM_STR);
+                }
+            }
+            
+            $stmt->execute();
+            return $stmt;
+        } catch (PDOException $e) {
+            error_log("Error fetching products with sellers: " . $e->getMessage());
+            return false;
+        }
+    }
+    
+    /**
+     * Get paginated products with seller information
+     * @param int $pageSize Number of products per page
+     * @param int $offset Starting offset
+     * @param string $search Search term
+     * @param string $category Category filter
+     * @param int $sellerId Seller filter
+     * @return array Array of products
+     */
+    public function getProductsPaginatedWithSellers(int $pageSize, int $offset, string $search = '', string $category = '', int $sellerId = 0): array {
+        $query = "SELECT 
+                    p.*,
+                    s.supplier_name as seller_name,
+                    s.contact_person as seller_contact
+                  FROM {$this->table} p
+                  LEFT JOIN sellers s ON p.seller_id = s.id
+                  WHERE 1=1";
+        
+        $params = [];
+        
+        if (!empty($search)) {
+            $query .= " AND (p.name LIKE :search OR p.sku LIKE :search OR p.description LIKE :search OR s.supplier_name LIKE :search)";
+            $params[':search'] = '%' . $search . '%';
+        }
+        
+        if (!empty($category)) {
+            $query .= " AND p.category = :category";
+            $params[':category'] = $category;
+        }
+        
+        if ($sellerId > 0) {
+            $query .= " AND p.seller_id = :seller_id";
+            $params[':seller_id'] = $sellerId;
+        }
+        
+        $query .= " ORDER BY p.name ASC LIMIT :limit OFFSET :offset";
+        
+        try {
+            $stmt = $this->conn->prepare($query);
+            
+            // Bind search parameters
+            foreach ($params as $key => $value) {
+                $stmt->bindValue($key, $value);
+            }
+            
+            // Bind pagination parameters
+            $stmt->bindValue(':limit', $pageSize, PDO::PARAM_INT);
+            $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+            
+            $stmt->execute();
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (PDOException $e) {
+            error_log("Error getting paginated products with sellers: " . $e->getMessage());
+            return [];
+        }
+    }
+    
+    /**
+     * Get total count with seller filter support
+     * @param string $search Search term
+     * @param string $category Category filter
+     * @param int $sellerId Seller filter
+     * @return int Total count
+     */
+    public function getTotalCountWithSellers(string $search = '', string $category = '', int $sellerId = 0): int {
+        $query = "SELECT COUNT(*) as total 
+                  FROM {$this->table} p
+                  LEFT JOIN sellers s ON p.seller_id = s.id
+                  WHERE 1=1";
+        
+        $params = [];
+        
+        if (!empty($search)) {
+            $query .= " AND (p.name LIKE :search OR p.sku LIKE :search OR p.description LIKE :search OR s.supplier_name LIKE :search)";
+            $params[':search'] = '%' . $search . '%';
+        }
+        
+        if (!empty($category)) {
+            $query .= " AND p.category = :category";
+            $params[':category'] = $category;
+        }
+        
+        if ($sellerId > 0) {
+            $query .= " AND p.seller_id = :seller_id";
+            $params[':seller_id'] = $sellerId;
+        }
+        
+        try {
+            $stmt = $this->conn->prepare($query);
+            $stmt->execute($params);
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            return (int)($result['total'] ?? 0);
+        } catch (PDOException $e) {
+            error_log("Error getting total count with sellers: " . $e->getMessage());
+            return 0;
+        }
+    }
+    
+    /**
+     * Create a new product with seller support
+     * @param array $productData Product data including seller_id
+     * @return int|false Product ID on success, false on failure
+     */
+    public function createProduct(array $productData) {
+        // Validate required fields
+        if (empty($productData['name']) || empty($productData['sku'])) {
+            error_log("Product creation failed: SKU and name are required");
+            return false;
+        }
+        
+        // Check if SKU already exists
+        if ($this->skuExists($productData['sku'])) {
+            error_log("Product creation failed: SKU already exists - " . $productData['sku']);
+            return false;
+        }
+        
+        $query = "INSERT INTO {$this->table} (
+                    sku, name, description, category, quantity, price, seller_id
+                  ) VALUES (?, ?, ?, ?, ?, ?, ?)";
+        
+        try {
+            $stmt = $this->conn->prepare($query);
+            $params = [
+                $productData['sku'],
+                $productData['name'],
+                $productData['description'] ?? '',
+                $productData['category'] ?? '',
+                intval($productData['quantity'] ?? 0),
+                floatval($productData['price'] ?? 0),
+                !empty($productData['seller_id']) ? intval($productData['seller_id']) : null
+            ];
+            
+            $success = $stmt->execute($params);
+            if ($success) {
+                $productId = $this->conn->lastInsertId();
+                
+                // Log activity if available
+                if (function_exists('logActivity')) {
+                    $userId = $_SESSION['user_id'] ?? 0;
+                    logActivity(
+                        $userId,
+                        'create',
+                        'product',
+                        $productId,
+                        'Product created',
+                        null,
+                        $productData
+                    );
+                }
+                
+                return $productId;
+            } else {
+                error_log("Product creation failed for SKU: " . $productData['sku'] . " - Execute returned false");
+                return false;
+            }
+        } catch (PDOException $e) {
+            error_log("Error creating product " . $productData['sku'] . ": " . $e->getMessage());
+            return false;
+        }
+    }
+    
+    /**
+     * Update an existing product with seller support
+     * @param int $productId Product ID
+     * @param array $productData Product data
+     * @return bool Success status
+     */
+    public function updateProduct(int $productId, array $productData): bool {
+        if (empty($productData)) {
+            error_log("updateProduct: No data provided for product ID: " . $productId);
+            return false;
+        }
+        
+        // Check if SKU is being changed and already exists
+        if (isset($productData['sku']) && $this->skuExists($productData['sku'], $productId)) {
+            error_log("updateProduct: SKU already exists - " . $productData['sku']);
+            return false;
+        }
+        
+        // Build dynamic UPDATE query based on provided fields only
+        $fields = [];
+        $params = [':id' => $productId];
+        
+        // Map of allowed fields that exist in your database
+        $allowedFields = [
+            'sku' => ':sku',
+            'name' => ':name', 
+            'description' => ':description',
+            'category' => ':category',
+            'quantity' => ':quantity',
+            'price' => ':price',
+            'min_stock_level' => ':min_stock_level',
+            'seller_id' => ':seller_id'
+        ];
+        
+        // Only update fields that are actually provided and exist in database
+        foreach ($allowedFields as $field => $param) {
+            if (array_key_exists($field, $productData)) {
+                $fields[] = "{$field} = {$param}";
+                
+                // Handle different data types
+                if (in_array($field, ['quantity', 'min_stock_level', 'seller_id'])) {
+                    $params[$param] = $productData[$field] !== null ? intval($productData[$field]) : null;
+                } elseif ($field === 'price') {
+                    $params[$param] = floatval($productData[$field]);
+                } else {
+                    $params[$param] = $productData[$field];
+                }
+            }
+        }
+        
+        // If no valid fields to update, return false
+        if (empty($fields)) {
+            error_log("updateProduct: No valid fields to update for product ID: " . $productId);
+            return false;
+        }
+        
+        $query = "UPDATE {$this->table} SET " . implode(', ', $fields) . " WHERE product_id = :id";
+        
+        try {
+            $stmt = $this->conn->prepare($query);
+            $success = $stmt->execute($params);
+            
+            if ($success && function_exists('logActivity')) {
+                $userId = $_SESSION['user_id'] ?? 0;
+                logActivity(
+                    $userId,
+                    'update',
+                    'product',
+                    $productId,
+                    'Product updated',
+                    null,
+                    $productData
+                );
+            }
+            
+            return $success;
+        } catch (PDOException $e) {
+            error_log("Error updating product {$productId}: " . $e->getMessage());
+            return false;
+        }
+    }
+    
+    /**
+     * Get seller by ID (helper method)
+     * @param int $sellerId Seller ID
+     * @return array|false Seller data or false if not found
+     */
+    public function getSellerById(int $sellerId): array|false {
+        $query = "SELECT id, supplier_name, contact_person, email, phone FROM sellers WHERE id = ? AND status = 'active'";
+        
+        try {
+            $stmt = $this->conn->prepare($query);
+            $stmt->execute([$sellerId]);
+            return $stmt->fetch(PDO::FETCH_ASSOC);
+        } catch (PDOException $e) {
+            error_log("Error getting seller by ID: " . $e->getMessage());
+            return false;
+        }
+    }
+    
+    /**
+     * Check if SKU exists (excluding specific product ID)
+     * @param string $sku SKU to check
+     * @param int $excludeId Product ID to exclude from check
+     * @return bool True if SKU exists, false otherwise
+     */
+    private function skuExists(string $sku, int $excludeId = 0): bool {
+        $query = "SELECT COUNT(*) FROM {$this->table} WHERE sku = :sku";
+        $params = [':sku' => $sku];
+        
+        if ($excludeId > 0) {
+            $query .= " AND product_id != :exclude_id";
+            $params[':exclude_id'] = $excludeId;
+        }
+        
+        try {
+            $stmt = $this->conn->prepare($query);
+            $stmt->execute($params);
+            return $stmt->fetchColumn() > 0;
+        } catch (PDOException $e) {
+            error_log("Error checking SKU existence: " . $e->getMessage());
+            return false;
+        }
+    }
+    
+    /**
+     * Build WHERE conditions for filtering
+     * @param array $filters Filters to apply
+     * @param array &$params Parameters array (passed by reference)
+     * @return array WHERE conditions
+     */
+    private function buildWhereConditions($filters, &$params) {
+        $conditions = [];
+        
+        // Text search
+        if (!empty($filters['search'])) {
+            $conditions[] = '(p.name LIKE :search OR p.sku LIKE :search OR p.description LIKE :search OR s.supplier_name LIKE :search)';
+            $params[':search'] = '%' . $filters['search'] . '%';
+        }
+        
+        if (!empty($filters['category'])) {
+            $conditions[] = 'p.category = :category';
+            $params[':category'] = $filters['category'];
+        }
+        
+        if (!empty($filters['seller_id'])) {
+            $conditions[] = 'p.seller_id = :seller_id';
+            $params[':seller_id'] = $filters['seller_id'];
+        }
+        
+        return $conditions;
     }
     
     /**
@@ -33,6 +409,7 @@ class Product {
     public function getAll($fields = null, $filters = [], $limit = null, $offset = 0) {
         // Determine which fields to select
         $selectFields = $this->buildSelectFields($fields);
+        return $this->getAllWithSellers($fields, $filters, $limit, $offset);
         
         // Build the base query
         $query = "SELECT {$selectFields} FROM {$this->table}";
@@ -375,24 +752,24 @@ class Product {
      * @param int $excludeId Exclude this product ID (for updates)
      * @return bool True if SKU exists
      */
-    public function skuExists($sku, $excludeId = 0) {
-        $query = "SELECT COUNT(*) FROM {$this->table} WHERE sku = :sku";
-        $params = [':sku' => $sku];
+    // public function skuExists($sku, $excludeId = 0) {
+    //     $query = "SELECT COUNT(*) FROM {$this->table} WHERE sku = :sku";
+    //     $params = [':sku' => $sku];
         
-        if ($excludeId > 0) {
-            $query .= " AND product_id != :exclude_id";
-            $params[':exclude_id'] = $excludeId;
-        }
+    //     if ($excludeId > 0) {
+    //         $query .= " AND product_id != :exclude_id";
+    //         $params[':exclude_id'] = $excludeId;
+    //     }
         
-        try {
-            $stmt = $this->conn->prepare($query);
-            $stmt->execute($params);
-            return (int)$stmt->fetchColumn() > 0;
-        } catch (PDOException $e) {
-            error_log("Error checking SKU existence: " . $e->getMessage());
-            return true; // Err on the side of caution
-        }
-    }
+    //     try {
+    //         $stmt = $this->conn->prepare($query);
+    //         $stmt->execute($params);
+    //         return (int)$stmt->fetchColumn() > 0;
+    //     } catch (PDOException $e) {
+    //         error_log("Error checking SKU existence: " . $e->getMessage());
+    //         return true; // Err on the side of caution
+    //     }
+    // }
     
     /**
      * Generate a unique SKU
@@ -531,40 +908,6 @@ class Product {
         return implode(', ', $validFields);
     }
     
-    private function buildWhereConditions($filters, &$params) {
-        $conditions = [];
-        
-        // Text search
-        if (!empty($filters['search'])) {
-            $conditions[] = '(name LIKE :search OR sku LIKE :search OR description LIKE :search)';
-            $params[':search'] = '%' . $filters['search'] . '%';
-        }
-        
-        // Category filter
-        if (!empty($filters['category'])) {
-            $conditions[] = 'category = :category';
-            $params[':category'] = $filters['category'];
-        }
-        
-        // Price range
-        if (!empty($filters['min_price'])) {
-            $conditions[] = 'price >= :min_price';
-            $params[':min_price'] = $filters['min_price'];
-        }
-        
-        if (!empty($filters['max_price'])) {
-            $conditions[] = 'price <= :max_price';
-            $params[':max_price'] = $filters['max_price'];
-        }
-        
-        // Stock level filters
-        if (isset($filters['low_stock']) && $filters['low_stock']) {
-            $conditions[] = 'quantity <= min_stock_level';
-        }
-        
-        return $conditions;
-    }
-
     /**
      * Get total count of products with filters
      * @param string $search Search term
@@ -637,159 +980,6 @@ class Product {
         } catch (PDOException $e) {
             error_log("Error getting paginated products: " . $e->getMessage());
             return [];
-        }
-    }
-
-    /**
-     * Create a new product
-     * @param array $productData Product data
-     * @return int|false Product ID on success, false on failure
-     */
-    public function createProduct(array $productData) {
-        // Validate required fields
-        if (empty($productData['name']) || empty($productData['sku'])) {
-            error_log("Product creation failed: SKU and name are required");
-            return false;
-        }
-        
-        // Check if SKU already exists
-        if ($this->skuExists($productData['sku'])) {
-            error_log("Product creation failed: SKU already exists - " . $productData['sku']);
-            return false;
-        }
-        
-        // Only use fields that actually exist in your database
-        $query = "INSERT INTO {$this->table} (sku, name, description, category, quantity, price, created_at) 
-                VALUES (:sku, :name, :description, :category, :quantity, :price, NOW())";
-        
-        try {
-            $stmt = $this->conn->prepare($query);
-            $params = [
-                ':sku' => $productData['sku'],
-                ':name' => $productData['name'],
-                ':description' => $productData['description'] ?? '',
-                ':category' => $productData['category'] ?? '',
-                ':quantity' => intval($productData['quantity'] ?? 0),
-                ':price' => floatval($productData['price'] ?? 0)
-            ];
-            
-            $success = $stmt->execute($params);
-            if ($success) {
-                $productId = $this->conn->lastInsertId();
-                $userId = $_SESSION['user_id'] ?? 0;
-                logActivity(
-                    $userId,
-                    'create',
-                    'product',
-                    $productId,
-                    'Product created',
-                    null,
-                    $productData
-                );
-                return $productId;
-            } else {
-                error_log("Product creation failed for SKU: " . $productData['sku'] . " - Execute returned false");
-                return false;
-            }
-        } catch (PDOException $e) {
-            error_log("Error creating product " . $productData['sku'] . ": " . $e->getMessage());
-            return false;
-        }
-    }
-
-    /**
-     * Update an existing product
-     * @param int $productId Product ID
-     * @param array $productData Product data
-     * @return bool Success status
-     */
-    public function updateProduct(int $productId, array $productData): bool {
-        if (empty($productData)) {
-            error_log("updateProduct: No data provided for product ID: " . $productId);
-            return false;
-        }
-        
-        // Debug logging
-        error_log("updateProduct: Updating product ID $productId with data: " . json_encode($productData));
-        
-        // Check if SKU is being changed and already exists
-        if (isset($productData['sku']) && $this->skuExists($productData['sku'], $productId)) {
-            error_log("updateProduct: SKU already exists - " . $productData['sku']);
-            return false;
-        }
-        
-        // Build dynamic UPDATE query based on provided fields only
-        $fields = [];
-        $params = [':id' => $productId];
-        
-        // Map of allowed fields that exist in your database
-        $allowedFields = [
-            'sku' => ':sku',
-            'name' => ':name', 
-            'description' => ':description',
-            'category' => ':category',
-            'quantity' => ':quantity',
-            'price' => ':price',
-            'min_stock_level' => ':min_stock_level'
-        ];
-        
-        // Only update fields that are actually provided and exist in database
-        foreach ($allowedFields as $field => $param) {
-            if (array_key_exists($field, $productData)) {
-                $fields[] = "{$field} = {$param}";
-                
-                // Handle different data types
-                if (in_array($field, ['quantity', 'min_stock_level'])) {
-                    $params[$param] = intval($productData[$field]);
-                } elseif ($field === 'price') {
-                    $params[$param] = floatval($productData[$field]);
-                } else {
-                    $params[$param] = $productData[$field];
-                }
-            }
-        }
-        
-        // If no valid fields to update, return false
-        if (empty($fields)) {
-            error_log("updateProduct: No valid fields to update for product ID: " . $productId);
-            return false;
-        }
-        
-        // Add updated_at timestamp
-        $fields[] = "updated_at = NOW()";
-        
-        $query = "UPDATE {$this->table} SET " . implode(', ', $fields) . " WHERE product_id = :id";
-        
-        try {
-            error_log("updateProduct: Executing query: " . $query);
-            error_log("updateProduct: With params: " . json_encode($params));
-
-            $old = $this->findById($productId);
-            $stmt = $this->conn->prepare($query);
-            $success = $stmt->execute($params);
-
-            if (!$success) {
-                error_log("updateProduct: Execute returned false for product ID: " . $productId);
-                $errorInfo = $stmt->errorInfo();
-                error_log("updateProduct: SQL Error: " . implode(' - ', $errorInfo));
-            } else {
-                error_log("updateProduct: Successfully updated product ID: " . $productId);
-                $userId = $_SESSION['user_id'] ?? 0;
-                logActivity(
-                    $userId,
-                    'update',
-                    'product',
-                    $productId,
-                    'Product updated',
-                    $old,
-                    $productData
-                );
-            }
-            
-            return $success;
-        } catch (PDOException $e) {
-            error_log("updateProduct: PDO Exception for product ID " . $productId . ": " . $e->getMessage());
-            return false;
         }
     }
 

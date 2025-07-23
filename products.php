@@ -245,6 +245,10 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                         </div>
                     </div>
                     <div class="header-actions">
+                        <button type="button" class="btn btn-success" onclick="openImportModal()">
+                            <span class="material-symbols-outlined">cloud_upload</span>
+                            Import Excel
+                        </button>
                         <button class="btn btn-secondary" onclick="syncSmartBillStock()">
                             <span class="material-symbols-outlined">sync</span>
                             Sincronizează Stoc
@@ -258,30 +262,41 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                 
                 <!-- Compact Search and Filters -->
                 <div class="filters-bar">
-                    <form method="GET" class="filters-form" id="filters-form">
-                        <div class="search-group">
-                            <div class="search-box">
-                                <span class="material-symbols-outlined">search</span>
-                                <input type="search" name="search" value="<?= htmlspecialchars($search) ?>" 
-                                       placeholder="Caută produse..." class="search-input">
-                                <?php if ($search): ?>
-                                    <a href="?" class="clear-search" title="Șterge căutarea">
-                                        <span class="material-symbols-outlined">close</span>
-                                    </a>
-                                <?php endif; ?>
+                <form method="GET" class="filters-form" id="filters-form">
+                        <input type="hidden" name="page" value="1">
+                        <div class="filters-row">
+                            <div class="filter-group">
+                                <input type="text" name="search" placeholder="Caută după nume, SKU sau furnizor..." 
+                                    value="<?= htmlspecialchars($search) ?>" class="form-control">
+                            </div>
+                            <div class="filter-group">
+                                <select name="category" class="form-control">
+                                    <option value="">Toate categoriile</option>
+                                    <?php foreach ($categories as $cat): ?>
+                                        <option value="<?= htmlspecialchars($cat) ?>" <?= $category === $cat ? 'selected' : '' ?>>
+                                            <?= htmlspecialchars($cat) ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <div class="filter-group">
+                                <select name="seller_id" class="form-control">
+                                    <option value="">Toți furnizorii</option>
+                                    <?php foreach ($allSellers as $seller): ?>
+                                        <option value="<?= $seller['id'] ?>" <?= $sellerId == $seller['id'] ? 'selected' : '' ?>>
+                                            <?= htmlspecialchars($seller['supplier_name']) ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <div class="filter-actions">
+                                <button type="submit" class="btn btn-primary">
+                                    <span class="material-symbols-outlined">search</span>
+                                    Caută
+                                </button>
+                                <a href="?" class="btn btn-secondary">Șterge filtrele</a>
                             </div>
                         </div>
-                        
-                        <select name="category" class="filter-select" onchange="this.form.submit()">
-                            <option value="">Toate categoriile</option>
-                            <?php foreach ($categories as $cat): ?>
-                                <option value="<?= htmlspecialchars($cat) ?>" <?= $category === $cat ? 'selected' : '' ?>>
-                                    <?= htmlspecialchars($cat) ?>
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
-                        
-                        <input type="hidden" name="page" value="1">
                     </form>
                 </div>
                 
@@ -334,6 +349,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                         <th>SKU</th>
                                         <th>Nume Produs</th>
                                         <th>Categorie</th>
+                                        <th>Furnizor</th>
                                         <th>Preț</th>
                                         <th>Stoc</th>
                                         <th>Status</th>
@@ -341,65 +357,117 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    <?php foreach ($allProducts as $product): ?>
-                                        <tr>
-                                            <td>
-                                                <input type="checkbox" name="selected_products[]" 
-                                                       value="<?= $product['product_id'] ?>" 
-                                                       class="product-checkbox" 
-                                                       onchange="updateBulkActions()">
-                                            </td>
-                                            <td>
-                                                <code class="sku-code"><?= htmlspecialchars($product['sku'] ?? 'N/A') ?></code>
-                                            </td>
-                                            <td>
-                                                <div class="product-info">
-                                                    <strong><?= htmlspecialchars($product['name'] ?? 'Produs fără nume') ?></strong>
-                                                    <?php if (!empty($product['description'])): ?>
-                                                        <small><?= htmlspecialchars(substr($product['description'], 0, 60)) ?><?= strlen($product['description'] ?? '') > 60 ? '...' : '' ?></small>
+                                    <?php if (!empty($products)): ?>
+                                        <?php foreach ($products as $product): ?>
+                                            <tr>
+                                                <td>
+                                                    <input type="checkbox" name="selected_products[]" 
+                                                        value="<?= $product['product_id'] ?>" class="product-checkbox">
+                                                </td>
+                                                <td>
+                                                    <span class="sku-badge"><?= htmlspecialchars($product['sku']) ?></span>
+                                                </td>
+                                                <td>
+                                                    <div class="product-info">
+                                                        <strong><?= htmlspecialchars($product['name']) ?></strong>
+                                                        <?php if (!empty($product['description'])): ?>
+                                                            <small class="product-description">
+                                                                <?= htmlspecialchars(substr($product['description'], 0, 60)) ?>
+                                                                <?= strlen($product['description']) > 60 ? '...' : '' ?>
+                                                            </small>
+                                                        <?php endif; ?>
+                                                    </div>
+                                                </td>
+                                                <td>
+                                                    <?php if (!empty($product['category'])): ?>
+                                                        <span class="category-badge"><?= htmlspecialchars($product['category']) ?></span>
+                                                    <?php else: ?>
+                                                        <span class="text-muted">-</span>
                                                     <?php endif; ?>
+                                                </td>
+                                                <td>
+                                                    <!-- SELLER INFORMATION COLUMN -->
+                                                    <?php if (!empty($product['seller_name'])): ?>
+                                                        <div class="seller-info">
+                                                            <strong class="seller-name"><?= htmlspecialchars($product['seller_name']) ?></strong>
+                                                            <?php if (!empty($product['seller_contact'])): ?>
+                                                                <small class="seller-contact">
+                                                                    <?= htmlspecialchars($product['seller_contact']) ?>
+                                                                </small>
+                                                            <?php endif; ?>
+                                                        </div>
+                                                    <?php else: ?>
+                                                        <span class="text-muted no-seller">Fără furnizor</span>
+                                                    <?php endif; ?>
+                                                </td>
+                                                <td>
+                                                    <div class="quantity-info">
+                                                        <span class="quantity-value"><?= number_format($product['quantity']) ?></span>
+                                                        <?php if ($product['quantity'] <= ($product['min_stock_level'] ?? 5)): ?>
+                                                            <span class="low-stock-indicator" title="Stoc scăzut">
+                                                                <span class="material-symbols-outlined">warning</span>
+                                                            </span>
+                                                        <?php endif; ?>
+                                                    </div>
+                                                </td>
+                                                <td>
+                                                    <span class="price-value"><?= number_format($product['price'], 2) ?> RON</span>
+                                                </td>
+                                                <td>
+                                                    <span class="status-badge status-<?= $product['status'] ?? 'active' ?>">
+                                                        <?= ($product['status'] ?? 'active') === 'active' ? 'Activ' : 'Inactiv' ?>
+                                                    </span>
+                                                </td>
+                                                <td>
+                                                    <div class="action-buttons">
+                                                        <button type="button" class="btn btn-sm btn-primary" 
+                                                                onclick="openEditModal(<?= htmlspecialchars(json_encode($product)) ?>)"
+                                                                title="Editează produs">
+                                                            <span class="material-symbols-outlined">edit</span>
+                                                        </button>
+                                                        <button type="button" class="btn btn-sm btn-danger" 
+                                                                onclick="confirmDelete(<?= $product['product_id'] ?>, '<?= htmlspecialchars($product['name']) ?>')"
+                                                                title="Șterge produs">
+                                                            <span class="material-symbols-outlined">delete</span>
+                                                        </button>
+                                                        
+                                                        <!-- SmartBill sync button if product has no seller -->
+                                                        <?php if (empty($product['seller_id'])): ?>
+                                                            <button type="button" class="btn btn-sm btn-info" 
+                                                                    onclick="suggestSeller(<?= $product['product_id'] ?>)"
+                                                                    title="Sugerează furnizor">
+                                                                <span class="material-symbols-outlined">auto_fix_high</span>
+                                                            </button>
+                                                        <?php endif; ?>
+                                                        
+                                                        <!-- Existing label printing and other actions -->
+                                                        <button type="button" class="btn btn-sm btn-secondary" 
+                                                                onclick="printLabels(<?= $product['product_id'] ?>, '<?= htmlspecialchars($product['name']) ?>')"
+                                                                title="Printează etichete">
+                                                            <span class="material-symbols-outlined">local_printshop</span>
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    <?php else: ?>
+                                        <tr>
+                                            <td colspan="9" class="text-center">
+                                                <div class="empty-state">
+                                                    <span class="material-symbols-outlined">inventory_2</span>
+                                                    <h3>Nu există produse</h3>
+                                                    <p>
+                                                        <?php if (!empty($search) || !empty($category) || !empty($sellerId)): ?>
+                                                            Nu s-au găsit produse cu criteriile selectate.
+                                                            <a href="?" class="btn btn-secondary">Șterge filtrele</a>
+                                                        <?php else: ?>
+                                                            Adaugă primul produs folosind butonul "Nou Produs".
+                                                        <?php endif; ?>
+                                                    </p>
                                                 </div>
                                             </td>
-                                            <td>
-                                                <?php if (!empty($product['category'])): ?>
-                                                    <span class="category-tag"><?= htmlspecialchars($product['category']) ?></span>
-                                                <?php else: ?>
-                                                    <span class="text-muted">-</span>
-                                                <?php endif; ?>
-                                            </td>
-                                            <td>
-                                                <strong><?= number_format($product['price'] ?? 0, 2) ?> RON</strong>
-                                            </td>
-                                            <td>
-                                                <span class="stock-info">
-                                                    <?= number_format($product['quantity'] ?? 0) ?> 
-                                                    <small><?= htmlspecialchars($product['unit'] ?? 'pcs') ?></small>
-                                                </span>
-                                            </td>
-                                            <td>
-                                                <span class="status-badge status-<?= ($product['status'] ?? 1) == 1 ? 'active' : 'inactive' ?>">
-                                                    <?= ($product['status'] ?? 1) == 1 ? 'Activ' : 'Inactiv' ?>
-                                                </span>
-                                            </td>
-                                            <td>
-                                            <div class="actions-group">
-                                                <button type="button" class="action-btn edit-btn" onclick="openEditModal(<?= htmlspecialchars(json_encode($product)) ?>)"
-                                                        title="Editează">
-                                                    <span class="material-symbols-outlined">edit</span>
-                                                </button>
-                                                <button type="button" class="action-btn print-btn"
-                                                        onclick="printLabels(<?= $product['product_id'] ?? 0 ?>, '<?= htmlspecialchars(addslashes($product['name'] ?? 'Produs')) ?>')"
-                                                        title="Printează Etichete">
-                                                    <span class="material-symbols-outlined">local_printshop</span>
-                                                </button>
-                                                <button type="button" class="action-btn delete-btn" onclick="confirmDelete(<?= $product['product_id'] ?? 0 ?>, '<?= htmlspecialchars(addslashes($product['name'] ?? 'Produs')) ?>')"
-                                                        title="Șterge">
-                                                    <span class="material-symbols-outlined">delete</span>
-                                                </button>
-                                            </div>
-                                            </td>
                                         </tr>
-                                    <?php endforeach; ?>
+                                    <?php endif; ?>
                                 </tbody>
                             </table>
                         </form>
@@ -456,235 +524,315 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
     </div>
 
     <!-- Import Products Modal -->
-    <div class="modal" id="importProductModal" style="display: none;">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h3>Import Produse din Excel</h3>
-                    <button class="modal-close" onclick="closeImportModal()">
-                        <span class="material-symbols-outlined">close</span>
-                    </button>
-                </div>
-                <div class="modal-body">
-                    <!-- Step 1: File Upload -->
-                    <div id="step-upload" class="import-step">
+<div class="modal" id="importProductModal" style="display: none;">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><span class="material-symbols-outlined">cloud_upload</span> Import Produse din Excel</h3>
+                <button class="modal-close" onclick="closeImportModal()">
+                    <span class="material-symbols-outlined">close</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <!-- File Upload Section -->
+                <div id="step-upload" class="import-step">
+                    <div class="upload-section">
                         <div class="upload-area" id="uploadArea">
                             <div class="upload-content">
                                 <span class="material-symbols-outlined upload-icon">cloud_upload</span>
                                 <h4>Încarcă fișierul Excel</h4>
-                                <p>Selectează fișierul .xls sau .xlsx cu produsele</p>
+                                <p>Selectează sau trage fișierul .xls sau .xlsx cu produsele</p>
                                 <input type="file" id="excelFile" accept=".xls,.xlsx" style="display: none;">
                                 <button type="button" class="btn btn-primary" onclick="document.getElementById('excelFile').click()">
+                                    <span class="material-symbols-outlined">folder_open</span>
                                     Selectează Fișier
                                 </button>
+                                <div class="upload-help">
+                                    <small>
+                                        <a href="#" onclick="downloadSampleTemplate()" class="link-primary">
+                                            <span class="material-symbols-outlined">download</span>
+                                            Descarcă template exemplu
+                                        </a>
+                                    </small>
+                                </div>
                             </div>
                         </div>
+                        
+                        <!-- File Information -->
                         <div id="fileInfo" class="file-info" style="display: none;">
                             <div class="file-details">
                                 <span class="material-symbols-outlined">description</span>
-                                <div>
-                                    <strong id="fileName"></strong>
-                                    <small id="fileSize"></small>
+                                <div class="file-meta">
+                                    <strong id="fileName">-</strong>
+                                    <span id="fileSize" class="text-muted">-</span>
                                 </div>
+                                <button type="button" class="btn-remove" onclick="resetImportForm()">
+                                    <span class="material-symbols-outlined">close</span>
+                                </button>
                             </div>
-                            <button type="button" class="btn btn-success" onclick="startProcessing()">
-                                <span class="material-symbols-outlined">play_arrow</span>
-                                Start Import
-                            </button>
                         </div>
                     </div>
                     
-                    <!-- Step 2: Processing -->
-                    <div id="step-processing" class="import-step" style="display: none;">
-                        <div class="processing-content">
-                            <div class="processing-animation">
-                                <div class="spinner"></div>
-                            </div>
-                            <h4>Se procesează fișierul...</h4>
-                            <p id="processingStatus">Citire date Excel...</p>
-                            <div class="progress-bar">
-                                <div class="progress-fill" id="progressFill" style="width: 0%"></div>
-                            </div>
-                            <div id="processingLogs" class="processing-logs"></div>
+                    <!-- Import Options -->
+                    <div class="import-options">
+                        <h5><span class="material-symbols-outlined">settings</span> Opțiuni Import</h5>
+                        
+                        <div class="option-group">
+                            <label class="checkbox-option">
+                                <input type="checkbox" id="overwriteExisting" checked>
+                                <span class="checkmark"></span>
+                                <div class="option-text">
+                                    <strong>Actualizează produsele existente</strong>
+                                    <small>Suprascrie datele produselor care au același SKU</small>
+                                </div>
+                            </label>
                         </div>
-                    </div>
-                    
-                    <!-- Step 3: Results -->
-                    <div id="step-results" class="import-step" style="display: none;">
-                        <div class="results-content">
-                            <div class="results-header">
-                                <span class="material-symbols-outlined success-icon">check_circle</span>
-                                <h4>Import Finalizat!</h4>
+                        
+                        <div class="option-group">
+                            <label class="checkbox-option">
+                                <input type="checkbox" id="syncSmartBill">
+                                <span class="checkmark"></span>
+                                <div class="option-text">
+                                    <strong>Sincronizează cu SmartBill</strong>
+                                    <small>Caută și actualizează produsele din SmartBill după import</small>
+                                </div>
+                            </label>
+                        </div>
+                        
+                        <div class="format-help">
+                            <h6><span class="material-symbols-outlined">info</span> Format acceptat</h6>
+                            <p>Fișierul Excel trebuie să conțină următoarele coloane:</p>
+                            <div class="columns-list">
+                                <span class="column required">SKU/Cod</span>
+                                <span class="column required">Nume Produs</span>
+                                <span class="column optional">Descriere</span>
+                                <span class="column optional">Categorie</span>
+                                <span class="column optional">Cantitate</span>
+                                <span class="column optional">Preț</span>
+                                <span class="column optional">Stoc Minim</span>
+                                <span class="column optional">Unitate Măsură</span>
                             </div>
-                            <div class="results-stats">
-                                <div class="stat-item">
-                                    <strong id="createdCount">0</strong>
-                                    <span>Produse noi</span>
-                                </div>
-                                <div class="stat-item">
-                                    <strong id="updatedCount">0</strong>
-                                    <span>Actualizate</span>
-                                </div>
-                                <div class="stat-item">
-                                    <strong id="skippedCount">0</strong>
-                                    <span>Omise</span>
-                                </div>
-                                <div class="stat-item">
-                                    <strong id="errorCount">0</strong>
-                                    <span>Erori</span>
-                                </div>
-                            </div>
-                            <div id="importErrors" class="import-errors" style="display: none;">
-                                <h5>Erori detectate:</h5>
-                                <ul id="errorList"></ul>
-                            </div>
+                            <small class="text-muted">
+                                <strong>Obligatoriu:</strong> roșu | <strong>Opțional:</strong> albastru
+                            </small>
                         </div>
                     </div>
                 </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" onclick="closeImportModal()">Închide</button>
-                    <button type="button" class="btn btn-primary" id="viewProductsBtn" onclick="window.location.reload()" style="display: none;">
-                        Vezi Produsele
-                    </button>
+                
+                <!-- Progress Section -->
+                <div id="progressContainer" class="progress-container" style="display: none;">
+                    <div class="progress-header">
+                        <h5><span class="material-symbols-outlined">hourglass_empty</span> Procesez fișierul...</h5>
+                        <p>Vă rog să așteptați. Nu închideți această fereastră.</p>
+                    </div>
+                    <div class="progress-bar-container">
+                        <div class="progress-bar" id="progressBar" style="width: 0%"></div>
+                    </div>
                 </div>
+                
+                <!-- Results Section -->
+                <div id="importResults" class="import-results" style="display: none;">
+                    <!-- Results will be inserted here by JavaScript -->
+                </div>
+            </div>
+            
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeImportModal()">
+                    <span class="material-symbols-outlined">close</span>
+                    Închide
+                </button>
+                <button type="button" class="btn btn-primary" id="processBtn" disabled onclick="startProcessing()">
+                    <span class="material-symbols-outlined">play_arrow</span>
+                    Selectează un fișier
+                </button>
             </div>
         </div>
     </div>
+</div>
 
     <!-- Modals (Create, Edit, Delete) -->
     <!-- The HTML for your modals is unchanged. -->
     <!-- Create Product Modal -->
     <div class="modal" id="createProductModal" style="display: none;">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h3>Adaugă Produs Nou</h3>
-                    <button class="modal-close" onclick="closeCreateModal()">
-                        <span class="material-symbols-outlined">close</span>
-                    </button>
-                </div>
-                <form method="POST" action="">
-                    <div class="modal-body">
-                        <input type="hidden" name="action" value="create">
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label for="create-name">Nume Produs *</label>
-                                <input type="text" id="create-name" name="name" class="form-control" required>
-                            </div>
-                            <div class="form-group">
-                                <label for="create-sku">SKU *</label>
-                                <input type="text" id="create-sku" name="sku" class="form-control" required>
-                            </div>
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Adaugă Produs Nou</h3>
+                <button class="modal-close" onclick="closeCreateModal()">
+                    <span class="material-symbols-outlined">close</span>
+                </button>
+            </div>
+            <form method="POST" action="">
+                <div class="modal-body">
+                    <input type="hidden" name="action" value="create">
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="create-name">Nume Produs *</label>
+                            <input type="text" id="create-name" name="name" class="form-control" required>
                         </div>
                         <div class="form-group">
-                            <label for="create-description">Descriere</label>
-                            <textarea id="create-description" name="description" class="form-control" rows="2"></textarea>
+                            <label for="create-sku">SKU *</label>
+                            <input type="text" id="create-sku" name="sku" class="form-control" required>
                         </div>
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label for="create-price">Preț (RON)</label>
-                                <input type="number" id="create-price" name="price" class="form-control" step="0.01" min="0">
-                            </div>
-                            <div class="form-group">
-                                <label for="create-category">Categorie</label>
-                                <input type="text" id="create-category" name="category" class="form-control">
-                            </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="create-description">Descriere</label>
+                        <textarea id="create-description" name="description" class="form-control" rows="2"></textarea>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="create-price">Preț (RON)</label>
+                            <input type="number" id="create-price" name="price" class="form-control" step="0.01" min="0">
                         </div>
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label for="create-unit">Unitate</label>
-                                <select id="create-unit" name="unit" class="form-control">
-                                    <option value="pcs">Bucăți</option>
-                                    <option value="kg">Kilograme</option>
-                                    <option value="l">Litri</option>
-                                    <option value="m">Metri</option>
-                                    <option value="set">Set</option>
-                                </select>
-                            </div>
-                            <div class="form-group form-check-group">
-                                <label class="form-check">
-                                    <input type="checkbox" id="create-status" name="status" checked>
-                                    <span class="checkmark"></span>
-                                    Produs activ
-                                </label>
+                        <div class="form-group">
+                            <label for="create-category">Categorie</label>
+                            <input type="text" id="create-category" name="category" class="form-control">
+                        </div>
+                    </div>
+                    
+                    <!-- NEW SELLER SELECTION FIELD -->
+                    <div class="form-group">
+                        <label for="create-seller">Furnizor</label>
+                        <div class="seller-search-container">
+                            <input type="hidden" id="create-seller-id" name="seller_id" value="">
+                            <input type="text" id="create-seller-search" class="form-control seller-search-input" 
+                                   placeholder="Caută furnizor după nume sau contact..." autocomplete="off">
+                            <div class="seller-search-results" id="create-seller-results"></div>
+                            <div class="selected-seller" id="create-selected-seller" style="display: none;">
+                                <div class="selected-seller-info">
+                                    <span class="selected-seller-name"></span>
+                                    <span class="selected-seller-contact"></span>
+                                </div>
+                                <button type="button" class="remove-seller-btn" onclick="clearSelectedSeller('create')">
+                                    <span class="material-symbols-outlined">close</span>
+                                </button>
                             </div>
                         </div>
                     </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" onclick="closeCreateModal()">Anulează</button>
-                        <button type="submit" class="btn btn-primary">Creează Produs</button>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="create-unit">Unitate</label>
+                            <select id="create-unit" name="unit" class="form-control">
+                                <option value="pcs">Bucată</option>
+                                <option value="kg">Kilogram</option>
+                                <option value="l">Litru</option>
+                                <option value="m">Metru</option>
+                                <option value="set">Set</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="create-status" name="status" checked>
+                                <span class="checkmark"></span>
+                                Activ
+                            </label>
+                        </div>
                     </div>
-                </form>
-            </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="closeCreateModal()">Anulează</button>
+                    <button type="submit" class="btn btn-primary">Salvează Produs</button>
+                </div>
+            </form>
         </div>
     </div>
+</div>
+
 
     <!-- Edit Product Modal -->
     <div class="modal" id="editProductModal" style="display: none;">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h3>Editează Produs</h3>
-                    <button class="modal-close" onclick="closeEditModal()">
-                        <span class="material-symbols-outlined">close</span>
-                    </button>
-                </div>
-                <form method="POST" action="">
-                    <div class="modal-body">
-                        <input type="hidden" name="action" value="update">
-                        <input type="hidden" id="edit-product-id" name="product_id">
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label for="edit-name">Nume Produs *</label>
-                                <input type="text" id="edit-name" name="name" class="form-control" required>
-                            </div>
-                            <div class="form-group">
-                                <label for="edit-sku">SKU *</label>
-                                <input type="text" id="edit-sku" name="sku" class="form-control" required>
-                            </div>
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Editează Produs</h3>
+                <button class="modal-close" onclick="closeEditModal()">
+                    <span class="material-symbols-outlined">close</span>
+                </button>
+            </div>
+            <form method="POST" action="">
+                <div class="modal-body">
+                    <input type="hidden" name="action" value="update">
+                    <input type="hidden" id="edit-product-id" name="product_id" value="">
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="edit-name">Nume Produs *</label>
+                            <input type="text" id="edit-name" name="name" class="form-control" required>
                         </div>
                         <div class="form-group">
-                            <label for="edit-description">Descriere</label>
-                            <textarea id="edit-description" name="description" class="form-control" rows="2"></textarea>
+                            <label for="edit-sku">SKU *</label>
+                            <input type="text" id="edit-sku" name="sku" class="form-control" required>
                         </div>
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label for="edit-price">Preț (RON)</label>
-                                <input type="number" id="edit-price" name="price" class="form-control" step="0.01" min="0">
-                            </div>
-                            <div class="form-group">
-                                <label for="edit-category">Categorie</label>
-                                <input type="text" id="edit-category" name="category" class="form-control">
-                            </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="edit-description">Descriere</label>
+                        <textarea id="edit-description" name="description" class="form-control" rows="2"></textarea>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="edit-price">Preț (RON)</label>
+                            <input type="number" id="edit-price" name="price" class="form-control" step="0.01" min="0">
                         </div>
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label for="edit-unit">Unitate</label>
-                                <select id="edit-unit" name="unit" class="form-control">
-                                    <option value="pcs">Bucăți</option>
-                                    <option value="kg">Kilograme</option>
-                                    <option value="l">Litri</option>
-                                    <option value="m">Metri</option>
-                                    <option value="set">Set</option>
-                                </select>
-                            </div>
-                            <div class="form-group form-check-group">
-                                <label class="form-check">
-                                    <input type="checkbox" id="edit-status" name="status">
-                                    <span class="checkmark"></span>
-                                    Produs activ
-                                </label>
+                        <div class="form-group">
+                            <label for="edit-category">Categorie</label>
+                            <input type="text" id="edit-category" name="category" class="form-control">
+                        </div>
+                    </div>
+                    
+                    <!-- NEW SELLER SELECTION FIELD FOR EDIT -->
+                    <div class="form-group">
+                        <label for="edit-seller">Furnizor</label>
+                        <div class="seller-search-container">
+                            <input type="hidden" id="edit-seller-id" name="seller_id" value="">
+                            <input type="text" id="edit-seller-search" class="form-control seller-search-input" 
+                                   placeholder="Caută furnizor după nume sau contact..." autocomplete="off">
+                            <div class="seller-search-results" id="edit-seller-results"></div>
+                            <div class="selected-seller" id="edit-selected-seller" style="display: none;">
+                                <div class="selected-seller-info">
+                                    <span class="selected-seller-name"></span>
+                                    <span class="selected-seller-contact"></span>
+                                </div>
+                                <button type="button" class="remove-seller-btn" onclick="clearSelectedSeller('edit')">
+                                    <span class="material-symbols-outlined">close</span>
+                                </button>
                             </div>
                         </div>
                     </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" onclick="closeEditModal()">Anulează</button>
-                        <button type="submit" class="btn btn-primary">Actualizează</button>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="edit-unit">Unitate</label>
+                            <select id="edit-unit" name="unit" class="form-control">
+                                <option value="pcs">Bucată</option>
+                                <option value="kg">Kilogram</option>
+                                <option value="l">Litru</option>
+                                <option value="m">Metru</option>
+                                <option value="set">Set</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="edit-status" name="status">
+                                <span class="checkmark"></span>
+                                Activ
+                            </label>
+                        </div>
                     </div>
-                </form>
-            </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="closeEditModal()">Anulează</button>
+                    <button type="submit" class="btn btn-primary">Actualizează Produs</button>
+                </div>
+            </form>
         </div>
     </div>
+</div>
 
     <!-- Delete Confirmation Modal -->
     <div class="modal" id="deleteProductModal" style="display: none;">

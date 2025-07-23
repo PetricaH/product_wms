@@ -598,10 +598,7 @@ class EnhancedWarehouseVisualization {
                     <td>${location.items?.total || location.total_items || 0}</td>
                     <td>${location.unique_products || 0}</td>
                     <td>
-                        <button class="btn btn-sm btn-outline" onclick="
-                        
-                        
-                        ById(${location.id})" title="Editează">
+                        <button class="btn btn-sm btn-outline" onclick="openEditModalById(${location.id})" title="Editează">
                             <span class="material-symbols-outlined">edit</span>
                         </button>
                         <button class="btn btn-sm btn-outline-danger" onclick="openDeleteModal(${location.id}, '${location.location_code}')" title="Șterge">

@@ -52,7 +52,8 @@ $batchNumber = trim($input['batch_number'] ?? '');
 $producedAt = $input['produced_at'] ?? date('Y-m-d H:i:s');
 $locationInput = $input['location_id'] ?? null;
 $printer   = $input['printer'] ?? null;
-$description = trim($input['description'] ?? '');
+$photoDescription = trim($input['photo_description'] ?? '');
+
 
 error_log("Production Receipt Debug - Input: " . json_encode($input));
 
@@ -223,12 +224,12 @@ try {
         }
     }
 
-    if ($description) {
+if ($photoDescription && !empty($savedPhotos)) {
         $dir = BASE_PATH . '/storage/receiving/factory/';
         if (!file_exists($dir)) {
             mkdir($dir, 0755, true);
         }
-        file_put_contents($dir . 'receipt_' . $invId . '_desc.txt', $description);
+        file_put_contents($dir . 'receipt_' . $invId . '_desc.txt', $photoDescription);
     }
 
     echo json_encode([

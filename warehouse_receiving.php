@@ -209,6 +209,14 @@ $currentPage = 'warehouse_receiving';
                             <label class="form-label">Cantitate (bucăți)</label>
                             <input type="number" id="prod-qty" class="form-input" min="1" value="1">
                         </div>
+                        <div class="form-group">
+                            <label class="form-label">Descriere Foto (opțional)</label>
+                            <textarea id="prod-photo-description" class="form-input" placeholder="Note pentru fotografii"></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Fotografii (opțional)</label>
+                            <input type="file" id="prod-photos" class="form-input" accept="image/*" capture="environment" multiple>
+                        </div>
                         <button type="button" class="btn btn-primary" id="print-labels-btn">
                             <span class="material-symbols-outlined">print</span>
                             Printează Etichete
@@ -260,7 +268,16 @@ $currentPage = 'warehouse_receiving';
                                 <!-- Expected items will be populated here -->
                             </div>
                         </div>
-                        
+
+                        <div class="form-group">
+                            <label class="form-label">Descriere Foto (opțional)</label>
+                            <textarea id="receiving-photo-description" class="form-input" placeholder="Note pentru fotografii"></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Fotografii Recepție (opțional)</label>
+                            <input type="file" id="receiving-photos" class="form-input" accept="image/*" capture="environment" multiple>
+                        </div>
+
                         <div class="step-actions">
                             <button type="button" class="btn btn-secondary" onclick="goToPreviousStep()">
                                 <span class="material-symbols-outlined">arrow_back</span>

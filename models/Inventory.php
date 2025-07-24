@@ -446,6 +446,8 @@ class Inventory {
                 $stmt = $this->conn->prepare($updateQuery);
                 $stmt->bindParam(':product_id', $productId, PDO::PARAM_INT);
                 $stmt->execute();
+                // After updating quantity, check auto order rules
+                $this->triggerAutoOrder($productId);
             }
         } catch (PDOException $e) {
             error_log("Warning: Could not update product total quantity: " . $e->getMessage());
@@ -817,10 +819,10 @@ public function getCriticalStockAlerts(int $limit = 10): array {
  * Get number of items moved today (transactions)
  * @return int Number of inventory movements today
  */
-public function getItemsMovedToday(): int {
-    try {
-        $query = "SELECT COALESCE(SUM(ABS(quantity_change)), 0) as items_moved
-                  FROM inventory_transactions 
+    public function getItemsMovedToday(): int {
+        try {
+            $query = "SELECT COALESCE(SUM(ABS(quantity_change)), 0) as items_moved
+                  FROM inventory_transactions
                   WHERE DATE(created_at) = CURDATE()";
         
         $stmt = $this->conn->prepare($query);
@@ -832,6 +834,57 @@ public function getItemsMovedToday(): int {
         // If inventory_transactions table doesn't exist, return 0
         error_log("Error getting items moved today: " . $e->getMessage());
         return 0;
+    }
+
+    /**
+     * Trigger automatic purchase order if stock below minimum
+     */
+    private function triggerAutoOrder(int $productId): void {
+        try {
+            $query = "SELECT p.product_id, p.quantity, p.min_stock_level,
+                             p.min_order_quantity, p.auto_order_enabled,
+                             p.seller_id,
+                             pp.id AS purchasable_product_id
+                      FROM {$this->productsTable} p
+                      LEFT JOIN purchasable_products pp
+                        ON pp.internal_product_id = p.product_id
+                        AND pp.preferred_seller_id = p.seller_id
+                      WHERE p.product_id = :id";
+
+            $stmt = $this->conn->prepare($query);
+            $stmt->bindValue(':id', $productId, PDO::PARAM_INT);
+            $stmt->execute();
+            $product = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if (!$product || !$product['auto_order_enabled'] || empty($product['seller_id'])) {
+                return;
+            }
+
+            if ((int)$product['quantity'] > (int)$product['min_stock_level']) {
+                return;
+            }
+
+            require_once __DIR__ . '/PurchaseOrder.php';
+            $po = new PurchaseOrder($this->conn);
+
+            $orderData = [
+                'seller_id' => (int)$product['seller_id'],
+                'status' => 'draft',
+                'notes' => 'Auto-generated order for low stock',
+                'items' => [[
+                    'purchasable_product_id' => (int)($product['purchasable_product_id'] ?? 0),
+                    'quantity' => max(1, (int)($product['min_order_quantity'] ?? 1)),
+                    'unit_price' => 0
+                ]]
+            ];
+            $po->createPurchaseOrder($orderData);
+
+            $upd = $this->conn->prepare("UPDATE {$this->productsTable} SET last_auto_order_date = NOW() WHERE product_id = :id");
+            $upd->execute([':id' => $productId]);
+
+        } catch (Exception $e) {
+            error_log('Auto order error: ' . $e->getMessage());
+        }
     }
 }
 

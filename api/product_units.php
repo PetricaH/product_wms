@@ -49,8 +49,10 @@ try {
  * Handle GET requests - retrieve product units
  */
 function handleGet($db) {
+    $id = $_GET['id'] ?? null;
+
     $query = "
-        SELECT 
+        SELECT
             pu.id,
             pu.product_id,
             pu.weight_per_unit,
@@ -77,12 +79,18 @@ function handleGet($db) {
         FROM product_units pu
         JOIN products p ON pu.product_id = p.product_id
         JOIN unit_types ut ON pu.unit_type_id = ut.id
-        WHERE pu.active = 1
-        ORDER BY p.name ASC, ut.unit_code ASC
     ";
-    
+
+    $params = [];
+    if ($id) {
+        $query .= " WHERE pu.id = ?";
+        $params[] = $id;
+    } else {
+        $query .= " ORDER BY p.name ASC, ut.unit_code ASC";
+    }
+
     $stmt = $db->prepare($query);
-    $stmt->execute();
+    $stmt->execute($params);
     $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
     
     // Format results for frontend
@@ -110,12 +118,13 @@ function handleGet($db) {
             'hazardous' => (bool)$row['hazardous'],
             'temperature_controlled' => (bool)$row['temperature_controlled'],
             'packaging_cost' => (float)$row['packaging_cost'],
+            'active' => (bool)$row['active'],
             'created_at' => $row['created_at'],
             'updated_at' => $row['updated_at']
         ];
     }, $results);
     
-    echo json_encode($formattedResults);
+    echo json_encode($id ? ($formattedResults[0] ?? null) : $formattedResults);
 }
 
 /**
@@ -158,7 +167,7 @@ function handlePost($db) {
             dimensions_length, dimensions_width, dimensions_height,
             max_stack_height, fragile, hazardous, temperature_controlled,
             packaging_cost, active
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ";
     
     $stmt = $db->prepare($query);
@@ -174,7 +183,8 @@ function handlePost($db) {
         isset($input['fragile']) ? (bool)$input['fragile'] : false,
         isset($input['hazardous']) ? (bool)$input['hazardous'] : false,
         isset($input['temperature_controlled']) ? (bool)$input['temperature_controlled'] : false,
-        $input['packaging_cost'] ?? 0.00
+        $input['packaging_cost'] ?? 0.00,
+        isset($input['active']) ? (bool)$input['active'] : true
     ]);
     
     if ($result) {
@@ -209,14 +219,15 @@ function handlePut($db) {
     $allowedFields = [
         'weight_per_unit', 'volume_per_unit', 'dimensions_length',
         'dimensions_width', 'dimensions_height', 'max_stack_height',
-        'fragile', 'hazardous', 'temperature_controlled', 'packaging_cost'
+        'fragile', 'hazardous', 'temperature_controlled', 'packaging_cost',
+        'active'
     ];
     
     foreach ($allowedFields as $field) {
         if (isset($input[$field])) {
             $updateFields[] = "$field = ?";
             
-            if (in_array($field, ['fragile', 'hazardous', 'temperature_controlled'])) {
+            if (in_array($field, ['fragile', 'hazardous', 'temperature_controlled', 'active'])) {
                 $updateValues[] = (bool)$input[$field];
             } else {
                 $updateValues[] = $input[$field];

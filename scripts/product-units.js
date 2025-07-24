@@ -582,11 +582,21 @@ const ProductUnitsApp = {
         event.preventDefault();
         
         const formData = new FormData(event.target);
-        const data = Object.fromEntries(formData);
-
-        // Convert checkboxes
-        data.fragile = formData.has('fragile');
-        data.hazardous = formData.has('hazardous');
+        const data = {
+            product_id: formData.get('product_id'),
+            unit_type_id: formData.get('unit_type_id'),
+            weight_per_unit: formData.get('weight_per_unit'),
+            volume_per_unit: formData.get('volume_per_unit') || null,
+            dimensions_length: formData.get('dimensions_length') || null,
+            dimensions_width: formData.get('dimensions_width') || null,
+            dimensions_height: formData.get('dimensions_height') || null,
+            max_stack_height: formData.get('max_stack_height') || 1,
+            packaging_cost: formData.get('packaging_cost') || 0,
+            fragile: formData.has('fragile'),
+            hazardous: formData.has('hazardous'),
+            temperature_controlled: formData.has('temperature_controlled'),
+            active: formData.has('active')
+        };
 
         // Validate required fields
         if (!data.product_id || !data.unit_type_id || !data.weight_per_unit) {
@@ -871,6 +881,7 @@ showEditProductUnitModal(productUnit) {
     document.getElementById('edit-fragile').checked = productUnit.fragile || false;
     document.getElementById('edit-hazardous').checked = productUnit.hazardous || false;
     document.getElementById('edit-temperature-controlled').checked = productUnit.temperature_controlled || false;
+    document.getElementById('edit-active').checked = productUnit.active !== false;
     
     // Show product info
     document.getElementById('edit-product-info').textContent = 
@@ -990,6 +1001,14 @@ createEditProductUnitModal() {
                                             Controlat termic
                                         </span>
                                     </label>
+                                    <label class="form-check">
+                                        <input type="checkbox" id="edit-active" name="active">
+                                        <span class="checkmark"></span>
+                                        <span class="check-label">
+                                            <span class="material-symbols-outlined">check_circle</span>
+                                            Activ
+                                        </span>
+                                    </label>
                                 </div>
                             </div>
                         </div>
@@ -1024,7 +1043,8 @@ async handleEditSubmit(event) {
         packaging_cost: formData.get('packaging_cost') || 0,
         fragile: formData.has('fragile'),
         hazardous: formData.has('hazardous'),
-        temperature_controlled: formData.has('temperature_controlled')
+        temperature_controlled: formData.has('temperature_controlled'),
+        active: formData.has('active')
     };
 
     if (!data.weight_per_unit) {

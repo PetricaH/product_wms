@@ -595,6 +595,31 @@ $currentPage = 'product-units';
                                min="0" 
                                placeholder="0.000">
                     </div>
+                    <div class="form-group">
+                        <label for="dimensionsLength">Lungime (cm)</label>
+                        <input type="number" id="dimensionsLength" name="dimensions_length"
+                               step="0.1" min="0" placeholder="0.0">
+                    </div>
+                    <div class="form-group">
+                        <label for="dimensionsWidth">Lățime (cm)</label>
+                        <input type="number" id="dimensionsWidth" name="dimensions_width"
+                               step="0.1" min="0" placeholder="0.0">
+                    </div>
+                    <div class="form-group">
+                        <label for="dimensionsHeight">Înălțime (cm)</label>
+                        <input type="number" id="dimensionsHeight" name="dimensions_height"
+                               step="0.1" min="0" placeholder="0.0">
+                    </div>
+                    <div class="form-group">
+                        <label for="maxStackHeight">Înălțime maximă stivă</label>
+                        <input type="number" id="maxStackHeight" name="max_stack_height"
+                               min="1" max="50" value="1">
+                    </div>
+                    <div class="form-group">
+                        <label for="packagingCost">Cost ambalare</label>
+                        <input type="number" id="packagingCost" name="packaging_cost"
+                               step="0.01" min="0" placeholder="0.00">
+                    </div>
                     <div class="form-group checkbox-group">
                         <label class="checkbox-label">
                             <input type="checkbox" id="fragile" name="fragile">
@@ -607,6 +632,20 @@ $currentPage = 'product-units';
                             <input type="checkbox" id="hazardous" name="hazardous">
                             <span class="checkmark"></span>
                             Produs periculos
+                        </label>
+                    </div>
+                    <div class="form-group checkbox-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="temperatureControlled" name="temperature_controlled">
+                            <span class="checkmark"></span>
+                            Controlat termic
+                        </label>
+                    </div>
+                    <div class="form-group checkbox-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="active" name="active" checked>
+                            <span class="checkmark"></span>
+                            Activ
                         </label>
                     </div>
                 </div>

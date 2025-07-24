@@ -16,16 +16,44 @@ $method = $_SERVER['REQUEST_METHOD'];
 
 try {
     if ($method === 'GET') {
+        $search = trim($_GET['search'] ?? '');
+        $limit  = min(100, max(1, intval($_GET['limit'] ?? 20))); // cap results
+        $offset = max(0, intval($_GET['offset'] ?? 0));
+
+        $where  = '';
+        $params = [];
+        if ($search !== '') {
+            $where = "WHERE p.name LIKE :search OR p.sku LIKE :search";
+            $params[':search'] = '%' . $search . '%';
+        }
+
         $query = "SELECT p.product_id, p.sku, p.name, p.quantity,
                          p.min_stock_level, p.min_order_quantity,
                          p.auto_order_enabled, p.last_auto_order_date,
                          s.supplier_name
                   FROM products p
                   LEFT JOIN sellers s ON p.seller_id = s.id
-                  ORDER BY p.name ASC";
+                  $where
+                  ORDER BY p.name ASC
+                  LIMIT :limit OFFSET :offset";
         $stmt = $db->prepare($query);
+        foreach ($params as $k => $v) {
+            $stmt->bindValue($k, $v);
+        }
+        $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
         $stmt->execute();
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $countQuery = "SELECT COUNT(*) FROM products p
+                        LEFT JOIN sellers s ON p.seller_id = s.id $where";
+        $countStmt = $db->prepare($countQuery);
+        foreach ($params as $k => $v) {
+            $countStmt->bindValue($k, $v);
+        }
+        $countStmt->execute();
+        $total = (int)$countStmt->fetchColumn();
+
         $result = array_map(function($r){
             return [
                 'product_id' => (int)$r['product_id'],
@@ -39,7 +67,17 @@ try {
                 'supplier_name' => $r['supplier_name']
             ];
         }, $rows);
-        echo json_encode($result);
+
+        echo json_encode([
+            'success' => true,
+            'data' => $result,
+            'total' => $total,
+            'pagination' => [
+                'limit' => $limit,
+                'offset' => $offset,
+                'has_next' => ($offset + $limit) < $total
+            ]
+        ]);
     } elseif ($method === 'POST') {
         $input = json_decode(file_get_contents('php://input'), true);
         if (!$input || !isset($input['product_id'])) {

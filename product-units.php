@@ -429,6 +429,9 @@ $currentPage = 'product-units';
                             </div>
                         </div>
 
+                        <div class="stock-search-bar">
+                            <input type="text" id="stockSearch" class="stock-search-input" placeholder="Caută produs...">
+                        </div>
                         <div class="table-container">
                             <table class="data-table">
                                 <thead>
@@ -455,6 +458,7 @@ $currentPage = 'product-units';
                                 </tbody>
                             </table>
                         </div>
+                        <div id="stockPagination" class="pagination-wrapper"></div>
                     </div>
 
                     <!-- Cargus Config Tab -->

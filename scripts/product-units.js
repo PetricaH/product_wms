@@ -33,6 +33,8 @@ const ProductUnitsApp = {
         productUnits: [],
         products: [],
         stockSettings: [],
+        stockPagination: { limit: 20, offset: 0, total: 0, has_next: false },
+        stockSearch: '',
         filteredData: [],
         isLoading: false,
         filters: {
@@ -90,6 +92,8 @@ const ProductUnitsApp = {
             // Stock management elements
             addStockSetting: document.getElementById('addStockSetting'),
             stockSettingsBody: document.getElementById('stockSettingsBody'),
+            stockSearchInput: document.getElementById('stockSearch'),
+            stockPagination: document.getElementById('stockPagination'),
             stockSettingsModal: document.getElementById('stockSettingsModal'),
             stockSettingsForm: document.getElementById('stockSettingsForm'),
             stockProductSelect: document.getElementById('stockProductSelect'),
@@ -214,6 +218,30 @@ const ProductUnitsApp = {
             this.elements.stockSettingsForm.addEventListener('submit', (e) => {
                 e.preventDefault();
                 this.saveStockSettings();
+            });
+        }
+
+        if (this.elements.stockSearchInput) {
+            this.elements.stockSearchInput.addEventListener('input', this.debounce(() => {
+                this.state.stockSearch = this.elements.stockSearchInput.value.trim();
+                this.state.stockPagination.offset = 0;
+                this.loadStockSettings();
+            }, this.config.debounceDelay));
+        }
+
+        if (this.elements.stockPagination) {
+            this.elements.stockPagination.addEventListener('click', (e) => {
+                if (e.target.classList.contains('prev-page')) {
+                    if (this.state.stockPagination.offset >= this.state.stockPagination.limit) {
+                        this.state.stockPagination.offset -= this.state.stockPagination.limit;
+                        this.loadStockSettings();
+                    }
+                } else if (e.target.classList.contains('next-page')) {
+                    if (this.state.stockPagination.has_next) {
+                        this.state.stockPagination.offset += this.state.stockPagination.limit;
+                        this.loadStockSettings();
+                    }
+                }
             });
         }
 
@@ -1477,12 +1505,24 @@ showNotification(message, type = 'info') {
                 </div>
             </td></tr>`;
         try {
-            const response = await this.apiCall('GET', this.config.apiEndpoints.stockSettings);
-            this.state.stockSettings = response.data || response;
+            const params = new URLSearchParams({
+                search: this.state.stockSearch,
+                limit: this.state.stockPagination.limit,
+                offset: this.state.stockPagination.offset
+            });
+            const url = `${this.config.apiEndpoints.stockSettings}?${params.toString()}`;
+            const response = await this.apiCall('GET', url);
+            this.state.stockSettings = response.data || [];
+            this.state.stockPagination.total = response.total || 0;
+            this.state.stockPagination.has_next = response.pagination?.has_next || false;
             this.renderStockSettingsTable();
+            this.renderStockPagination();
         } catch (error) {
             console.error('Error loading stock settings:', error);
             this.elements.stockSettingsBody.innerHTML = '<tr><td colspan="8" class="text-center">Eroare la încărcare</td></tr>';
+            if (this.elements.stockPagination) {
+                this.elements.stockPagination.innerHTML = '';
+            }
         }
     },
 
@@ -1505,6 +1545,26 @@ showNotification(message, type = 'info') {
                 <td><button class="btn btn-sm btn-secondary" onclick="ProductUnitsApp.editStockSetting(${s.product_id})"><span class="material-symbols-outlined">edit</span></button></td>
             </tr>
         `).join('');
+    },
+
+    renderStockPagination() {
+        if (!this.elements.stockPagination) return;
+        const { limit, offset, total, has_next } = this.state.stockPagination;
+        if (total === 0) {
+            this.elements.stockPagination.innerHTML = '';
+            return;
+        }
+        const start = total === 0 ? 0 : offset + 1;
+        const end = Math.min(offset + limit, total);
+        const prevDisabled = offset === 0 ? 'disabled' : '';
+        const nextDisabled = !has_next ? 'disabled' : '';
+        this.elements.stockPagination.innerHTML = `
+            <div class="pagination-info">Afișare ${start}-${end} din ${total}</div>
+            <div class="pagination-controls">
+                <button class="btn btn-secondary prev-page" ${prevDisabled}>Anterior</button>
+                <button class="btn btn-secondary next-page" ${nextDisabled}>Următor</button>
+            </div>
+        `;
     },
 
     openStockModal(productId = null) {

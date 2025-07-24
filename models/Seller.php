@@ -16,6 +16,10 @@ class Seller {
         $query = "SELECT * FROM {$this->table} WHERE status = 'active' ORDER BY supplier_name ASC";
         
         try {
+            if (isset($sellerData['order_deadline_day']) && $sellerData['order_deadline_day'] !== null) {
+                $sellerData['next_order_date'] = $this->calculateNextDate((int)$sellerData['order_deadline_day'], $sellerData['order_deadline_time'] ?? '23:59:00');
+            }
+
             $stmt = $this->conn->prepare($query);
             $stmt->execute();
             return $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -121,13 +125,15 @@ class Seller {
      */
     public function createSeller(array $sellerData): int|false {
         $query = "INSERT INTO {$this->table} (
-            supplier_name, cif, registration_number, supplier_code, 
-            address, city, county, bank_name, iban, country, 
-            email, contact_person, phone, notes, status
+            supplier_name, cif, registration_number, supplier_code,
+            address, city, county, bank_name, iban, country,
+            email, contact_person, phone, notes, status,
+            order_deadline_day, order_deadline_time, next_order_date
         ) VALUES (
             :supplier_name, :cif, :registration_number, :supplier_code,
             :address, :city, :county, :bank_name, :iban, :country,
-            :email, :contact_person, :phone, :notes, :status
+            :email, :contact_person, :phone, :notes, :status,
+            :order_deadline_day, :order_deadline_time, :next_order_date
         )";
         
         try {
@@ -148,6 +154,9 @@ class Seller {
             $stmt->bindValue(':phone', $sellerData['phone'] ?? null);
             $stmt->bindValue(':notes', $sellerData['notes'] ?? null);
             $stmt->bindValue(':status', $sellerData['status'] ?? 'active');
+            $stmt->bindValue(':order_deadline_day', $sellerData['order_deadline_day'] ?? null, PDO::PARAM_INT);
+            $stmt->bindValue(':order_deadline_time', $sellerData['order_deadline_time'] ?? '23:59:00');
+            $stmt->bindValue(':next_order_date', $sellerData['next_order_date'] ?? null);
             
             if ($stmt->execute()) {
                 $sellerId = (int)$this->conn->lastInsertId();
@@ -185,7 +194,8 @@ class Seller {
         $allowedFields = [
             'supplier_name', 'cif', 'registration_number', 'supplier_code',
             'address', 'city', 'county', 'bank_name', 'iban', 'country',
-            'email', 'contact_person', 'phone', 'notes', 'status'
+            'email', 'contact_person', 'phone', 'notes', 'status',
+            'order_deadline_day', 'order_deadline_time', 'next_order_date'
         ];
         
         foreach ($allowedFields as $field) {
@@ -303,7 +313,7 @@ class Seller {
      * @return array
      */
     public function getSellerStatistics(int $sellerId): array {
-        $query = "SELECT 
+        $query = "SELECT
                     COUNT(po.id) as total_orders,
                     COALESCE(SUM(po.total_amount), 0) as total_value,
                     COUNT(CASE WHEN po.status = 'completed' THEN 1 END) as completed_orders,
@@ -333,4 +343,88 @@ class Seller {
             ];
         }
     }
+
+    /**
+     * Determine if orders can be sent today based on deadline
+     */
+    public function canSendOrderToday(int $sellerId): bool {
+        $seller = $this->getSellerById($sellerId);
+        if (!$seller) {
+            return true;
+        }
+        if (empty($seller['order_deadline_day'])) {
+            return true;
+        }
+
+        $currentDay = (int)date('N');
+        $currentTime = date('H:i:s');
+        $deadlineDay = (int)$seller['order_deadline_day'];
+        $deadlineTime = $seller['order_deadline_time'] ?? '23:59:00';
+
+        if ($currentDay < $deadlineDay) {
+            return true;
+        }
+
+        if ($currentDay === $deadlineDay && $currentTime <= $deadlineTime) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Calculate next available order date for supplier
+     */
+    public function getNextOrderDate(int $sellerId): string {
+        $seller = $this->getSellerById($sellerId);
+        if (!$seller || empty($seller['order_deadline_day'])) {
+            return date('Y-m-d');
+        }
+
+        $deadlineDay = (int)$seller['order_deadline_day'];
+        $deadlineTime = $seller['order_deadline_time'] ?? '23:59:00';
+
+        $now = new DateTime('now');
+        $weekStart = (clone $now)->modify('monday this week');
+        $deadlineDate = (clone $weekStart)->modify('+' . ($deadlineDay - 1) . ' days');
+        $timeParts = explode(':', $deadlineTime);
+        $deadlineDate->setTime((int)$timeParts[0], (int)$timeParts[1], (int)($timeParts[2] ?? 0));
+
+        if ($now > $deadlineDate) {
+            $deadlineDate->modify('+1 week');
+        }
+
+        return $deadlineDate->format('Y-m-d');
+    }
+
+    /**
+     * Update order deadline settings for seller
+     */
+    public function updateOrderDeadline(int $sellerId, ?int $deadlineDay, string $deadlineTime): bool {
+        $nextDate = null;
+        if ($deadlineDay !== null) {
+            $nextDate = $this->calculateNextDate($deadlineDay, $deadlineTime);
+        }
+
+        $query = "UPDATE {$this->table} SET order_deadline_day = :day, order_deadline_time = :time, next_order_date = :next WHERE id = :id";
+        $stmt = $this->conn->prepare($query);
+        $stmt->bindValue(':day', $deadlineDay, $deadlineDay === null ? PDO::PARAM_NULL : PDO::PARAM_INT);
+        $stmt->bindValue(':time', $deadlineTime);
+        $stmt->bindValue(':next', $nextDate);
+        $stmt->bindValue(':id', $sellerId, PDO::PARAM_INT);
+        return $stmt->execute();
+    }
+
+    private function calculateNextDate(int $day, string $time): string {
+        $now = new DateTime('now');
+        $weekStart = (clone $now)->modify('monday this week');
+        $date = (clone $weekStart)->modify('+' . ($day - 1) . ' days');
+        $parts = explode(':', $time);
+        $date->setTime((int)$parts[0], (int)$parts[1], (int)($parts[2] ?? 0));
+        if ($now > $date) {
+            $date->modify('+1 week');
+        }
+        return $date->format('Y-m-d');
+    }
 }
+

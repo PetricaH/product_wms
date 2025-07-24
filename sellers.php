@@ -57,7 +57,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'contact_person' => trim($_POST['contact_person'] ?? ''),
                     'phone' => trim($_POST['phone'] ?? ''),
                     'notes' => trim($_POST['notes'] ?? ''),
-                    'status' => $_POST['status'] ?? 'active'
+                    'status' => $_POST['status'] ?? 'active',
+                    'order_deadline_day' => $_POST['order_deadline_day'] !== '' ? intval($_POST['order_deadline_day']) : null,
+                    'order_deadline_time' => $_POST['order_deadline_time'] ?? '23:59:00'
                 ];
                 
                 if (empty($sellerData['supplier_name'])) {
@@ -94,7 +96,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'contact_person' => trim($_POST['contact_person'] ?? ''),
                     'phone' => trim($_POST['phone'] ?? ''),
                     'notes' => trim($_POST['notes'] ?? ''),
-                    'status' => $_POST['status'] ?? 'active'
+                    'status' => $_POST['status'] ?? 'active',
+                    'order_deadline_day' => $_POST['order_deadline_day'] !== '' ? intval($_POST['order_deadline_day']) : null,
+                    'order_deadline_time' => $_POST['order_deadline_time'] ?? '23:59:00'
                 ];
                 
                 if (empty($sellerData['supplier_name'])) {
@@ -223,6 +227,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                     <th>Contact</th>
                                     <th>Informații Fiscale</th>
                                     <th>Adresă</th>
+                                    <th>Termen Comandă</th>
                                     <th>Status</th>
                                     <th>Acțiuni</th>
                                 </tr>
@@ -283,6 +288,24 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                     <div><?= htmlspecialchars($seller['country']) ?></div>
                                                 <?php endif; ?>
                                             </div>
+                                        </td>
+                                        <td>
+                                            <?php
+                                                if ($seller['order_deadline_day']) {
+                                                    $canSend = $sellerModel->canSendOrderToday($seller['id']);
+                                                    $nextDate = $sellerModel->getNextOrderDate($seller['id']);
+                                                    $dayNames = [1=>'Luni',2=>'Marți',3=>'Miercuri',4=>'Joi',5=>'Vineri',6=>'Sâmbătă',7=>'Duminică'];
+                                                    if ($canSend) {
+                                                        echo '<span class="deadline-badge deadline-active">Până ' . $dayNames[$seller['order_deadline_day']] . ' ' . substr($seller['order_deadline_time'],0,5) . '</span>';
+                                                    } else {
+                                                    $date = DateTime::createFromFormat('Y-m-d', $nextDate);
+                                                    $day = $dayNames[(int)$date->format('N')];
+                                                    echo '<span class="deadline-badge deadline-missed">Următoarea: ' . $day . ' ' . $date->format('d.m') . '</span>';
+                                                    }
+                                                } else {
+                                                    echo '<span class="deadline-badge deadline-none">Oricând</span>';
+                                                }
+                                            ?>
                                         </td>
                                         <td>
                                             <span class="status-badge status-<?= $seller['status'] ?>">
@@ -479,6 +502,32 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                     <input type="text" name="iban" id="iban" class="form-control">
                                 </div>
                             </div>
+                        </div>
+
+                        <!-- Configurare Comenzi -->
+                        <div class="form-section">
+                            <h4>Configurare Comenzi</h4>
+                            <div class="form-group">
+                                <label for="orderDeadlineDay">Zi Limită Comandă</label>
+                                <select id="orderDeadlineDay" name="order_deadline_day" class="form-control">
+                                    <option value="">Fără restricții</option>
+                                    <option value="1">Luni</option>
+                                    <option value="2">Marți</option>
+                                    <option value="3">Miercuri</option>
+                                    <option value="4">Joi</option>
+                                    <option value="5">Vineri</option>
+                                    <option value="6">Sâmbătă</option>
+                                    <option value="7">Duminică</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="orderDeadlineTime">Ora Limită</label>
+                                <input type="time" id="orderDeadlineTime" name="order_deadline_time" class="form-control" value="23:59">
+                            </div>
+                            <div class="form-help">
+                                <small>Comenzile pot fi trimise doar până în ziua și ora specificată. După această dată, comenzile vor fi programate pentru săptămâna următoare.</small>
+                            </div>
+                            <div id="deadlinePreview" class="form-help"></div>
                         </div>
 
                         <!-- Notes -->

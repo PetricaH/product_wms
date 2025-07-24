@@ -49,7 +49,7 @@ function closeModal(modalId) {
 // Create seller modal
 function openCreateModal() {
     openModal('createSellerModal');
-    
+
     // Focus on the first input
     setTimeout(() => {
         const firstInput = document.getElementById('supplier_name');
@@ -57,6 +57,8 @@ function openCreateModal() {
             firstInput.focus();
         }
     }, 100);
+
+    setupDeadlinePreview('createSellerModal');
 }
 
 // Edit seller modal
@@ -221,6 +223,32 @@ function populateEditForm(seller) {
             </div>
         </div>
 
+        <!-- Configurare Comenzi -->
+        <div class="form-section">
+            <h4>Configurare Comenzi</h4>
+            <div class="form-group">
+                <label for="edit_order_deadline_day">Zi Limită Comandă</label>
+                <select id="edit_order_deadline_day" name="order_deadline_day" class="form-control">
+                    <option value="">Fără restricții</option>
+                    <option value="1" ${seller.order_deadline_day == 1 ? 'selected' : ''}>Luni</option>
+                    <option value="2" ${seller.order_deadline_day == 2 ? 'selected' : ''}>Marți</option>
+                    <option value="3" ${seller.order_deadline_day == 3 ? 'selected' : ''}>Miercuri</option>
+                    <option value="4" ${seller.order_deadline_day == 4 ? 'selected' : ''}>Joi</option>
+                    <option value="5" ${seller.order_deadline_day == 5 ? 'selected' : ''}>Vineri</option>
+                    <option value="6" ${seller.order_deadline_day == 6 ? 'selected' : ''}>Sâmbătă</option>
+                    <option value="7" ${seller.order_deadline_day == 7 ? 'selected' : ''}>Duminică</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="edit_order_deadline_time">Ora Limită</label>
+                <input type="time" id="edit_order_deadline_time" name="order_deadline_time" class="form-control" value="${escapeHtml((seller.order_deadline_time || '23:59').slice(0,5))}">
+            </div>
+            <div class="form-help">
+                <small>Comenzile pot fi trimise doar până în ziua și ora specificată. După această dată, comenzile vor fi programate pentru săptămâna următoare.</small>
+            </div>
+            <div id="editDeadlinePreview" class="form-help"></div>
+        </div>
+
         <!-- Notes -->
         <div class="form-section">
             <h4>Observații</h4>
@@ -232,6 +260,8 @@ function populateEditForm(seller) {
     `;
     
     document.getElementById('editSellerForm').innerHTML = formHtml;
+
+    setupDeadlinePreview('editSellerModal');
     
     // Focus on the first input
     setTimeout(() => {
@@ -343,6 +373,19 @@ function populateDetailsView(seller) {
                 </div>
                 ` : ''}
 
+                ${seller.order_deadline_day ? `
+                <div class="details-section">
+                    <h4>Termen Comandă</h4>
+                    <div class="details-item">
+                        ${(() => {
+                            const dayNames = ['','Luni','Marți','Miercuri','Joi','Vineri','Sâmbătă','Duminică'];
+                            const day = dayNames[seller.order_deadline_day];
+                            return `Până ${day} ${seller.order_deadline_time.slice(0,5)}`;
+                        })()}
+                    </div>
+                </div>
+                ` : ''}
+
                 <!-- Notes -->
                 ${seller.notes ? `
                 <div class="details-section full-width">
@@ -412,6 +455,8 @@ function formatDate(dateString) {
 function validateSellerForm(form) {
     const supplierName = form.querySelector('[name="supplier_name"]').value.trim();
     const email = form.querySelector('[name="email"]').value.trim();
+    const deadlineDay = form.querySelector('[name="order_deadline_day"]').value;
+    const deadlineTime = form.querySelector('[name="order_deadline_time"]').value;
     
     if (!supplierName) {
         alert('Numele furnizorului este obligatoriu.');
@@ -422,7 +467,12 @@ function validateSellerForm(form) {
         alert('Adresa de email nu este validă.');
         return false;
     }
-    
+
+    if (deadlineDay && !deadlineTime) {
+        alert('Trebuie să specificați ora limită pentru ziua selectată.');
+        return false;
+    }
+
     return true;
 }
 
@@ -493,3 +543,47 @@ document.addEventListener('input', function(e) {
         e.target.value = value;
     }
 });
+
+function setupDeadlinePreview(modalId) {
+    const modal = document.getElementById(modalId);
+    if (!modal) return;
+    const dayField = modal.querySelector('[name="order_deadline_day"]');
+    const timeField = modal.querySelector('[name="order_deadline_time"]');
+    const preview = modal.querySelector('#' + (modalId === 'editSellerModal' ? 'editDeadlinePreview' : 'deadlinePreview'));
+
+    function updatePreview() {
+        const day = dayField.value;
+        const time = timeField.value || '23:59';
+        if (!day) {
+            preview.textContent = '';
+            return;
+        }
+        const nextDate = calculateNextDate(parseInt(day), time);
+        if (nextDate) {
+            const d = new Date(nextDate);
+            const dayNames = ['Duminică','Luni','Marți','Miercuri','Joi','Vineri','Sâmbătă'];
+            preview.textContent = 'Următoarea comandă poate fi trimisă: ' + dayNames[d.getDay()] + ' ' + d.toLocaleDateString('ro-RO');
+        } else {
+            preview.textContent = '';
+        }
+    }
+
+    dayField.addEventListener('change', updatePreview);
+    timeField.addEventListener('change', updatePreview);
+    updatePreview();
+}
+
+function calculateNextDate(day, time) {
+    if (!day) return '';
+    const now = new Date();
+    const todayDay = now.getDay() === 0 ? 7 : now.getDay();
+    const deadline = new Date(now);
+    const [hh, mm] = time.split(':');
+    deadline.setHours(parseInt(hh), parseInt(mm), 0, 0);
+    const diff = day - todayDay;
+    deadline.setDate(deadline.getDate() + diff);
+    if (deadline < now) {
+        deadline.setDate(deadline.getDate() + 7);
+    }
+    return deadline.toISOString().split('T')[0];
+}

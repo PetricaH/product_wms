@@ -58,7 +58,7 @@ try {
     }
 
     $sessionId = (int)($input['session_id'] ?? 0);
-    $completionNotes = trim($input['completion_notes'] ?? '');
+    $photoDescription = trim($input['photo_description'] ?? '');
     $source = $input['source'] ?? 'sellers';
     
     if (!$sessionId) {
@@ -120,14 +120,14 @@ try {
         UPDATE receiving_sessions SET 
             status = 'completed',
             total_items_received = :total_received_items,
-            discrepancy_notes = :completion_notes,
+            discrepancy_notes = :photo_description,
             completed_at = NOW(),
             updated_at = NOW()
         WHERE id = :session_id
     ");
     $stmt->execute([
         ':total_received_items' => $stats['total_received_items'],
-        ':completion_notes' => $completionNotes,
+        ':photo_description' => $photoDescription,
         ':session_id' => $sessionId
     ]);
     
@@ -207,12 +207,12 @@ try {
         }
     }
 
-    if ($completionNotes) {
+    if ($photoDescription && !empty($savedPhotos)) {
         $dir = BASE_PATH . '/storage/receiving/' . ($source === 'factory' ? 'factory' : 'sellers') . '/';
         if (!file_exists($dir)) {
             mkdir($dir, 0755, true);
         }
-        file_put_contents($dir . 'session_' . $sessionId . '_desc.txt', $completionNotes);
+        file_put_contents($dir . 'session_' . $sessionId . '_desc.txt', $photoDescription);
     }
     
     // Format response

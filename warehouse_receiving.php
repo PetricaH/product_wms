@@ -210,12 +210,12 @@ $currentPage = 'warehouse_receiving';
                             <input type="number" id="prod-qty" class="form-input" min="1" value="1">
                         </div>
                         <div class="form-group">
-                            <label class="form-label">Descriere (opțional)</label>
-                            <textarea id="prod-description" class="form-input" placeholder="Observații"></textarea>
+                            <label class="form-label">Descriere Foto (opțional)</label>
+                            <textarea id="prod-photo-description" class="form-input" placeholder="Note pentru fotografii"></textarea>
                         </div>
                         <div class="form-group">
                             <label class="form-label">Fotografii (opțional)</label>
-                            <input type="file" id="prod-photos" class="form-input" accept="image/*" multiple>
+                            <input type="file" id="prod-photos" class="form-input" accept="image/*" capture="environment" multiple>
                         </div>
                         <button type="button" class="btn btn-primary" id="print-labels-btn">
                             <span class="material-symbols-outlined">print</span>
@@ -270,12 +270,12 @@ $currentPage = 'warehouse_receiving';
                         </div>
 
                         <div class="form-group">
-                            <label class="form-label">Descriere Recepție (opțional)</label>
-                            <textarea id="receiving-description" class="form-input" placeholder="Note"></textarea>
+                            <label class="form-label">Descriere Foto (opțional)</label>
+                            <textarea id="receiving-photo-description" class="form-input" placeholder="Note pentru fotografii"></textarea>
                         </div>
                         <div class="form-group">
                             <label class="form-label">Fotografii Recepție (opțional)</label>
-                            <input type="file" id="receiving-photos" class="form-input" accept="image/*" multiple>
+                            <input type="file" id="receiving-photos" class="form-input" accept="image/*" capture="environment" multiple>
                         </div>
 
                         <div class="step-actions">

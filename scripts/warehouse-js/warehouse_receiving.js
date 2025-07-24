@@ -344,8 +344,10 @@ class WarehouseReceiving {
             formData.append('printer', printerName);
             formData.append('source', 'factory');
 
-            const desc = document.getElementById('prod-description');
-            if (desc) formData.append('description', desc.value);
+            const desc = document.getElementById('prod-photo-description');
+            if (desc && desc.value.trim()) {
+                formData.append('photo_description', desc.value.trim());
+            }
 
             const photos = document.getElementById('prod-photos');
             if (photos && photos.files.length) {
@@ -679,12 +681,14 @@ class WarehouseReceiving {
             formData.append('session_id', this.currentReceivingSession.id);
             formData.append('source', 'sellers');
 
-            const desc = document.getElementById('receiving-description');
-            if (desc) formData.append('completion_notes', desc.value);
+            const desc = document.getElementById('receiving-photo-description');
 
             const photosInput = document.getElementById('receiving-photos');
             if (photosInput && photosInput.files.length) {
                 Array.from(photosInput.files).forEach(file => formData.append('photos[]', file));
+                if (desc && desc.value.trim()) {
+                    formData.append('photo_description', desc.value.trim());
+                }
             }
 
             const response = await fetch(`${this.config.apiBase}/receiving/complete_session.php`, {

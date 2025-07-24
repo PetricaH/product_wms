@@ -36,6 +36,7 @@ require_once __DIR__ . '/models/Location.php';
 require_once __DIR__ . '/models/Inventory.php';
 require_once __DIR__ . '/models/Order.php';
 require_once __DIR__ . '/models/ReceivingSession.php';
+require_once BASE_PATH . '/models/LocationLevelSettings.php'; 
 
 $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
 

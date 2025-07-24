@@ -33,6 +33,7 @@ $db = $dbFactory();
 require_once BASE_PATH . '/models/Inventory.php';
 require_once BASE_PATH . '/models/Product.php';
 require_once BASE_PATH . '/models/Location.php';
+require_once BASE_PATH . '/models/LocationLevelSettings.php';
 
 $inventoryModel = new Inventory($db);
 $productModel = new Product($db);

@@ -66,7 +66,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'category' => trim($_POST['category'] ?? ''),
                     'unit' => trim($_POST['unit'] ?? 'pcs'),
                     'status' => isset($_POST['status']) ? 'active' : 'inactive',
-                    'seller_id' => isset($_POST['seller_id']) ? intval($_POST['seller_id']) : null
+                    'seller_id' => (!empty($_POST['seller_id']) && $_POST['seller_id'] !== '') ? intval($_POST['seller_id']) : null
                 ];
                 
                 if ($productId <= 0 || empty($productData['name']) || empty($productData['sku'])) {
@@ -691,7 +691,9 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                             <input type="hidden" id="create-seller-id" name="seller_id" value="">
                             <input type="text" id="create-seller-search" class="form-control seller-search-input" 
                                    placeholder="Caută furnizor după nume sau contact..." autocomplete="off">
-                            <div class="seller-search-results" id="create-seller-results"></div>
+                            <div class="seller-search-results" id="create-seller-results">
+                                
+                            </div>
                             <div class="selected-seller" id="create-selected-seller" style="display: none;">
                                 <div class="selected-seller-info">
                                     <span class="selected-seller-name"></span>

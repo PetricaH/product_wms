@@ -635,7 +635,7 @@ require_once __DIR__ . '/includes/header.php';
                             <th>Furnizor</th>
                             <th>Total</th>
                             <th>Status Comandă</th>
-                            <th>Status Primire</th> <!-- NEW -->
+                            <!-- <th>Status Primire</th>  -->
                             <th>Progres Primire</th> <!-- NEW -->
                             <th>Discrepanțe</th> <!-- NEW -->
                             <th>Data Creării</th>

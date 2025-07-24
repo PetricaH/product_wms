@@ -4,6 +4,8 @@ node_modules/
 # Ignore environment files
 .env
 
+/config
+
 # Ignore log files
 *.log
 

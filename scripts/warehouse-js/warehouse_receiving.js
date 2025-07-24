@@ -686,7 +686,7 @@ class WarehouseReceiving {
             const photosInput = document.getElementById('receiving-photos');
             if (photosInput && photosInput.files.length) {
                 Array.from(photosInput.files).forEach(file => formData.append('photos[]', file));
-                if (desc && desc.value.trim()) {
+            if (desc && desc.value.trim()) {
                     formData.append('photo_description', desc.value.trim());
                 }
             }

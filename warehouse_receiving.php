@@ -216,7 +216,7 @@ $currentPage = 'warehouse_receiving';
                         <div class="form-group">
                             <label class="form-label">Fotografii (opțional)</label>
                             <input type="file" id="prod-photos" class="form-input" accept="image/*" capture="environment" multiple>
-                        </div>
+                        </div>                      
                         <button type="button" class="btn btn-primary" id="print-labels-btn">
                             <span class="material-symbols-outlined">print</span>
                             Printează Etichete
@@ -275,9 +275,9 @@ $currentPage = 'warehouse_receiving';
                         </div>
                         <div class="form-group">
                             <label class="form-label">Fotografii Recepție (opțional)</label>
-                            <input type="file" id="receiving-photos" class="form-input" accept="image/*" capture="environment" multiple>
+                            <input type="file" id="receiving-photos" class="form-input" accept="image/*" capture="environment" multiple>                           
                         </div>
-
+                  
                         <div class="step-actions">
                             <button type="button" class="btn btn-secondary" onclick="goToPreviousStep()">
                                 <span class="material-symbols-outlined">arrow_back</span>

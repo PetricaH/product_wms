@@ -54,6 +54,7 @@ $locationInput = $input['location_id'] ?? null;
 $printer   = $input['printer'] ?? null;
 $photoDescription = trim($input['photo_description'] ?? '');
 
+
 error_log("Production Receipt Debug - Input: " . json_encode($input));
 
 if (!$productId || $quantity <= 0) {
@@ -223,7 +224,7 @@ try {
         }
     }
 
-    if ($photoDescription && !empty($savedPhotos)) {
+if ($photoDescription && !empty($savedPhotos)) {
         $dir = BASE_PATH . '/storage/receiving/factory/';
         if (!file_exists($dir)) {
             mkdir($dir, 0755, true);

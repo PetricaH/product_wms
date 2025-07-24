@@ -835,6 +835,7 @@ public function getCriticalStockAlerts(int $limit = 10): array {
         error_log("Error getting items moved today: " . $e->getMessage());
         return 0;
     }
+}
 
     /**
      * Trigger automatic purchase order if stock below minimum
@@ -886,6 +887,4 @@ public function getCriticalStockAlerts(int $limit = 10): array {
             error_log('Auto order error: ' . $e->getMessage());
         }
     }
-}
-
 }

@@ -25,13 +25,11 @@ if (isset($_SESSION['username'])) {
 }
 ?>
 
-<!-- Mobile menu toggle button -->
 <button class="mobile-menu-btn" id="mobile-menu-btn" aria-label="Open Menu">
     <span class="material-symbols-outlined">menu</span>
 </button>
 
 <aside class="sidebar" id="sidebar">
-    <!-- Sidebar Header -->
     <div class="sidebar__header">
         <a href="<?= getNavUrl('index.php') ?>" class="sidebar__logo">
             <div class="logo-icon">W</div>
@@ -42,9 +40,8 @@ if (isset($_SESSION['username'])) {
         </button>
     </div>
 
-    <!-- Navigation Menu -->
     <ul class="sidebar__nav" role="navigation">
-        <!-- Dashboard -->
+        
         <li class="sidebar__item">
             <a href="<?= getNavUrl('index.php') ?>" 
                class="sidebar__link <?= getActiveClass('index.php') ?>"
@@ -54,57 +51,6 @@ if (isset($_SESSION['username'])) {
             </a>
         </li>
         
-        <!-- User Management -->
-        <li class="sidebar__item">
-            <a href="<?= getNavUrl('users.php') ?>" 
-               class="sidebar__link <?= getActiveClass('users.php') ?>"
-               data-tooltip="Utilizatori">
-                <span class="material-symbols-outlined">group</span>
-                <span class="link-text">Utilizatori</span>
-            </a>
-        </li>
-        
-        <!-- Products -->
-        <li class="sidebar__item">
-            <a href="<?= getNavUrl('products.php') ?>" 
-               class="sidebar__link <?= getActiveClass('products.php') ?>"
-               data-tooltip="Produse">
-                <span class="material-symbols-outlined">inventory_2</span>
-                <span class="link-text">Produse</span>
-            </a>
-        </li>
-        
-        <!-- Inventory -->
-        <li class="sidebar__item">
-            <a href="<?= getNavUrl('inventory.php') ?>" 
-               class="sidebar__link <?= getActiveClass('inventory.php') ?>"
-               data-tooltip="Stocuri">
-                <span class="material-symbols-outlined">inventory</span>
-                <span class="link-text">Stocuri</span>
-            </a>
-        </li>
-
-        <!-- Product Units Management -->
-        <li class="sidebar__item">
-            <a href="<?= getNavUrl('product-units.php') ?>" 
-               class="sidebar__link <?= getActiveClass('product-units.php') ?>"
-               data-tooltip="Unități Produse">
-                <span class="material-symbols-outlined">inventory_2</span>
-                <span class="link-text">Setări Produse</span>
-            </a>
-        </li>
-        
-        <!-- Locations -->
-        <li class="sidebar__item">
-            <a href="<?= getNavUrl('locations.php') ?>" 
-               class="sidebar__link <?= getActiveClass('locations.php') ?>"
-               data-tooltip="Depozite">
-                <span class="material-symbols-outlined">warehouse</span>
-                <span class="link-text">Locații</span>
-            </a>
-        </li>
-        
-        <!-- Orders -->
         <li class="sidebar__item">
             <a href="<?= getNavUrl('orders.php') ?>" 
                class="sidebar__link <?= getActiveClass('orders.php') ?>"
@@ -113,28 +59,14 @@ if (isset($_SESSION['username'])) {
                 <span class="link-text">Comenzi</span>
             </a>
         </li>
-        
-        <!-- Transactions -->
-        <!-- <li class="sidebar__item">
-            <a href="<?= getNavUrl('transactions.php') ?>" 
-               class="sidebar__link <?= getActiveClass('transactions.php') ?>"
-               data-tooltip="Tranzacții">
-                <span class="material-symbols-outlined">receipt_long</span>
-                <span class="link-text">Tranzacții</span>
-            </a>
-        </li> -->
-
-        <!-- Sellers -->
         <li class="sidebar__item">
-            <a href="<?= getNavUrl('sellers.php') ?>" 
-               class="sidebar__link <?= getActiveClass('sellers.php') ?>"
-               data-tooltip="Furnizori">
-                <span class="material-symbols-outlined">store</span>
-                <span class="link-text">Furnizori</span>
+            <a href="<?= getNavUrl('inventory.php') ?>" 
+               class="sidebar__link <?= getActiveClass('inventory.php') ?>"
+               data-tooltip="Stocuri">
+                <span class="material-symbols-outlined">inventory</span>
+                <span class="link-text">Stocuri</span>
             </a>
         </li>
-
-        <!-- Purchase Orders -->
         <li class="sidebar__item">
             <a href="<?= getNavUrl('purchase_orders.php') ?>" 
                class="sidebar__link <?= getActiveClass('purchase_orders.php') ?>"
@@ -143,8 +75,6 @@ if (isset($_SESSION['username'])) {
                 <span class="link-text">Comenzi Stoc</span>
             </a>
         </li>
-
-         <!-- Quality Control Management -->
         <?php if (isset($_SESSION['role']) && in_array($_SESSION['role'], ['admin', 'supervisor'])): ?>
         <li class="sidebar__item">
             <a href="<?= getNavUrl('qc_management.php') ?>" 
@@ -156,27 +86,39 @@ if (isset($_SESSION['username'])) {
         </li>
         <?php endif; ?>
 
-        <!-- SmartBill Sync -->
-        <!-- <li class="sidebar__item">
-            <a href="<?= getNavUrl('smartbill-sync.php') ?>"
-               class="sidebar__link <?= getActiveClass('smartbill-sync.php') ?>"
-               data-tooltip="SmartBill Sync">
-                <span class="material-symbols-outlined">sync</span>
-                <span class="link-text">SmartBill Sync</span>
-            </a>
-        </li> -->
-
-        <!-- Printers -->
         <li class="sidebar__item">
-            <a href="<?= getNavUrl('printer-management.php') ?>"
-               class="sidebar__link <?= getActiveClass('printer-management.php') ?>"
-               data-tooltip="Imprimante">
-                <span class="material-symbols-outlined">print</span>
-                <span class="link-text">Imprimante</span>
+            <a href="<?= getNavUrl('products.php') ?>" 
+               class="sidebar__link <?= getActiveClass('products.php') ?>"
+               data-tooltip="Produse">
+                <span class="material-symbols-outlined">inventory_2</span>
+                <span class="link-text">Produse</span>
+            </a>
+        </li>
+        <li class="sidebar__item">
+            <a href="<?= getNavUrl('sellers.php') ?>" 
+               class="sidebar__link <?= getActiveClass('sellers.php') ?>"
+               data-tooltip="Furnizori">
+                <span class="material-symbols-outlined">store</span>
+                <span class="link-text">Furnizori</span>
+            </a>
+        </li>
+        <li class="sidebar__item">
+            <a href="<?= getNavUrl('locations.php') ?>" 
+               class="sidebar__link <?= getActiveClass('locations.php') ?>"
+               data-tooltip="Depozite">
+                <span class="material-symbols-outlined">warehouse</span>
+                <span class="link-text">Locații</span>
             </a>
         </li>
 
-        <!-- Warehouse Settings -->
+        <li class="sidebar__item">
+            <a href="<?= getNavUrl('users.php') ?>" 
+               class="sidebar__link <?= getActiveClass('users.php') ?>"
+               data-tooltip="Utilizatori">
+                <span class="material-symbols-outlined">group</span>
+                <span class="link-text">Utilizatori</span>
+            </a>
+        </li>
         <li class="sidebar__item">
             <a href="<?= getNavUrl('warehouse_settings.php') ?>"
                class="sidebar__link <?= getActiveClass('warehouse_settings.php') ?>"
@@ -185,8 +127,21 @@ if (isset($_SESSION['username'])) {
                 <span class="link-text">Setări Depozit</span>
             </a>
         </li>
-
-        <!-- Activity Log -->
+        <li class="sidebar__item">
+            <a href="<?= getNavUrl('product-units.php') ?>" 
+               class="sidebar__link <?= getActiveClass('product-units.php') ?>"
+               data-tooltip="Unități Produse">
+                <span class="material-symbols-outlined">rule_settings</span> <span class="link-text">Setări Produse</span>
+            </a>
+        </li>
+        <li class="sidebar__item">
+            <a href="<?= getNavUrl('printer-management.php') ?>"
+               class="sidebar__link <?= getActiveClass('printer-management.php') ?>"
+               data-tooltip="Imprimante">
+                <span class="material-symbols-outlined">print</span>
+                <span class="link-text">Imprimante</span>
+            </a>
+        </li>
         <li class="sidebar__item">
             <a href="<?= getNavUrl('activities.php') ?>"
                class="sidebar__link <?= getActiveClass('activities.php') ?>"
@@ -195,9 +150,9 @@ if (isset($_SESSION['username'])) {
                 <span class="link-text">Istoric Acțiuni</span>
             </a>
         </li>
-    </ul>
+        
+        </ul>
 
-    <!-- User Profile Section -->
     <div class="sidebar__profile">
         <a href="views/users/profile.php">
             <div class="profile-avatar">
@@ -221,7 +176,6 @@ if (isset($_SESSION['username'])) {
     </div>
 </aside>
 
-<!-- Mobile Overlay -->
 <div class="sidebar-overlay" id="sidebar-overlay"></div>
 
 <script>

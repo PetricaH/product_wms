@@ -1464,7 +1464,7 @@ showNotification(message, type = 'info') {
             notification.remove();
         }
     }, 5000);
-}
+},
 
     // ===== STOCK MANAGEMENT FUNCTIONS =====
     async loadStockSettings() {

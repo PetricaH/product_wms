@@ -3,7 +3,6 @@ class AddInventoryColumnsToProductsTableMigration {
     public function up(PDO $pdo): void
     {
         $pdo->exec("ALTER TABLE products
-            ADD COLUMN min_stock_level INT DEFAULT 0 AFTER quantity,
             ADD COLUMN min_order_quantity INT DEFAULT 1,
             ADD COLUMN auto_order_enabled TINYINT(1) DEFAULT 0,
             ADD COLUMN last_auto_order_date DATETIME NULL,

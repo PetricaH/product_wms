@@ -48,15 +48,12 @@ require_once BASE_PATH . '/models/Seller.php';
 require_once BASE_PATH . '/models/PurchasableProduct.php';
 require_once BASE_PATH . '/models/Product.php';
 require_once BASE_PATH . '/models/Transaction.php';
-require_once BASE_PATH . '/models/User.php';
 
 $purchaseOrderModel = new PurchaseOrder($db);
 $sellerModel = new Seller($db);
 $purchasableProductModel = new PurchasableProduct($db);
 $productModel = new Product($db);
 $transactionModel = new Transaction($db);
-$usersModel = new Users($db);
-$currentUser = $usersModel->findById($_SESSION['user_id']);
 
 /**
  * Generate PDF for purchase order
@@ -171,7 +168,7 @@ function generatePurchaseOrderPdf(array $orderInfo, array $items): ?string {
  */
 function sendPurchaseOrderEmail(array $smtp, string $to, string $subject, string $body, string $attachmentPath = ''): array {
     $mail = new PHPMailer(true);
-    
+
     try {
         // Use your working SMTP settings
         $mail->isSMTP();
@@ -187,7 +184,9 @@ function sendPurchaseOrderEmail(array $smtp, string $to, string $subject, string
         }
         
         // Recipients and content
-        $mail->setFrom($smtp['smtp_user'], 'WMS - Comanda Achizitie');
+        $fromEmail = $smtp['from_email'] ?? $smtp['smtp_user'];
+        $fromName = $smtp['from_name'] ?? 'WMS - Comanda Achizitie';
+        $mail->setFrom($fromEmail, $fromName);
         $mail->addAddress($to);
         $mail->Subject = $subject;
         $mail->Body = $body;
@@ -376,42 +375,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         error_log("PDF generation failed for order: " . $orderInfo['order_number']);
                     }
                     
-                    // Prepare SMTP settings from your working configuration
+                    // Prepare SMTP settings using global configuration
                     $smtpSettings = [
-                        'smtp_host' => $currentUser['smtp_host'] ?? '',
-                        'smtp_port' => $currentUser['smtp_port'] ?? 587,
-                        'smtp_user' => $currentUser['smtp_user'] ?? '',
-                        'smtp_pass' => $currentUser['smtp_pass'] ?? '',
-                        'smtp_secure' => $currentUser['smtp_secure'] ?? 'tls'
+                        'smtp_host'   => $config['email']['host'] ?? '',
+                        'smtp_port'   => $config['email']['port'] ?? 587,
+                        'smtp_user'   => $config['email']['username'] ?? '',
+                        'smtp_pass'   => $config['email']['password'] ?? '',
+                        'smtp_secure' => $config['email']['encryption'] ?? 'ssl',
+                        'from_email'  => $config['email']['from_email'] ?? '',
+                        'from_name'   => $config['email']['from_name'] ?? ''
                     ];
-                    
-                    // Check if SMTP is configured
-                    if (empty($smtpSettings['smtp_host']) || empty($smtpSettings['smtp_user'])) {
-                        $message = 'Comanda a fost creată cu succes (' . $orderInfo['order_number'] . '), dar emailul nu a fost trimis - configurați setările SMTP în profilul dvs.';
-                        $messageType = 'warning';
+
+                    // Prepare email content
+                    $emailBody = "Bună ziua,\n\n";
+                    $emailBody .= "Vă transmitem comanda de achiziție " . $orderInfo['order_number'] . ".\n\n";
+                    if (!empty($customMessage)) {
+                        $emailBody .= $customMessage . "\n\n";
+                    }
+                    $emailBody .= "Vă mulțumim!\n";
+                    $emailBody .= "Echipa WMS";
+
+                    $finalSubject = !empty($emailSubject) ? $emailSubject : 'Comanda ' . $orderInfo['order_number'];
+
+                    // Send email
+                    $emailResult = sendPurchaseOrderEmail($smtpSettings, $emailRecipient, $finalSubject, $emailBody, $pdfFile);
+
+                    if ($emailResult['success']) {
+                        $purchaseOrderModel->markAsSent($orderId, $emailRecipient);
+                        $message = 'Comanda de stoc a fost creată și trimisă prin email cu succes! Numărul comenzii: ' . $orderInfo['order_number'];
+                        $messageType = 'success';
                     } else {
-                        // Prepare email content
-                        $emailBody = "Bună ziua,\n\n";
-                        $emailBody .= "Vă transmitem comanda de achiziție " . $orderInfo['order_number'] . ".\n\n";
-                        if (!empty($customMessage)) {
-                            $emailBody .= $customMessage . "\n\n";
-                        }
-                        $emailBody .= "Vă mulțumim!\n";
-                        $emailBody .= "Echipa WMS";
-                        
-                        $finalSubject = !empty($emailSubject) ? $emailSubject : 'Comanda ' . $orderInfo['order_number'];
-                        
-                        // Send email
-                        $emailResult = sendPurchaseOrderEmail($smtpSettings, $emailRecipient, $finalSubject, $emailBody, $pdfFile);
-                        
-                        if ($emailResult['success']) {
-                            $purchaseOrderModel->markAsSent($orderId, $emailRecipient);
-                            $message = 'Comanda de stoc a fost creată și trimisă prin email cu succes! Numărul comenzii: ' . $orderInfo['order_number'];
-                            $messageType = 'success';
-                        } else {
-                            $message = 'Comanda a fost creată (' . $orderInfo['order_number'] . '), dar emailul nu a fost trimis. Eroare: ' . $emailResult['message'];
-                            $messageType = 'warning';
-                        }
+                        $message = 'Comanda a fost creată (' . $orderInfo['order_number'] . '), dar emailul nu a fost trimis. Eroare: ' . $emailResult['message'];
+                        $messageType = 'warning';
                     }
                 } else {
                     throw new Exception('Eroare la crearea comenzii de stoc.');
@@ -452,26 +447,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $seller = $sellerModel->getSellerById($orderInfo['seller_id']);
                 $orderInfo['supplier_name'] = $seller['supplier_name'];
                 
-                // Prepare SMTP settings
+                // Prepare SMTP settings using global configuration
                 $smtpSettings = [
-                    'smtp_host' => $currentUser['smtp_host'] ?? '',
-                    'smtp_port' => $currentUser['smtp_port'] ?? 587,
-                    'smtp_user' => $currentUser['smtp_user'] ?? '',
-                    'smtp_pass' => $currentUser['smtp_pass'] ?? '',
-                    'smtp_secure' => $currentUser['smtp_secure'] ?? 'tls'
+                    'smtp_host'   => $config['email']['host'] ?? '',
+                    'smtp_port'   => $config['email']['port'] ?? 587,
+                    'smtp_user'   => $config['email']['username'] ?? '',
+                    'smtp_pass'   => $config['email']['password'] ?? '',
+                    'smtp_secure' => $config['email']['encryption'] ?? 'ssl',
+                    'from_email'  => $config['email']['from_email'] ?? '',
+                    'from_name'   => $config['email']['from_name'] ?? ''
                 ];
-                
-                if (empty($smtpSettings['smtp_host']) || empty($smtpSettings['smtp_user'])) {
-                    throw new Exception('Configurați setările SMTP în profilul dvs.');
-                }
-                
+
                 // Prepare email
                 $emailSubject = 'Comanda ' . $orderInfo['order_number'];
                 $emailBody = "Bună ziua,\n\n";
                 $emailBody .= "Vă transmitem comanda de achiziție " . $orderInfo['order_number'] . ".\n\n";
                 $emailBody .= "Vă mulțumim!\n";
                 $emailBody .= "Echipa WMS";
-                
+
                 // Send email
                 $emailResult = sendPurchaseOrderEmail($smtpSettings, $emailRecipient, $emailSubject, $emailBody, $orderInfo['pdf_path']);
                 

@@ -132,5 +132,5 @@ return [
         'key' => getenv('WMS_API_KEY') ?: '',
         'allowed_origins' => ['*'],
         'rate_limit' => 100,
-    ],
+    ]
 ];

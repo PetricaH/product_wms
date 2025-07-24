@@ -117,16 +117,6 @@ function generatePurchaseOrderPdf(array $orderInfo, array $items): ?string {
         $pdf->Cell(140, 8, 'TOTAL:', 1, 0, 'R');
         $pdf->Cell(30, 8, number_format($grandTotal, 2) . ' RON', 1, 1, 'R');
 
-        // VAT
-        $vatRate = isset($orderInfo['tax_rate']) ? floatval($orderInfo['tax_rate']) : 19;
-        $vatAmount = $grandTotal * ($vatRate / 100);
-        $pdf->SetFont('Arial', '', 10);
-        $pdf->Cell(140, 8, 'TVA (' . $vatRate . '%):', 1, 0, 'R');
-        $pdf->Cell(30, 8, number_format($vatAmount, 2) . ' RON', 1, 1, 'R');
-        $pdf->SetFont('Arial', 'B', 10);
-        $pdf->Cell(140, 8, 'TOTAL CU TVA:', 1, 0, 'R');
-        $pdf->Cell(30, 8, number_format($grandTotal + $vatAmount, 2) . ' RON', 1, 1, 'R');
-
         // Try multiple writable locations
         $fileName = 'po_' . $orderInfo['order_number'] . '_' . time() . '.pdf';
         $writableLocations = [
@@ -197,7 +187,7 @@ function sendPurchaseOrderEmail(array $smtp, string $to, string $subject, string
         }
         
         // Recipients and content
-        $mail->setFrom($smtp['smtp_user'], 'Wartung Tratamente Speciale SRL');
+        $mail->setFrom($smtp['smtp_user'], 'WMS - Comanda Achizitie');
         $mail->addAddress($to);
         $mail->Subject = $subject;
         $mail->Body = $body;
@@ -252,7 +242,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $customMessage = trim($_POST['custom_message'] ?? '');
                 $emailSubject = trim($_POST['email_subject'] ?? '');
                 $expectedDeliveryDate = $_POST['expected_delivery_date'] ?? null;
-                $taxRate = floatval($_POST['tax_rate'] ?? 19);
                 $items = $_POST['items'] ?? [];
                 
                 if ($sellerId <= 0) {
@@ -342,13 +331,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // Get seller details
                 $seller = $sellerModel->getSellerById($sellerId);
                 $emailRecipient = $_POST['email_recipient'] ?? $seller['email'] ?? '';
-
-                // Check deadline
-                if (!$sellerModel->canSendOrderToday($sellerId)) {
-                    $expectedDeliveryDate = $sellerModel->getNextOrderDate($sellerId);
-                    $dayNames = [1=>'Luni',2=>'Marți',3=>'Miercuri',4=>'Joi',5=>'Vineri',6=>'Sâmbătă',7=>'Duminică'];
-                    $deadlineWarning = '⚠️ Comenzile pentru acest furnizor sunt trimise doar până ' . $dayNames[$seller['order_deadline_day'] ?? 1];
-                }
                 
                 // Create purchase order
                 $orderData = [
@@ -358,7 +340,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'email_subject' => $emailSubject,
                     'expected_delivery_date' => $expectedDeliveryDate,
                     'email_recipient' => $emailRecipient,
-                    'tax_rate' => $taxRate,
                     'items' => $processedItems
                 ];
                 
@@ -409,9 +390,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $message = 'Comanda a fost creată cu succes (' . $orderInfo['order_number'] . '), dar emailul nu a fost trimis - configurați setările SMTP în profilul dvs.';
                         $messageType = 'warning';
                     } else {
-                        // Prepare email content using user-provided subject and body only
-                        $emailBody = $customMessage;
-                        $finalSubject = $emailSubject;
+                        // Prepare email content
+                        $emailBody = "Bună ziua,\n\n";
+                        $emailBody .= "Vă transmitem comanda de achiziție " . $orderInfo['order_number'] . ".\n\n";
+                        if (!empty($customMessage)) {
+                            $emailBody .= $customMessage . "\n\n";
+                        }
+                        $emailBody .= "Vă mulțumim!\n";
+                        $emailBody .= "Echipa WMS";
+                        
+                        $finalSubject = !empty($emailSubject) ? $emailSubject : 'Comanda ' . $orderInfo['order_number'];
                         
                         // Send email
                         $emailResult = sendPurchaseOrderEmail($smtpSettings, $emailRecipient, $finalSubject, $emailBody, $pdfFile);
@@ -419,15 +407,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         if ($emailResult['success']) {
                             $purchaseOrderModel->markAsSent($orderId, $emailRecipient);
                             $message = 'Comanda de stoc a fost creată și trimisă prin email cu succes! Numărul comenzii: ' . $orderInfo['order_number'];
-                            if (isset($deadlineWarning)) {
-                                $message .= ' ' . $deadlineWarning . ' - va fi procesată pe ' . $expectedDeliveryDate . '.';
-                            }
                             $messageType = 'success';
                         } else {
                             $message = 'Comanda a fost creată (' . $orderInfo['order_number'] . '), dar emailul nu a fost trimis. Eroare: ' . $emailResult['message'];
-                            if (isset($deadlineWarning)) {
-                                $message .= ' ' . $deadlineWarning . ' - va fi procesată pe ' . $expectedDeliveryDate . '.';
-                            }
                             $messageType = 'warning';
                         }
                     }
@@ -660,6 +642,7 @@ require_once __DIR__ . '/includes/header.php';
                             <th>Furnizor</th>
                             <th>Total</th>
                             <th>Status Comandă</th>
+                            <th>Status Primire</th> <!-- NEW -->
                             <th>Progres Primire</th> <!-- NEW -->
                             <th>Discrepanțe</th> <!-- NEW -->
                             <th>Data Creării</th>
@@ -758,17 +741,6 @@ require_once __DIR__ . '/includes/header.php';
                             <div class="form-group">
                                 <label for="expected_delivery_date" class="form-label">Data Livrării Estimate</label>
                                 <input type="date" name="expected_delivery_date" id="expected_delivery_date" class="form-control">
-                            </div>
-                        </div>
-
-                        <!-- TVA Rate -->
-                        <div class="row">
-                            <div class="form-group">
-                                <label for="tax_rate" class="form-label">TVA</label>
-                                <select name="tax_rate" id="tax_rate" class="form-control">
-                                    <option value="19" selected>19% TVA</option>
-                                    <option value="0">0% TVA</option>
-                                </select>
                             </div>
                         </div>
 

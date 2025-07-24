@@ -58,7 +58,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'phone' => trim($_POST['phone'] ?? ''),
                     'notes' => trim($_POST['notes'] ?? ''),
                     'status' => $_POST['status'] ?? 'active',
-                    'order_deadline_day' => $_POST['order_deadline_day'] !== '' ? intval($_POST['order_deadline_day']) : null,
+                    // FIXED: Use null coalescing operator and proper validation
+                    'order_deadline_day' => !empty($_POST['order_deadline_day']) ? intval($_POST['order_deadline_day']) : null,
                     'order_deadline_time' => $_POST['order_deadline_time'] ?? '23:59:00'
                 ];
                 
@@ -97,7 +98,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'phone' => trim($_POST['phone'] ?? ''),
                     'notes' => trim($_POST['notes'] ?? ''),
                     'status' => $_POST['status'] ?? 'active',
-                    'order_deadline_day' => $_POST['order_deadline_day'] !== '' ? intval($_POST['order_deadline_day']) : null,
+                    'order_deadline_day' => !empty($_POST['order_deadline_day']) ? intval($_POST['order_deadline_day']) : null,
                     'order_deadline_time' => $_POST['order_deadline_time'] ?? '23:59:00'
                 ];
                 

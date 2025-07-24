@@ -335,25 +335,32 @@ class WarehouseReceiving {
             const printerName = await chooseLabelPrinter();
             if (!printerName) return;
 
-            const requestData = {
-                product_id: this.selectedProductId,
-                quantity: qty,
-                batch_number: batch,
-                produced_at: date,
-                location_id: locationId, // Add this line
-                printer: printerName
-            };
-            
-            console.log('Sending production receipt data:', requestData); // Debug logging
-            
+            const formData = new FormData();
+            formData.append('product_id', this.selectedProductId);
+            formData.append('quantity', qty);
+            formData.append('batch_number', batch);
+            formData.append('produced_at', date);
+            formData.append('location_id', locationId);
+            formData.append('printer', printerName);
+            formData.append('source', 'factory');
+
+            const desc = document.getElementById('prod-description');
+            if (desc) formData.append('description', desc.value);
+
+            const photos = document.getElementById('prod-photos');
+            if (photos && photos.files.length) {
+                Array.from(photos.files).forEach(f => formData.append('photos[]', f));
+            }
+
+            console.log('Sending production receipt data');
+
             const response = await fetch(`${this.config.apiBase}/receiving/record_production_receipt.php`, {
                 method: 'POST',
                 credentials: 'same-origin',
-                headers: { 
-                    'Content-Type': 'application/json', 
-                    'X-CSRF-Token': csrfToken 
+                headers: {
+                    'X-CSRF-Token': csrfToken
                 },
-                body: JSON.stringify(requestData)
+                body: formData
             });
 
             const result = await response.json();
@@ -667,16 +674,26 @@ class WarehouseReceiving {
         
         try {
             const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || this.config.csrfToken;
+
+            const formData = new FormData();
+            formData.append('session_id', this.currentReceivingSession.id);
+            formData.append('source', 'sellers');
+
+            const desc = document.getElementById('receiving-description');
+            if (desc) formData.append('completion_notes', desc.value);
+
+            const photosInput = document.getElementById('receiving-photos');
+            if (photosInput && photosInput.files.length) {
+                Array.from(photosInput.files).forEach(file => formData.append('photos[]', file));
+            }
+
             const response = await fetch(`${this.config.apiBase}/receiving/complete_session.php`, {
                 method: 'POST',
                 credentials: 'same-origin',
                 headers: {
-                    'Content-Type': 'application/json',
                     'X-CSRF-Token': csrfToken
                 },
-                body: JSON.stringify({
-                    session_id: this.currentReceivingSession.id
-                })
+                body: formData
             });
 
             const result = await response.json();

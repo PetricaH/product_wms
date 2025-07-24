@@ -134,14 +134,3 @@ return [
         'rate_limit' => 100,
     ],
 ];
-
-$emailConfig = [
-    'host' => 'mail.wartung.ro',
-    'port' => 465, 
-    'encryption' => 'ssl',
-    'username' => 'comenzi@wartung.ro',
-    'password' => 'WTG7498&$%',
-    'from_email' => 'comenzi@wartung.ro',
-    'from_name' => 'Wartung - Departament Achizitii',
-    'reply_to' => 'comenzi@wartung.ro'
-];

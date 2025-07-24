@@ -342,6 +342,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // Get seller details
                 $seller = $sellerModel->getSellerById($sellerId);
                 $emailRecipient = $_POST['email_recipient'] ?? $seller['email'] ?? '';
+
+                // Check deadline
+                if (!$sellerModel->canSendOrderToday($sellerId)) {
+                    $expectedDeliveryDate = $sellerModel->getNextOrderDate($sellerId);
+                    $dayNames = [1=>'Luni',2=>'Marți',3=>'Miercuri',4=>'Joi',5=>'Vineri',6=>'Sâmbătă',7=>'Duminică'];
+                    $deadlineWarning = '⚠️ Comenzile pentru acest furnizor sunt trimise doar până ' . $dayNames[$seller['order_deadline_day'] ?? 1];
+                }
                 
                 // Create purchase order
                 $orderData = [
@@ -412,9 +419,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         if ($emailResult['success']) {
                             $purchaseOrderModel->markAsSent($orderId, $emailRecipient);
                             $message = 'Comanda de stoc a fost creată și trimisă prin email cu succes! Numărul comenzii: ' . $orderInfo['order_number'];
+                            if (isset($deadlineWarning)) {
+                                $message .= ' ' . $deadlineWarning . ' - va fi procesată pe ' . $expectedDeliveryDate . '.';
+                            }
                             $messageType = 'success';
                         } else {
                             $message = 'Comanda a fost creată (' . $orderInfo['order_number'] . '), dar emailul nu a fost trimis. Eroare: ' . $emailResult['message'];
+                            if (isset($deadlineWarning)) {
+                                $message .= ' ' . $deadlineWarning . ' - va fi procesată pe ' . $expectedDeliveryDate . '.';
+                            }
                             $messageType = 'warning';
                         }
                     }

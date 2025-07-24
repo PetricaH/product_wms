@@ -49,11 +49,17 @@ $dbFactory = $config['connection_factory'];
 $db = $dbFactory();
 
 try {
-    // Get input data
-    $input = json_decode(file_get_contents('php://input'), true);
-    
+    // Get input data (support JSON and form-data)
+    $contentType = $_SERVER['CONTENT_TYPE'] ?? '';
+    if (strpos($contentType, 'application/json') !== false) {
+        $input = json_decode(file_get_contents('php://input'), true);
+    } else {
+        $input = $_POST;
+    }
+
     $sessionId = (int)($input['session_id'] ?? 0);
     $completionNotes = trim($input['completion_notes'] ?? '');
+    $source = $input['source'] ?? 'sellers';
     
     if (!$sessionId) {
         throw new Exception('Session ID is required');
@@ -183,6 +189,31 @@ try {
     
     // Commit transaction
     $db->commit();
+
+    $savedPhotos = [];
+    if (!empty($_FILES['photos']['name'][0])) {
+        $baseDir = BASE_PATH . '/storage/receiving/' . ($source === 'factory' ? 'factory' : 'sellers') . '/';
+        if (!file_exists($baseDir)) {
+            mkdir($baseDir, 0755, true);
+        }
+        foreach ($_FILES['photos']['tmp_name'] as $idx => $tmp) {
+            if ($_FILES['photos']['error'][$idx] === UPLOAD_ERR_OK) {
+                $ext = pathinfo($_FILES['photos']['name'][$idx], PATHINFO_EXTENSION);
+                $filename = 'session_' . $sessionId . '_' . time() . "_{$idx}." . $ext;
+                if (move_uploaded_file($tmp, $baseDir . $filename)) {
+                    $savedPhotos[] = 'receiving/' . ($source === 'factory' ? 'factory' : 'sellers') . '/' . $filename;
+                }
+            }
+        }
+    }
+
+    if ($completionNotes) {
+        $dir = BASE_PATH . '/storage/receiving/' . ($source === 'factory' ? 'factory' : 'sellers') . '/';
+        if (!file_exists($dir)) {
+            mkdir($dir, 0755, true);
+        }
+        file_put_contents($dir . 'session_' . $sessionId . '_desc.txt', $completionNotes);
+    }
     
     // Format response
     echo json_encode([
@@ -203,6 +234,7 @@ try {
             'total_expected_quantity' => (float)$stats['total_expected_quantity'],
             'total_received_quantity' => (float)$stats['total_received_quantity']
         ],
+        'saved_photos' => $savedPhotos,
         'received_items' => array_map(function($item) {
             return [
                 'product_name' => $item['product_name'],

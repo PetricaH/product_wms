@@ -38,7 +38,12 @@ $db = $config['connection_factory']();
 require_once BASE_PATH . '/models/Inventory.php';
 require_once BASE_PATH . '/models/Product.php';
 
-$input = json_decode(file_get_contents('php://input'), true);
+$contentType = $_SERVER['CONTENT_TYPE'] ?? '';
+if (strpos($contentType, 'application/json') !== false) {
+    $input = json_decode(file_get_contents('php://input'), true);
+} else {
+    $input = $_POST;
+}
 
 // Enhanced validation with logging
 $productId = $input['product_id'] ?? null;
@@ -47,6 +52,7 @@ $batchNumber = trim($input['batch_number'] ?? '');
 $producedAt = $input['produced_at'] ?? date('Y-m-d H:i:s');
 $locationInput = $input['location_id'] ?? null;
 $printer   = $input['printer'] ?? null;
+$description = trim($input['description'] ?? '');
 
 error_log("Production Receipt Debug - Input: " . json_encode($input));
 
@@ -200,10 +206,36 @@ try {
         }
     }
 
+    $savedPhotos = [];
+    if (!empty($_FILES['photos']['name'][0])) {
+        $baseDir = BASE_PATH . '/storage/receiving/factory/';
+        if (!file_exists($baseDir)) {
+            mkdir($baseDir, 0755, true);
+        }
+        foreach ($_FILES['photos']['tmp_name'] as $idx => $tmp) {
+            if ($_FILES['photos']['error'][$idx] === UPLOAD_ERR_OK) {
+                $ext = pathinfo($_FILES['photos']['name'][$idx], PATHINFO_EXTENSION);
+                $filename = 'receipt_' . $invId . '_' . time() . "_{$idx}." . $ext;
+                if (move_uploaded_file($tmp, $baseDir . $filename)) {
+                    $savedPhotos[] = 'receiving/factory/' . $filename;
+                }
+            }
+        }
+    }
+
+    if ($description) {
+        $dir = BASE_PATH . '/storage/receiving/factory/';
+        if (!file_exists($dir)) {
+            mkdir($dir, 0755, true);
+        }
+        file_put_contents($dir . 'receipt_' . $invId . '_desc.txt', $description);
+    }
+
     echo json_encode([
-        'success' => true, 
+        'success' => true,
         'inventory_id' => $invId,
         'message' => 'Production receipt recorded successfully',
+        'saved_photos' => $savedPhotos,
         'debug' => [
             'product_id' => $productId,
             'location_id' => $locationId,

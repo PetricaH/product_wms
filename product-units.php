@@ -122,6 +122,10 @@ $currentPage = 'product-units';
                             <span class="material-symbols-outlined">package_2</span>
                             Reguli Ambalare
                         </button>
+                        <button class="tab-button" data-tab="stock-management">
+                            <span class="material-symbols-outlined">warehouse</span>
+                            Gestiune Stocuri
+                        </button>
                         <button class="tab-button" data-tab="cargus-config">
                             <span class="material-symbols-outlined">settings</span>
                             Configurare Cargus
@@ -413,6 +417,46 @@ $currentPage = 'product-units';
                         </div>
                     </div>
 
+                    <!-- Stock Management Tab -->
+                    <div id="stock-management" class="tab-content">
+                        <div class="tab-header">
+                            <h2>Gestiune Stocuri</h2>
+                            <div class="tab-actions">
+                                <button class="btn btn-primary" id="addStockSetting">
+                                    <span class="material-symbols-outlined">add</span>
+                                    Adaugă Setări
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="table-container">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Produs</th>
+                                        <th>Furnizor Asignat</th>
+                                        <th>Stoc Curent</th>
+                                        <th>Stoc Minim</th>
+                                        <th>Cant. Min. Comandă</th>
+                                        <th>Autocomandă</th>
+                                        <th>Ultima Comandă Auto</th>
+                                        <th>Acțiuni</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="stockSettingsBody">
+                                    <tr class="loading-row">
+                                        <td colspan="8" class="text-center">
+                                            <div class="loading-spinner">
+                                                <span class="material-symbols-outlined spinning">progress_activity</span>
+                                                Încărcare date...
+                                            </div>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
                     <!-- Cargus Config Tab -->
                     <div id="cargus-config" class="tab-content">
                         <div class="tab-header">
@@ -647,6 +691,63 @@ $currentPage = 'product-units';
                             <span class="checkmark"></span>
                             Activ
                         </label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-action="cancel">
+                        <span class="material-symbols-outlined">close</span>
+                        Anulează
+                    </button>
+                    <button type="submit" class="btn btn-success">
+                        <span class="material-symbols-outlined">save</span>
+                        Salvează
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Stock Settings Modal -->
+    <div id="stockSettingsModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Configurare Gestiune Stoc</h2>
+                <button class="modal-close" type="button">
+                    <span class="material-symbols-outlined">close</span>
+                </button>
+            </div>
+            <form id="stockSettingsForm" class="modal-form">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="stockProductSelect">Produs <span class="required">*</span></label>
+                        <select id="stockProductSelect" name="product_id" required></select>
+                    </div>
+                    <div class="form-group">
+                        <label>Furnizor Asignat</label>
+                        <div id="assignedSupplier" class="form-info">-</div>
+                    </div>
+                    <div class="form-group">
+                        <label>Stoc Curent</label>
+                        <div id="currentStockInfo" class="form-info">0</div>
+                    </div>
+                    <div class="form-group">
+                        <label for="minStockLevel">Stoc Minim</label>
+                        <input type="number" id="minStockLevel" name="min_stock_level" min="0" value="0">
+                    </div>
+                    <div class="form-group">
+                        <label for="minOrderQty">Cantitate Min. Comandă</label>
+                        <input type="number" id="minOrderQty" name="min_order_quantity" min="1" value="1">
+                    </div>
+                    <div class="form-group checkbox-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="autoOrderEnabled" name="auto_order_enabled">
+                            <span class="checkmark"></span>
+                            Autocomandă Activă
+                        </label>
+                    </div>
+                    <div class="form-group full-width warning" id="noSupplierWarning" style="display:none;">
+                        <span class="material-symbols-outlined">warning</span>
+                        Asignați un furnizor pentru a activa autocomanda.
                     </div>
                 </div>
                 <div class="modal-footer">

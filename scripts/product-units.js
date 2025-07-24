@@ -19,7 +19,8 @@ const ProductUnitsApp = {
             products: `${baseUrl}/api/products.php`,
             cargusConfig: `${baseUrl}/api/cargus_config.php`,
             testCargus: `${baseUrl}/api/test_cargus.php`,
-            recalculateWeight: `${baseUrl}/api/recalculate_weight.php`
+            recalculateWeight: `${baseUrl}/api/recalculate_weight.php`,
+            stockSettings: `${baseUrl}/api/inventory_settings.php`
         },
         debounceDelay: 300,
         refreshInterval: 30000, // 30 seconds
@@ -31,6 +32,7 @@ const ProductUnitsApp = {
         currentTab: 'product-units',
         productUnits: [],
         products: [],
+        stockSettings: [],
         filteredData: [],
         isLoading: false,
         filters: {
@@ -84,6 +86,19 @@ const ProductUnitsApp = {
             addProductUnitBtn: document.getElementById('addProductUnitBtn'),
             addProductUnitFromTab: document.getElementById('addProductUnitFromTab'),
             refreshStatsBtn: document.getElementById('refreshStatsBtn'),
+
+            // Stock management elements
+            addStockSetting: document.getElementById('addStockSetting'),
+            stockSettingsBody: document.getElementById('stockSettingsBody'),
+            stockSettingsModal: document.getElementById('stockSettingsModal'),
+            stockSettingsForm: document.getElementById('stockSettingsForm'),
+            stockProductSelect: document.getElementById('stockProductSelect'),
+            autoOrderEnabled: document.getElementById('autoOrderEnabled'),
+            minStockLevel: document.getElementById('minStockLevel'),
+            minOrderQty: document.getElementById('minOrderQty'),
+            assignedSupplier: document.getElementById('assignedSupplier'),
+            currentStockInfo: document.getElementById('currentStockInfo'),
+            noSupplierWarning: document.getElementById('noSupplierWarning'),
             
             // Modal
             modal: document.getElementById('addProductUnitModal'),
@@ -183,6 +198,25 @@ const ProductUnitsApp = {
             this.elements.refreshStatsBtn.addEventListener('click', () => this.loadStatistics());
         }
 
+        if (this.elements.addStockSetting) {
+            this.elements.addStockSetting.addEventListener('click', () => this.openStockModal());
+        }
+
+        if (this.elements.stockSettingsModal) {
+            this.elements.stockSettingsModal.addEventListener('click', (e) => {
+                if (e.target === this.elements.stockSettingsModal) {
+                    this.closeStockModal();
+                }
+            });
+        }
+
+        if (this.elements.stockSettingsForm) {
+            this.elements.stockSettingsForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                this.saveStockSettings();
+            });
+        }
+
         // Cargus config events
         if (this.elements.testCargusConnection) {
             this.elements.testCargusConnection.addEventListener('click', () => this.testCargusConnection());
@@ -231,6 +265,9 @@ const ProductUnitsApp = {
             case 'product-units':
                 this.loadProductUnits();
                 break;
+            case 'stock-management':
+                this.loadStockSettings();
+                break;
             case 'cargus-config':
                 this.loadCargusConfiguration();
                 break;
@@ -246,7 +283,8 @@ const ProductUnitsApp = {
             await Promise.all([
                 this.loadStatistics(),
                 this.loadProducts(),
-                this.loadProductUnits()
+                this.loadProductUnits(),
+                this.loadStockSettings()
             ]);
         } catch (error) {
             console.error('Error loading initial data:', error);
@@ -1427,6 +1465,108 @@ showNotification(message, type = 'info') {
         }
     }, 5000);
 }
+
+    // ===== STOCK MANAGEMENT FUNCTIONS =====
+    async loadStockSettings() {
+        if (!this.elements.stockSettingsBody) return;
+        this.elements.stockSettingsBody.innerHTML = `
+            <tr class="loading-row"><td colspan="8" class="text-center">
+                <div class="loading-spinner">
+                    <span class="material-symbols-outlined spinning">progress_activity</span>
+                    Încărcare date...
+                </div>
+            </td></tr>`;
+        try {
+            const response = await this.apiCall('GET', this.config.apiEndpoints.stockSettings);
+            this.state.stockSettings = response.data || response;
+            this.renderStockSettingsTable();
+        } catch (error) {
+            console.error('Error loading stock settings:', error);
+            this.elements.stockSettingsBody.innerHTML = '<tr><td colspan="8" class="text-center">Eroare la încărcare</td></tr>';
+        }
+    },
+
+    renderStockSettingsTable() {
+        if (!this.elements.stockSettingsBody) return;
+        const tbody = this.elements.stockSettingsBody;
+        if (!this.state.stockSettings.length) {
+            tbody.innerHTML = '<tr><td colspan="8" class="text-center">Nu există setări</td></tr>';
+            return;
+        }
+        tbody.innerHTML = this.state.stockSettings.map(s => `
+            <tr>
+                <td><strong>${this.escapeHtml(s.product_name)}</strong><br><small>${this.escapeHtml(s.sku)}</small></td>
+                <td>${this.escapeHtml(s.supplier_name || 'Neasignat')}</td>
+                <td>${s.current_stock}</td>
+                <td>${s.min_stock_level}</td>
+                <td>${s.min_order_quantity}</td>
+                <td>${s.auto_order_enabled ? '<span class="badge badge-success">Activă</span>' : '<span class="badge badge-secondary">Inactivă</span>'}</td>
+                <td>${s.last_auto_order_date || '-'}</td>
+                <td><button class="btn btn-sm btn-secondary" onclick="ProductUnitsApp.editStockSetting(${s.product_id})"><span class="material-symbols-outlined">edit</span></button></td>
+            </tr>
+        `).join('');
+    },
+
+    openStockModal(productId = null) {
+        if (!this.elements.stockSettingsModal) return;
+        this.elements.stockSettingsForm.reset();
+
+        if (this.state.products.length === 0) {
+            this.loadProducts();
+        }
+        if (this.elements.stockProductSelect) {
+            this.elements.stockProductSelect.innerHTML = '<option value="">Selectează produs...</option>';
+            this.state.products.forEach(p => {
+                const opt = document.createElement('option');
+                opt.value = p.id;
+                opt.textContent = `${p.name} (${p.code})`;
+                this.elements.stockProductSelect.appendChild(opt);
+            });
+        }
+
+        this.elements.stockSettingsModal.style.display = 'block';
+        document.body.style.overflow = 'hidden';
+    },
+
+    closeStockModal() {
+        if (!this.elements.stockSettingsModal) return;
+        this.elements.stockSettingsModal.style.display = 'none';
+        document.body.style.overflow = '';
+    },
+
+    async saveStockSettings() {
+        const data = {
+            product_id: this.elements.stockProductSelect.value,
+            min_stock_level: this.elements.minStockLevel.value,
+            min_order_quantity: this.elements.minOrderQty.value,
+            auto_order_enabled: this.elements.autoOrderEnabled.checked
+        };
+        try {
+            const response = await this.apiCall('POST', this.config.apiEndpoints.stockSettings, data);
+            if (response.success) {
+                this.closeStockModal();
+                this.loadStockSettings();
+                this.showSuccess('Setările au fost salvate');
+            } else {
+                throw new Error(response.error || 'Eroare la salvare');
+            }
+        } catch (e) {
+            console.error('saveStockSettings error', e);
+            this.showError(e.message);
+        }
+    },
+
+    editStockSetting(productId) {
+        const setting = this.state.stockSettings.find(s => s.product_id === productId);
+        if (!setting) return;
+        this.openStockModal();
+        this.elements.stockProductSelect.value = productId;
+        this.elements.minStockLevel.value = setting.min_stock_level;
+        this.elements.minOrderQty.value = setting.min_order_quantity;
+        this.elements.autoOrderEnabled.checked = setting.auto_order_enabled;
+        this.elements.assignedSupplier.textContent = setting.supplier_name || 'Neasignat';
+        this.elements.currentStockInfo.textContent = setting.current_stock;
+    },
 
 };
 

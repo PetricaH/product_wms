@@ -90,7 +90,7 @@ if (isset($_SESSION['username'])) {
                class="sidebar__link <?= getActiveClass('product-units.php') ?>"
                data-tooltip="Unități Produse">
                 <span class="material-symbols-outlined">inventory_2</span>
-                <span class="link-text">Unități Produse</span>
+                <span class="link-text">Setări Produse</span>
             </a>
         </li>
         

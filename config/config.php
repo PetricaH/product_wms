@@ -132,17 +132,5 @@ return [
         'key' => getenv('WMS_API_KEY') ?: '',
         'allowed_origins' => ['*'],
         'rate_limit' => 100,
-    ],
-
-    // Default email account used for sending notifications
-    'email' => [
-        'host' => 'mail.wartung.ro',
-        'port' => 465,
-        'encryption' => 'ssl',
-        'username' => 'comenzi@wartung.ro',
-        'password' => 'WTG7498&$%',
-        'from_email' => 'comenzi@wartung.ro',
-        'from_name' => 'Wartung - Departament Achizitii',
-        'reply_to' => 'comenzi@wartung.ro'
-    ],
+    ]
 ];

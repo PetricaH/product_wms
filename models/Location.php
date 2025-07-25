@@ -845,23 +845,46 @@ class Location {
      * @return array Array of zones with statistics
      */
     public function getDynamicZones() {
+        error_log("getDynamicZones() - Starting universal zone extraction");
+        
+        // CORRECTED: Extract zones from ALL active locations regardless of type
         $query = "SELECT 
-                    SUBSTRING_INDEX(location_code, '-', 1) as zone_name,
-                    COUNT(*) as shelf_count,
+                    CASE 
+                        WHEN location_code LIKE '%-%' THEN SUBSTRING_INDEX(location_code, '-', 1)
+                        ELSE COALESCE(zone, 'UNASSIGNED')
+                    END as zone_name,
+                    COUNT(*) as location_count,
+                    COUNT(DISTINCT type) as location_types_count,
+                    GROUP_CONCAT(DISTINCT type ORDER BY type) as location_types,
                     AVG(capacity) as avg_capacity,
                     SUM(capacity) as total_capacity,
-                    COUNT(CASE WHEN status = 'active' THEN 1 END) as active_shelves
+                    COUNT(CASE WHEN status = 'active' THEN 1 END) as active_locations,
+                    -- Get type breakdown
+                    COUNT(CASE WHEN type = 'shelf' THEN 1 END) as shelf_count,
+                    COUNT(CASE WHEN type = 'bin' THEN 1 END) as bin_count,
+                    COUNT(CASE WHEN type = 'rack' THEN 1 END) as rack_count,
+                    COUNT(CASE WHEN type = 'warehouse' THEN 1 END) as warehouse_count,
+                    COUNT(CASE WHEN type = 'zone' THEN 1 END) as zone_count,
+                    COUNT(CASE WHEN type LIKE '%qc%' OR type LIKE '%quarantine%' THEN 1 END) as qc_count,
+                    COUNT(CASE WHEN type = 'production' THEN 1 END) as production_count
                   FROM {$this->table} 
-                  WHERE type = 'Shelf' 
-                    AND status = 'active' 
-                    AND location_code LIKE '%-%'
-                  GROUP BY SUBSTRING_INDEX(location_code, '-', 1)
+                  WHERE status = 'active'
+                    AND (location_code IS NOT NULL OR zone IS NOT NULL)
+                  GROUP BY CASE 
+                        WHEN location_code LIKE '%-%' THEN SUBSTRING_INDEX(location_code, '-', 1)
+                        ELSE COALESCE(zone, 'UNASSIGNED')
+                    END
+                  HAVING zone_name IS NOT NULL AND zone_name != ''
                   ORDER BY zone_name";
         
         try {
+            error_log("getDynamicZones() - Executing universal query for all location types");
+            
             $stmt = $this->conn->prepare($query);
             $stmt->execute();
             $zones = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            error_log("getDynamicZones() - Found " . count($zones) . " zones: " . implode(', ', array_column($zones, 'zone_name')));
             
             // Calculate occupancy for each zone (with safety check)
             foreach ($zones as &$zone) {
@@ -871,6 +894,10 @@ class Location {
                     $zone['total_items'] = $zoneOccupancy['total_items'];
                     $zone['max_occupancy'] = $zoneOccupancy['max_occupancy'];
                     $zone['min_occupancy'] = $zoneOccupancy['min_occupancy'];
+                    
+                    // Enhanced zone info
+                    $zone['type_summary'] = $this->buildTypeSummary($zone);
+                    
                 } catch (Exception $e) {
                     error_log("Error getting occupancy for zone {$zone['zone_name']}: " . $e->getMessage());
                     // Set default values if occupancy calculation fails
@@ -878,15 +905,39 @@ class Location {
                     $zone['total_items'] = 0;
                     $zone['max_occupancy'] = 0;
                     $zone['min_occupancy'] = 0;
+                    $zone['type_summary'] = 'Mixed';
                 }
             }
             
+            error_log("getDynamicZones() - Successfully processed " . count($zones) . " zones with all location types");
             return $zones;
             
         } catch (PDOException $e) {
             error_log("Error getting dynamic zones: " . $e->getMessage());
-            return [];
+            
+            // FALLBACK: Extract zones from all locations if SQL fails
+            error_log("getDynamicZones() - Using fallback extraction method");
+            return $this->extractZonesFallback();
         }
+    }
+   
+    /**
+     * Build a readable summary of location types in a zone
+     * @param array $zone Zone data with type counts
+     * @return string Readable summary
+     */
+    private function buildTypeSummary($zone) {
+        $parts = [];
+        
+        if ($zone['shelf_count'] > 0) $parts[] = $zone['shelf_count'] . ' rafturi';
+        if ($zone['bin_count'] > 0) $parts[] = $zone['bin_count'] . ' containere';
+        if ($zone['rack_count'] > 0) $parts[] = $zone['rack_count'] . ' rack-uri';
+        if ($zone['warehouse_count'] > 0) $parts[] = $zone['warehouse_count'] . ' depozite';
+        if ($zone['zone_count'] > 0) $parts[] = $zone['zone_count'] . ' zone';
+        if ($zone['qc_count'] > 0) $parts[] = $zone['qc_count'] . ' QC';
+        if ($zone['production_count'] > 0) $parts[] = $zone['production_count'] . ' producție';
+        
+        return !empty($parts) ? implode(', ', $parts) : 'Mixt';
     }
 
     /**
@@ -895,58 +946,75 @@ class Location {
      * @return array Zone occupancy statistics
      */
     public function getZoneOccupancyStats($zoneName) {
+        // CORRECTED: Include ALL location types in occupancy calculation
         $query = "SELECT 
                     l.id,
+                    l.type,
                     l.capacity,
                     COALESCE(SUM(i.quantity), 0) as total_items
                   FROM {$this->table} l
                   LEFT JOIN inventory i ON l.id = i.location_id
-                  WHERE l.zone = :zone_name 
-                    AND l.type = 'Shelf' 
+                  WHERE (l.zone = :zone_name OR 
+                         (l.location_code LIKE CONCAT(:zone_name_2, '-%')))
                     AND l.status = 'active'
-                  GROUP BY l.id, l.capacity";
+                  GROUP BY l.id, l.type, l.capacity";
         
         try {
             $stmt = $this->conn->prepare($query);
             $stmt->bindParam(':zone_name', $zoneName);
+            $stmt->bindParam(':zone_name_2', $zoneName);
             $stmt->execute();
-            $shelves = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            $locations = $stmt->fetchAll(PDO::FETCH_ASSOC);
             
-            if (empty($shelves)) {
+            if (empty($locations)) {
+                error_log("getZoneOccupancyStats() - No locations found for zone: $zoneName");
                 return [
                     'avg_occupancy' => 0,
                     'total_items' => 0,
                     'max_occupancy' => 0,
-                    'min_occupancy' => 0
+                    'min_occupancy' => 0,
+                    'location_breakdown' => []
                 ];
             }
             
             $occupancies = [];
             $totalItems = 0;
+            $locationBreakdown = [];
             
-            foreach ($shelves as $shelf) {
-                $capacity = (int)$shelf['capacity'];
-                $items = (int)$shelf['total_items'];
+            foreach ($locations as $location) {
+                $capacity = (int)$location['capacity'];
+                $items = (int)$location['total_items'];
                 $occupancy = $capacity > 0 ? ($items / $capacity) * 100 : 0;
                 
                 $occupancies[] = $occupancy;
                 $totalItems += $items;
+                
+                // Track by location type
+                $type = $location['type'];
+                if (!isset($locationBreakdown[$type])) {
+                    $locationBreakdown[$type] = ['count' => 0, 'total_items' => 0, 'total_capacity' => 0];
+                }
+                $locationBreakdown[$type]['count']++;
+                $locationBreakdown[$type]['total_items'] += $items;
+                $locationBreakdown[$type]['total_capacity'] += $capacity;
             }
             
             return [
                 'avg_occupancy' => !empty($occupancies) ? round(array_sum($occupancies) / count($occupancies), 1) : 0,
                 'total_items' => $totalItems,
                 'max_occupancy' => !empty($occupancies) ? round(max($occupancies), 1) : 0,
-                'min_occupancy' => !empty($occupancies) ? round(min($occupancies), 1) : 0
+                'min_occupancy' => !empty($occupancies) ? round(min($occupancies), 1) : 0,
+                'location_breakdown' => $locationBreakdown
             ];
             
         } catch (PDOException $e) {
-            error_log("Error getting zone occupancy stats: " . $e->getMessage());
+            error_log("Error getting zone occupancy stats for $zoneName: " . $e->getMessage());
             return [
                 'avg_occupancy' => 0,
                 'total_items' => 0,
                 'max_occupancy' => 0,
-                'min_occupancy' => 0
+                'min_occupancy' => 0,
+                'location_breakdown' => []
             ];
         }
     }

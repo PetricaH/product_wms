@@ -21,9 +21,8 @@ $db = $dbFactory();
 // Include models
 require_once BASE_PATH . '/models/Location.php';
 require_once BASE_PATH . '/models/LocationLevelSettings.php';
-require_once BASE_PATH . '/models/LocationEnhanced.php';
 
-$locationModel = new LocationEnhanced($db);
+$locationModel = new Location($db);
 $levelSettingsModel = new LocationLevelSettings($db);
 
 // Handle operations
@@ -35,6 +34,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
     switch ($action) {
         case 'create':
+            error_log("=== LOCATION CREATION DEBUG START ===");
+            
             $locationData = [
                 'location_code' => trim($_POST['location_code'] ?? ''),
                 'zone' => trim($_POST['zone'] ?? ''),
@@ -49,27 +50,158 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'status' => intval($_POST['status'] ?? 1)
             ];
             
-            // Parse level settings data if provided
-            if (!empty($_POST['level_settings_data'])) {
-                try {
-                    $levelSettingsData = json_decode($_POST['level_settings_data'], true);
-                    if ($levelSettingsData) {
-                        $locationData['level_settings'] = $levelSettingsData;
-                    }
-                } catch (Exception $e) {
-                    error_log("Error parsing level settings: " . $e->getMessage());
-                }
+            error_log("Location Data: " . json_encode($locationData));
+            
+            // Check if location code already exists first
+            $existingLocation = $locationModel->getLocationByCode($locationData['location_code']);
+            if ($existingLocation) {
+                error_log("ERROR: Location code already exists: " . $locationData['location_code']);
+                $message = 'Eroare: Codul locației există deja!';
+                $messageType = 'error';
+                break;
             }
             
-            // Use enhanced creation method
-            $locationId = $locationModel->createLocationWithLevelSettings($locationData);
-            if ($locationId) {
+            try {
+                // Start transaction manually to get better error handling
+                $db->beginTransaction();
+                error_log("Transaction started");
+                
+                // Insert location record directly
+                $statusMap = [0 => 'inactive', 1 => 'active', 2 => 'maintenance'];
+                $status = $statusMap[$locationData['status'] ?? 1] ?? 'active';
+                
+                $insertQuery = "INSERT INTO locations
+                                (location_code, zone, type, levels, capacity, length_mm, depth_mm, height_mm, max_weight_kg, notes, status, created_at)
+                                VALUES (:location_code, :zone, :type, :levels, :capacity, :length_mm, :depth_mm, :height_mm, :max_weight_kg, :notes, :status, NOW())";
+                
+                $stmt = $db->prepare($insertQuery);
+                $params = [
+                    ':location_code' => $locationData['location_code'],
+                    ':zone' => $locationData['zone'],
+                    ':type' => $locationData['type'],
+                    ':levels' => $locationData['levels'],
+                    ':capacity' => $locationData['capacity'],
+                    ':length_mm' => $locationData['length_mm'],
+                    ':depth_mm' => $locationData['depth_mm'],
+                    ':height_mm' => $locationData['height_mm'],
+                    ':max_weight_kg' => $locationData['max_weight_kg'],
+                    ':notes' => $locationData['description'],
+                    ':status' => $status
+                ];
+                
+                error_log("Executing location insert with params: " . json_encode($params));
+                
+                if (!$stmt->execute($params)) {
+                    $errorInfo = $stmt->errorInfo();
+                    error_log("Location insert failed: " . json_encode($errorInfo));
+                    throw new Exception("Failed to insert location: " . $errorInfo[2]);
+                }
+                
+                $locationId = (int)$db->lastInsertId();
+                error_log("Location inserted successfully with ID: " . $locationId);
+                
+                // Now try to create level settings one by one
+                $levels = $locationData['levels'];
+                error_log("Creating level settings for $levels levels");
+                
+                for ($level = 1; $level <= $levels; $level++) {
+                    error_log("Creating settings for level $level");
+                    
+                    $levelSettings = [
+                        'level_name' => match($level) {
+                            1 => 'Bottom',
+                            2 => 'Middle', 
+                            3 => 'Top',
+                            default => "Level $level"
+                        },
+                        'storage_policy' => 'multiple_products',
+                        'allowed_product_types' => null,
+                        'max_different_products' => null,
+                        'length_mm' => 1000,
+                        'depth_mm' => 400,
+                        'height_mm' => 300,
+                        'max_weight_kg' => 50.0,
+                        'volume_min_liters' => null,
+                        'volume_max_liters' => null,
+                        'weight_min_kg' => null,
+                        'weight_max_kg' => null,
+                        'enable_auto_repartition' => false,
+                        'repartition_trigger_threshold' => 80,
+                        'priority_order' => $levels - $level + 1,
+                        'requires_special_handling' => false,
+                        'temperature_controlled' => false,
+                        'notes' => null
+                    ];
+                    
+                    error_log("Level $level settings: " . json_encode($levelSettings));
+                    
+                    // Insert level settings directly
+                    $levelQuery = "INSERT INTO location_level_settings 
+                                  (location_id, level_number, level_name, storage_policy, allowed_product_types, 
+                                   max_different_products, length_mm, depth_mm, height_mm, max_weight_kg,
+                                   volume_min_liters, volume_max_liters, weight_min_kg, weight_max_kg,
+                                   enable_auto_repartition, repartition_trigger_threshold, priority_order,
+                                   requires_special_handling, temperature_controlled, notes)
+                                  VALUES 
+                                  (:location_id, :level_number, :level_name, :storage_policy, :allowed_product_types,
+                                   :max_different_products, :length_mm, :depth_mm, :height_mm, :max_weight_kg,
+                                   :volume_min_liters, :volume_max_liters, :weight_min_kg, :weight_max_kg,
+                                   :enable_auto_repartition, :repartition_trigger_threshold, :priority_order,
+                                   :requires_special_handling, :temperature_controlled, :notes)";
+                    
+                    $levelStmt = $db->prepare($levelQuery);
+                    $levelParams = [
+                        ':location_id' => $locationId,
+                        ':level_number' => $level,
+                        ':level_name' => $levelSettings['level_name'],
+                        ':storage_policy' => $levelSettings['storage_policy'],
+                        ':allowed_product_types' => $levelSettings['allowed_product_types'],
+                        ':max_different_products' => $levelSettings['max_different_products'],
+                        ':length_mm' => $levelSettings['length_mm'],
+                        ':depth_mm' => $levelSettings['depth_mm'],
+                        ':height_mm' => $levelSettings['height_mm'],
+                        ':max_weight_kg' => $levelSettings['max_weight_kg'],
+                        ':volume_min_liters' => $levelSettings['volume_min_liters'],
+                        ':volume_max_liters' => $levelSettings['volume_max_liters'],
+                        ':weight_min_kg' => $levelSettings['weight_min_kg'],
+                        ':weight_max_kg' => $levelSettings['weight_max_kg'],
+                        ':enable_auto_repartition' => $levelSettings['enable_auto_repartition'] ? 1 : 0,
+                        ':repartition_trigger_threshold' => $levelSettings['repartition_trigger_threshold'],
+                        ':priority_order' => $levelSettings['priority_order'],
+                        ':requires_special_handling' => $levelSettings['requires_special_handling'] ? 1 : 0,
+                        ':temperature_controlled' => $levelSettings['temperature_controlled'] ? 1 : 0,
+                        ':notes' => $levelSettings['notes']
+                    ];
+                    
+                    error_log("Executing level settings insert for level $level with params: " . json_encode($levelParams));
+                    
+                    if (!$levelStmt->execute($levelParams)) {
+                        $errorInfo = $levelStmt->errorInfo();
+                        error_log("Level settings insert failed for level $level: " . json_encode($errorInfo));
+                        throw new Exception("Failed to insert level settings for level $level: " . $errorInfo[2]);
+                    }
+                    
+                    error_log("Level $level settings created successfully");
+                }
+                
+                $db->commit();
+                error_log("Transaction committed successfully");
+                
                 $message = 'Locația a fost creată cu succes.';
                 $messageType = 'success';
-            } else {
-                $message = 'Eroare la crearea locației. Verificați dacă codul nu există deja.';
+                
+            } catch (Exception $e) {
+                if ($db->inTransaction()) {
+                    $db->rollBack();
+                    error_log("Transaction rolled back");
+                }
+                error_log("CREATION FAILED: " . $e->getMessage());
+                error_log("Stack trace: " . $e->getTraceAsString());
+                $message = 'Eroare la crearea locației: ' . $e->getMessage();
                 $messageType = 'error';
             }
+            
+            error_log("=== LOCATION CREATION DEBUG END ===");
             break;
             
             case 'update':

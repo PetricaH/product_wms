@@ -594,7 +594,7 @@ class EnhancedWarehouseVisualization {
                     <td><span class="occupancy-badge ${occupancyClass}">${Math.round(location.occupancy?.total || 0)}%</span></td>
                     <td>${isShelf ? Math.round(location.occupancy?.bottom || 0) + '%' : '-'}</td>
                     <td>${isShelf ? Math.round(location.occupancy?.middle || 0) + '%' : '-'}</td>
-                    <td>${isShelf ? Math.round(location.occupancy?.top || 0) + '%' : '-'}</td>
+                   <td>${isShelf ? Math.round(location.occupancy?.top || 0) + '%' : '-'}</td>
                     <td>${location.items?.total || location.total_items || 0}</td>
                     <td>${location.unique_products || 0}</td>
                     <td>

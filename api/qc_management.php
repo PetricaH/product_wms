@@ -669,7 +669,7 @@ function notifySupplier($db, $input) {
         'smtp_pass'   => getenv('SMTP_PASS'),
         'smtp_secure' => getenv('SMTP_SECURE') ?: '',
         'from_email'  => getenv('FROM_EMAIL') ?: getenv('SMTP_USER'),
-        'from_name'   => getenv('FROM_NAME') ?: 'WMS - Comanda Achizitie'
+        'from_name'   => getenv('FROM_NAME') ?: getenv('MAIL_FROM_NAME')
     ];
 
     $emailResult = sendSupplierNotificationEmail($smtp, $data['email'], $subject, $finalBody, $images);

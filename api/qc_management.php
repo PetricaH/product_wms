@@ -654,20 +654,22 @@ function notifySupplier($db, $input) {
 
     // Build final email body
     $infoLines = [];
-    foreach ($selectedInfo as $key => $val) {
-        if (isset($data[$key])) {
-            $infoLines[] = ucfirst($key) . ': ' . $data[$key];
+    foreach ($selectedInfo as $field) {
+        if (isset($data[$field])) {
+            $infoLines[] = ucfirst($field) . ': ' . $data[$field];
         }
     }
     $finalBody = $body . "\n\n" . implode("\n", $infoLines);
 
     // Load SMTP settings from config
     $smtp = [
-        'smtp_host' => getenv('SMTP_HOST'),
-        'smtp_port' => getenv('SMTP_PORT') ?: 587,
-        'smtp_user' => getenv('SMTP_USER'),
-        'smtp_pass' => getenv('SMTP_PASS'),
-        'smtp_secure' => getenv('SMTP_SECURE') ?: ''
+        'smtp_host'   => getenv('SMTP_HOST'),
+        'smtp_port'   => getenv('SMTP_PORT') ?: 587,
+        'smtp_user'   => getenv('SMTP_USER'),
+        'smtp_pass'   => getenv('SMTP_PASS'),
+        'smtp_secure' => getenv('SMTP_SECURE') ?: '',
+        'from_email'  => getenv('FROM_EMAIL') ?: getenv('SMTP_USER'),
+        'from_name'   => getenv('FROM_NAME') ?: 'WMS - Comanda Achizitie'
     ];
 
     $emailResult = sendSupplierNotificationEmail($smtp, $data['email'], $subject, $finalBody, $images);
@@ -712,8 +714,9 @@ function sendSupplierNotificationEmail(array $smtp, string $to, string $subject,
         if (!empty($smtp['smtp_secure'])) {
             $mail->SMTPSecure = $smtp['smtp_secure'];
         }
-        $fromEmail = $smtp['smtp_user'];
-        $mail->setFrom($fromEmail, 'WMS QC');
+        $fromEmail = $smtp['from_email'] ?? $smtp['smtp_user'];
+        $fromName  = $smtp['from_name'] ?? 'WMS - Comanda Achizitie';
+        $mail->setFrom($fromEmail, $fromName);
         $mail->addAddress($to);
         $mail->Subject = $subject;
         $mail->Body = $body;

@@ -68,6 +68,12 @@ function handleGet($db, $path) {
         case 'decision-history':
             getDecisionHistory($db);
             break;
+        case 'get-supplier-info':
+            getSupplierInfo($db);
+            break;
+        case 'notification-history':
+            getNotificationHistoryApi($db);
+            break;
         default:
             http_response_code(404);
             echo json_encode(['error' => 'Endpoint not found']);
@@ -89,6 +95,9 @@ function handlePost($db, $path) {
             break;
         case 'bulk-decision':
             bulkDecision($db, $input);
+            break;
+        case 'notify-supplier':
+            notifySupplier($db, $input);
             break;
         default:
             http_response_code(404);
@@ -522,4 +531,203 @@ function getDecisionHistory($db) {
         'success' => true,
         'history' => $history
     ]);
+}
+
+/**
+ * Get supplier information and item details
+ */
+function getSupplierInfo($db) {
+    $itemId = intval($_GET['receiving_item_id'] ?? 0);
+    if ($itemId <= 0) {
+        http_response_code(400);
+        echo json_encode(['error' => 'Missing receiving_item_id']);
+        return;
+    }
+
+    $stmt = $db->prepare("
+        SELECT
+            ri.id as receiving_item_id,
+            ri.expected_quantity,
+            ri.received_quantity,
+            ri.condition_status,
+            ri.batch_number,
+            ri.expiry_date,
+            ri.notes as operator_notes,
+            ri.supplier_notification_count,
+            ri.last_notification_at,
+            rs.id as session_id,
+            rs.session_number,
+            rs.purchase_order_id,
+            rs.created_at as received_date,
+            po.order_number,
+            s.id as seller_id,
+            s.supplier_name as name,
+            s.email,
+            s.contact_person,
+            s.phone,
+            l.location_code,
+            pp.supplier_product_name as product_name
+        FROM receiving_items ri
+        LEFT JOIN purchase_order_items poi ON ri.purchase_order_item_id = poi.id
+        LEFT JOIN purchasable_products pp ON poi.purchasable_product_id = pp.id
+        LEFT JOIN receiving_sessions rs ON ri.receiving_session_id = rs.id
+        LEFT JOIN purchase_orders po ON rs.purchase_order_id = po.id
+        LEFT JOIN sellers s ON po.seller_id = s.id
+        LEFT JOIN locations l ON ri.location_id = l.id
+        WHERE ri.id = :item_id
+    ");
+    $stmt->execute([':item_id' => $itemId]);
+    $info = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$info) {
+        http_response_code(404);
+        echo json_encode(['error' => 'Item not found']);
+        return;
+    }
+
+    // Discover images from storage/receiving/session_number
+    $images = [];
+    if (!empty($info['session_number'])) {
+        $dir = BASE_PATH . '/storage/receiving/' . $info['session_number'];
+        if (is_dir($dir)) {
+            foreach (glob($dir . '/*.{jpg,jpeg,png,gif}', GLOB_BRACE) as $img) {
+                $images[] = str_replace(BASE_PATH, '', $img);
+            }
+        }
+    }
+
+    echo json_encode([
+        'success' => true,
+        'data' => $info,
+        'images' => $images
+    ]);
+}
+
+/**
+ * Get detailed notification history
+ */
+function getNotificationHistoryApi($db) {
+    $itemId = intval($_GET['item_id'] ?? 0);
+    if ($itemId <= 0) {
+        http_response_code(400);
+        echo json_encode(['error' => 'Missing item_id']);
+        return;
+    }
+
+    $stmt = $db->prepare("SELECT * FROM supplier_notifications WHERE receiving_item_id = :id ORDER BY created_at DESC");
+    $stmt->execute([':id' => $itemId]);
+    $history = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    echo json_encode(['success' => true, 'history' => $history]);
+}
+
+/**
+ * Send supplier notification email and log
+ */
+function notifySupplier($db, $input) {
+    $itemId = intval($input['receiving_item_id'] ?? 0);
+    $subject = trim($input['email_subject'] ?? '');
+    $body = trim($input['email_body'] ?? '');
+    $selectedInfo = $input['selected_info'] ?? [];
+    $images = $input['selected_images'] ?? [];
+    if ($itemId <= 0) {
+        http_response_code(400);
+        echo json_encode(['error' => 'Invalid receiving_item_id']);
+        return;
+    }
+    if ($subject === '' && $body === '') {
+        http_response_code(400);
+        echo json_encode(['error' => 'Email subject or body required']);
+        return;
+    }
+
+    // Fetch supplier and SMTP info via getSupplierInfo query
+    $_GET['receiving_item_id'] = $itemId;
+    ob_start();
+    getSupplierInfo($db);
+    $response = ob_get_clean();
+    $info = json_decode($response, true);
+    if (!$info || empty($info['success'])) {
+        http_response_code(404);
+        echo json_encode(['error' => 'Item not found']);
+        return;
+    }
+    $data = $info['data'];
+
+    // Build final email body
+    $infoLines = [];
+    foreach ($selectedInfo as $key => $val) {
+        if (isset($data[$key])) {
+            $infoLines[] = ucfirst($key) . ': ' . $data[$key];
+        }
+    }
+    $finalBody = $body . "\n\n" . implode("\n", $infoLines);
+
+    // Load SMTP settings from config
+    $smtp = [
+        'smtp_host' => getenv('SMTP_HOST'),
+        'smtp_port' => getenv('SMTP_PORT') ?: 587,
+        'smtp_user' => getenv('SMTP_USER'),
+        'smtp_pass' => getenv('SMTP_PASS'),
+        'smtp_secure' => getenv('SMTP_SECURE') ?: ''
+    ];
+
+    $emailResult = sendSupplierNotificationEmail($smtp, $data['email'], $subject, $finalBody, $images);
+    $status = $emailResult['success'] ? 'sent' : 'failed';
+
+    // Log notification
+    $stmt = $db->prepare("
+        INSERT INTO supplier_notifications (receiving_item_id, purchase_order_id, seller_id, sent_by, email_subject, email_body, selected_info, attached_images, delivery_status)
+        VALUES (:ri, :po, :seller, :user, :subj, :body, :info, :images, :status)
+    ");
+    $stmt->execute([
+        ':ri' => $itemId,
+        ':po' => $data['purchase_order_id'],
+        ':seller' => $data['seller_id'],
+        ':user' => $_SESSION['user_id'],
+        ':subj' => $subject,
+        ':body' => $finalBody,
+        ':info' => json_encode($selectedInfo),
+        ':images' => json_encode($images),
+        ':status' => $status
+    ]);
+
+    // Update receiving item counters
+    $db->exec("UPDATE receiving_items SET supplier_notified = 1, supplier_notification_count = supplier_notification_count + 1, last_notification_at = NOW() WHERE id = " . intval($itemId));
+
+    echo json_encode($emailResult);
+}
+
+function sendSupplierNotificationEmail(array $smtp, string $to, string $subject, string $body, array $attachments = []): array {
+    require_once BASE_PATH . '/lib/PHPMailer/PHPMailer.php';
+    require_once BASE_PATH . '/lib/PHPMailer/SMTP.php';
+    require_once BASE_PATH . '/lib/PHPMailer/Exception.php';
+
+    $mail = new PHPMailer\PHPMailer\PHPMailer(true);
+    try {
+        $mail->isSMTP();
+        $mail->Host = $smtp['smtp_host'];
+        $mail->Port = intval($smtp['smtp_port']);
+        $mail->SMTPAuth = true;
+        $mail->Username = $smtp['smtp_user'];
+        $mail->Password = $smtp['smtp_pass'];
+        if (!empty($smtp['smtp_secure'])) {
+            $mail->SMTPSecure = $smtp['smtp_secure'];
+        }
+        $fromEmail = $smtp['smtp_user'];
+        $mail->setFrom($fromEmail, 'WMS QC');
+        $mail->addAddress($to);
+        $mail->Subject = $subject;
+        $mail->Body = $body;
+        $mail->isHTML(false);
+        foreach ($attachments as $path) {
+            $fullPath = BASE_PATH . $path;
+            if (is_file($fullPath)) {
+                $mail->addAttachment($fullPath);
+            }
+        }
+        $mail->send();
+        return ['success' => true, 'message' => 'Email sent'];
+    } catch (Exception $e) {
+        error_log('Supplier notification email error: ' . $e->getMessage());
+        return ['success' => false, 'message' => $e->getMessage()];
+    }
 }

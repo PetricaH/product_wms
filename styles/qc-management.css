@@ -413,6 +413,46 @@
     max-width: 600px;
 }
 
+#supplier-notification-modal .modal-content {
+    max-width: 800px;
+}
+
+#supplier-notification-modal .info-section {
+    margin-bottom: 1rem;
+    background: var(--background-secondary);
+    padding: 0.75rem;
+    border-radius: 4px;
+}
+
+#supplier-notification-modal .checkbox-container {
+    margin-top: 1rem;
+}
+
+#supplier-notification-modal .image-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 1rem;
+}
+
+#supplier-notification-modal .image-container img {
+    width: 80px;
+    height: 80px;
+    object-fit: cover;
+    border-radius: 4px;
+    border: 1px solid var(--border-color);
+    cursor: pointer;
+}
+
+#supplier-notification-modal .email-preview {
+    margin-top: 1rem;
+    background: var(--background-secondary);
+    padding: 0.75rem;
+    font-size: 0.9rem;
+    white-space: pre-wrap;
+    border-radius: 4px;
+}
+
 .approval-summary,
 .rejection-summary {
     background: var(--background-secondary);

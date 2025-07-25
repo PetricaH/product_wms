@@ -348,7 +348,7 @@ class Product {
      * @param int $excludeId Product ID to exclude from check
      * @return bool True if SKU exists, false otherwise
      */
-    private function skuExists(string $sku, int $excludeId = 0): bool {
+    public function skuExists(string $sku, int $excludeId = 0): bool {
         $query = "SELECT COUNT(*) FROM {$this->table} WHERE sku = :sku";
         $params = [':sku' => $sku];
         

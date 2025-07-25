@@ -2,6 +2,7 @@
 // Include necessary files
 require_once 'bootstrap.php';
 require_once 'includes/helpers.php';
+require_once 'models/LocationLevelSettings.php';
 
 // Check if user is logged in (optional - depending on your auth system)
 if (!isset($_SESSION['user_id'])) {

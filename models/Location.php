@@ -2,6 +2,7 @@
 
 // File: models/Location.php - Updated for locations page functionality
 require_once __DIR__ . '/Setting.php';
+require_once __DIR__ . '/LocationLevelSettings.php';
 
 class Location {
     protected $conn;

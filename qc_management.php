@@ -251,6 +251,36 @@ require_once __DIR__ . '/includes/header.php';
         </div>
     </div>
 
+    <!-- Supplier Notification Modal -->
+    <div id="supplier-notification-modal" class="modal" style="display: none;">
+        <div class="modal-content" style="max-width:800px;">
+            <div class="modal-header">
+                <h3>Notifică Furnizor</h3>
+                <button type="button" class="close-btn" onclick="QCManager.closeSupplierModal()">
+                    <span class="material-symbols-outlined">close</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div id="supplier-info" class="info-section"></div>
+                <div class="form-group">
+                    <label for="supplier-subject">Subiect</label>
+                    <input type="text" id="supplier-subject" class="form-control">
+                </div>
+                <div class="form-group">
+                    <label for="supplier-message">Mesaj</label>
+                    <textarea id="supplier-message" class="form-control" rows="5"></textarea>
+                </div>
+                <div id="info-checkboxes" class="checkbox-container"></div>
+                <div id="image-container" class="image-container"></div>
+                <div id="email-preview" class="email-preview"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="QCManager.closeSupplierModal()">Anulează</button>
+                <button type="button" class="btn btn-primary" onclick="QCManager.sendSupplierNotification()">Trimite</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Loading Overlay -->
     <div id="loading-overlay" class="loading-overlay" style="display: none;">
         <div class="loading-content">

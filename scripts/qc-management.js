@@ -23,7 +23,8 @@ const QCManager = {
             offset: 0,
             total: 0
         },
-        isLoading: false
+        isLoading: false,
+        currentItem: null
     },
     
     // API endpoints
@@ -76,10 +77,17 @@ const QCManager = {
             bulkApproveModal: document.getElementById('bulk-approve-modal'),
             bulkRejectModal: document.getElementById('bulk-reject-modal'),
             loadingOverlay: document.getElementById('loading-overlay'),
+            supplierModal: document.getElementById('supplier-notification-modal'),
             
             // Forms
             bulkApproveForm: document.getElementById('bulk-approve-form'),
             bulkRejectForm: document.getElementById('bulk-reject-form'),
+            supplierSubject: document.getElementById('supplier-subject'),
+            supplierMessage: document.getElementById('supplier-message'),
+            infoCheckboxes: document.getElementById('info-checkboxes'),
+            imageContainer: document.getElementById('image-container'),
+            emailPreview: document.getElementById('email-preview'),
+            supplierInfo: document.getElementById('supplier-info'),
             
             // Modal fields
             approveNotes: document.getElementById('approve-notes'),
@@ -121,8 +129,15 @@ const QCManager = {
             } else if (e.target.closest('.reject-single-btn')) {
                 const itemId = e.target.closest('.qc-item-card').dataset.itemId;
                 this.rejectSingleItem(itemId);
+            } else if (e.target.closest('.notify-supplier-btn')) {
+                const itemId = e.target.closest('.qc-item-card').dataset.itemId;
+                this.openSupplierModal(itemId);
             }
         });
+
+        if (this.elements.supplierMessage) {
+            this.elements.supplierMessage.addEventListener('input', () => this.updateEmailPreview());
+        }
         
         // Keyboard shortcuts
         document.addEventListener('keydown', (e) => {
@@ -541,6 +556,12 @@ const QCManager = {
                                 <span class="material-symbols-outlined">cancel</span>
                                 Respinge
                             </button>
+                            ${item.condition_status !== 'good' || quantityDiscrepancy ? `
+                            <button type="button" class="btn btn-sm btn-warning notify-supplier-btn">
+                                <span class="material-symbols-outlined">mail</span>
+                                Notifică Furnizor
+                            </button>
+                            ` : ''}
                         </div>
                     </div>
                     
@@ -972,6 +993,93 @@ const QCManager = {
     closeBulkRejectModal() {
         this.hideModal(this.elements.bulkRejectModal);
         if (this.elements.bulkRejectForm) this.elements.bulkRejectForm.reset();
+    },
+
+    openSupplierModal(itemId) {
+        if (!itemId) return;
+        this.state.currentItem = itemId;
+        this.showLoading();
+        fetch(`${this.api.qcManagement}?path=get-supplier-info&receiving_item_id=${itemId}`)
+            .then(r => r.json())
+            .then(data => {
+                if (!data.success) throw new Error(data.error || 'Eroare');
+                if (this.elements.supplierInfo) {
+                    this.elements.supplierInfo.textContent = `${data.data.name} (${data.data.email})`;
+                }
+                if (this.elements.infoCheckboxes) {
+                    this.elements.infoCheckboxes.innerHTML = '';
+                    Object.keys(data.data).forEach(key => {
+                        if (['purchase_order_id','seller_id','session_id','receiving_item_id'].includes(key)) return;
+                        const label = document.createElement('label');
+                        label.innerHTML = `<input type="checkbox" value="${key}" checked> ${key}`;
+                        label.querySelector('input').addEventListener('change', () => this.updateEmailPreview());
+                        this.elements.infoCheckboxes.appendChild(label);
+                    });
+                    this.updateEmailPreview();
+                }
+                if (this.elements.imageContainer) {
+                    this.elements.imageContainer.innerHTML = '';
+                    (data.images || []).forEach(img => {
+                        const image = document.createElement('img');
+                        image.src = img;
+                        this.elements.imageContainer.appendChild(image);
+                    });
+                }
+                this.showModal(this.elements.supplierModal);
+            })
+            .catch(err => {
+                console.error(err);
+                this.showAlert('Nu s-au putut încărca informațiile', 'error');
+            })
+            .finally(() => this.hideLoading());
+    },
+
+    closeSupplierModal() {
+        this.hideModal(this.elements.supplierModal);
+        if (this.elements.supplierSubject) this.elements.supplierSubject.value = '';
+        if (this.elements.supplierMessage) this.elements.supplierMessage.value = '';
+        if (this.elements.infoCheckboxes) this.elements.infoCheckboxes.innerHTML = '';
+        if (this.elements.imageContainer) this.elements.imageContainer.innerHTML = '';
+        if (this.elements.emailPreview) this.elements.emailPreview.textContent = '';
+    },
+
+    async sendSupplierNotification() {
+        if (!this.state.currentItem) return;
+        const selectedFields = Array.from(this.elements.infoCheckboxes.querySelectorAll('input:checked')).map(c => c.value);
+        const formData = {
+            receiving_item_id: this.state.currentItem,
+            email_subject: this.elements.supplierSubject.value || '',
+            email_body: this.elements.supplierMessage.value || '',
+            selected_info: selectedFields,
+            selected_images: []
+        };
+        try {
+            this.showLoading();
+            const response = await fetch(`${this.api.qcManagement}?path=notify-supplier`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': window.CSRF_TOKEN },
+                body: JSON.stringify(formData)
+            });
+            const data = await response.json();
+            if (!data.success) throw new Error(data.message || 'Eroare');
+            this.showAlert('Notificare trimisă', 'success');
+            this.closeSupplierModal();
+        } catch (err) {
+            console.error(err);
+            this.showAlert('Eroare la trimiterea notificării: ' + err.message, 'error');
+        } finally {
+            this.hideLoading();
+        }
+    },
+
+    updateEmailPreview() {
+        if (!this.elements.emailPreview) return;
+        const fields = Array.from(this.elements.infoCheckboxes.querySelectorAll('input:checked')).map(c => c.value);
+        let preview = this.elements.supplierMessage.value || '';
+        fields.forEach(f => {
+            preview += `\n${f}: [valoare]`;
+        });
+        this.elements.emailPreview.textContent = preview.trim();
     },
     
     // Loading management

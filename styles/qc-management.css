@@ -617,3 +617,463 @@
         margin-left: 2rem;
     }
 }
+
+/* ===== SUPPLIER NOTIFICATION MODAL SPECIFIC STYLING ===== */
+
+/* Close button styling - matching the existing modal-close style */
+.close-btn {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 0.5rem;
+    border-radius: 4px;
+    transition: var(--transition);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+}
+
+.close-btn:hover {
+    background-color: var(--button-hover);
+    color: var(--text-primary);
+}
+
+.close-btn:focus {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+}
+
+.close-btn .material-symbols-outlined {
+    font-size: 1.2rem;
+}
+
+/* Enhanced supplier info section */
+#supplier-notification-modal .info-section {
+    margin-bottom: 1.5rem;
+    background: linear-gradient(135deg, var(--surface-background), var(--container-background));
+    padding: 1rem;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+#supplier-notification-modal .info-section::before {
+    content: "📧";
+    margin-right: 0.5rem;
+    font-size: 1.1rem;
+}
+
+/* Enhanced checkbox container for optional values - Grid Layout */
+/* Displays checkboxes in a grid: 3+ columns on desktop, 2 on tablet, 1 on mobile */
+#supplier-notification-modal .checkbox-container {
+    margin-top: 1.5rem;
+    padding: 1rem;
+    background: var(--surface-background);
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+}
+
+#supplier-notification-modal .checkbox-container::before {
+    content: "Selectează informațiile opționale de inclus:";
+    display: block;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border-color);
+    grid-column: 1 / -1;
+    position: relative;
+}
+
+/* Optional: Add selection counter (can be updated via JavaScript) */
+#supplier-notification-modal .checkbox-container::after {
+    content: "";
+    position: absolute;
+    right: 0;
+    top: 0;
+    background: var(--primary-color);
+    color: white;
+    padding: 0.2rem 0.5rem;
+    border-radius: 12px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    display: none; /* Show this via JS when checkboxes are selected */
+}
+
+/* When checkboxes are selected, show the counter */
+#supplier-notification-modal .checkbox-container.has-selections::after {
+    display: block;
+    content: var(--selection-count, "");
+}
+
+/* Responsive grid layout - auto-fits based on available space */
+#supplier-notification-modal .checkbox-container {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 0.5rem;
+    align-items: start;
+}
+
+/* Checkbox labels styling */
+#supplier-notification-modal .checkbox-container label {
+    display: flex;
+    align-items: center;
+    padding: 0.6rem 0.75rem;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    background: var(--container-background);
+    border: 1px solid transparent;
+    font-weight: normal;
+    font-size: 0.85rem;
+    min-height: 40px;
+    word-break: break-word;
+}
+
+#supplier-notification-modal .checkbox-container label:hover {
+    background: var(--button-hover);
+    border-color: var(--border-color-strong);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+#supplier-notification-modal .checkbox-container label input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    margin: 0 0.5rem 0 0;
+    cursor: pointer;
+    accent-color: var(--primary-color);
+    flex-shrink: 0;
+}
+
+#supplier-notification-modal .checkbox-container label:has(input:checked) {
+    background: rgba(var(--primary-color-rgb), 0.1);
+    border-color: var(--primary-color);
+    color: var(--primary-color);
+    font-weight: 500;
+    box-shadow: 0 2px 8px rgba(var(--primary-color-rgb), 0.2);
+}
+
+/* Enhanced email preview section */
+#supplier-notification-modal .email-preview {
+    margin-top: 1.5rem;
+    background: var(--container-background);
+    padding-left: 1rem;
+    padding-right: 1rem;
+    padding-top: 2rem;
+    border-radius: 8px;
+    border: 2px dashed var(--border-color);
+    font-family: 'Courier New', Consolas, monospace;
+    font-size: 0.85rem;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    min-height: 120px;
+    max-height: 250px;
+    overflow-y: auto;
+    position: relative;
+    transition: all 0.2s ease;
+}
+
+#supplier-notification-modal .email-preview::before {
+    content: "📄 Previzualizare Email";
+    position: absolute;
+    top: 10px;
+    left: 12px;
+    background: var(--container-background);
+    padding: 0 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    font-family: var(--font-family, inherit);
+}
+
+#supplier-notification-modal .email-preview:not(:empty) {
+    border-color: var(--primary-color);
+    border-style: solid;
+    background: linear-gradient(135deg, var(--container-background), var(--surface-background));
+}
+
+#supplier-notification-modal .email-preview:empty::after {
+    content: "Previzualizarea va apărea aici când completezi mesajul și selectezi informațiile...";
+    color: var(--text-muted);
+    font-style: italic;
+    font-family: var(--font-family, inherit);
+    font-size: 0.8rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100px;
+    text-align: center;
+}
+
+/* Enhanced form controls */
+#supplier-notification-modal .form-group {
+    margin-bottom: 1.25rem;
+}
+
+#supplier-notification-modal .form-group label {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    color: var(--text-primary);
+    font-size: 0.9rem;
+}
+
+#supplier-notification-modal .form-control {
+    width: 100%;
+    padding: 0.75rem;
+    border: 2px solid var(--border-color);
+    border-radius: 6px;
+    background-color: var(--container-background);
+    color: var(--text-primary);
+    font-size: 0.9rem;
+    transition: all 0.2s ease;
+    font-family: inherit;
+}
+
+#supplier-notification-modal .form-control:focus {
+    border-color: var(--primary-color);
+    outline: 0;
+    box-shadow: 0 0 0 3px rgba(var(--primary-color-rgb), 0.1);
+    background-color: var(--surface-background);
+}
+
+#supplier-notification-modal .form-control:hover {
+    border-color: var(--border-color-strong);
+}
+
+/* Subject field specific styling */
+#supplier-notification-modal #supplier-subject {
+    font-weight: 500;
+}
+
+/* Message textarea specific styling */
+#supplier-notification-modal #supplier-message {
+    resize: vertical;
+    min-height: 100px;
+    font-family: inherit;
+    line-height: 1.5;
+}
+
+#supplier-notification-modal #supplier-message::placeholder {
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+/* Enhanced image container */
+#supplier-notification-modal .image-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-top: 1.5rem;
+    padding: 1rem;
+    background: var(--surface-background);
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+}
+
+#supplier-notification-modal .image-container:empty {
+    display: none;
+}
+
+#supplier-notification-modal .image-container img {
+    width: 80px;
+    height: 80px;
+    object-fit: cover;
+    border-radius: 6px;
+    border: 2px solid var(--border-color);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+#supplier-notification-modal .image-container img:hover {
+    border-color: var(--primary-color);
+    transform: scale(1.05);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+/* Modal structure improvements */
+#supplier-notification-modal .modal-content {
+    background-color: var(--container-background);
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+    width: 90%;
+    max-width: 800px;
+    max-height: 90vh;
+    overflow-y: auto;
+    border: 1px solid var(--border-color);
+    animation: slideIn 0.3s ease-out;
+}
+
+#supplier-notification-modal.show {
+    display: flex !important;
+    animation: fadeIn 0.2s ease;
+}
+
+#supplier-notification-modal .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1.25rem;
+    border-bottom: 1px solid var(--border-color);
+    background: linear-gradient(135deg, var(--surface-background), var(--container-background));
+    border-radius: 12px 12px 0 0;
+}
+
+#supplier-notification-modal .modal-header h3 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin: 0;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+#supplier-notification-modal .modal-header h3::before {
+    content: "📬";
+    font-size: 1.1rem;
+}
+
+#supplier-notification-modal .modal-body {
+    background-color: var(--container-background);
+    padding: 1.5rem;
+}
+
+#supplier-notification-modal .modal-footer {
+    border-radius: 0 0 12px 12px;
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    padding: 1.25rem;
+    border-top: 1px solid var(--border-color);
+    background: linear-gradient(135deg, var(--surface-background), var(--container-background));
+}
+
+/* Button enhancements */
+#supplier-notification-modal .modal-footer .btn {
+    padding: 0.75rem 1.5rem;
+    font-weight: 500;
+    border-radius: 6px;
+    transition: all 0.2s ease;
+}
+
+#supplier-notification-modal .modal-footer .btn-primary {
+    background: linear-gradient(135deg, var(--primary-color), color-mix(in srgb, var(--primary-color) 85%, black));
+    border: none;
+    box-shadow: 0 2px 4px rgba(var(--primary-color-rgb), 0.3);
+}
+
+#supplier-notification-modal .modal-footer .btn-primary:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.4);
+}
+
+/* Loading state improvements */
+#supplier-notification-modal .loading-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1001;
+    border-radius: 12px;
+}
+
+#supplier-notification-modal .loading-content {
+    background: var(--container-background);
+    padding: 1.5rem;
+    border-radius: 8px;
+    text-align: center;
+    box-shadow: var(--card-shadow);
+}
+
+#supplier-notification-modal .loading-content .material-symbols-outlined {
+    font-size: 2rem;
+    color: var(--primary-color);
+    margin-bottom: 0.5rem;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    #supplier-notification-modal .modal-content {
+        width: 95%;
+        max-width: 95%;
+        margin: 2% auto;
+    }
+    
+    #supplier-notification-modal .modal-header,
+    #supplier-notification-modal .modal-body,
+    #supplier-notification-modal .modal-footer {
+        padding: 1rem;
+    }
+    
+    /* Checkbox container - 2 columns on tablet */
+    #supplier-notification-modal .checkbox-container {
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 0.4rem;
+    }
+    
+    #supplier-notification-modal .checkbox-container label {
+        padding: 0.5rem 0.6rem;
+        font-size: 0.8rem;
+        min-height: 36px;
+    }
+    
+    #supplier-notification-modal .image-container img {
+        width: 60px;
+        height: 60px;
+    }
+    
+    #supplier-notification-modal .email-preview {
+        max-height: 150px;
+        font-size: 0.8rem;
+    }
+}
+
+@media (max-width: 480px) {
+    #supplier-notification-modal .modal-header h3 {
+        font-size: 1.1rem;
+    }
+    
+    #supplier-notification-modal .modal-footer {
+        flex-direction: column-reverse;
+        gap: 0.5rem;
+    }
+    
+    #supplier-notification-modal .modal-footer .btn {
+        width: 100%;
+        justify-content: center;
+    }
+    
+    /* Checkbox container - 1 column on mobile for better readability */
+    #supplier-notification-modal .checkbox-container {
+        grid-template-columns: 1fr;
+        gap: 0.3rem;
+    }
+    
+    #supplier-notification-modal .checkbox-container label {
+        padding: 0.4rem 0.5rem;
+        font-size: 0.8rem;
+        min-height: 32px;
+    }
+    
+    #supplier-notification-modal .checkbox-container label input[type="checkbox"] {
+        width: 14px;
+        height: 14px;
+    }
+}

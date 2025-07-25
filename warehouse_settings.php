@@ -64,6 +64,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $messageType = 'error';
             }
             break;
+
+        case 'add_barrel_dimension':
+            $label  = trim($_POST['barrel_label'] ?? '');
+            $len    = floatval($_POST['barrel_length'] ?? 0);
+            $wid    = floatval($_POST['barrel_width'] ?? 0);
+            $hei    = floatval($_POST['barrel_height'] ?? 0);
+
+            if ($label && $len > 0 && $wid > 0 && $hei > 0) {
+                $stmt = $db->prepare('INSERT INTO barrel_dimensions (label, length_cm, width_cm, height_cm) VALUES (?, ?, ?, ?)');
+                if ($stmt->execute([$label, $len, $wid, $hei])) {
+                    $message = 'Dimensiunea bidonului a fost adăugată.';
+                    $messageType = 'success';
+                } else {
+                    $message = 'Eroare la adăugarea dimensiunii.';
+                    $messageType = 'error';
+                }
+            } else {
+                $message = 'Completați toate câmpurile pentru dimensiunea bidonului.';
+                $messageType = 'error';
+            }
+            break;
+
+        case 'delete_barrel_dimension':
+            $id = intval($_POST['dimension_id'] ?? 0);
+            if ($id > 0) {
+                $stmt = $db->prepare('DELETE FROM barrel_dimensions WHERE id = ?');
+                if ($stmt->execute([$id])) {
+                    $message = 'Dimensiunea a fost ștearsă.';
+                    $messageType = 'success';
+                } else {
+                    $message = 'Eroare la ștergerea dimensiunii.';
+                    $messageType = 'error';
+                }
+            }
+            break;
             
         case 'run_repartition_analysis':
             if (isset($levelSettingsModel) && class_exists('AutoRepartitionService')) {
@@ -143,6 +178,11 @@ $dimensionKeys = ['default_shelf_length','default_shelf_depth','default_level_he
 $basicSettings = $settingModel->getMultiple($basicKeys);
 $dimensionSettings = $settingModel->getMultiple($dimensionKeys);
 
+// Fetch barrel dimensions
+$barrelStmt = $db->prepare('SELECT id, label, length_cm, width_cm, height_cm FROM barrel_dimensions ORDER BY id ASC');
+$barrelStmt->execute();
+$barrelDimensions = $barrelStmt->fetchAll(PDO::FETCH_ASSOC);
+
 // Get repartition statistics
 $repartitionStats = [];
 try {
@@ -205,7 +245,7 @@ $currentPage = 'warehouse_settings.php';
             <?php if (isset($levelSettingsModel)): ?>
             <button type="button" class="tab-button" onclick="switchTab('dimensions')">
                 <span class="material-symbols-outlined">straighten</span>
-                Dimensiuni Rafturi
+                Dimensiuni
             </button>
             <button type="button" class="tab-button" onclick="switchTab('repartition')">
                 <span class="material-symbols-outlined">auto_fix_high</span>
@@ -298,6 +338,69 @@ $currentPage = 'warehouse_settings.php';
                         Salvează Dimensiunile Standard
                     </button>
                 </form>
+            </div>
+            <div class="settings-section">
+                <h3>
+                    <span class="material-symbols-outlined">straighten</span>
+                    Dimensiuni Standard Bidoane
+                </h3>
+                <form method="POST" style="margin-bottom:1rem;">
+                    <input type="hidden" name="action" value="add_barrel_dimension">
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="barrel_label" class="form-label">Tip Bidon</label>
+                            <input type="text" id="barrel_label" name="barrel_label" class="form-control" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="barrel_length" class="form-label">Lungime (cm)</label>
+                            <input type="number" id="barrel_length" name="barrel_length" step="0.1" min="0" class="form-control" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="barrel_width" class="form-label">Lățime (cm)</label>
+                            <input type="number" id="barrel_width" name="barrel_width" step="0.1" min="0" class="form-control" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="barrel_height" class="form-label">Înălțime (cm)</label>
+                            <input type="number" id="barrel_height" name="barrel_height" step="0.1" min="0" class="form-control" required>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary">
+                        <span class="material-symbols-outlined">add</span>
+                        Adaugă Dimensiune
+                    </button>
+                </form>
+                <?php if (!empty($barrelDimensions)): ?>
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Tip</th>
+                            <th>Lungime</th>
+                            <th>Lățime</th>
+                            <th>Înălțime</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    <?php foreach ($barrelDimensions as $bd): ?>
+                        <tr>
+                            <td><?= htmlspecialchars($bd['label']) ?></td>
+                            <td><?= $bd['length_cm'] ?></td>
+                            <td><?= $bd['width_cm'] ?></td>
+                            <td><?= $bd['height_cm'] ?></td>
+                            <td>
+                                <form method="POST" style="display:inline;">
+                                    <input type="hidden" name="action" value="delete_barrel_dimension">
+                                    <input type="hidden" name="dimension_id" value="<?= $bd['id'] ?>">
+                                    <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Ștergeți această dimensiune?')">
+                                        <span class="material-symbols-outlined">delete</span>
+                                    </button>
+                                </form>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+                <?php endif; ?>
             </div>
         </div>
         

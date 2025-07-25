@@ -86,6 +86,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             break;
 
+        case 'update_barrel_dimension':
+            $id     = intval($_POST['dimension_id'] ?? 0);
+            $label  = trim($_POST['barrel_label'] ?? '');
+            $len    = floatval($_POST['barrel_length'] ?? 0);
+            $wid    = floatval($_POST['barrel_width'] ?? 0);
+            $hei    = floatval($_POST['barrel_height'] ?? 0);
+
+            if ($id > 0 && $label && $len > 0 && $wid > 0 && $hei > 0) {
+                $stmt = $db->prepare('UPDATE barrel_dimensions SET label = ?, length_cm = ?, width_cm = ?, height_cm = ? WHERE id = ?');
+                if ($stmt->execute([$label, $len, $wid, $hei, $id])) {
+                    $message = 'Dimensiunea bidonului a fost actualizată.';
+                    $messageType = 'success';
+                } else {
+                    $message = 'Eroare la actualizarea dimensiunii.';
+                    $messageType = 'error';
+                }
+            } else {
+                $message = 'Completați toate câmpurile pentru actualizare.';
+                $messageType = 'error';
+            }
+            break;
+
         case 'delete_barrel_dimension':
             $id = intval($_POST['dimension_id'] ?? 0);
             if ($id > 0) {
@@ -182,6 +204,17 @@ $dimensionSettings = $settingModel->getMultiple($dimensionKeys);
 $barrelStmt = $db->prepare('SELECT id, label, length_cm, width_cm, height_cm FROM barrel_dimensions ORDER BY id ASC');
 $barrelStmt->execute();
 $barrelDimensions = $barrelStmt->fetchAll(PDO::FETCH_ASSOC);
+
+// Editing a specific barrel dimension?
+$editingDimension = null;
+if (isset($_GET['edit_dimension'])) {
+    $editId = intval($_GET['edit_dimension']);
+    if ($editId > 0) {
+        $stmt = $db->prepare('SELECT id, label, length_cm, width_cm, height_cm FROM barrel_dimensions WHERE id = ?');
+        $stmt->execute([$editId]);
+        $editingDimension = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+    }
+}
 
 // Get repartition statistics
 $repartitionStats = [];
@@ -345,29 +378,35 @@ $currentPage = 'warehouse_settings.php';
                     Dimensiuni Standard Bidoane
                 </h3>
                 <form method="POST" style="margin-bottom:1rem;">
-                    <input type="hidden" name="action" value="add_barrel_dimension">
+                    <input type="hidden" name="action" value="<?= $editingDimension ? 'update_barrel_dimension' : 'add_barrel_dimension' ?>">
+                    <?php if ($editingDimension): ?>
+                        <input type="hidden" name="dimension_id" value="<?= $editingDimension['id'] ?>">
+                    <?php endif; ?>
                     <div class="form-grid">
                         <div class="form-group">
                             <label for="barrel_label" class="form-label">Tip Bidon</label>
-                            <input type="text" id="barrel_label" name="barrel_label" class="form-control" required>
+                            <input type="text" id="barrel_label" name="barrel_label" class="form-control" value="<?= htmlspecialchars($editingDimension['label'] ?? '') ?>" required>
                         </div>
                         <div class="form-group">
                             <label for="barrel_length" class="form-label">Lungime (cm)</label>
-                            <input type="number" id="barrel_length" name="barrel_length" step="0.1" min="0" class="form-control" required>
+                            <input type="number" id="barrel_length" name="barrel_length" step="0.1" min="0" class="form-control" value="<?= htmlspecialchars($editingDimension['length_cm'] ?? '') ?>" required>
                         </div>
                         <div class="form-group">
                             <label for="barrel_width" class="form-label">Lățime (cm)</label>
-                            <input type="number" id="barrel_width" name="barrel_width" step="0.1" min="0" class="form-control" required>
+                            <input type="number" id="barrel_width" name="barrel_width" step="0.1" min="0" class="form-control" value="<?= htmlspecialchars($editingDimension['width_cm'] ?? '') ?>" required>
                         </div>
                         <div class="form-group">
                             <label for="barrel_height" class="form-label">Înălțime (cm)</label>
-                            <input type="number" id="barrel_height" name="barrel_height" step="0.1" min="0" class="form-control" required>
+                            <input type="number" id="barrel_height" name="barrel_height" step="0.1" min="0" class="form-control" value="<?= htmlspecialchars($editingDimension['height_cm'] ?? '') ?>" required>
                         </div>
                     </div>
                     <button type="submit" class="btn btn-primary">
-                        <span class="material-symbols-outlined">add</span>
-                        Adaugă Dimensiune
+                        <span class="material-symbols-outlined"><?= $editingDimension ? 'save' : 'add' ?></span>
+                        <?= $editingDimension ? 'Salvează' : 'Adaugă Dimensiune' ?>
                     </button>
+                    <?php if ($editingDimension): ?>
+                        <a href="warehouse_settings.php#dimensions-tab" class="btn btn-secondary">Anulează</a>
+                    <?php endif; ?>
                 </form>
                 <?php if (!empty($barrelDimensions)): ?>
                 <table class="data-table">
@@ -377,7 +416,7 @@ $currentPage = 'warehouse_settings.php';
                             <th>Lungime</th>
                             <th>Lățime</th>
                             <th>Înălțime</th>
-                            <th></th>
+                            <th>Acțiuni</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -388,6 +427,9 @@ $currentPage = 'warehouse_settings.php';
                             <td><?= $bd['width_cm'] ?></td>
                             <td><?= $bd['height_cm'] ?></td>
                             <td>
+                                <a href="warehouse_settings.php?edit_dimension=<?= $bd['id'] ?>#dimensions-tab" class="btn btn-sm btn-secondary">
+                                    <span class="material-symbols-outlined">edit</span>
+                                </a>
                                 <form method="POST" style="display:inline;">
                                     <input type="hidden" name="action" value="delete_barrel_dimension">
                                     <input type="hidden" name="dimension_id" value="<?= $bd['id'] ?>">

@@ -636,12 +636,18 @@ $currentPage = 'product-units';
                     </div>
                     <div class="form-group">
                         <label for="volumePerUnit">Volum per Unitate (L)</label>
-                        <input type="number" 
-                               id="volumePerUnit" 
-                               name="volume_per_unit" 
-                               step="0.001" 
-                               min="0" 
+                    <input type="number"
+                               id="volumePerUnit"
+                               name="volume_per_unit"
+                               step="0.001"
+                               min="0"
                                placeholder="0.000">
+                    </div>
+                    <div class="form-group">
+                        <label for="barrelDimensionSelect">Dimensiune Standard Bidon</label>
+                        <select id="barrelDimensionSelect">
+                            <option value="">Selectează...</option>
+                        </select>
                     </div>
                     <div class="form-group">
                         <label for="dimensionsLength">Lungime (cm)</label>

@@ -20,7 +20,8 @@ const ProductUnitsApp = {
             cargusConfig: `${baseUrl}/api/cargus_config.php`,
             testCargus: `${baseUrl}/api/test_cargus.php`,
             recalculateWeight: `${baseUrl}/api/recalculate_weight.php`,
-            stockSettings: `${baseUrl}/api/inventory_settings.php`
+            stockSettings: `${baseUrl}/api/inventory_settings.php`,
+            barrelDimensions: `${baseUrl}/api/barrel_dimensions.php`
         },
         debounceDelay: 300,
         refreshInterval: 30000, // 30 seconds
@@ -35,6 +36,7 @@ const ProductUnitsApp = {
         stockSettings: [],
         stockPagination: { limit: 20, offset: 0, total: 0, has_next: false },
         stockSearch: '',
+        barrelDimensions: [],
         filteredData: [],
         isLoading: false,
         filters: {
@@ -110,6 +112,10 @@ const ProductUnitsApp = {
             modalClose: document.querySelector('.modal-close'),
             productSelect: document.getElementById('productSelect'),
             unitTypeSelect: document.getElementById('unitTypeSelect'),
+            barrelDimensionSelect: document.getElementById('barrelDimensionSelect'),
+            dimensionsLengthInput: document.getElementById('dimensionsLength'),
+            dimensionsWidthInput: document.getElementById('dimensionsWidth'),
+            dimensionsHeightInput: document.getElementById('dimensionsHeight'),
             
             // Cargus Config
             cargusConfigForm: document.getElementById('cargusConfigForm'),
@@ -160,6 +166,18 @@ const ProductUnitsApp = {
             this.elements.modalForm.addEventListener('submit', (e) => {
                 e.preventDefault();
                 this.handleProductUnitSubmit(e);
+            });
+        }
+
+        if (this.elements.barrelDimensionSelect) {
+            this.elements.barrelDimensionSelect.addEventListener('change', () => {
+                const id = this.elements.barrelDimensionSelect.value;
+                const dim = this.state.barrelDimensions.find(d => d.id == id);
+                if (dim) {
+                    if (this.elements.dimensionsLengthInput) this.elements.dimensionsLengthInput.value = dim.length_cm;
+                    if (this.elements.dimensionsWidthInput) this.elements.dimensionsWidthInput.value = dim.width_cm;
+                    if (this.elements.dimensionsHeightInput) this.elements.dimensionsHeightInput.value = dim.height_cm;
+                }
             });
         }
 
@@ -312,7 +330,8 @@ const ProductUnitsApp = {
                 this.loadStatistics(),
                 this.loadProducts(),
                 this.loadProductUnits(),
-                this.loadStockSettings()
+                this.loadStockSettings(),
+                this.loadBarrelDimensions()
             ]);
         } catch (error) {
             console.error('Error loading initial data:', error);
@@ -394,6 +413,28 @@ const ProductUnitsApp = {
             option.value = product.id;
             option.textContent = `${product.name} (${product.code})`;
             this.elements.productSelect.appendChild(option);
+        });
+    },
+
+    async loadBarrelDimensions() {
+        try {
+            const response = await this.apiCall('GET', this.config.apiEndpoints.barrelDimensions);
+            this.state.barrelDimensions = response.data || response;
+            this.populateBarrelDimensionSelect();
+        } catch (error) {
+            console.error('Error loading barrel dimensions:', error);
+        }
+    },
+
+    populateBarrelDimensionSelect() {
+        if (!this.elements.barrelDimensionSelect) return;
+        const select = this.elements.barrelDimensionSelect;
+        select.innerHTML = '<option value="">Selectează...</option>';
+        this.state.barrelDimensions.forEach(dim => {
+            const opt = document.createElement('option');
+            opt.value = dim.id;
+            opt.textContent = dim.label;
+            select.appendChild(opt);
         });
     },
 
@@ -617,9 +658,17 @@ const ProductUnitsApp = {
             this.loadProducts();
         }
 
+        if (this.state.barrelDimensions.length === 0) {
+            this.loadBarrelDimensions();
+        }
+
         // Reset form
         if (this.elements.modalForm) {
             this.elements.modalForm.reset();
+        }
+
+        if (this.elements.barrelDimensionSelect) {
+            this.elements.barrelDimensionSelect.value = '';
         }
 
         // Show modal
@@ -638,6 +687,10 @@ const ProductUnitsApp = {
         // Reset form
         if (this.elements.modalForm) {
             this.elements.modalForm.reset();
+        }
+
+        if (this.elements.barrelDimensionSelect) {
+            this.elements.barrelDimensionSelect.value = '';
         }
 
         console.log('Modal closed');

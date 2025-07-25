@@ -180,11 +180,11 @@ function handlePost($db) {
         $input['dimensions_width'] ?? null,
         $input['dimensions_height'] ?? null,
         $input['max_stack_height'] ?? 1,
-        isset($input['fragile']) ? (bool)$input['fragile'] : false,
-        isset($input['hazardous']) ? (bool)$input['hazardous'] : false,
-        isset($input['temperature_controlled']) ? (bool)$input['temperature_controlled'] : false,
+        !empty($input['fragile']) ? 1 : 0,
+        !empty($input['hazardous']) ? 1 : 0,
+        !empty($input['temperature_controlled']) ? 1 : 0,
         $input['packaging_cost'] ?? 0.00,
-        isset($input['active']) ? (bool)$input['active'] : true
+        isset($input['active']) ? (!empty($input['active']) ? 1 : 0) : 1
     ]);
     
     if ($result) {
@@ -228,7 +228,7 @@ function handlePut($db) {
             $updateFields[] = "$field = ?";
             
             if (in_array($field, ['fragile', 'hazardous', 'temperature_controlled', 'active'])) {
-                $updateValues[] = (bool)$input[$field];
+                $updateValues[] = !empty($input[$field]) ? 1 : 0;
             } else {
                 $updateValues[] = $input[$field];
             }

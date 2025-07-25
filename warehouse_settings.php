@@ -76,6 +76,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($stmt->execute([$label, $len, $wid, $hei])) {
                     $message = 'Dimensiunea bidonului a fost adăugată.';
                     $messageType = 'success';
+                    header('Location: warehouse_settings.php?tab=dimensions&success=1');
+                    exit;
                 } else {
                     $message = 'Eroare la adăugarea dimensiunii.';
                     $messageType = 'error';
@@ -377,7 +379,7 @@ $currentPage = 'warehouse_settings.php';
                     <span class="material-symbols-outlined">straighten</span>
                     Dimensiuni Standard Bidoane
                 </h3>
-                <form method="POST" style="margin-bottom:1rem;">
+                <form method="POST" style="margin-bottom:1rem;" onsubmit="console.log('Form submitting...'); return true;">
                     <input type="hidden" name="action" value="<?= $editingDimension ? 'update_barrel_dimension' : 'add_barrel_dimension' ?>">
                     <?php if ($editingDimension): ?>
                         <input type="hidden" name="dimension_id" value="<?= $editingDimension['id'] ?>">
@@ -400,12 +402,12 @@ $currentPage = 'warehouse_settings.php';
                             <input type="number" id="barrel_height" name="barrel_height" step="0.1" min="0" class="form-control" value="<?= htmlspecialchars($editingDimension['height_cm'] ?? '') ?>" required>
                         </div>
                     </div>
-                    <button type="submit" class="btn btn-primary">
+                    <button type="submit" class="btn btn-primary" onclick="this.disabled=true; this.innerHTML='<span class=&quot;material-symbols-outlined&quot;>hourglass_empty</span> Salvez...'; this.form.submit();">
                         <span class="material-symbols-outlined"><?= $editingDimension ? 'save' : 'add' ?></span>
                         <?= $editingDimension ? 'Salvează' : 'Adaugă Dimensiune' ?>
                     </button>
                     <?php if ($editingDimension): ?>
-                        <a href="warehouse_settings.php#dimensions-tab" class="btn btn-secondary">Anulează</a>
+                        <a href="warehouse_settings.php?tab=dimensions" class="btn btn-secondary">Anulează</a>
                     <?php endif; ?>
                 </form>
                 <?php if (!empty($barrelDimensions)): ?>
@@ -430,10 +432,11 @@ $currentPage = 'warehouse_settings.php';
                                 <a href="warehouse_settings.php?edit_dimension=<?= $bd['id'] ?>#dimensions-tab" class="btn btn-sm btn-secondary">
                                     <span class="material-symbols-outlined">edit</span>
                                 </a>
-                                <form method="POST" style="display:inline;">
+                                <form method="POST" style="display:inline;" onsubmit="return true;">
                                     <input type="hidden" name="action" value="delete_barrel_dimension">
                                     <input type="hidden" name="dimension_id" value="<?= $bd['id'] ?>">
-                                    <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Ștergeți această dimensiune?')">
+                                    <button type="submit" class="btn btn-sm btn-danger" 
+                                            onclick="return confirm('Ștergeți această dimensiune?') && (this.disabled=true, this.innerHTML='<span class=&quot;material-symbols-outlined&quot;>hourglass_empty</span> Șterg...', true);">
                                         <span class="material-symbols-outlined">delete</span>
                                     </button>
                                 </form>

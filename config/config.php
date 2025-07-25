@@ -15,6 +15,11 @@ if (file_exists($envFile)) {
         $name = trim($name);
         $value = trim($value);
         
+        if ((strlen($value) > 1) &&
+            ((($value[0] === '"' || $value[0] === "'") && substr($value, -1) === $value[0]))) {
+            $value = substr($value, 1, -1);
+        }
+
         if (!array_key_exists($name, $_ENV) && !getenv($name)) {
             putenv(sprintf('%s=%s', $name, $value));
             $_ENV[$name] = $value;
@@ -132,5 +137,16 @@ return [
         'key' => getenv('WMS_API_KEY') ?: '',
         'allowed_origins' => ['*'],
         'rate_limit' => 100,
-    ]
+    ],
+
+    'email' => [
+        'host' => 'mail.wartung.ro',
+        'port' => 465,
+        'encryption' => 'ssl',
+        'username' => 'comenzi@wartung.ro',
+        'password' => 'WTG7498&$%',
+        'from_email' => 'comenzi@wartung.ro',
+        'from_name' => 'Wartung - Departament Achizitii',
+        'reply_to' => 'comenzi@wartung.ro'
+    ],
 ];

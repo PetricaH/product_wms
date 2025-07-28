@@ -1,5 +1,5 @@
 <?php
-// File: api/excel_import.php - Complete Excel Import with SmartBill Sync
+// File: api/excel_import_fixed.php - Clean Excel Import Handler
 header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: POST, OPTIONS');
@@ -14,14 +14,12 @@ if (!defined('BASE_PATH')) {
 }
 
 require_once BASE_PATH . '/bootstrap.php';
-require_once BASE_PATH . '/vendor/autoload.php'; // For PhpSpreadsheet
+require_once BASE_PATH . '/vendor/autoload.php';
 
 use PhpOffice\PhpSpreadsheet\IOFactory;
-use PhpOffice\PhpSpreadsheet\Shared\Date;
 
-class ExcelImportHandler {
+class ImprovedExcelImportHandler {
     private $db;
-    private $smartBillService;
     private $results;
     
     public function __construct($database) {
@@ -32,19 +30,11 @@ class ExcelImportHandler {
             'imported' => 0,
             'updated' => 0,
             'skipped' => 0,
-            'smartbill_synced' => 0,
             'errors' => [],
             'warnings' => [],
-            'message' => ''
+            'message' => '',
+            'debug_info' => []
         ];
-        
-        // Initialize SmartBill service if available
-        try {
-            require_once BASE_PATH . '/models/SmartBillService.php';
-            $this->smartBillService = new SmartBillService($database);
-        } catch (Exception $e) {
-            $this->results['warnings'][] = 'SmartBill service not available: ' . $e->getMessage();
-        }
     }
     
     public function processUpload() {
@@ -64,27 +54,88 @@ class ExcelImportHandler {
                 throw new Exception('Invalid file type. Only .xls and .xlsx files are allowed.');
             }
             
-            // Process the Excel file
-            $this->processExcelFile($tmpPath);
+            // Check if this is preview mode
+            $previewOnly = isset($_POST['preview_only']) && $_POST['preview_only'] === 'true';
             
-            // Sync with SmartBill if enabled
-            if ($this->smartBillService && $_POST['sync_smartbill'] === 'true') {
-                $this->syncWithSmartBill();
+            if ($previewOnly) {
+                $this->processExcelFilePreview($tmpPath);
+                $this->results['success'] = true;
+                $this->results['message'] = 'Preview completed successfully';
+            } else {
+                // Process the Excel file with full import
+                $this->processExcelFileImproved($tmpPath);
+                $this->results['success'] = true;
+                $this->results['message'] = "Import completed successfully. Processed: {$this->results['processed']}, Imported: {$this->results['imported']}, Updated: {$this->results['updated']}";
             }
-            
-            $this->results['success'] = true;
-            $this->results['message'] = "Import completed successfully. Processed: {$this->results['processed']}, Imported: {$this->results['imported']}, Updated: {$this->results['updated']}";
             
         } catch (Exception $e) {
             $this->results['success'] = false;
-            $this->results['message'] = 'Import failed: ' . $e->getMessage();
+            $this->results['message'] = 'Operation failed: ' . $e->getMessage();
             $this->results['errors'][] = $e->getMessage();
         }
         
         return $this->results;
     }
     
-    private function processExcelFile($filePath) {
+    private function processExcelFilePreview($filePath) {
+        try {
+            // Load the spreadsheet
+            $spreadsheet = IOFactory::load($filePath);
+            $worksheet = $spreadsheet->getActiveSheet();
+            $rows = $worksheet->toArray();
+            
+            if (empty($rows)) {
+                throw new Exception('Excel file is empty');
+            }
+            
+            // Debug: Show first few rows to understand structure
+            $this->results['debug_info']['first_10_rows'] = array_slice($rows, 0, 10);
+            
+            // Find header row
+            $headerInfo = $this->findHeaderRowImproved($rows);
+            
+            if ($headerInfo['row'] === -1) {
+                throw new Exception('Could not find header row in Excel file');
+            }
+            
+            $headerRow = $headerInfo['row'];
+            $headers = $headerInfo['headers'];
+            $headerMap = $this->mapHeadersImproved($headers);
+            
+            $this->results['debug_info']['header_row'] = $headerRow;
+            $this->results['debug_info']['headers'] = $headers;
+            $this->results['debug_info']['header_map'] = $headerMap;
+            $this->results['debug_info']['total_rows'] = count($rows);
+            $this->results['debug_info']['data_rows'] = count($rows) - $headerRow - 1;
+            
+            // Show sample data mapping
+            if (count($rows) > $headerRow + 1) {
+                $sampleRow = $rows[$headerRow + 1];
+                $sampleProduct = $this->extractProductDataImproved($sampleRow, $headerMap);
+                $this->results['debug_info']['sample_product'] = $sampleProduct;
+            }
+            
+            // Validate mapping
+            $requiredFields = ['sku', 'name'];
+            $missingRequired = [];
+            foreach ($requiredFields as $field) {
+                if (!isset($headerMap[$field])) {
+                    $missingRequired[] = $field;
+                }
+            }
+            
+            if (!empty($missingRequired)) {
+                $this->results['warnings'][] = 'Missing required fields: ' . implode(', ', $missingRequired);
+            }
+            
+            $this->results['processed'] = 0; // Preview mode
+            
+        } catch (Exception $e) {
+            throw $e;
+        }
+    }
+    
+    private function processExcelFileImproved($filePath) {
         $transactionStarted = false;
         
         try {
@@ -97,34 +148,34 @@ class ExcelImportHandler {
                 throw new Exception('Excel file is empty');
             }
             
-            // Find header row - look through first 20 rows for headers
-            $headerRow = $this->findHeaderRow($rows);
-            if ($headerRow === -1) {
-                throw new Exception('Nu s-au găsit coloanele necesare în fișier. Verificați formatul Excel.');
-            }
+            // Debug: Show first few rows to understand structure
+            $this->results['debug_info']['first_10_rows'] = array_slice($rows, 0, 10);
             
-            $headers = array_map(function($header) {
-                return trim((string)($header ?? ''));
-            }, $rows[$headerRow]);
+            // Find header row with improved detection
+            $headerInfo = $this->findHeaderRowImproved($rows);
             
-            $headerMap = $this->mapHeaders($headers);
-            
-            if (empty($headerMap['sku']) && empty($headerMap['name'])) {
-                // Show available headers for debugging
-                $availableHeaders = array_filter($headers);
-                $debugInfo = [
-                    'found_headers' => $availableHeaders,
-                    'header_row' => $headerRow,
-                    'mapped_fields' => $headerMap
-                ];
+            if ($headerInfo['row'] === -1) {
+                $availableContent = [];
+                for ($i = 0; $i < min(15, count($rows)); $i++) {
+                    $availableContent[] = "Row $i: " . implode(' | ', array_filter($rows[$i]));
+                }
                 
-                throw new Exception('Excel file must contain at least SKU or Product Name columns. ' . 
-                    'Available headers: ' . implode(', ', $availableHeaders) . '. ' .
-                    'Header found at row: ' . ($headerRow + 1) . '. ' .
-                    'Debug info: ' . json_encode($debugInfo));
+                throw new Exception('Could not find header row. Available content: ' . implode('; ', $availableContent));
             }
             
-            // Start transaction only if not already in one
+            $headerRow = $headerInfo['row'];
+            $headers = $headerInfo['headers'];
+            $headerMap = $this->mapHeadersImproved($headers);
+            
+            $this->results['debug_info']['header_row'] = $headerRow;
+            $this->results['debug_info']['headers'] = $headers;
+            $this->results['debug_info']['header_map'] = $headerMap;
+            
+            if (empty($headerMap)) {
+                throw new Exception('No recognizable columns found. Headers: ' . implode(', ', $headers));
+            }
+            
+            // Start transaction
             if (!$this->db->inTransaction()) {
                 $this->db->beginTransaction();
                 $transactionStarted = true;
@@ -134,28 +185,33 @@ class ExcelImportHandler {
             for ($i = $headerRow + 1; $i < count($rows); $i++) {
                 try {
                     $rowData = $rows[$i];
-                    $productData = $this->extractProductData($rowData, $headerMap);
                     
-                    if (empty($productData['sku']) && empty($productData['name'])) {
+                    // Skip empty rows
+                    if ($this->isEmptyRow($rowData)) {
+                        continue;
+                    }
+                    
+                    $productData = $this->extractProductDataImproved($rowData, $headerMap);
+                    
+                    if (empty($productData)) {
                         $this->results['skipped']++;
                         continue;
                     }
                     
                     $this->results['processed']++;
-                    $this->processProductData($productData, $i + 1);
+                    $this->processProductDataImproved($productData, $i + 1);
                     
                 } catch (Exception $e) {
                     $this->results['errors'][] = "Row " . ($i + 1) . ": " . $e->getMessage();
                 }
             }
             
-            // Commit only if we started the transaction
+            // Commit transaction
             if ($transactionStarted) {
                 $this->db->commit();
             }
             
         } catch (Exception $e) {
-            // Rollback only if we started the transaction
             if ($transactionStarted && $this->db->inTransaction()) {
                 $this->db->rollBack();
             }
@@ -164,76 +220,150 @@ class ExcelImportHandler {
     }
     
     /**
-     * Find the header row by looking for key column indicators
-     * @param array $rows All rows from Excel
-     * @return int Header row index, or -1 if not found
+     * Optimized header row detection for the specific Excel format
      */
-    private function findHeaderRow($rows) {
-        // Common Romanian header indicators
-        $indicators = [
-            'cod', 'produs', 'nume', 'sku', 'stoc', 'cantitate', 'pret', 'cost', 
-            'gestiune', 'u.m.', 'um', 'sold', 'final', 'unitar'
+    private function findHeaderRowImproved($rows) {
+        // Known exact headers for this Excel format
+        $expectedHeaders = ['gestiune', 'produs', 'cod', 'u.m.', 'stoc final', 'sold final', 'stoc minim'];
+        
+        // First, try to find the exact header row (should be row 0)
+        for ($i = 0; $i < min(10, count($rows)); $i++) {
+            $row = $rows[$i];
+            if (!$row || count($row) < 5) continue;
+            
+            $cleanRow = [];
+            $exactMatches = 0;
+            
+            foreach ($row as $cell) {
+                $cellValue = trim((string)($cell ?? ''));
+                $cleanRow[] = $cellValue;
+                
+                $cellLower = strtolower($cellValue);
+                if (in_array($cellLower, $expectedHeaders)) {
+                    $exactMatches++;
+                }
+            }
+            
+            // If we found at least 5 exact matches, this is our header row
+            if ($exactMatches >= 5) {
+                return [
+                    'row' => $i,
+                    'headers' => $cleanRow,
+                    'match_count' => $exactMatches
+                ];
+            }
+        }
+        
+        // Fallback: look for partial matches with key Romanian patterns
+        $patterns = [
+            'gestiune', 'produs', 'cod', 'u.m.', 'stoc', 'sold', 'minim',
+            'GESTIUNE', 'PRODUS', 'COD', 'U.M.', 'STOC', 'SOLD', 'MINIM'
         ];
         
-        for ($i = 0; $i < min(20, count($rows)); $i++) {
+        for ($i = 0; $i < min(15, count($rows)); $i++) {
             $row = $rows[$i];
-            if (!$row || count($row) < 2) continue;
+            if (!$row || count($row) < 3) continue;
             
-            $foundIndicators = 0;
+            $matchCount = 0;
+            $cleanRow = [];
+            
             foreach ($row as $cell) {
-                if (!$cell) continue;
+                $cellValue = trim((string)($cell ?? ''));
+                $cleanRow[] = $cellValue;
                 
-                $cellLower = strtolower(trim((string)$cell));
-                foreach ($indicators as $indicator) {
-                    if (strpos($cellLower, $indicator) !== false) {
-                        $foundIndicators++;
+                if (empty($cellValue)) continue;
+                
+                foreach ($patterns as $pattern) {
+                    if (stripos($cellValue, $pattern) !== false) {
+                        $matchCount++;
                         break;
                     }
                 }
             }
             
-            // If we found at least 2 indicators in this row, it's likely the header
-            if ($foundIndicators >= 2) {
-                return $i;
+            // If we found at least 4 matches, this is likely the header
+            if ($matchCount >= 4) {
+                return [
+                    'row' => $i,
+                    'headers' => $cleanRow,
+                    'match_count' => $matchCount
+                ];
             }
         }
         
-        return -1; // Header not found
+        return ['row' => -1, 'headers' => [], 'match_count' => 0];
     }
     
-    private function mapHeaders($headers) {
+    /**
+     * Optimized header mapping for the specific Excel format
+     */
+    private function mapHeadersImproved($headers) {
         $map = [];
         
-        // Extended Romanian/English header mappings
-        $mappings = [
-            'sku' => ['sku', 'cod', 'code', 'product_code', 'cod produs', 'cod_produs'],
-            'name' => ['name', 'nume', 'product_name', 'nume produs', 'produs', 'denumire', 'nume_produs'],
-            'description' => ['description', 'descriere', 'desc', 'detalii'],
-            'category' => ['category', 'categorie', 'cat', 'gestiune', 'tip'],
-            'quantity' => ['quantity', 'cantitate', 'qty', 'stock', 'stoc', 'stoc final', 'stoc_final', 'cant'],
-            'price' => ['price', 'pret', 'cost', 'unit_price', 'pret_unitar', 'cost unitar', 'cost_unitar', 'pret unitar'],
-            'min_stock_level' => ['min_stock', 'stoc_minim', 'minimum_stock', 'minim'],
-            'unit_of_measure' => ['unit', 'unitate', 'um', 'u.m.', 'unit_of_measure', 'unitate_masura'],
-            'supplier' => ['supplier', 'furnizor', 'vendor', 'prov'],
-            'barcode' => ['barcode', 'cod_bare', 'ean', 'cod bare'],
-            'weight' => ['weight', 'greutate', 'kg', 'masa'],
-            'dimensions' => ['dimensions', 'dimensiuni', 'dim'],
-            'total_value' => ['sold final', 'sold_final', 'total', 'valoare']
+        // Exact mappings for the specific Excel format we analyzed
+        $exactMappings = [
+            'gestiune' => 'category',
+            'produs' => 'name', 
+            'cod' => 'sku',
+            'u.m.' => 'unit_of_measure',
+            'stoc final' => 'quantity',
+            'sold final' => 'total_value',
+            'stoc minim' => 'min_stock_level'
         ];
         
+        // Enhanced mappings with fallbacks for variations
+        $fallbackMappings = [
+            'sku' => [
+                'cod', 'code', 'sku', 'cod produs', 'cod_produs', 'product_code'
+            ],
+            'name' => [
+                'produs', 'product', 'nume', 'name', 'denumire', 'nume produs', 'nume_produs', 'product_name'
+            ],
+            'category' => [
+                'gestiune', 'category', 'categorie', 'tip', 'management'
+            ],
+            'quantity' => [
+                'stoc final', 'stoc_final', 'stoc', 'stock', 'cantitate', 'quantity', 'qty'
+            ],
+            'unit_of_measure' => [
+                'u.m.', 'um', 'u.m', 'unit', 'unitate', 'unit_of_measure', 'unitate_masura'
+            ],
+            'total_value' => [
+                'sold final', 'sold_final', 'sold', 'valoare', 'value', 'total'
+            ],
+            'min_stock_level' => [
+                'stoc minim', 'stoc_minim', 'minimum', 'minim'
+            ]
+        ];
+        
+        // First try exact mappings
         foreach ($headers as $index => $header) {
-            $header = strtolower(trim((string)($header ?? '')));
+            $headerLower = strtolower(trim((string)($header ?? '')));
             
-            if (empty($header)) {
-                continue; // Skip empty headers
+            if (isset($exactMappings[$headerLower])) {
+                $map[$exactMappings[$headerLower]] = $index;
+                continue;
+            }
+        }
+        
+        // Then try fallback mappings for any unmapped fields
+        foreach ($headers as $index => $header) {
+            $headerLower = strtolower(trim((string)($header ?? '')));
+            
+            if (empty($headerLower)) {
+                continue;
             }
             
-            foreach ($mappings as $field => $variants) {
+            foreach ($fallbackMappings as $field => $variants) {
+                // Skip if already mapped
+                if (isset($map[$field])) {
+                    continue;
+                }
+                
                 foreach ($variants as $variant) {
-                    // Exact match or contains match
-                    if ($header === $variant || strpos($header, $variant) !== false) {
+                    if ($headerLower === $variant || strpos($headerLower, $variant) !== false) {
                         $map[$field] = $index;
-                        break 2; // Break both loops
+                        break 2;
                     }
                 }
             }
@@ -242,80 +372,90 @@ class ExcelImportHandler {
         return $map;
     }
     
-    private function extractProductData($rowData, $headerMap) {
+    /**
+     * Improved data extraction optimized for the specific Excel format
+     */
+    private function extractProductDataImproved($rowData, $headerMap) {
         $productData = [];
         
         foreach ($headerMap as $field => $index) {
-            if (isset($rowData[$index]) && $rowData[$index] !== null) {
-                $value = trim((string)$rowData[$index]);
-                
-                // Skip empty values
-                if ($value === '') {
-                    continue;
-                }
-                
-                // Handle different data types
-                switch ($field) {
-                    case 'quantity':
-                    case 'min_stock_level':
-                        // Handle Romanian number format (comma as decimal separator)
-                        $cleanValue = str_replace(['.', ','], ['', '.'], $value);
-                        $productData[$field] = max(0, intval(floatval($cleanValue)));
-                        break;
-                    case 'price':
-                        // Handle Romanian price format (comma as decimal separator)
-                        $cleanValue = str_replace(',', '.', $value);
-                        $productData[$field] = max(0, floatval($cleanValue));
-                        break;
-                    case 'weight':
-                        $cleanValue = str_replace(',', '.', $value);
-                        $productData[$field] = floatval($cleanValue);
-                        break;
-                    case 'unit_of_measure':
-                        // Map common Romanian units to standard units
-                        $unitMap = [
-                            'bucata' => 'pcs',
-                            'bucati' => 'pcs', 
-                            'buc' => 'pcs',
-                            'litru' => 'l',
-                            'litri' => 'l',
-                            'kg' => 'kg',
-                            'set' => 'set',
-                            'metru' => 'm',
-                            'metri' => 'm'
-                        ];
-                        $lowerValue = strtolower($value);
-                        $productData[$field] = $unitMap[$lowerValue] ?? $value;
-                        break;
-                    default:
-                        $productData[$field] = $value;
-                }
+            if (!isset($rowData[$index]) || $rowData[$index] === null) {
+                continue;
+            }
+            
+            $value = trim((string)$rowData[$index]);
+            
+            // Skip empty values, NULL, or dash placeholders
+            if ($value === '' || $value === '-' || $value === 'NULL' || $value === 'null') {
+                continue;
+            }
+            
+            switch ($field) {
+                case 'sku':
+                    $productData['sku'] = $value;
+                    break;
+                    
+                case 'name':
+                    $productData['name'] = $value;
+                    // Also use as description if not set elsewhere
+                    if (!isset($productData['description'])) {
+                        $productData['description'] = $value;
+                    }
+                    break;
+                    
+                case 'category':
+                    // Clean up category value
+                    $cleanCategory = trim($value);
+                    if ($cleanCategory !== 'Total') { // Skip summary rows
+                        $productData['category'] = $cleanCategory;
+                    }
+                    break;
+                    
+                case 'unit_of_measure':
+                    $productData['unit_of_measure'] = $value;
+                    break;
+                    
+                case 'quantity':
+                    // Handle Romanian number format and ensure integer
+                    $cleanValue = str_replace(['.', ','], ['', '.'], $value);
+                    $numericValue = floatval($cleanValue);
+                    $productData['quantity'] = max(0, intval($numericValue));
+                    break;
+                    
+                case 'min_stock_level':
+                    // Handle Romanian number format
+                    $cleanValue = str_replace(['.', ','], ['', '.'], $value);
+                    $numericValue = floatval($cleanValue);
+                    $productData['min_stock_level'] = max(0, intval($numericValue));
+                    break;
+                    
+                case 'total_value':
+                    // Handle Romanian currency format - convert to unit price if quantity exists
+                    $cleanValue = str_replace(['.', ','], ['', '.'], $value);
+                    $totalValue = max(0, floatval($cleanValue));
+                    
+                    // Try to calculate unit price if we have quantity
+                    if (isset($productData['quantity']) && $productData['quantity'] > 0) {
+                        $productData['price'] = round($totalValue / $productData['quantity'], 2);
+                    } else {
+                        $productData['price'] = $totalValue;
+                    }
+                    break;
             }
         }
         
-        // Special handling for Romanian report format
-        // If we have a combined product name with code (like "CODE123 - Product Name")
-        if (!empty($productData['name']) && empty($productData['sku'])) {
-            $nameParts = explode(' - ', $productData['name'], 2);
-            if (count($nameParts) === 2) {
-                $potentialSku = trim($nameParts[0]);
-                $potentialName = trim($nameParts[1]);
-                
-                // If first part looks like a code (alphanumeric, no spaces)
-                if (preg_match('/^[A-Z0-9\-\.]+$/', $potentialSku)) {
-                    $productData['sku'] = $potentialSku;
-                    $productData['name'] = $potentialName;
-                    $productData['description'] = $productData['name']; // Use full original as description
-                }
-            }
+        // Skip if this looks like a summary row
+        if (isset($productData['category']) && $productData['category'] === 'Total') {
+            return null;
         }
         
-        // Set defaults for required fields
-        if (empty($productData['sku']) && !empty($productData['name'])) {
-            $productData['sku'] = $this->generateSku($productData['name']);
+        // Validate minimum required data
+        if (empty($productData['sku']) && empty($productData['name'])) {
+            return null;
         }
         
-        if (empty($productData['category'])) {
+        // Set intelligent defaults
+        if (!isset($productData['category']) || empty($productData['category'])) {
             $productData['category'] = 'Import Excel';
         }
         
@@ -327,31 +467,49 @@ class ExcelImportHandler {
             $productData['price'] = 0.00;
         }
         
-        // Ensure all string fields are properly trimmed and not null
-        foreach (['sku', 'name', 'description', 'category', 'unit_of_measure', 'supplier', 'barcode'] as $field) {
-            if (isset($productData[$field])) {
-                $productData[$field] = trim((string)$productData[$field]);
-            }
+        if (!isset($productData['min_stock_level'])) {
+            $productData['min_stock_level'] = 0;
+        }
+        
+        // Clean and validate SKU
+        if (isset($productData['sku'])) {
+            $productData['sku'] = trim($productData['sku']);
+        }
+        
+        // Clean and validate name
+        if (isset($productData['name'])) {
+            $productData['name'] = trim($productData['name']);
         }
         
         return $productData;
     }
     
-    private function processProductData($productData, $rowNumber) {
-        // Check if product exists by SKU
-        $existingProduct = $this->findProductBySku($productData['sku']);
+    /**
+     * Improved product processing with better matching
+     */
+    private function processProductDataImproved($productData, $rowNumber) {
+        // Try to find existing product by SKU first, then by name
+        $existingProduct = null;
+        
+        if (!empty($productData['sku'])) {
+            $existingProduct = $this->findProductBySku($productData['sku']);
+        }
+        
+        if (!$existingProduct && !empty($productData['name'])) {
+            $existingProduct = $this->findProductByName($productData['name']);
+        }
         
         if ($existingProduct) {
             // Update existing product
-            $this->updateProduct($existingProduct['product_id'], $productData);
+            $this->updateProductImproved($existingProduct['product_id'], $productData, $existingProduct);
             $this->results['updated']++;
         } else {
             // Create new product
-            $productId = $this->createProduct($productData);
+            $productId = $this->createProductImproved($productData);
             if ($productId) {
                 $this->results['imported']++;
             } else {
-                throw new Exception("Failed to create product");
+                throw new Exception("Failed to create product for row $rowNumber");
             }
         }
     }
@@ -363,126 +521,159 @@ class ExcelImportHandler {
         return $stmt->fetch(PDO::FETCH_ASSOC);
     }
     
-    private function createProduct($productData) {
-        // Use only the columns that exist in your database
-        $query = "INSERT INTO products (
-            sku, name, description, category, quantity, price
-        ) VALUES (?, ?, ?, ?, ?, ?)";
-        
+    private function findProductByName($name) {
+        $query = "SELECT * FROM products WHERE name = ? LIMIT 1";
         $stmt = $this->db->prepare($query);
-        $params = [
+        $stmt->execute([$name]);
+        return $stmt->fetch(PDO::FETCH_ASSOC);
+    }
+    
+    private function updateProductImproved($productId, $productData, $existingProduct) {
+        $updateFields = [];
+        $params = [];
+        
+        // Fields to check for updates
+        $fieldsToUpdate = [
+            'name' => 'string',
+            'category' => 'string', 
+            'quantity' => 'int',
+            'price' => 'float',
+            'min_stock_level' => 'int',
+            'unit_of_measure' => 'string'
+        ];
+        
+        foreach ($fieldsToUpdate as $field => $type) {
+            if (!isset($productData[$field])) {
+                continue;
+            }
+            
+            $newValue = $productData[$field];
+            $existingValue = $existingProduct[$field] ?? null;
+            
+            // Convert values based on type for comparison
+            switch ($type) {
+                case 'int':
+                    $newValue = intval($newValue);
+                    $existingValue = intval($existingValue);
+                    break;
+                case 'float':
+                    $newValue = floatval($newValue);
+                    $existingValue = floatval($existingValue);
+                    break;
+                case 'string':
+                    $newValue = trim((string)$newValue);
+                    $existingValue = trim((string)$existingValue);
+                    break;
+            }
+            
+            // Only update if values are different
+            if ($newValue != $existingValue) {
+                $updateFields[] = "$field = ?";
+                $params[] = $newValue;
+            }
+        }
+        
+        if (empty($updateFields)) {
+            return; // Nothing to update
+        }
+        
+        $updateFields[] = "updated_at = CURRENT_TIMESTAMP";
+        $params[] = $productId;
+        
+        $query = "UPDATE products SET " . implode(', ', $updateFields) . " WHERE product_id = ?";
+        $stmt = $this->db->prepare($query);
+        $stmt->execute($params);
+    }
+    
+    private function createProductImproved($productData) {
+        // Check which columns exist in the products table
+        $availableColumns = $this->getTableColumns();
+        
+        // Base required columns
+        $baseColumns = ['sku', 'name', 'description', 'category', 'quantity', 'price'];
+        $baseValues = [
             trim((string)($productData['sku'] ?? '')),
             trim((string)($productData['name'] ?? '')),
-            trim((string)($productData['description'] ?? '')),
+            trim((string)($productData['description'] ?? $productData['name'] ?? '')),
             trim((string)($productData['category'] ?? 'Import Excel')),
             intval($productData['quantity'] ?? 0),
             floatval($productData['price'] ?? 0.00)
         ];
         
-        if ($stmt->execute($params)) {
-            return $this->db->lastInsertId();
+        // Optional columns (add if they exist in table)
+        $optionalColumns = [];
+        $optionalValues = [];
+        
+        if (in_array('min_stock_level', $availableColumns) && isset($productData['min_stock_level'])) {
+            $optionalColumns[] = 'min_stock_level';
+            $optionalValues[] = intval($productData['min_stock_level']);
         }
         
-        return false;
-    }
-    
-    private function updateProduct($productId, $productData) {
-        if (empty($productData)) {
-            return false;
+        if (in_array('unit_of_measure', $availableColumns) && isset($productData['unit_of_measure'])) {
+            $optionalColumns[] = 'unit_of_measure';
+            $optionalValues[] = trim((string)$productData['unit_of_measure']);
         }
         
-        $fields = [];
-        $params = [];
+        // Timestamps
+        $timestampColumns = ['created_at', 'updated_at'];
+        $timestampValues = ['CURRENT_TIMESTAMP', 'CURRENT_TIMESTAMP'];
         
-        // Only update basic fields that exist in your database
-        $allowedFields = ['name', 'description', 'category', 'quantity', 'price'];
+        // Combine all columns and values
+        $allColumns = array_merge($baseColumns, $optionalColumns, $timestampColumns);
+        $allValues = array_merge($baseValues, $optionalValues, $timestampValues);
         
-        foreach ($allowedFields as $field) {
-            if (isset($productData[$field])) {
-                $fields[] = "{$field} = ?";
-                if ($field === 'quantity') {
-                    $params[] = intval($productData[$field]);
-                } elseif ($field === 'price') {
-                    $params[] = floatval($productData[$field]);
-                } else {
-                    $params[] = trim((string)$productData[$field]);
-                }
-            }
-        }
+        // Build the query
+        $columnsList = implode(', ', $allColumns);
+        $placeholders = array_fill(0, count($baseValues) + count($optionalValues), '?');
+        $placeholders = array_merge($placeholders, $timestampValues);
+        $placeholdersList = implode(', ', $placeholders);
         
-        if (!empty($fields)) {
-            $params[] = $productId;
-            $query = "UPDATE products SET " . implode(', ', $fields) . " WHERE product_id = ?";
-            $stmt = $this->db->prepare($query);
-            return $stmt->execute($params);
-        }
-        
-        return false;
-    }
-    
-    private function generateSku($name) {
-        $safeName = trim((string)($name ?? ''));
-        $sku = strtoupper(substr(preg_replace('/[^A-Za-z0-9]/', '', $safeName), 0, 8));
-        $sku .= rand(100, 999);
-        
-        // Ensure uniqueness
-        while ($this->findProductBySku($sku)) {
-            $sku = substr($sku, 0, -3) . rand(100, 999);
-        }
-        
-        return $sku;
-    }
-    
-    private function syncWithSmartBill() {
-        if (!$this->smartBillService) {
-            $this->results['warnings'][] = 'SmartBill service not available for sync';
-            return;
-        }
-        
-        try {
-            // Use the existing SmartBill sync functionality instead of direct method calls
-            $syncResult = $this->smartBillService->syncProductsFromSmartBill(100);
-            
-            if ($syncResult['success']) {
-                $this->results['smartbill_synced'] = $syncResult['updated'] ?? 0;
-                $this->results['message'] .= " SmartBill sync: {$this->results['smartbill_synced']} products updated.";
-            } else {
-                $this->results['warnings'][] = 'SmartBill sync failed: ' . ($syncResult['message'] ?? 'Unknown error');
-            }
-            
-        } catch (Exception $e) {
-            $this->results['warnings'][] = 'SmartBill sync error: ' . $e->getMessage();
-        }
-    }
-    
-    private function updateProductSmartBillInfo($sku, $smartBillData) {
-        $query = "UPDATE products SET 
-                 smartbill_product_id = ?,
-                 quantity = COALESCE(?, quantity),
-                 price = COALESCE(?, price),
-                 smartbill_synced_at = NOW()
-                 WHERE sku = ?";
+        $query = "INSERT INTO products ($columnsList) VALUES ($placeholdersList)";
         
         $stmt = $this->db->prepare($query);
-        $stmt->execute([
-            $smartBillData['code'] ?? $sku,
-            $smartBillData['quantity'] ?? null,
-            $smartBillData['price'] ?? null,
-            $sku
-        ]);
+        $executeValues = array_merge($baseValues, $optionalValues);
+        $stmt->execute($executeValues);
+        
+        return $this->db->lastInsertId();
+    }
+    
+    private function getTableColumns() {
+        static $columns = null;
+        
+        if ($columns === null) {
+            try {
+                $stmt = $this->db->query("DESCRIBE products");
+                $columns = [];
+                while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+                    $columns[] = $row['Field'];
+                }
+            } catch (Exception $e) {
+                // Fallback to basic columns if describe fails
+                $columns = ['product_id', 'sku', 'name', 'description', 'category', 'quantity', 'price', 'created_at', 'updated_at'];
+            }
+        }
+        
+        return $columns;
+    }
+    
+    private function isEmptyRow($rowData) {
+        if (!$rowData) return true;
+        
+        foreach ($rowData as $cell) {
+            if ($cell !== null && trim((string)$cell) !== '') {
+                return false;
+            }
+        }
+        return true;
     }
 }
 
-// Main execution
+// Usage
 try {
-    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-        throw new Exception('Only POST method allowed');
-    }
-    
     $config = require BASE_PATH . '/config/config.php';
     $db = $config['connection_factory']();
     
-    $importer = new ExcelImportHandler($db);
+    $importer = new ImprovedExcelImportHandler($db);
     $result = $importer->processUpload();
     
     echo json_encode($result);
@@ -491,7 +682,7 @@ try {
     http_response_code(500);
     echo json_encode([
         'success' => false,
-        'message' => 'Server error: ' . $e->getMessage(),
+        'message' => 'System error: ' . $e->getMessage(),
         'errors' => [$e->getMessage()]
     ]);
 }

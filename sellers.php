@@ -173,6 +173,10 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                             <span class="material-symbols-outlined">add</span>
                             Furnizor Nou
                         </button>
+                        <button class="btn btn-primary" onclick="openImportSellersModal()">
+                            <span class="material-symbols-outlined">cloud_upload</span>
+                            Import Excel
+                        </button>
                     </div>
                 </div>
 
@@ -633,6 +637,116 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" onclick="closeModal('sellerDetailsModal')">Închide</button>
                     <button type="button" class="btn btn-primary" onclick="editCurrentSeller()">Editează</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Import Sellers Modal -->
+    <div class="modal" id="importSellersModal" style="display: none;">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3><span class="material-symbols-outlined">cloud_upload</span> Import Furnizori din Excel</h3>
+                    <button class="modal-close" onclick="closeImportSellersModal()">
+                        <span class="material-symbols-outlined">close</span>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <!-- File Upload Section -->
+                    <div id="step-upload" class="import-step">
+                        <div class="upload-section">
+                            <div class="upload-area" id="sellersUploadArea">
+                                <div class="upload-content">
+                                    <span class="material-symbols-outlined upload-icon">cloud_upload</span>
+                                    <h4>Încarcă fișierul Excel</h4>
+                                    <p>Selectează sau trage fișierul .xls sau .xlsx cu furnizorii</p>
+                                    <input type="file" id="sellersExcelFile" accept=".xls,.xlsx" style="display: none;">
+                                    <button type="button" class="btn btn-primary" onclick="document.getElementById('sellersExcelFile').click()">
+                                        <span class="material-symbols-outlined">folder_open</span>
+                                        Selectează Fișier
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <!-- File Info (hidden initially) -->
+                            <div class="file-info" id="sellersFileInfo" style="display: none;">
+                                <div class="file-details">
+                                    <span class="material-symbols-outlined">description</span>
+                                    <div class="file-meta">
+                                        <strong id="sellersFileName"></strong>
+                                        <span id="sellersFileSize"></span>
+                                    </div>
+                                </div>
+                                <button type="button" class="btn-remove" onclick="removeSellersFile()">
+                                    <span class="material-symbols-outlined">close</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Import Options -->
+                        <div class="import-options">
+                            <h5><span class="material-symbols-outlined">settings</span> Opțiuni Import</h5>
+                            
+                            <div class="option-group">
+                                <label class="checkbox-option">
+                                    <input type="checkbox" id="updateExistingSellers" checked>
+                                    <span class="checkmark"></span>
+                                    <div class="option-content">
+                                        <strong>Actualizează furnizorii existenți</strong>
+                                        <p>Actualizează datele furnizorilor existenți pe baza codului furnizor</p>
+                                    </div>
+                                </label>
+                            </div>
+                            
+                            <div class="option-group">
+                                <label class="checkbox-option">
+                                    <input type="checkbox" id="skipDuplicates">
+                                    <span class="checkmark"></span>
+                                    <div class="option-content">
+                                        <strong>Omite dublurile</strong>
+                                        <p>Nu importa furnizorii care există deja în sistem</p>
+                                    </div>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Progress Section (hidden initially) -->
+                    <div id="step-progress" class="import-step" style="display: none;">
+                        <div class="progress-container">
+                            <h4>Se procesează fișierul...</h4>
+                            <div class="progress-bar">
+                                <div class="progress-fill" id="sellersProgressFill"></div>
+                            </div>
+                            <div class="progress-text">
+                                <span id="sellersProgressText">Se pregătește importul...</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Results Section (hidden initially) -->
+                    <div id="step-results" class="import-step" style="display: none;">
+                        <div class="results-container">
+                            <div class="results-header">
+                                <span class="material-symbols-outlined success">check_circle</span>
+                                <h4>Import finalizat</h4>
+                            </div>
+                            <div class="results-stats" id="sellersResultsStats">
+                                <!-- Stats will be populated by JavaScript -->
+                            </div>
+                            <div class="results-details" id="sellersResultsDetails">
+                                <!-- Details will be populated by JavaScript -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="closeImportSellersModal()" id="sellersCancelBtn">Anulează</button>
+                    <button type="button" class="btn btn-primary" onclick="startSellersProcessing()" id="sellersProcessBtn" disabled>
+                        <span class="material-symbols-outlined">play_arrow</span>
+                        Selectează un fișier
+                    </button>
                 </div>
             </div>
         </div>

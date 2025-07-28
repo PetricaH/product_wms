@@ -342,7 +342,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                         <th>Nume Produs</th>
                                         <th>Categorie</th>
                                         <th>Furnizor</th>
-                                        <th>Preț</th>
+                                        <th>U.M.</th>
                                         <th>Stoc</th>
                                         <th>Status</th>
                                         <th width="100">Acțiuni</th>
@@ -392,7 +392,11 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                     <?php endif; ?>
                                                 </td>
                                                 <td>
-                                                    <span class="price-value"><?= number_format($product['price'], 2) ?> RON</span>
+                                                    <?php if (!empty($product['unit_of_measure'])): ?>
+                                                        <span class="unit-badge"><?= htmlspecialchars($product['unit_of_measure']) ?></span>
+                                                    <?php else: ?>
+                                                        <span class="text-muted">-</span>
+                                                    <?php endif; ?>
                                                 </td>
                                                 <td>
                                                     <div class="quantity-info">

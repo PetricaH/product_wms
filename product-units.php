@@ -608,11 +608,12 @@ $currentPage = 'product-units';
             <form id="addProductUnitForm" class="modal-form">
                 <div class="form-grid">
                     <div class="form-group">
-                        <label for="productSelect">Produs <span class="required">*</span></label>
-                        <select id="productSelect" name="product_id" required>
-                            <option value="">Selectează produs...</option>
-                            <!-- Options will be loaded via JavaScript -->
-                        </select>
+                        <label for="productSearchInput">Produs <span class="required">*</span></label>
+                        <div class="seller-search-container">
+                            <input type="hidden" id="productSelect" name="product_id" value="">
+                            <input type="text" id="productSearchInput" class="seller-search-input" placeholder="Caută produs..." autocomplete="off">
+                            <div class="seller-search-results" id="productSearchResults"></div>
+                        </div>
                     </div>
                     <div class="form-group">
                         <label for="unitTypeSelect">Tip Unitate <span class="required">*</span></label>

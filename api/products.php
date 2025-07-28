@@ -12,6 +12,7 @@ $db = $config['connection_factory']();
 
 try {
     $search = trim($_GET['search'] ?? '');
+    $limit  = min(100, max(1, intval($_GET['limit'] ?? 10)));
 
     $baseQuery = "
         SELECT
@@ -31,10 +32,14 @@ try {
         $params[':search'] = '%' . $search . '%';
     }
 
-    $query = "$baseQuery $where GROUP BY p.product_id, p.name, p.sku, p.category ORDER BY p.name ASC LIMIT 50";
+    $query = "$baseQuery $where GROUP BY p.product_id, p.name, p.sku, p.category ORDER BY p.name ASC LIMIT :limit";
 
     $stmt = $db->prepare($query);
-    $stmt->execute($params);
+    foreach ($params as $k => $v) {
+        $stmt->bindValue($k, $v);
+    }
+    $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+    $stmt->execute();
     $products = $stmt->fetchAll(PDO::FETCH_ASSOC);
     
     $formattedProducts = array_map(function($row) {

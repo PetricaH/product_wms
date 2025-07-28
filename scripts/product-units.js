@@ -110,7 +110,9 @@ const ProductUnitsApp = {
             modal: document.getElementById('addProductUnitModal'),
             modalForm: document.getElementById('addProductUnitForm'),
             modalClose: document.querySelector('.modal-close'),
-            productSelect: document.getElementById('productSelect'),
+            productIdInput: document.getElementById('productSelect'),
+            productSearchInput: document.getElementById('productSearchInput'),
+            productSearchResults: document.getElementById('productSearchResults'),
             unitTypeSelect: document.getElementById('unitTypeSelect'),
             barrelDimensionSelect: document.getElementById('barrelDimensionSelect'),
             dimensionsLengthInput: document.getElementById('dimensionsLength'),
@@ -246,6 +248,19 @@ const ProductUnitsApp = {
                 this.loadStockSettings();
             }, this.config.debounceDelay));
         }
+
+        if (this.elements.productSearchInput) {
+            this.elements.productSearchInput.addEventListener('input', this.debounce(() => {
+                const q = this.elements.productSearchInput.value.trim();
+                this.searchProducts(q);
+            }, this.config.debounceDelay));
+        }
+
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.seller-search-container')) {
+                this.hideProductResults();
+            }
+        });
 
         if (this.elements.stockPagination) {
             this.elements.stockPagination.addEventListener('click', (e) => {
@@ -394,7 +409,6 @@ const ProductUnitsApp = {
         try {
             const response = await this.apiCall('GET', this.config.apiEndpoints.products);
             this.state.products = response.data || response;
-            this.populateProductSelect();
             
             console.log(`Loaded ${this.state.products.length} products`);
         } catch (error) {
@@ -403,18 +417,6 @@ const ProductUnitsApp = {
         }
     },
 
-    populateProductSelect() {
-        if (!this.elements.productSelect) return;
-
-        this.elements.productSelect.innerHTML = '<option value="">Selectează produs...</option>';
-        
-        this.state.products.forEach(product => {
-            const option = document.createElement('option');
-            option.value = product.id;
-            option.textContent = `${product.name} (${product.code})`;
-            this.elements.productSelect.appendChild(option);
-        });
-    },
 
     async loadBarrelDimensions() {
         try {
@@ -653,10 +655,12 @@ const ProductUnitsApp = {
     openModal() {
         if (!this.elements.modal) return;
 
-        // Load products if not already loaded
-        if (this.state.products.length === 0) {
-            this.loadProducts();
-        }
+
+        // Reset search inputs
+        if (this.elements.productIdInput) this.elements.productIdInput.value = '';
+        if (this.elements.productSearchInput) this.elements.productSearchInput.value = '';
+        if (this.elements.productSearchResults) this.elements.productSearchResults.innerHTML = '';
+        if (this.elements.productSearchResults) this.elements.productSearchResults.classList.remove('show');
 
         if (this.state.barrelDimensions.length === 0) {
             this.loadBarrelDimensions();
@@ -691,6 +695,10 @@ const ProductUnitsApp = {
 
         if (this.elements.barrelDimensionSelect) {
             this.elements.barrelDimensionSelect.value = '';
+        }
+        if (this.elements.productSearchResults) {
+            this.elements.productSearchResults.innerHTML = '';
+            this.elements.productSearchResults.classList.remove('show');
         }
 
         console.log('Modal closed');
@@ -741,6 +749,61 @@ const ProductUnitsApp = {
             this.showError(error.message || 'Eroare la salvarea configurării');
         } finally {
             this.hideLoading();
+        }
+    },
+
+    async searchProducts(query) {
+        if (!this.elements.productSearchResults) return;
+        if (!query || query.length < 2) {
+            this.hideProductResults();
+            return;
+        }
+        try {
+            const url = `${this.config.apiEndpoints.products}?search=${encodeURIComponent(query)}&limit=10`;
+            const resp = await fetch(url);
+            const data = await resp.json();
+            if (resp.ok && Array.isArray(data)) {
+                this.displayProductResults(data);
+            }
+        } catch (err) {
+            console.error('Product search error', err);
+        }
+    },
+
+    displayProductResults(products) {
+        const container = this.elements.productSearchResults;
+        if (!container) return;
+        if (products.length === 0) {
+            container.innerHTML = '<div class="seller-search-item">Nu s-au găsit produse</div>';
+            container.classList.add('show');
+            return;
+        }
+        container.innerHTML = products.map((p, idx) => `
+            <div class="seller-search-item" data-id="${p.id}" data-name="${this.escapeHtml(p.name)}" data-index="${idx}">
+                <span class="seller-item-name">${this.escapeHtml(p.name)}</span>
+                <span class="seller-item-details">${this.escapeHtml(p.code)}</span>
+            </div>
+        `).join('');
+        container.classList.add('show');
+        container.querySelectorAll('.seller-search-item').forEach(item => {
+            item.addEventListener('click', () => {
+                const id = item.getAttribute('data-id');
+                const name = item.getAttribute('data-name');
+                this.selectProduct(id, name);
+            });
+        });
+    },
+
+    selectProduct(id, name) {
+        if (this.elements.productIdInput) this.elements.productIdInput.value = id;
+        if (this.elements.productSearchInput) this.elements.productSearchInput.value = name;
+        this.hideProductResults();
+    },
+
+    hideProductResults() {
+        if (this.elements.productSearchResults) {
+            this.elements.productSearchResults.innerHTML = '';
+            this.elements.productSearchResults.classList.remove('show');
         }
     },
 

@@ -7,8 +7,8 @@ class Product {
     private $table = "products";
     
     private $defaultFields = [
-        'product_id', 'sku', 'name', 'description', 'category', 'quantity',
-        'min_stock_level', 'price', 'weight', 'dimensions', 'barcode', 
+        'product_id', 'sku', 'name', 'description', 'category', 'unit_of_measure', 'quantity',
+        'min_stock_level', 'price', 'weight', 'dimensions', 'barcode',
         'image_url', 'status', 'seller_id', 'created_at', 'updated_at', 'smartbill_product_id'
     ];
     
@@ -198,8 +198,8 @@ class Product {
         }
         
         $query = "INSERT INTO {$this->table} (
-                    sku, name, description, category, quantity, price, seller_id
-                  ) VALUES (?, ?, ?, ?, ?, ?, ?)";
+                    sku, name, description, category, unit_of_measure, quantity, price, seller_id
+                  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
         
         try {
             $stmt = $this->conn->prepare($query);
@@ -208,6 +208,7 @@ class Product {
                 $productData['name'],
                 $productData['description'] ?? '',
                 $productData['category'] ?? '',
+                $productData['unit_of_measure'] ?? 'pcs',
                 intval($productData['quantity'] ?? 0),
                 floatval($productData['price'] ?? 0),
                 !empty($productData['seller_id']) ? intval($productData['seller_id']) : null
@@ -267,9 +268,10 @@ class Product {
         // Map of allowed fields that exist in your database
         $allowedFields = [
             'sku' => ':sku',
-            'name' => ':name', 
+            'name' => ':name',
             'description' => ':description',
             'category' => ':category',
+            'unit_of_measure' => ':unit_of_measure',
             'quantity' => ':quantity',
             'price' => ':price',
             'min_stock_level' => ':min_stock_level',
@@ -866,6 +868,7 @@ class Product {
             'name' => 'name',
             'description' => 'description',
             'category' => 'category',
+            'unit_of_measure' => 'unit_of_measure',
             'quantity' => 'quantity',
             'min_stock_level' => 'min_stock_level',
             'price' => 'price'

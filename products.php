@@ -36,7 +36,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'sku' => trim($_POST['sku'] ?? ''),
                 'price' => floatval($_POST['price'] ?? 0),
                 'category' => trim($_POST['category'] ?? ''),
-                'unit' => trim($_POST['unit'] ?? 'pcs'),
+                'unit_of_measure' => trim($_POST['unit_of_measure'] ?? 'pcs'),
                 'status' => isset($_POST['status']) ? 'active' : 'inactive',
                 'seller_id' => isset($_POST['seller_id']) ? intval($_POST['seller_id']) : null
             ];
@@ -64,7 +64,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'sku' => trim($_POST['sku'] ?? ''),
                     'price' => floatval($_POST['price'] ?? 0),
                     'category' => trim($_POST['category'] ?? ''),
-                    'unit' => trim($_POST['unit'] ?? 'pcs'),
+                    'unit_of_measure' => trim($_POST['unit_of_measure'] ?? 'pcs'),
                     'status' => isset($_POST['status']) ? 'active' : 'inactive',
                     'seller_id' => (!empty($_POST['seller_id']) && $_POST['seller_id'] !== '') ? intval($_POST['seller_id']) : null
                 ];
@@ -713,7 +713,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                     <div class="form-row">
                         <div class="form-group">
                             <label for="create-unit">Unitate</label>
-                            <select id="create-unit" name="unit" class="form-control">
+                            <select id="create-unit" name="unit_of_measure" class="form-control">
                                 <option value="pcs">Bucată</option>
                                 <option value="kg">Kilogram</option>
                                 <option value="l">Litru</option>
@@ -805,7 +805,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                     <div class="form-row">
                         <div class="form-group">
                             <label for="edit-unit">Unitate</label>
-                            <select id="edit-unit" name="unit" class="form-control">
+                            <select id="edit-unit" name="unit_of_measure" class="form-control">
                                 <option value="pcs">Bucată</option>
                                 <option value="kg">Kilogram</option>
                                 <option value="l">Litru</option>

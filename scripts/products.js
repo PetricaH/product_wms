@@ -148,7 +148,7 @@ function populateEditForm(productData) {
         document.getElementById('edit-description').value = product.description || '';
         document.getElementById('edit-price').value = product.price || '';
         document.getElementById('edit-category').value = product.category || '';
-        document.getElementById('edit-unit').value = product.unit || 'pcs';
+        document.getElementById('edit-unit').value = product.unit_of_measure || 'pcs';
         document.getElementById('edit-status').checked = (product.status == undefined ? 1 : product.status) == 1;
         
     } catch (error) {
@@ -1646,7 +1646,7 @@ function populateEditForm(productData) {
         document.getElementById('edit-description').value = product.description || '';
         document.getElementById('edit-price').value = product.price || '';
         document.getElementById('edit-category').value = product.category || '';
-        document.getElementById('edit-unit').value = product.unit || 'pcs';
+        document.getElementById('edit-unit').value = product.unit_of_measure || 'pcs';
         document.getElementById('edit-status').checked = (product.status == undefined ? 1 : product.status) == 1;
         
         // Handle seller data

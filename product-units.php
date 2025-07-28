@@ -730,8 +730,12 @@ $currentPage = 'product-units';
             <form id="stockSettingsForm" class="modal-form">
                 <div class="form-grid">
                     <div class="form-group">
-                        <label for="stockProductSelect">Produs <span class="required">*</span></label>
-                        <select id="stockProductSelect" name="product_id" required></select>
+                        <label for="stockProductSearch">Produs <span class="required">*</span></label>
+                        <div class="seller-search-container">
+                            <input type="hidden" id="stockProductId" name="product_id" value="">
+                            <input type="text" id="stockProductSearch" class="seller-search-input" placeholder="Caută produs..." autocomplete="off">
+                            <div class="seller-search-results" id="stockProductResults"></div>
+                        </div>
                     </div>
                     <div class="form-group">
                         <label>Furnizor Asignat</label>

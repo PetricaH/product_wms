@@ -981,13 +981,28 @@ const ProductUnitsApp = {
         }
 
         const response = await fetch(url, options);
-        
+        const contentType = response.headers.get('content-type') || '';
+        const rawText = await response.text();
+
         if (!response.ok) {
-            const errorData = await response.json().catch(() => ({ error: `HTTP ${response.status}` }));
+            let errorData;
+            try {
+                errorData = JSON.parse(rawText);
+            } catch (_) {
+                errorData = { error: rawText || `HTTP ${response.status}` };
+            }
             throw new Error(errorData.error || `HTTP ${response.status}`);
         }
 
-        return await response.json();
+        if (contentType.includes('application/json')) {
+            try {
+                return JSON.parse(rawText);
+            } catch (e) {
+                throw new Error('Invalid JSON response');
+            }
+        }
+
+        throw new Error('Invalid JSON response');
     },
 
     debounce(func, wait) {

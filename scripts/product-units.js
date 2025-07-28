@@ -98,7 +98,9 @@ const ProductUnitsApp = {
             stockPagination: document.getElementById('stockPagination'),
             stockSettingsModal: document.getElementById('stockSettingsModal'),
             stockSettingsForm: document.getElementById('stockSettingsForm'),
-            stockProductSelect: document.getElementById('stockProductSelect'),
+            stockProductId: document.getElementById('stockProductId'),
+            stockProductSearch: document.getElementById('stockProductSearch'),
+            stockProductResults: document.getElementById('stockProductResults'),
             autoOrderEnabled: document.getElementById('autoOrderEnabled'),
             minStockLevel: document.getElementById('minStockLevel'),
             minOrderQty: document.getElementById('minOrderQty'),
@@ -252,13 +254,21 @@ const ProductUnitsApp = {
         if (this.elements.productSearchInput) {
             this.elements.productSearchInput.addEventListener('input', this.debounce(() => {
                 const q = this.elements.productSearchInput.value.trim();
-                this.searchProducts(q);
+                this.searchProducts(q, 'product');
+            }, this.config.debounceDelay));
+        }
+
+        if (this.elements.stockProductSearch) {
+            this.elements.stockProductSearch.addEventListener('input', this.debounce(() => {
+                const q = this.elements.stockProductSearch.value.trim();
+                this.searchProducts(q, 'stockProduct');
             }, this.config.debounceDelay));
         }
 
         document.addEventListener('click', (e) => {
             if (!e.target.closest('.seller-search-container')) {
-                this.hideProductResults();
+                this.hideProductResults('product');
+                this.hideProductResults('stockProduct');
             }
         });
 
@@ -407,7 +417,8 @@ const ProductUnitsApp = {
 
     async loadProducts() {
         try {
-            const response = await this.apiCall('GET', this.config.apiEndpoints.products);
+            const url = `${this.config.apiEndpoints.products}?limit=1000`;
+            const response = await this.apiCall('GET', url);
             this.state.products = response.data || response;
             
             console.log(`Loaded ${this.state.products.length} products`);
@@ -752,26 +763,27 @@ const ProductUnitsApp = {
         }
     },
 
-    async searchProducts(query) {
-        if (!this.elements.productSearchResults) return;
+    async searchProducts(query, context = 'product') {
+        const resultsEl = this.elements[`${context}Results`];
+        if (!resultsEl) return;
         if (!query || query.length < 2) {
-            this.hideProductResults();
+            this.hideProductResults(context);
             return;
         }
         try {
-            const url = `${this.config.apiEndpoints.products}?search=${encodeURIComponent(query)}&limit=10`;
+            const url = `${this.config.apiEndpoints.products}?search=${encodeURIComponent(query)}&limit=50`;
             const resp = await fetch(url);
             const data = await resp.json();
             if (resp.ok && Array.isArray(data)) {
-                this.displayProductResults(data);
+                this.displayProductResults(data, context);
             }
         } catch (err) {
             console.error('Product search error', err);
         }
     },
 
-    displayProductResults(products) {
-        const container = this.elements.productSearchResults;
+    displayProductResults(products, context = 'product') {
+        const container = this.elements[`${context}Results`];
         if (!container) return;
         if (products.length === 0) {
             container.innerHTML = '<div class="seller-search-item">Nu s-au găsit produse</div>';
@@ -789,21 +801,24 @@ const ProductUnitsApp = {
             item.addEventListener('click', () => {
                 const id = item.getAttribute('data-id');
                 const name = item.getAttribute('data-name');
-                this.selectProduct(id, name);
+                this.selectProduct(id, name, context);
             });
         });
     },
 
-    selectProduct(id, name) {
-        if (this.elements.productIdInput) this.elements.productIdInput.value = id;
-        if (this.elements.productSearchInput) this.elements.productSearchInput.value = name;
-        this.hideProductResults();
+    selectProduct(id, name, context = 'product') {
+        const idInput = this.elements[`${context}Id`];
+        const searchInput = this.elements[`${context}Search`];
+        if (idInput) idInput.value = id;
+        if (searchInput) searchInput.value = name;
+        this.hideProductResults(context);
     },
 
-    hideProductResults() {
-        if (this.elements.productSearchResults) {
-            this.elements.productSearchResults.innerHTML = '';
-            this.elements.productSearchResults.classList.remove('show');
+    hideProductResults(context = 'product') {
+        const resultsEl = this.elements[`${context}Results`];
+        if (resultsEl) {
+            resultsEl.innerHTML = '';
+            resultsEl.classList.remove('show');
         }
     },
 
@@ -1690,14 +1705,15 @@ showNotification(message, type = 'info') {
         if (this.state.products.length === 0) {
             this.loadProducts();
         }
-        if (this.elements.stockProductSelect) {
-            this.elements.stockProductSelect.innerHTML = '<option value="">Selectează produs...</option>';
-            this.state.products.forEach(p => {
-                const opt = document.createElement('option');
-                opt.value = p.id;
-                opt.textContent = `${p.name} (${p.code})`;
-                this.elements.stockProductSelect.appendChild(opt);
-            });
+        if (this.elements.stockProductId) this.elements.stockProductId.value = '';
+        if (this.elements.stockProductSearch) this.elements.stockProductSearch.value = '';
+        if (this.elements.stockProductResults) this.elements.stockProductResults.innerHTML = '';
+
+        if (productId) {
+            const prod = this.state.products.find(p => p.id == productId);
+            if (prod) {
+                this.selectProduct(prod.id, prod.name, 'stockProduct');
+            }
         }
 
         this.elements.stockSettingsModal.style.display = 'block';
@@ -1708,11 +1724,14 @@ showNotification(message, type = 'info') {
         if (!this.elements.stockSettingsModal) return;
         this.elements.stockSettingsModal.style.display = 'none';
         document.body.style.overflow = '';
+        if (this.elements.stockProductId) this.elements.stockProductId.value = '';
+        if (this.elements.stockProductSearch) this.elements.stockProductSearch.value = '';
+        if (this.elements.stockProductResults) this.elements.stockProductResults.innerHTML = '';
     },
 
     async saveStockSettings() {
         const data = {
-            product_id: this.elements.stockProductSelect.value,
+            product_id: this.elements.stockProductId.value,
             min_stock_level: this.elements.minStockLevel.value,
             min_order_quantity: this.elements.minOrderQty.value,
             auto_order_enabled: this.elements.autoOrderEnabled.checked
@@ -1736,7 +1755,10 @@ showNotification(message, type = 'info') {
         const setting = this.state.stockSettings.find(s => s.product_id === productId);
         if (!setting) return;
         this.openStockModal();
-        this.elements.stockProductSelect.value = productId;
+        const prod = this.state.products.find(p => p.id == productId);
+        if (prod) {
+            this.selectProduct(prod.id, prod.name, 'stockProduct');
+        }
         this.elements.minStockLevel.value = setting.min_stock_level;
         this.elements.minOrderQty.value = setting.min_order_quantity;
         this.elements.autoOrderEnabled.checked = setting.auto_order_enabled;

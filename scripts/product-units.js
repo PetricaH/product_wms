@@ -101,6 +101,7 @@ const ProductUnitsApp = {
             stockProductId: document.getElementById('stockProductId'),
             stockProductSearch: document.getElementById('stockProductSearch'),
             stockProductResults: document.getElementById('stockProductResults'),
+            stockModalClose: document.querySelector('#stockSettingsModal .modal-close'),
             autoOrderEnabled: document.getElementById('autoOrderEnabled'),
             minStockLevel: document.getElementById('minStockLevel'),
             minOrderQty: document.getElementById('minOrderQty'),
@@ -111,7 +112,7 @@ const ProductUnitsApp = {
             // Modal
             modal: document.getElementById('addProductUnitModal'),
             modalForm: document.getElementById('addProductUnitForm'),
-            modalClose: document.querySelector('.modal-close'),
+            modalClose: document.querySelector('#addProductUnitModal .modal-close'),
             productIdInput: document.getElementById('productSelect'),
             productSearchInput: document.getElementById('productSearchInput'),
             productSearchResults: document.getElementById('productSearchResults'),
@@ -130,6 +131,11 @@ const ProductUnitsApp = {
             // Loading
             loadingOverlay: document.getElementById('loadingOverlay')
         };
+
+        // Aliases for generic handlers
+        this.elements.productId = this.elements.productIdInput;
+        this.elements.productSearch = this.elements.productSearchInput;
+        this.elements.productResults = this.elements.productSearchResults;
     },
 
     // Bind all event listeners
@@ -154,6 +160,9 @@ const ProductUnitsApp = {
 
         if (this.elements.modalClose) {
             this.elements.modalClose.addEventListener('click', () => this.closeModal());
+        }
+        if (this.elements.stockModalClose) {
+            this.elements.stockModalClose.addEventListener('click', () => this.closeStockModal());
         }
 
         // Close modal when clicking outside
@@ -188,7 +197,11 @@ const ProductUnitsApp = {
         // Cancel buttons
         document.addEventListener('click', (e) => {
             if (e.target.matches('[data-action="cancel"]')) {
-                this.closeModal();
+                if (e.target.closest('#stockSettingsModal')) {
+                    this.closeStockModal();
+                } else {
+                    this.closeModal();
+                }
             }
         });
 
@@ -300,7 +313,11 @@ const ProductUnitsApp = {
         // Keyboard shortcuts
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') {
-                this.closeModal();
+                if (this.elements.stockSettingsModal && this.elements.stockSettingsModal.style.display === 'block') {
+                    this.closeStockModal();
+                } else {
+                    this.closeModal();
+                }
             }
         });
     },

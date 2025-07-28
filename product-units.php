@@ -77,7 +77,7 @@ $currentPage = 'product-units';
                                 <div class="stat-label">Produse Configurate</div>
                             </div>
                         </div>
-                        <div class="stat-card">
+                        <!-- <div class="stat-card">
                             <div class="stat-icon">
                                 <span class="material-symbols-outlined">straighten</span>
                             </div>
@@ -94,7 +94,7 @@ $currentPage = 'product-units';
                                 <div class="stat-number" id="totalPackagingRules">4</div>
                                 <div class="stat-label">Reguli Ambalare</div>
                             </div>
-                        </div>
+                        </div> -->
                         <div class="stat-card warning">
                             <div class="stat-icon">
                                 <span class="material-symbols-outlined">warning</span>
@@ -114,14 +114,14 @@ $currentPage = 'product-units';
                             <span class="material-symbols-outlined">inventory_2</span>
                             Unități Produse
                         </button>
-                        <button class="tab-button" data-tab="unit-types">
+                        <!-- <button class="tab-button" data-tab="unit-types">
                             <span class="material-symbols-outlined">straighten</span>
                             Tipuri Unități
                         </button>
                         <button class="tab-button" data-tab="packaging-rules">
                             <span class="material-symbols-outlined">package_2</span>
                             Reguli Ambalare
-                        </button>
+                        </button> -->
                         <button class="tab-button" data-tab="stock-management">
                             <span class="material-symbols-outlined">warehouse</span>
                             Gestiune Stocuri

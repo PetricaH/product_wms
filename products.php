@@ -49,6 +49,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($productId) {
                     $message = 'Produsul a fost creat cu succes.';
                     $messageType = 'success';
+                    // Explicit activity log to ensure product actions are tracked
+                    if (function_exists('logActivity')) {
+                        $userId = $_SESSION['user_id'] ?? 0;
+                        logActivity(
+                            $userId,
+                            'create',
+                            'product',
+                            $productId,
+                            'Product created via products.php'
+                        );
+                    }
                 } else {
                     $message = 'Eroare la crearea produsului. Verificați dacă SKU-ul nu există deja.';
                     $messageType = 'error';
@@ -77,6 +88,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if ($success) {
                         $message = 'Produsul a fost actualizat cu succes.';
                         $messageType = 'success';
+                        if (function_exists('logActivity')) {
+                            $userId = $_SESSION['user_id'] ?? 0;
+                            logActivity(
+                                $userId,
+                                'update',
+                                'product',
+                                $productId,
+                                'Product updated via products.php'
+                            );
+                        }
                     } else {
                         $message = 'Eroare la actualizarea produsului.';
                         $messageType = 'error';
@@ -94,6 +115,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($success) {
                     $message = 'Produsul a fost șters cu succes.';
                     $messageType = 'success';
+                    if (function_exists('logActivity')) {
+                        $userId = $_SESSION['user_id'] ?? 0;
+                        logActivity(
+                            $userId,
+                            'delete',
+                            'product',
+                            $productId,
+                            'Product deleted via products.php'
+                        );
+                    }
                 } else {
                     $message = 'Eroare la ștergerea produsului.';
                     $messageType = 'error';
@@ -130,6 +161,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     if ($productModel->deleteProduct($productId)) {
                                         $successCount++;
                                         error_log("Successfully deleted product ID: $productId");
+                                        if (function_exists('logActivity')) {
+                                            $userId = $_SESSION['user_id'] ?? 0;
+                                            logActivity(
+                                                $userId,
+                                                'delete',
+                                                'product',
+                                                $productId,
+                                                'Product deleted via bulk action'
+                                            );
+                                        }
                                     } else {
                                         $errorCount++;
                                         error_log("Failed to delete product ID: $productId");
@@ -141,6 +182,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     if ($productModel->updateStatus($productId, 'active')) {
                                         $successCount++;
                                         error_log("Successfully activated product ID: $productId");
+                                        if (function_exists('logActivity')) {
+                                            $userId = $_SESSION['user_id'] ?? 0;
+                                            logActivity(
+                                                $userId,
+                                                'update',
+                                                'product',
+                                                $productId,
+                                                'Product activated via bulk action'
+                                            );
+                                        }
                                     } else {
                                         $errorCount++;
                                         error_log("Failed to activate product ID: $productId");
@@ -152,6 +203,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     if ($productModel->updateStatus($productId, 'inactive')) {
                                         $successCount++;
                                         error_log("Successfully deactivated product ID: $productId");
+                                        if (function_exists('logActivity')) {
+                                            $userId = $_SESSION['user_id'] ?? 0;
+                                            logActivity(
+                                                $userId,
+                                                'update',
+                                                'product',
+                                                $productId,
+                                                'Product deactivated via bulk action'
+                                            );
+                                        }
                                     } else {
                                         $errorCount++;
                                         error_log("Failed to deactivate product ID: $productId");

@@ -36,188 +36,363 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
     switch ($action) {
         case 'create':
-            error_log("=== LOCATION CREATION DEBUG START ===");
+            error_log("=== DYNAMIC LOCATION CREATION DEBUG START ===");
             
-            $locationData = [
-                'location_code' => trim($_POST['location_code'] ?? ''),
-                'zone' => trim($_POST['zone'] ?? ''),
-                'type' => trim($_POST['type'] ?? 'shelf'),
-                'capacity' => intval($_POST['capacity'] ?? 0),
-                'levels' => intval($_POST['levels'] ?? 3),
-                'length_mm' => intval($_POST['length_mm'] ?? 1000),
-                'depth_mm' => intval($_POST['depth_mm'] ?? 400),
-                'height_mm' => intval($_POST['height_mm'] ?? 900),
-                'max_weight_kg' => floatval($_POST['max_weight_kg'] ?? 150),
-                'description' => trim($_POST['description'] ?? ''),
-                'status' => intval($_POST['status'] ?? 1)
-            ];
-            
-            error_log("Location Data: " . json_encode($locationData));
-            
-            // Check if location code already exists first
-            $existingLocation = $locationModel->getLocationByCode($locationData['location_code']);
-            if ($existingLocation) {
-                error_log("ERROR: Location code already exists: " . $locationData['location_code']);
-                $message = 'Eroare: Codul locației există deja!';
-                $messageType = 'error';
-                break;
-            }
-            
-            try {
-                // Start transaction manually to get better error handling
-                $db->beginTransaction();
-                error_log("Transaction started");
+            // Check if we're using the new dynamic level system
+            if (isset($_POST['dynamic_levels_data']) && !empty($_POST['dynamic_levels_data'])) {
+                error_log("Using new dynamic level system");
                 
-                // Insert location record directly
-                $statusMap = [0 => 'inactive', 1 => 'active', 2 => 'maintenance'];
-                $status = $statusMap[$locationData['status'] ?? 1] ?? 'active';
-                
-                $insertQuery = "INSERT INTO locations
-                                (location_code, zone, type, levels, capacity, length_mm, depth_mm, height_mm, max_weight_kg, notes, status, created_at)
-                                VALUES (:location_code, :zone, :type, :levels, :capacity, :length_mm, :depth_mm, :height_mm, :max_weight_kg, :notes, :status, NOW())";
-                
-                $stmt = $db->prepare($insertQuery);
-                $params = [
-                    ':location_code' => $locationData['location_code'],
-                    ':zone' => $locationData['zone'],
-                    ':type' => $locationData['type'],
-                    ':levels' => $locationData['levels'],
-                    ':capacity' => $locationData['capacity'],
-                    ':length_mm' => $locationData['length_mm'],
-                    ':depth_mm' => $locationData['depth_mm'],
-                    ':height_mm' => $locationData['height_mm'],
-                    ':max_weight_kg' => $locationData['max_weight_kg'],
-                    ':notes' => $locationData['description'],
-                    ':status' => $status
-                ];
-                
-                error_log("Executing location insert with params: " . json_encode($params));
-                
-                if (!$stmt->execute($params)) {
-                    $errorInfo = $stmt->errorInfo();
-                    error_log("Location insert failed: " . json_encode($errorInfo));
-                    throw new Exception("Failed to insert location: " . $errorInfo[2]);
-                }
-                
-                $locationId = (int)$db->lastInsertId();
-                error_log("Location inserted successfully with ID: " . $locationId);
-                
-                // Now try to create level settings one by one
-                $levels = $locationData['levels'];
-                error_log("Creating level settings for $levels levels");
-                
-                $customLevelData = [];
-                if (!empty($_POST['level_settings_data'])) {
-                    $customLevelData = json_decode($_POST['level_settings_data'], true) ?? [];
-                }
-
-                for ($level = 1; $level <= $levels; $level++) {
-                    error_log("Creating settings for level $level");
-
-                    $levelSettings = [
-                        'level_name' => match($level) {
-                            1 => 'Bottom',
-                            2 => 'Middle', 
-                            3 => 'Top',
-                            default => "Level $level"
-                        },
-                        'storage_policy' => 'multiple_products',
-                        'allowed_product_types' => null,
-                        'max_different_products' => null,
-                        'length_mm' => 1000,
-                        'depth_mm' => 400,
-                        'height_mm' => 300,
-                        'max_weight_kg' => 50.0,
-                        'volume_min_liters' => null,
-                        'volume_max_liters' => null,
-                        'weight_min_kg' => null,
-                        'weight_max_kg' => null,
-                        'enable_auto_repartition' => false,
-                        'repartition_trigger_threshold' => 80,
-                        'priority_order' => $levels - $level + 1,
-                        'requires_special_handling' => false,
-                        'temperature_controlled' => false,
-                        'items_capacity' => null,
-                        'dedicated_product_id' => null,
-                        'allow_other_products' => true,
-                        'notes' => null
+                try {
+                    $db->beginTransaction();
+                    error_log("Transaction started for dynamic location creation");
+                    
+                    // Extract basic location data (no longer includes dimensions/capacity as those are per-level)
+                    $locationData = [
+                        'location_code' => trim($_POST['location_code'] ?? ''),
+                        'zone' => trim($_POST['zone'] ?? ''),
+                        'type' => trim($_POST['type'] ?? 'shelf'),
+                        'description' => trim($_POST['description'] ?? ''),
+                        'status' => intval($_POST['status'] ?? 1)
                     ];
-
-                    if (isset($customLevelData[$level])) {
-                        $levelSettings = array_merge($levelSettings, $customLevelData[$level]);
+                    
+                    error_log("Basic Location Data: " . json_encode($locationData));
+                    
+                    // Validate required fields
+                    if (empty($locationData['location_code']) || empty($locationData['zone'])) {
+                        throw new Exception('Codul locației și zona sunt obligatorii!');
                     }
                     
-                    error_log("Level $level settings: " . json_encode($levelSettings));
+                    // Check if location code already exists
+                    $existingLocation = $locationModel->getLocationByCode($locationData['location_code']);
+                    if ($existingLocation) {
+                        throw new Exception('Codul locației există deja!');
+                    }
                     
-                    // Insert level settings directly
+                    // Parse dynamic levels data
+                    $dynamicLevels = json_decode($_POST['dynamic_levels_data'], true);
+                    if (empty($dynamicLevels)) {
+                        throw new Exception('Trebuie să adăugați cel puțin un nivel!');
+                    }
+                    
+                    error_log("Dynamic Levels Data: " . json_encode($dynamicLevels));
+                    
+                    // Calculate totals from all levels
+                    $totalHeight = 0;
+                    $totalWeight = 0;
+                    $totalCapacity = 0;
+                    $levelCount = count($dynamicLevels);
+                    
+                    foreach ($dynamicLevels as $levelData) {
+                        $totalHeight += intval($levelData['height_mm'] ?? 300);
+                        $totalWeight += floatval($levelData['max_weight_kg'] ?? 50);
+                        if (!empty($levelData['items_capacity'])) {
+                            $totalCapacity += intval($levelData['items_capacity']);
+                        }
+                    }
+                    
+                    // Set default dimensions (can be overridden later)
+                    $defaultLength = 1000;  // Default shelf length
+                    $defaultDepth = 400;    // Default shelf depth
+                    
+                    error_log("Calculated totals - Height: {$totalHeight}mm, Weight: {$totalWeight}kg, Items: {$totalCapacity}, Levels: {$levelCount}");
+                    
+                    // Insert main location record
+                    $statusMap = [0 => 'inactive', 1 => 'active', 2 => 'maintenance'];
+                    $status = $statusMap[$locationData['status']] ?? 'active';
+                    
+                    $insertQuery = "INSERT INTO locations
+                                   (location_code, zone, type, levels, capacity, length_mm, depth_mm, height_mm, max_weight_kg, notes, status, created_at)
+                                   VALUES (:location_code, :zone, :type, :levels, :capacity, :length_mm, :depth_mm, :height_mm, :max_weight_kg, :notes, :status, NOW())";
+                    
+                    $stmt = $db->prepare($insertQuery);
+                    $params = [
+                        ':location_code' => $locationData['location_code'],
+                        ':zone' => $locationData['zone'],
+                        ':type' => $locationData['type'],
+                        ':levels' => $levelCount,
+                        ':capacity' => $totalCapacity > 0 ? $totalCapacity : null,
+                        ':length_mm' => $defaultLength,
+                        ':depth_mm' => $defaultDepth,
+                        ':height_mm' => $totalHeight,
+                        ':max_weight_kg' => $totalWeight,
+                        ':notes' => $locationData['description'],
+                        ':status' => $status
+                    ];
+                    
+                    error_log("Executing location insert with params: " . json_encode($params));
+                    
+                    if (!$stmt->execute($params)) {
+                        $errorInfo = $stmt->errorInfo();
+                        error_log("Location insert failed: " . json_encode($errorInfo));
+                        throw new Exception("Failed to insert location: " . $errorInfo[2]);
+                    }
+                    
+                    $locationId = (int)$db->lastInsertId();
+                    error_log("Location inserted successfully with ID: " . $locationId);
+                    
+                    // Insert individual level settings from dynamic data
                     $levelQuery = "INSERT INTO location_level_settings
-                                  (location_id, level_number, level_name, storage_policy, allowed_product_types,
-                                   max_different_products, length_mm, depth_mm, height_mm, max_weight_kg, items_capacity,
+                                  (location_id, level_number, level_name, storage_policy, 
+                                   length_mm, depth_mm, height_mm, max_weight_kg, items_capacity,
                                    dedicated_product_id, allow_other_products,
-                                   volume_min_liters, volume_max_liters, weight_min_kg, weight_max_kg,
+                                   volume_min_liters, volume_max_liters,
                                    enable_auto_repartition, repartition_trigger_threshold, priority_order,
-                                   requires_special_handling, temperature_controlled, notes)
+                                   created_at)
                                   VALUES
-                                  (:location_id, :level_number, :level_name, :storage_policy, :allowed_product_types,
-                                   :max_different_products, :length_mm, :depth_mm, :height_mm, :max_weight_kg, :items_capacity,
+                                  (:location_id, :level_number, :level_name, :storage_policy,
+                                   :length_mm, :depth_mm, :height_mm, :max_weight_kg, :items_capacity,
                                    :dedicated_product_id, :allow_other_products,
-                                   :volume_min_liters, :volume_max_liters, :weight_min_kg, :weight_max_kg,
+                                   :volume_min_liters, :volume_max_liters,
                                    :enable_auto_repartition, :repartition_trigger_threshold, :priority_order,
-                                   :requires_special_handling, :temperature_controlled, :notes)";
+                                   NOW())";
                     
                     $levelStmt = $db->prepare($levelQuery);
-                    $levelParams = [
-                        ':location_id' => $locationId,
-                        ':level_number' => $level,
-                        ':level_name' => $levelSettings['level_name'],
-                        ':storage_policy' => $levelSettings['storage_policy'],
-                        ':allowed_product_types' => $levelSettings['allowed_product_types'],
-                        ':max_different_products' => $levelSettings['max_different_products'],
-                        ':length_mm' => $levelSettings['length_mm'],
-                        ':depth_mm' => $levelSettings['depth_mm'],
-                        ':height_mm' => $levelSettings['height_mm'],
-                        ':max_weight_kg' => $levelSettings['max_weight_kg'],
-                       ':items_capacity' => $levelSettings['items_capacity'],
-                        ':dedicated_product_id' => $levelSettings['dedicated_product_id'],
-                        ':allow_other_products' => $levelSettings['allow_other_products'] ? 1 : 0,
-                        ':volume_min_liters' => $levelSettings['volume_min_liters'],
-                        ':volume_max_liters' => $levelSettings['volume_max_liters'],
-                        ':weight_min_kg' => $levelSettings['weight_min_kg'],
-                        ':weight_max_kg' => $levelSettings['weight_max_kg'],
-                        ':enable_auto_repartition' => $levelSettings['enable_auto_repartition'] ? 1 : 0,
-                        ':repartition_trigger_threshold' => $levelSettings['repartition_trigger_threshold'],
-                        ':priority_order' => $levelSettings['priority_order'],
-                        ':requires_special_handling' => $levelSettings['requires_special_handling'] ? 1 : 0,
-                        ':temperature_controlled' => $levelSettings['temperature_controlled'] ? 1 : 0,
-                        ':notes' => $levelSettings['notes']
-                    ];
+                    $levelNumber = 1;
                     
-                    error_log("Executing level settings insert for level $level with params: " . json_encode($levelParams));
-                    
-                    if (!$levelStmt->execute($levelParams)) {
-                        $errorInfo = $levelStmt->errorInfo();
-                        error_log("Level settings insert failed for level $level: " . json_encode($errorInfo));
-                        throw new Exception("Failed to insert level settings for level $level: " . $errorInfo[2]);
+                    foreach ($dynamicLevels as $levelId => $levelData) {
+                        error_log("Processing dynamic level {$levelNumber}: " . json_encode($levelData));
+                        
+                        $levelParams = [
+                            ':location_id' => $locationId,
+                            ':level_number' => $levelNumber,
+                            ':level_name' => $levelData['name'] ?? "Nivel {$levelNumber}",
+                            ':storage_policy' => $levelData['storage_policy'] ?? 'multiple_products',
+                            ':length_mm' => $defaultLength,
+                            ':depth_mm' => $defaultDepth,
+                            ':height_mm' => intval($levelData['height_mm'] ?? 300),
+                            ':max_weight_kg' => floatval($levelData['max_weight_kg'] ?? 50),
+                            ':items_capacity' => !empty($levelData['items_capacity']) ? intval($levelData['items_capacity']) : null,
+                            ':dedicated_product_id' => !empty($levelData['dedicated_product_id']) ? intval($levelData['dedicated_product_id']) : null,
+                            ':allow_other_products' => ($levelData['allow_other_products'] ?? true) ? 1 : 0,
+                            ':volume_min_liters' => !empty($levelData['volume_min_liters']) ? floatval($levelData['volume_min_liters']) : null,
+                            ':volume_max_liters' => !empty($levelData['volume_max_liters']) ? floatval($levelData['volume_max_liters']) : null,
+                            ':enable_auto_repartition' => ($levelData['enable_auto_repartition'] ?? false) ? 1 : 0,
+                            ':repartition_trigger_threshold' => intval($levelData['repartition_trigger_threshold'] ?? 80),
+                            ':priority_order' => intval($levelData['priority_order'] ?? $levelNumber)
+                        ];
+                        
+                        error_log("Executing level settings insert for level {$levelNumber} with params: " . json_encode($levelParams));
+                        
+                        if (!$levelStmt->execute($levelParams)) {
+                            $errorInfo = $levelStmt->errorInfo();
+                            error_log("Level settings insert failed for level {$levelNumber}: " . json_encode($errorInfo));
+                            throw new Exception("Failed to insert level settings for level {$levelNumber}: " . $errorInfo[2]);
+                        }
+                        
+                        error_log("Level {$levelNumber} settings created successfully");
+                        $levelNumber++;
                     }
                     
-                    error_log("Level $level settings created successfully");
+                    // Generate individual QR codes for each level
+                    $qrCodesGenerated = generateLevelQRCodes($db, $locationId, $locationData['location_code'], $levelCount);
+                    if ($qrCodesGenerated) {
+                        error_log("QR codes generated successfully for all {$levelCount} levels");
+                    } else {
+                        error_log("Warning: QR code generation had issues, but location was created");
+                    }
+                    
+                    $db->commit();
+                    error_log("Transaction committed successfully for dynamic location creation");
+                    
+                    $message = "Locația '{$locationData['location_code']}' a fost creată cu succes cu {$levelCount} niveluri configurate.";
+                    $messageType = 'success';
+                    
+                } catch (Exception $e) {
+                    if ($db->inTransaction()) {
+                        $db->rollBack();
+                        error_log("Transaction rolled back for dynamic location creation");
+                    }
+                    error_log("DYNAMIC CREATION FAILED: " . $e->getMessage());
+                    error_log("Stack trace: " . $e->getTraceAsString());
+                    $message = 'Eroare la crearea locației: ' . $e->getMessage();
+                    $messageType = 'error';
                 }
                 
-                $db->commit();
-                error_log("Transaction committed successfully");
+            } else {
+                // Fallback to old system if dynamic_levels_data is not provided
+                error_log("Using legacy location creation system");
                 
-                $message = 'Locația a fost creată cu succes.';
-                $messageType = 'success';
+                $locationData = [
+                    'location_code' => trim($_POST['location_code'] ?? ''),
+                    'zone' => trim($_POST['zone'] ?? ''),
+                    'type' => trim($_POST['type'] ?? 'shelf'),
+                    'capacity' => intval($_POST['capacity'] ?? 0),
+                    'levels' => intval($_POST['levels'] ?? 3),
+                    'length_mm' => intval($_POST['length_mm'] ?? 1000),
+                    'depth_mm' => intval($_POST['depth_mm'] ?? 400),
+                    'height_mm' => intval($_POST['height_mm'] ?? 900),
+                    'max_weight_kg' => floatval($_POST['max_weight_kg'] ?? 150),
+                    'description' => trim($_POST['description'] ?? ''),
+                    'status' => intval($_POST['status'] ?? 1)
+                ];
                 
-            } catch (Exception $e) {
-                if ($db->inTransaction()) {
-                    $db->rollBack();
-                    error_log("Transaction rolled back");
+                error_log("Legacy Location Data: " . json_encode($locationData));
+                
+                // Check if location code already exists first
+                $existingLocation = $locationModel->getLocationByCode($locationData['location_code']);
+                if ($existingLocation) {
+                    error_log("ERROR: Location code already exists: " . $locationData['location_code']);
+                    $message = 'Eroare: Codul locației există deja!';
+                    $messageType = 'error';
+                    break;
                 }
-                error_log("CREATION FAILED: " . $e->getMessage());
-                error_log("Stack trace: " . $e->getTraceAsString());
-                $message = 'Eroare la crearea locației: ' . $e->getMessage();
-                $messageType = 'error';
+                
+                try {
+                    // Start transaction manually to get better error handling
+                    $db->beginTransaction();
+                    error_log("Transaction started for legacy creation");
+                    
+                    // Insert location record directly
+                    $statusMap = [0 => 'inactive', 1 => 'active', 2 => 'maintenance'];
+                    $status = $statusMap[$locationData['status'] ?? 1] ?? 'active';
+                    
+                    $insertQuery = "INSERT INTO locations
+                                    (location_code, zone, type, levels, capacity, length_mm, depth_mm, height_mm, max_weight_kg, notes, status, created_at)
+                                    VALUES (:location_code, :zone, :type, :levels, :capacity, :length_mm, :depth_mm, :height_mm, :max_weight_kg, :notes, :status, NOW())";
+                    
+                    $stmt = $db->prepare($insertQuery);
+                    $params = [
+                        ':location_code' => $locationData['location_code'],
+                        ':zone' => $locationData['zone'],
+                        ':type' => $locationData['type'],
+                        ':levels' => $locationData['levels'],
+                        ':capacity' => $locationData['capacity'],
+                        ':length_mm' => $locationData['length_mm'],
+                        ':depth_mm' => $locationData['depth_mm'],
+                        ':height_mm' => $locationData['height_mm'],
+                        ':max_weight_kg' => $locationData['max_weight_kg'],
+                        ':notes' => $locationData['description'],
+                        ':status' => $status
+                    ];
+                    
+                    error_log("Executing legacy location insert with params: " . json_encode($params));
+                    
+                    if (!$stmt->execute($params)) {
+                        $errorInfo = $stmt->errorInfo();
+                        error_log("Location insert failed: " . json_encode($errorInfo));
+                        throw new Exception("Failed to insert location: " . $errorInfo[2]);
+                    }
+                    
+                    $locationId = (int)$db->lastInsertId();
+                    error_log("Location inserted successfully with ID: " . $locationId);
+                    
+                    // Create default level settings for legacy system
+                    $levels = $locationData['levels'];
+                    error_log("Creating default level settings for $levels levels");
+                    
+                    $customLevelData = [];
+                    if (!empty($_POST['level_settings_data'])) {
+                        $customLevelData = json_decode($_POST['level_settings_data'], true) ?? [];
+                    }
+        
+                    for ($level = 1; $level <= $levels; $level++) {
+                        error_log("Creating settings for level $level");
+        
+                        $levelSettings = [
+                            'level_name' => match($level) {
+                                1 => 'Bottom',
+                                2 => 'Middle', 
+                                3 => 'Top',
+                                default => "Level $level"
+                            },
+                            'storage_policy' => 'multiple_products',
+                            'allowed_product_types' => null,
+                            'max_different_products' => null,
+                            'length_mm' => 1000,
+                            'depth_mm' => 400,
+                            'height_mm' => 300,
+                            'max_weight_kg' => 50.0,
+                            'volume_min_liters' => null,
+                            'volume_max_liters' => null,
+                            'weight_min_kg' => null,
+                            'weight_max_kg' => null,
+                            'enable_auto_repartition' => false,
+                            'repartition_trigger_threshold' => 80,
+                            'priority_order' => $levels - $level + 1,
+                            'requires_special_handling' => false,
+                            'temperature_controlled' => false,
+                            'items_capacity' => null,
+                            'dedicated_product_id' => null,
+                            'allow_other_products' => true,
+                            'notes' => null
+                        ];
+        
+                        if (isset($customLevelData[$level])) {
+                            $levelSettings = array_merge($levelSettings, $customLevelData[$level]);
+                        }
+                        
+                        error_log("Level $level settings: " . json_encode($levelSettings));
+                        
+                        // Insert level settings directly
+                        $levelQuery = "INSERT INTO location_level_settings
+                                      (location_id, level_number, level_name, storage_policy, allowed_product_types,
+                                       max_different_products, length_mm, depth_mm, height_mm, max_weight_kg, items_capacity,
+                                       dedicated_product_id, allow_other_products,
+                                       volume_min_liters, volume_max_liters, weight_min_kg, weight_max_kg,
+                                       enable_auto_repartition, repartition_trigger_threshold, priority_order,
+                                       requires_special_handling, temperature_controlled, notes, created_at)
+                                      VALUES
+                                      (:location_id, :level_number, :level_name, :storage_policy, :allowed_product_types,
+                                       :max_different_products, :length_mm, :depth_mm, :height_mm, :max_weight_kg, :items_capacity,
+                                       :dedicated_product_id, :allow_other_products,
+                                       :volume_min_liters, :volume_max_liters, :weight_min_kg, :weight_max_kg,
+                                       :enable_auto_repartition, :repartition_trigger_threshold, :priority_order,
+                                       :requires_special_handling, :temperature_controlled, :notes, NOW())";
+                        
+                        $levelStmt = $db->prepare($levelQuery);
+                        $levelParams = [
+                            ':location_id' => $locationId,
+                            ':level_number' => $level,
+                            ':level_name' => $levelSettings['level_name'],
+                            ':storage_policy' => $levelSettings['storage_policy'],
+                            ':allowed_product_types' => $levelSettings['allowed_product_types'],
+                            ':max_different_products' => $levelSettings['max_different_products'],
+                            ':length_mm' => $levelSettings['length_mm'],
+                            ':depth_mm' => $levelSettings['depth_mm'],
+                            ':height_mm' => $levelSettings['height_mm'],
+                            ':max_weight_kg' => $levelSettings['max_weight_kg'],
+                           ':items_capacity' => $levelSettings['items_capacity'],
+                            ':dedicated_product_id' => $levelSettings['dedicated_product_id'],
+                            ':allow_other_products' => $levelSettings['allow_other_products'] ? 1 : 0,
+                            ':volume_min_liters' => $levelSettings['volume_min_liters'],
+                            ':volume_max_liters' => $levelSettings['volume_max_liters'],
+                            ':weight_min_kg' => $levelSettings['weight_min_kg'],
+                            ':weight_max_kg' => $levelSettings['weight_max_kg'],
+                            ':enable_auto_repartition' => $levelSettings['enable_auto_repartition'] ? 1 : 0,
+                            ':repartition_trigger_threshold' => $levelSettings['repartition_trigger_threshold'],
+                            ':priority_order' => $levelSettings['priority_order'],
+                            ':requires_special_handling' => $levelSettings['requires_special_handling'] ? 1 : 0,
+                            ':temperature_controlled' => $levelSettings['temperature_controlled'] ? 1 : 0,
+                            ':notes' => $levelSettings['notes']
+                        ];
+                        
+                        error_log("Executing level settings insert for level $level with params: " . json_encode($levelParams));
+                        
+                        if (!$levelStmt->execute($levelParams)) {
+                            $errorInfo = $levelStmt->errorInfo();
+                            error_log("Level settings insert failed for level $level: " . json_encode($errorInfo));
+                            throw new Exception("Failed to insert level settings for level $level: " . $errorInfo[2]);
+                        }
+                        
+                        error_log("Level $level settings created successfully");
+                    }
+                    
+                    $db->commit();
+                    error_log("Transaction committed successfully for legacy creation");
+                    
+                    $message = 'Locația a fost creată cu succes.';
+                    $messageType = 'success';
+                    
+                } catch (Exception $e) {
+                    if ($db->inTransaction()) {
+                        $db->rollBack();
+                        error_log("Transaction rolled back for legacy creation");
+                    }
+                    error_log("LEGACY CREATION FAILED: " . $e->getMessage());
+                    error_log("Stack trace: " . $e->getTraceAsString());
+                    $message = 'Eroare la crearea locației: ' . $e->getMessage();
+                    $messageType = 'error';
+                }
             }
             
             error_log("=== LOCATION CREATION DEBUG END ===");
@@ -370,6 +545,66 @@ function cleanArrayValue($value, $default = null) {
         return end($value); // Get the last value if it's an array
     }
     return $value ?? $default;
+}
+
+/**
+ * Generate individual QR codes for each level using existing infrastructure
+ * @param PDO $db Database connection
+ * @param int $locationId Location ID
+ * @param string $locationCode Location code
+ * @param int $levelCount Number of levels
+ * @return bool Success status
+ */
+function generateLevelQRCodes($db, $locationId, $locationCode, $levelCount) {
+    try {
+       // Generate QR code for each level and store in database
+        $successCount = 0;
+        for ($level = 1; $level <= $levelCount; $level++) {
+            $levelCode = $locationCode . '-N' . $level;
+            $qrFilename = $locationId . '_level_' . $level . '.png';
+            $relativePath = 'storage/qr_codes/levels/' . $qrFilename;
+            
+            error_log("Preparing QR code for level {$level}: {$levelCode}");
+            
+            try {
+                // Store QR code info in database - the actual QR image will be generated by JavaScript
+                $qrStmt = $db->prepare("
+                    INSERT INTO location_qr_codes (
+                        location_id, level_number, qr_code, file_path, created_at
+                    ) VALUES (
+                        :location_id, :level_number, :qr_code, :file_path, NOW()
+                    ) ON DUPLICATE KEY UPDATE
+                        qr_code = VALUES(qr_code),
+                        file_path = VALUES(file_path),
+                        updated_at = NOW()
+                ");
+                
+                $qrParams = [
+                    ':location_id' => $locationId,
+                    ':level_number' => $level,
+                    ':qr_code' => $levelCode,
+                    ':file_path' => $relativePath
+                ];
+                
+                if ($qrStmt->execute($qrParams)) {
+                    error_log("QR code database record created for level {$level}");
+                    $successCount++;
+                } else {
+                    error_log("Failed to create QR code database record for level {$level}");
+                }
+                
+            } catch (Exception $e) {
+                error_log("Error storing QR code for level {$level}: " . $e->getMessage());
+            }
+        }
+        
+        error_log("QR code records created. Success: {$successCount}/{$levelCount}");
+        return $successCount > 0;
+        
+    } catch (Exception $e) {
+        error_log("Error in generateLevelQRCodes: " . $e->getMessage());
+        return false;
+    }
 }
 
 // Get filter parameters

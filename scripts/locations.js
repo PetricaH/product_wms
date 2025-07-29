@@ -8,6 +8,13 @@
 let qr = null;
 let levelCounter = 0;
 let createdLevels = [];
+
+function getNextAvailableLevelId() {
+    let id = 1;
+    const existing = createdLevels.map(l => l.id);
+    while (existing.includes(id)) id++;
+    return id;
+}
 let currentLevels = 0; // Start with 0, user creates levels dynamically
 let levelSettingsEnabled = true; // Force enable enhanced system
 let dynamicSystemInitialized = false; // Flag to prevent duplicate initialization
@@ -303,8 +310,10 @@ function addNewLevel() {
         return;
     }
     
-    levelCounter++;
-    const levelId = levelCounter;
+    const levelId = getNextAvailableLevelId();
+    if (levelId > levelCounter) {
+        levelCounter = levelId;
+    }
     
     // Create level object
     const newLevel = {
@@ -457,10 +466,14 @@ function createLevelHTML(level) {
                         <div class="form-grid">
                             <div class="form-group">
                                 <label>Produs dedicat</label>
-                                <select id="level_${level.id}_dedicated_product" name="level_${level.id}_dedicated_product" 
-                                        class="form-control">
-                                    <option value="">-- Selectează produs --</option>
-                                </select>
+                                <div class="product-search-container">
+                                    <input type="hidden" id="level_${level.id}_dedicated_product" name="level_${level.id}_dedicated_product">
+                                    <input type="text" class="form-control product-search-input" id="level_${level.id}_dedicated_product_search"
+                                           placeholder="Caută produs..." autocomplete="off"
+                                           onkeyup="searchProductForLevel(${level.id}, this.value)"
+                                           onfocus="showLevelProductResults(${level.id})">
+                                    <div class="product-search-results" id="level_${level.id}_dedicated_product_results"></div>
+                                </div>
                             </div>
                             <div class="form-group form-check-container">
                                 <label class="form-check">
@@ -533,8 +546,7 @@ function initializeLevelInteractions(levelId) {
         });
     });
     
-    // Initialize product selection
-    populateProductOptions(levelId);
+
     
     // Initialize QR code for this level
     initializeLevelQRCode(levelId);
@@ -548,9 +560,9 @@ function initializeLevelQRCode(levelId) {
     if (!canvas || !window.QRious) return;
     
     try {
-        const locationCode = document.getElementById('location_code')?.value || 'LEVEL';
+        const zoneName = document.getElementById('zone')?.value || '';
         const levelName = document.querySelector(`#level-item-${levelId} .level-name-input`)?.value || `Nivel ${levelId}`;
-        const qrValue = `${locationCode}\n${levelName}`;
+        const qrValue = zoneName ? `${zoneName}-${levelName}` : levelName;
         
         const levelQR = new QRious({
             element: canvas,
@@ -576,13 +588,14 @@ function downloadLevelQR(levelId) {
     const canvas = document.getElementById(`level_qr_canvas_${levelId}`);
     if (!canvas) return;
     
-    const locationCode = document.getElementById('location_code')?.value || 'LOCATION';
+    const zoneName = document.getElementById('zone')?.value || '';
     const levelName = document.querySelector(`#level-item-${levelId} .level-name-input`)?.value || `Nivel_${levelId}`;
+    const fileName = zoneName ? `${zoneName}_${levelName}_QR.png` : `${levelName}_QR.png`;
     
     try {
         const link = document.createElement('a');
         link.href = canvas.toDataURL('image/png');
-        link.download = `${locationCode}_${levelName}_QR.png`;
+        link.download = fileName;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -600,11 +613,11 @@ function updateLevelName(levelId, newName) {
     if (level) {
         level.name = newName || `Nivel ${levelId}`;
         
-        // Update QR code with new name
+        // Update QR code with new name and zone
         const canvas = document.getElementById(`level_qr_canvas_${levelId}`);
         if (canvas && canvas._qrInstance) {
-            const locationCode = document.getElementById('location_code')?.value || 'LEVEL';
-            const qrValue = `${locationCode}\n${level.name}`;
+            const zoneName = document.getElementById('zone')?.value || '';
+            const qrValue = zoneName ? `${zoneName}-${level.name}` : level.name;
             canvas._qrInstance.set({ value: qrValue });
         }
     }
@@ -689,24 +702,6 @@ function updatePolicyOptions(levelId, policy) {
     } else {
         dedicatedProduct.required = false;
         allowOthers.disabled = false;
-    }
-}
-
-/**
- * Populate product options for a level
- */
-function populateProductOptions(levelId) {
-    const select = document.getElementById(`level_${levelId}_dedicated_product`);
-    if (!select) return;
-    
-    // Add products if available
-    if (typeof window.allProducts !== 'undefined') {
-        window.allProducts.forEach(product => {
-            const option = document.createElement('option');
-            option.value = product.product_id;
-            option.textContent = `${product.name} (${product.sku})`;
-            select.appendChild(option);
-        });
     }
 }
 
@@ -1042,6 +1037,84 @@ function hideProductResults(levelId, subdivisionIndex) {
     if (resultsContainer) {
         resultsContainer.style.display = 'none';
     }
+}
+
+// =================== PRODUCT SEARCH FOR DEDICATED LEVEL PRODUCT ===================
+
+let levelProductTimeouts = {};
+
+function searchProductForLevel(levelId, query) {
+    const timeoutKey = `level_${levelId}`;
+
+    if (levelProductTimeouts[timeoutKey]) {
+        clearTimeout(levelProductTimeouts[timeoutKey]);
+    }
+
+    levelProductTimeouts[timeoutKey] = setTimeout(async () => {
+        if (query.length < 2) {
+            hideLevelProductResults(levelId);
+            return;
+        }
+
+        try {
+            if (productSearchCache[query]) {
+                displayLevelProductResults(levelId, productSearchCache[query]);
+                return;
+            }
+
+            const response = await fetch(`api/products.php?search=${encodeURIComponent(query)}&limit=10`);
+            const products = await response.json();
+
+            if (response.ok && Array.isArray(products)) {
+                productSearchCache[query] = products;
+                displayLevelProductResults(levelId, products);
+            }
+        } catch (error) {
+            console.error('Product search error:', error);
+        }
+    }, 300);
+}
+
+function displayLevelProductResults(levelId, products) {
+    const container = document.getElementById(`level_${levelId}_dedicated_product_results`);
+    if (!container) return;
+
+    if (products.length === 0) {
+        container.innerHTML = '<div class="search-result-item no-results">Nu s-au găsit produse</div>';
+    } else {
+        container.innerHTML = products.map(p => `
+            <div class="search-result-item" onclick="selectLevelProduct(${levelId}, ${p.id}, '${escapeHtml(p.name)}')">
+                <div class="product-name">${escapeHtml(p.name)}</div>
+                <div class="product-details">${escapeHtml(p.code)} - ${escapeHtml(p.category)}</div>
+            </div>
+        `).join('');
+    }
+
+    container.style.display = 'block';
+}
+
+function selectLevelProduct(levelId, productId, productName) {
+    const hidden = document.getElementById(`level_${levelId}_dedicated_product`);
+    const search = document.getElementById(`level_${levelId}_dedicated_product_search`);
+
+    if (hidden) hidden.value = productId;
+    if (search) search.value = productName;
+
+    hideLevelProductResults(levelId);
+}
+
+function showLevelProductResults(levelId) {
+    const container = document.getElementById(`level_${levelId}_dedicated_product_results`);
+    const input = document.getElementById(`level_${levelId}_dedicated_product_search`);
+
+    if (container && input && input.value.length >= 2) {
+        container.style.display = 'block';
+    }
+}
+
+function hideLevelProductResults(levelId) {
+    const container = document.getElementById(`level_${levelId}_dedicated_product_results`);
+    if (container) container.style.display = 'none';
 }
 
 // =================== MODAL FUNCTIONS ===================
@@ -1445,7 +1518,9 @@ function updateLocationQr() {
     }
     
     const codeInput = document.getElementById('location_code');
+    const zoneInput = document.getElementById('zone');
     const code = codeInput ? codeInput.value.trim() : '';
+    const zoneName = zoneInput ? zoneInput.value.trim() : '';
     
     try {
         if (code && code.length > 0) {
@@ -1455,7 +1530,7 @@ function updateLocationQr() {
             createdLevels.forEach(level => {
                 const canvas = document.getElementById(`level_qr_canvas_${level.id}`);
                 if (canvas && canvas._qrInstance) {
-                    const qrValue = `${code}\n${level.name}`;
+                    const qrValue = zoneName ? `${zoneName}-${level.name}` : level.name;
                     canvas._qrInstance.set({ value: qrValue });
                 }
             });
@@ -1513,6 +1588,19 @@ function setupEventListeners() {
                 zoneInput.value = '';
                 zoneInput.style.backgroundColor = '';
             }
+        });
+    }
+
+    if (zoneInput) {
+        zoneInput.addEventListener('input', function() {
+            const zoneName = this.value.trim();
+            createdLevels.forEach(level => {
+                const canvas = document.getElementById(`level_qr_canvas_${level.id}`);
+                if (canvas && canvas._qrInstance) {
+                    const qrValue = zoneName ? `${zoneName}-${level.name}` : level.name;
+                    canvas._qrInstance.set({ value: qrValue });
+                }
+            });
         });
     }
 }
@@ -2163,5 +2251,9 @@ window.selectProduct = selectProduct;
 window.showProductResults = showProductResults;
 window.hideProductResults = hideProductResults;
 window.downloadLevelQR = downloadLevelQR;
+window.searchProductForLevel = searchProductForLevel;
+window.showLevelProductResults = showLevelProductResults;
+window.hideLevelProductResults = hideLevelProductResults;
+window.selectLevelProduct = selectLevelProduct;
 
 console.log('✅ Enhanced Dynamic Locations JavaScript loaded successfully');

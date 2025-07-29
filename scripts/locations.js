@@ -1059,7 +1059,7 @@ function createLevelSettingsDiv(levelNumber) {
     levelDiv.className = 'level-settings-container';
     
     const levelName = getLevelName(levelNumber);
-    const isActive = levelNumber === 1 ? 'active' : '';
+    const isActive = '';
     
     levelDiv.innerHTML = `
         <div class="level-header ${isActive}" onclick="toggleLevel(${levelNumber})">
@@ -1167,11 +1167,25 @@ function createLevelSettingsDiv(levelNumber) {
                         <input type="number" name="level_${levelNumber}_threshold" 
                                class="form-control" value="80" min="50" max="95">
                     </div>
-                    <div class="form-group">
-                        <label class="form-label">Prioritate nivel</label>
-                        <input type="number" name="level_${levelNumber}_priority" 
+                <div class="form-group">
+                    <label class="form-label">Prioritate nivel</label>
+                    <input type="number" name="level_${levelNumber}_priority"
                                class="form-control" value="${currentLevels - levelNumber + 1}" min="1" max="10">
-                        <small class="form-help">Prioritate mai mare = plasat primul</small>
+                    <small class="form-help">Prioritate mai mare = plasat primul</small>
+                </div>
+                </div>
+                <div class="settings-section">
+                    <h4>
+                        <span class="material-symbols-outlined">view_column</span>
+                        Subdiviziuni
+                    </h4>
+                    <div class="form-group">
+                        <label class="form-label">Număr subdiviziuni</label>
+                        <div class="subdivision-control">
+                            <button type="button" class="btn btn-secondary btn-sm" onclick="changeSubdivision(${levelNumber}, -1)">-</button>
+                            <input type="number" name="level_${levelNumber}_subdivisions" id="level_${levelNumber}_subdivisions" class="form-control" value="1" min="1" style="width:60px;display:inline-block;margin:0 0.5rem;">
+                            <button type="button" class="btn btn-secondary btn-sm" onclick="changeSubdivision(${levelNumber}, 1)">+</button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1257,6 +1271,15 @@ function distributeItemCapacity() {
             input.value = perLevel;
         }
     }
+}
+
+function changeSubdivision(levelId, delta) {
+    const input = document.getElementById(`level_${levelId}_subdivisions`);
+    if (!input) return;
+    let value = parseInt(input.value) || 1;
+    value += delta;
+    if (value < 1) value = 1;
+    input.value = value;
 }
 
 function generateInternalProductOptions() {
@@ -1426,6 +1449,9 @@ function populateLevelSettings(levelSettings) {
         
         const priorityInput = document.querySelector(`input[name="level_${level}_priority"]`);
         if (priorityInput) priorityInput.value = setting.priority_order || 1;
+
+        const subdivInput = document.getElementById(`level_${level}_subdivisions`);
+        if (subdivInput) subdivInput.value = setting.subdivision_count || 1;
     });
 }
 
@@ -1992,6 +2018,20 @@ function createLevelHTML(level) {
                     </div>
                     <div class="settings-section">
                         <h5>
+                            <span class="material-symbols-outlined">view_column</span>
+                            Subdiviziuni
+                        </h5>
+                        <div class="form-group">
+                            <label>Număr subdiviziuni</label>
+                            <div class="subdivision-control">
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="changeSubdivision(${level.id}, -1)">-</button>
+                                <input type="number" id="level_${level.id}_subdivisions" name="level_${level.id}_subdivisions" class="form-control" value="1" min="1" style="width:60px;display:inline-block;margin:0 0.5rem;">
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="changeSubdivision(${level.id}, 1)">+</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="settings-section">
+                        <h5>
                             <span class="material-symbols-outlined">qr_code_2</span>
                             Cod QR Nivel
                         </h5>
@@ -2062,11 +2102,6 @@ function toggleLevel(levelId) {
  * Remove a level
  */
 function removeLevel(levelId) {
-    if (createdLevels.length <= 1) {
-        alert('Trebuie să existe cel puțin un nivel!');
-        return;
-    }
-    
     if (confirm('Sigur doriți să ștergeți acest nivel?')) {
         // Remove from DOM
         const levelElement = document.getElementById(`level-item-${levelId}`);
@@ -2077,8 +2112,9 @@ function removeLevel(levelId) {
         // Remove from array
         createdLevels = createdLevels.filter(l => l.id !== levelId);
         
-        // Update summary
+        // Update summary and counter
         updateLevelsSummary();
+        levelCounter = createdLevels.length;
     }
 }
 
@@ -2185,6 +2221,10 @@ function collectLevelData() {
             repartition_trigger_threshold: parseInt(document.getElementById(`level_${levelId}_threshold`)?.value) || 80,
             priority_order: parseInt(document.getElementById(`level_${levelId}_priority`)?.value) || 1
         };
+        const subdivInput = document.getElementById(`level_${levelId}_subdivisions`);
+        if (subdivInput) {
+            levelData[levelId].subdivision_count = parseInt(subdivInput.value) || 1;
+        }
     });
     
     return levelData;
@@ -2218,6 +2258,7 @@ function populateDynamicLevels(levelSettings) {
         document.getElementById(`level_${id}_auto_repartition`).checked = setting.enable_auto_repartition || false;
         document.getElementById(`level_${id}_threshold`).value = setting.repartition_trigger_threshold || 80;
         document.getElementById(`level_${id}_priority`).value = setting.priority_order || id;
+        document.getElementById(`level_${id}_subdivisions`).value = setting.subdivision_count || 1;
 
         if (setting.qr_code_path) {
             const link = document.getElementById(`level_qr_link_${id}`);
@@ -2295,3 +2336,4 @@ window.updateLevelName = updateLevelName;
 window.toggleLevel = toggleLevel;
 window.removeLevel = removeLevel;
 window.populateDynamicLevels = populateDynamicLevels;
+window.changeSubdivision = changeSubdivision;

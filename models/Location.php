@@ -7,11 +7,13 @@
 
 require_once __DIR__ . '/Setting.php';
 require_once __DIR__ . '/LocationLevelSettings.php';
+require_once __DIR__ . '/LocationSubdivision.php';
 
 class Location {
     protected $conn;
     private $table = "locations";
     private LocationLevelSettings $levelSettings;
+    private LocationSubdivision $subdivisions;
 
     // Default geometry constants used when dimensions are missing
     private const DEFAULT_LENGTH_MM = 1200;
@@ -21,6 +23,7 @@ class Location {
     public function __construct($db) {
         $this->conn = $db;
         $this->levelSettings = new LocationLevelSettings($this->conn);
+        $this->subdivisions = new LocationSubdivision($this->conn);
     }
 
     /**
@@ -343,6 +346,8 @@ class Location {
             if ($includeLevelSettings) {
                 $details['level_settings'] = $this->levelSettings->getLevelSettings($locationId);
 
+                $subs = $this->subdivisions->getAllSubdivisions($locationId);
+
                 // Attach QR code paths
                 $qrStmt = $this->conn->prepare(
                     "SELECT level_number, file_path FROM location_qr_codes WHERE location_id = :id"
@@ -357,12 +362,18 @@ class Location {
 
                 // Add occupancy data and QR path
                 foreach ($details['level_settings'] as &$levelSetting) {
+                    $levelNumber = (int)$levelSetting['level_number'];
                     $levelSetting['current_occupancy'] = $this->getLevelOccupancyData(
                         $locationId,
-                        $levelSetting['level_number']
+                        $levelNumber
                     );
-                    if (isset($qrMap[$levelSetting['level_number']])) {
-                        $levelSetting['qr_code_path'] = $qrMap[$levelSetting['level_number']];
+                    if (isset($qrMap[$levelNumber])) {
+                        $levelSetting['qr_code_path'] = $qrMap[$levelNumber];
+                    }
+                    if (isset($subs[$levelNumber])) {
+                        $levelSetting['subdivisions'] = $subs[$levelNumber];
+                    } else {
+                        $levelSetting['subdivisions'] = [];
                     }
                 }
                 unset($levelSetting);
@@ -597,11 +608,15 @@ class Location {
                 if (!$this->levelSettings->createDefaultSettings($locationId, $levels)) {
                     throw new Exception("Failed to create default level settings.");
                 }
+                for ($lvl = 1; $lvl <= $levels; $lvl++) {
+                    $this->subdivisions->syncSubdivisions($locationId, $lvl, ['subdivision_count' => 1]);
+                }
 
                 // If level-specific settings were provided, update them
                 if (isset($locationData['level_settings']) && is_array($locationData['level_settings'])) {
                     foreach ($locationData['level_settings'] as $levelNum => $settings) {
                         $this->levelSettings->updateLevelSettings($locationId, $levelNum, $settings);
+                        $this->subdivisions->syncSubdivisions($locationId, $levelNum, $settings);
                     }
                 }
             }
@@ -688,6 +703,7 @@ class Location {
                     if (!$this->levelSettings->updateLevelSettings($locationId, $levelNum, $settings)) {
                         throw new Exception("Failed to update settings for level $levelNum on location ID: $locationId");
                     }
+                    $this->subdivisions->syncSubdivisions($locationId, $levelNum, $settings);
                 }
             }
             
@@ -701,11 +717,13 @@ class Location {
                     for ($level = $currentLevels + 1; $level <= $newLevels; $level++) {
                         $defaultSettings = $this->getDefaultLevelSettings($level, $newLevels);
                         $this->levelSettings->updateLevelSettings($locationId, $level, $defaultSettings);
+                        $this->subdivisions->syncSubdivisions($locationId, $level, $defaultSettings);
                     }
                 } elseif ($newLevels < $currentLevels) {
                     // Remove settings for levels that no longer exist
                     for ($level = $newLevels + 1; $level <= $currentLevels; $level++) {
                         $this->deleteLevelSettings($locationId, $level);
+                        $this->subdivisions->deleteSubdivisions($locationId, $level);
                     }
                 }
             }
@@ -1456,7 +1474,8 @@ class Location {
             'allow_other_products' => true,
             'enable_auto_repartition' => false,
             'repartition_trigger_threshold' => 80,
-            'priority_order' => $totalLevels - $levelNumber + 1
+            'priority_order' => $totalLevels - $levelNumber + 1,
+            'subdivision_count' => 1
         ];
     }
 
@@ -1469,13 +1488,15 @@ class Location {
     private function deleteLevelSettings(int $locationId, int $levelNumber): bool {
         $query = "DELETE FROM location_level_settings
                     WHERE location_id = :location_id AND level_number = :level_number";
-        
+
         try {
             $stmt = $this->conn->prepare($query);
-            return $stmt->execute([
+            $res = $stmt->execute([
                 ':location_id' => $locationId,
                 ':level_number' => $levelNumber
             ]);
+            $this->subdivisions->deleteSubdivisions($locationId, $levelNumber);
+            return $res;
         } catch (PDOException $e) {
             error_log("Error deleting level settings.");
             return false;

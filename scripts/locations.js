@@ -194,6 +194,8 @@ document.getElementById('locationForm').addEventListener('submit', function(even
                 height_mm: parseInt(document.getElementById(`level_${lvl}_height`)?.value) || 0,
                 max_weight_kg: parseFloat(document.getElementById(`level_${lvl}_weight`)?.value) || 0,
                 items_capacity: parseInt(document.getElementById(`level_${lvl}_capacity`)?.value) || null,
+                dedicated_product_id: document.getElementById(`level_${lvl}_dedicated_product`)?.value || null,
+                allow_other_products: document.getElementById(`level_${lvl}_allow_others`)?.checked ?? true,
                 volume_min_liters: parseFloat(document.querySelector(`input[name="level_${lvl}_volume_min"]`)?.value) || null,
                 volume_max_liters: parseFloat(document.querySelector(`input[name="level_${lvl}_volume_max"]`)?.value) || null,
                 enable_auto_repartition: document.getElementById(`level_${lvl}_auto_repartition`)?.checked || false,
@@ -1054,6 +1056,16 @@ function createLevelSettingsDiv(levelNumber) {
                         <input type="number" name="level_${levelNumber}_capacity" id="level_${levelNumber}_capacity"
                                class="form-control" min="0">
                     </div>
+                    <div class="form-group">
+                        <label class="form-label">Produs dedicat</label>
+                        <select name="level_${levelNumber}_dedicated_product" id="level_${levelNumber}_dedicated_product" class="form-control">
+                            ${generateInternalProductOptions()}
+                        </select>
+                        <div class="form-check" style="margin-top:0.5rem;">
+                            <input type="checkbox" id="level_${levelNumber}_allow_others" name="level_${levelNumber}_allow_others" checked>
+                            <label for="level_${levelNumber}_allow_others" class="form-label">Permite alte produse</label>
+                        </div>
+                    </div>
                 </div>
                 
                 <div class="settings-section">
@@ -1180,6 +1192,23 @@ function distributeItemCapacity() {
             input.value = perLevel;
         }
     }
+}
+
+function generateInternalProductOptions() {
+    if (typeof window.allProducts !== 'undefined') {
+        let options = '<option value="">-- Produs intern --</option>';
+        window.allProducts.forEach(p => {
+            options += `<option value="${p.product_id}">${escapeHtml(p.name)} (${escapeHtml(p.sku)})</option>`;
+        });
+        return options;
+    }
+    return '<option value="">-- Produs intern --</option>';
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
 }
 
 /**
@@ -1371,6 +1400,12 @@ function populateLevelSettings(levelSettings) {
 
         const capacityInput = document.getElementById(`level_${level}_capacity`);
         if (capacityInput) capacityInput.value = setting.items_capacity || '';
+
+        const productSelect = document.getElementById(`level_${level}_dedicated_product`);
+        if (productSelect) productSelect.value = setting.dedicated_product_id || '';
+
+        const allowOthersCheckbox = document.getElementById(`level_${level}_allow_others`);
+        if (allowOthersCheckbox) allowOthersCheckbox.checked = setting.allow_other_products !== false;
         
         // Restrictions
         const volumeMinInput = document.querySelector(`input[name="level_${level}_volume_min"]`);
@@ -1642,6 +1677,9 @@ document.getElementById('locationForm')?.addEventListener('submit', function(eve
                 storage_policy: document.querySelector(`input[name="level_${level}_storage_policy"]:checked`)?.value || 'multiple_products',
                 height_mm: parseInt(document.getElementById(`level_${level}_height`)?.value) || 0,
                 max_weight_kg: parseFloat(document.getElementById(`level_${level}_weight`)?.value) || 0,
+                items_capacity: parseInt(document.getElementById(`level_${level}_capacity`)?.value) || null,
+                dedicated_product_id: document.getElementById(`level_${level}_dedicated_product`)?.value || null,
+                allow_other_products: document.getElementById(`level_${level}_allow_others`)?.checked ?? true,
                 volume_min_liters: parseFloat(document.querySelector(`input[name="level_${level}_volume_min"]`)?.value) || null,
                 volume_max_liters: parseFloat(document.querySelector(`input[name="level_${level}_volume_max"]`)?.value) || null,
                 enable_auto_repartition: document.getElementById(`level_${level}_auto_repartition`)?.checked || false,
@@ -1669,6 +1707,7 @@ window.selectStoragePolicy = selectStoragePolicy;
 window.distributeLevelHeights = distributeLevelHeights;
 window.distributeWeightCapacity = distributeWeightCapacity;
 window.distributeItemCapacity = distributeItemCapacity;
+window.generateInternalProductOptions = generateInternalProductOptions;
 
 // QR CODES
 window.updateLocationQr = updateLocationQr;

@@ -1436,6 +1436,8 @@ class Location {
             'height_mm' => 300,
             'max_weight_kg' => 50,
             'items_capacity' => null,
+            'dedicated_product_id' => null,
+            'allow_other_products' => true,
             'enable_auto_repartition' => false,
             'repartition_trigger_threshold' => 80,
             'priority_order' => $totalLevels - $levelNumber + 1

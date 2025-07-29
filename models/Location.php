@@ -1456,7 +1456,8 @@ class Location {
             'allow_other_products' => true,
             'enable_auto_repartition' => false,
             'repartition_trigger_threshold' => 80,
-            'priority_order' => $totalLevels - $levelNumber + 1
+            'priority_order' => $totalLevels - $levelNumber + 1,
+            'subdivision_count' => 1
         ];
     }
 

@@ -87,14 +87,14 @@ class LocationLevelSettings {
         }
         
         $query = "INSERT INTO {$this->table} 
-                  (location_id, level_number, level_name, storage_policy, allowed_product_types, 
-                   max_different_products, length_mm, depth_mm, height_mm, max_weight_kg,
+                  (location_id, level_number, level_name, storage_policy, allowed_product_types,
+                   max_different_products, length_mm, depth_mm, height_mm, max_weight_kg, items_capacity,
                    volume_min_liters, volume_max_liters, weight_min_kg, weight_max_kg,
                    enable_auto_repartition, repartition_trigger_threshold, priority_order,
                    requires_special_handling, temperature_controlled, notes)
                   VALUES 
                   (:location_id, :level_number, :level_name, :storage_policy, :allowed_product_types,
-                   :max_different_products, :length_mm, :depth_mm, :height_mm, :max_weight_kg,
+                   :max_different_products, :length_mm, :depth_mm, :height_mm, :max_weight_kg, :items_capacity,
                    :volume_min_liters, :volume_max_liters, :weight_min_kg, :weight_max_kg,
                    :enable_auto_repartition, :repartition_trigger_threshold, :priority_order,
                    :requires_special_handling, :temperature_controlled, :notes)
@@ -107,6 +107,7 @@ class LocationLevelSettings {
                   depth_mm = VALUES(depth_mm),
                   height_mm = VALUES(height_mm),
                   max_weight_kg = VALUES(max_weight_kg),
+                  items_capacity = VALUES(items_capacity),
                   volume_min_liters = VALUES(volume_min_liters),
                   volume_max_liters = VALUES(volume_max_liters),
                   weight_min_kg = VALUES(weight_min_kg),
@@ -133,6 +134,7 @@ class LocationLevelSettings {
                 ':depth_mm' => $settings['depth_mm'] ?? 0,
                 ':height_mm' => $settings['height_mm'] ?? 0,
                 ':max_weight_kg' => $settings['max_weight_kg'] ?? 0,
+                ':items_capacity' => $settings['items_capacity'] ?? null,
                 ':volume_min_liters' => $settings['volume_min_liters'] ?? null,
                 ':volume_max_liters' => $settings['volume_max_liters'] ?? null,
                 ':weight_min_kg' => $settings['weight_min_kg'] ?? null,
@@ -278,19 +280,21 @@ class LocationLevelSettings {
     private function getLevelOccupancy(int $locationId, int $levelNumber): float {
         $shelfLevel = $this->getLevelName($levelNumber);
         
-        $query = "SELECT 
-                    l.capacity / l.levels as level_capacity,
+        $query = "SELECT
+                    COALESCE(lls.items_capacity, l.capacity / l.levels) as level_capacity,
                     COALESCE(SUM(i.quantity), 0) as current_items
                   FROM locations l
+                  LEFT JOIN location_level_settings lls ON l.id = lls.location_id AND lls.level_number = :level_number
                   LEFT JOIN inventory i ON l.id = i.location_id AND i.shelf_level = :shelf_level
                   WHERE l.id = :location_id
-                  GROUP BY l.id";
+                  GROUP BY l.id, lls.items_capacity";
         
         try {
             $stmt = $this->conn->prepare($query);
             $stmt->execute([
                 ':location_id' => $locationId,
-                ':shelf_level' => $shelfLevel
+                ':shelf_level' => $shelfLevel,
+                ':level_number' => $levelNumber
             ]);
             
             $result = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -342,6 +346,7 @@ class LocationLevelSettings {
                 'depth_mm' => 400,
                 'height_mm' => 300,
                 'max_weight_kg' => 50,
+                'items_capacity' => null,
                 'enable_auto_repartition' => false,
                 'repartition_trigger_threshold' => 80,
                 'priority_order' => $totalLevels - $level + 1 // Bottom = highest priority

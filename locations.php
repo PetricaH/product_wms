@@ -104,9 +104,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $levels = $locationData['levels'];
                 error_log("Creating level settings for $levels levels");
                 
+                $customLevelData = [];
+                if (!empty($_POST['level_settings_data'])) {
+                    $customLevelData = json_decode($_POST['level_settings_data'], true) ?? [];
+                }
+
                 for ($level = 1; $level <= $levels; $level++) {
                     error_log("Creating settings for level $level");
-                    
+
                     $levelSettings = [
                         'level_name' => match($level) {
                             1 => 'Bottom',
@@ -130,21 +135,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'priority_order' => $levels - $level + 1,
                         'requires_special_handling' => false,
                         'temperature_controlled' => false,
+                        'items_capacity' => null,
                         'notes' => null
                     ];
+
+                    if (isset($customLevelData[$level])) {
+                        $levelSettings = array_merge($levelSettings, $customLevelData[$level]);
+                    }
                     
                     error_log("Level $level settings: " . json_encode($levelSettings));
                     
                     // Insert level settings directly
                     $levelQuery = "INSERT INTO location_level_settings 
-                                  (location_id, level_number, level_name, storage_policy, allowed_product_types, 
-                                   max_different_products, length_mm, depth_mm, height_mm, max_weight_kg,
+                                  (location_id, level_number, level_name, storage_policy, allowed_product_types,
+                                   max_different_products, length_mm, depth_mm, height_mm, max_weight_kg, items_capacity,
                                    volume_min_liters, volume_max_liters, weight_min_kg, weight_max_kg,
                                    enable_auto_repartition, repartition_trigger_threshold, priority_order,
                                    requires_special_handling, temperature_controlled, notes)
-                                  VALUES 
+                                  VALUES
                                   (:location_id, :level_number, :level_name, :storage_policy, :allowed_product_types,
-                                   :max_different_products, :length_mm, :depth_mm, :height_mm, :max_weight_kg,
+                                   :max_different_products, :length_mm, :depth_mm, :height_mm, :max_weight_kg, :items_capacity,
                                    :volume_min_liters, :volume_max_liters, :weight_min_kg, :weight_max_kg,
                                    :enable_auto_repartition, :repartition_trigger_threshold, :priority_order,
                                    :requires_special_handling, :temperature_controlled, :notes)";
@@ -161,6 +171,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         ':depth_mm' => $levelSettings['depth_mm'],
                         ':height_mm' => $levelSettings['height_mm'],
                         ':max_weight_kg' => $levelSettings['max_weight_kg'],
+                        ':items_capacity' => $levelSettings['items_capacity'],
                         ':volume_min_liters' => $levelSettings['volume_min_liters'],
                         ':volume_max_liters' => $levelSettings['volume_max_liters'],
                         ':weight_min_kg' => $levelSettings['weight_min_kg'],
@@ -588,7 +599,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                     <div class="form-row">
                         <div class="form-group">
                             <label for="capacity" class="form-label">Capacitate</label>
-                            <input type="number" name="capacity" id="capacity" class="form-control" min="0" placeholder="Nr. max articole">
+                            <input type="number" name="capacity" id="capacity" class="form-control" min="0" placeholder="Nr. max articole" onchange="distributeItemCapacity()">
                         </div>
                         <div class="form-group">
                             <label for="levels" class="form-label">Niveluri</label>

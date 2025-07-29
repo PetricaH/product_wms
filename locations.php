@@ -432,6 +432,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'description' => trim($_POST['description'] ?? ''),
                     'status' => intval($_POST['status'] ?? 1)
                 ];
+
+                if (isset($_POST['dynamic_levels_data']) && !empty($_POST['dynamic_levels_data'])) {
+                    $dynamicLevels = json_decode($_POST['dynamic_levels_data'], true);
+                    if ($dynamicLevels) {
+                        $totalHeight = $totalWeight = $totalCapacity = 0;
+                        $levelSettings = [];
+                        $levelNum = 1;
+                        foreach ($dynamicLevels as $lvl) {
+                            $totalHeight += intval($lvl['height_mm'] ?? 300);
+                            $totalWeight += floatval($lvl['max_weight_kg'] ?? 50);
+                            if (!empty($lvl['items_capacity'])) { $totalCapacity += intval($lvl['items_capacity']); }
+                            $levelSettings[$levelNum] = [
+                                'level_name' => $lvl['name'] ?? "Nivel {$levelNum}",
+                                'storage_policy' => $lvl['storage_policy'] ?? 'multiple_products',
+                                'length_mm' => 1000,
+                                'depth_mm' => 400,
+                                'height_mm' => intval($lvl['height_mm'] ?? 300),
+                                'max_weight_kg' => floatval($lvl['max_weight_kg'] ?? 50),
+                                'items_capacity' => !empty($lvl['items_capacity']) ? intval($lvl['items_capacity']) : null,
+                                'dedicated_product_id' => !empty($lvl['dedicated_product_id']) ? intval($lvl['dedicated_product_id']) : null,
+                                'allow_other_products' => ($lvl['allow_other_products'] ?? true) ? 1 : 0,
+                                'volume_min_liters' => !empty($lvl['volume_min_liters']) ? floatval($lvl['volume_min_liters']) : null,
+                                'volume_max_liters' => !empty($lvl['volume_max_liters']) ? floatval($lvl['volume_max_liters']) : null,
+                                'enable_auto_repartition' => ($lvl['enable_auto_repartition'] ?? false) ? 1 : 0,
+                                'repartition_trigger_threshold' => intval($lvl['repartition_trigger_threshold'] ?? 80),
+                                'priority_order' => intval($lvl['priority_order'] ?? $levelNum),
+                                'subdivision_count' => intval($lvl['subdivision_count'] ?? 1)
+                            ];
+                            $levelNum++;
+                        }
+                        $locationData['levels'] = count($dynamicLevels);
+                        $locationData['capacity'] = $totalCapacity > 0 ? $totalCapacity : null;
+                        $locationData['length_mm'] = 1000;
+                        $locationData['depth_mm'] = 400;
+                        $locationData['height_mm'] = $totalHeight;
+                        $locationData['max_weight_kg'] = $totalWeight;
+                        $locationData['level_settings'] = $levelSettings;
+                    }
+                }
                 
                 // Debug: Log cleaned data
                 error_log("DEBUG: Cleaned location data: " . json_encode($locationData));

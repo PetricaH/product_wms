@@ -1568,10 +1568,10 @@ function downloadLocationQr() {
 /**
  * Generate QR images for all levels after location creation
  */
-function generateLevelQRImages(locationId, locationCode, levelCount) {
-    for (let level = 1; level <= levelCount; level++) {
-        const levelCode = `${locationCode}-N${level}`;
-        
+function generateLevelQRImages(locationId, locationCode, levelNames) {
+    Object.entries(levelNames).forEach(([level, name]) => {
+        const levelCode = `${locationCode}\n${name}`;
+
         // Create canvas for this level
         const canvas = document.createElement('canvas');
         const qr = new QRious({
@@ -1595,7 +1595,7 @@ function generateLevelQRImages(locationId, locationCode, levelCount) {
             // You could also send this to server to save the file
             uploadQRCodeToServer(blob, locationId, level);
         });
-    }
+    });
 }
 
 function showZoneAutoFill(zone) {

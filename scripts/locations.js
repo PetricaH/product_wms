@@ -114,17 +114,21 @@ function updateModalStructure() {
  * Add enhanced tabs to modal
  */
 function addEnhancedTabs() {
-    const modalBody = document.querySelector('#locationModal .modal-body');
+    const form = document.getElementById('locationForm');
+    if (!form) return;
+
+    const modalBody = form.querySelector('.modal-body');
     if (!modalBody) return;
     
-    // Check if tabs already exist
-    let tabsContainer = modalBody.querySelector('.location-tabs');
-    
-    if (!tabsContainer) {
-        // Create tabs container
-        tabsContainer = document.createElement('div');
-        tabsContainer.className = 'location-tabs';
-        tabsContainer.innerHTML = `
+    // Avoid duplicating tabs if they already exist
+    if (modalBody.querySelector('.location-tabs')) {
+        return;
+    }
+
+    // Preserve existing modal body content
+    const existingContent = modalBody.innerHTML;
+    modalBody.innerHTML = `
+        <div class="location-tabs">
             <button type="button" class="tab-button active" onclick="switchLocationTab('basic')">
                 <span class="material-symbols-outlined">info</span>
                 Informații de Bază
@@ -137,15 +141,8 @@ function addEnhancedTabs() {
                 <span class="material-symbols-outlined">layers</span>
                 Configurare Niveluri
             </button>
-        `;
-        
-        // Insert tabs at the beginning of modal body
-        modalBody.insertBefore(tabsContainer, modalBody.firstChild);
-    }
-    
-    // Wrap existing form content in tabs
-    const existingContent = modalBody.querySelector('form').innerHTML;
-    modalBody.querySelector('form').innerHTML = `
+        </div>
+
         <!-- Basic Information Tab -->
         <div id="basic-tab" class="tab-content active">
             ${existingContent}

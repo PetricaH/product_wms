@@ -148,10 +148,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     
                     $levelStmt = $db->prepare($levelQuery);
                     $levelNumber = 1;
-                    
+                    $levelNames = [];
+
                     foreach ($dynamicLevels as $levelId => $levelData) {
                         error_log("Processing dynamic level {$levelNumber}: " . json_encode($levelData));
-                        
+
                         $levelParams = [
                             ':location_id' => $locationId,
                             ':level_number' => $levelNumber,
@@ -180,11 +181,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         }
                         
                         error_log("Level {$levelNumber} settings created successfully");
+
+                        // Store level name for QR generation
+                        $levelNames[$levelNumber] = $levelData['name'] ?? "Nivel {$levelNumber}";
                         $levelNumber++;
                     }
-                    
+
                     // Generate individual QR codes for each level
-                    $qrCodesGenerated = generateLevelQRCodes($db, $locationId, $locationData['location_code'], $levelCount);
+                    $qrCodesGenerated = generateLevelQRCodes($db, $locationId, $locationData['location_code'], $levelNames);
                     if ($qrCodesGenerated) {
                         error_log("QR codes generated successfully for all {$levelCount} levels");
                     } else {
@@ -552,15 +556,16 @@ function cleanArrayValue($value, $default = null) {
  * @param PDO $db Database connection
  * @param int $locationId Location ID
  * @param string $locationCode Location code
- * @param int $levelCount Number of levels
+ * @param array $levelNames Array of level names indexed by level number
  * @return bool Success status
- */
-function generateLevelQRCodes($db, $locationId, $locationCode, $levelCount) {
+*/
+function generateLevelQRCodes($db, $locationId, $locationCode, array $levelNames) {
     try {
         $successCount = 0;
+        $levelCount = count($levelNames);
 
-        for ($level = 1; $level <= $levelCount; $level++) {
-            $levelCode  = $locationCode . '-N' . $level;
+        foreach ($levelNames as $level => $name) {
+            $levelCode  = $locationCode . "\n" . $name;
             $qrFile     = $locationId . '_level_' . $level . '.png';
             $relative   = 'storage/qr_codes/levels/' . $qrFile;
             $absolute   = BASE_PATH . '/' . $relative;

@@ -21,6 +21,22 @@ document.addEventListener('DOMContentLoaded', function() {
     initializeQRCode();
     setupEventListeners();
     
+    const subdivisionData = collectSubdivisionDataForSubmission();
+
+    if (subdivisionData && Object.keys(subdivisionData).length > 0) {
+        // Add subdivision data as hidden field
+        let subdivisionField = document.getElementById('subdivision_form_data');
+        if (!subdivisionField) {
+            subdivisionField = document.createElement('input');
+            subdivisionField.type = 'hidden';
+            subdivisionField.id = 'subdivision_form_data';
+            subdivisionField.name = 'subdivision_form_data';
+            this.appendChild(subdivisionField);
+        }
+        
+        subdivisionField.value = JSON.stringify(subdivisionData);
+    }
+    
     // Auto-populate zone when location_code changes
     const locationCodeInput = document.getElementById('location_code');
     const zoneInput = document.getElementById('zone');
@@ -47,6 +63,49 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 });
+
+/**
+ * Collect subdivision data for form submission
+ * This function should be called before form submission
+ */
+function collectSubdivisionDataForSubmission() {
+    const subdivisionData = {};
+    
+    // Find all levels with subdivisions enabled
+    const enabledLevels = document.querySelectorAll('input[id*="_enable_subdivisions"]:checked');
+    
+    enabledLevels.forEach(checkbox => {
+        const levelMatch = checkbox.id.match(/level_(\d+)_enable_subdivisions/);
+        if (levelMatch) {
+            const levelNumber = parseInt(levelMatch[1]);
+            
+            subdivisionData[levelNumber] = {
+                subdivisions_enabled: true,
+                subdivisions: []
+            };
+            
+            // Collect all subdivisions for this level
+            const subdivisionItems = document.querySelectorAll(`#subdivisions-list-${levelNumber} .subdivision-item`);
+            
+            subdivisionItems.forEach((item, index) => {
+                const subdivisionIndex = index + 1;
+                const productId = document.getElementById(`level_${levelNumber}_subdivision_${subdivisionIndex}_product_id`)?.value;
+                const capacity = document.getElementById(`level_${levelNumber}_subdivision_${subdivisionIndex}_capacity`)?.value;
+                const notes = document.querySelector(`[name="level_${levelNumber}_subdivision_${subdivisionIndex}_notes"]`)?.value;
+                
+                if (productId && capacity) {
+                    subdivisionData[levelNumber].subdivisions.push({
+                        product_id: parseInt(productId),
+                        capacity: parseInt(capacity),
+                        notes: notes || ''
+                    });
+                }
+            });
+        }
+    });
+    
+    return subdivisionData;
+}
 
 // Show zone auto-fill message
 function showZoneAutoFill(zone) {
@@ -1046,36 +1105,59 @@ function generateLevelSettings() {
     for (let level = 1; level <= currentLevels; level++) {
         const levelDiv = createLevelSettingsDiv(level);
         container.appendChild(levelDiv);
+        
+        // Populate product dropdown for this level
+        populateProductDropdown(level);
     }
 }
+
 
 /**
  * Create level settings div
  * @param {number} levelNumber - Level number
  * @returns {HTMLElement} - Level settings element
+ * test
  */
 function createLevelSettingsDiv(levelNumber) {
     const levelDiv = document.createElement('div');
     levelDiv.className = 'level-settings-container';
     
     const levelName = getLevelName(levelNumber);
-    const isActive = '';
     
     levelDiv.innerHTML = `
-        <div class="level-header ${isActive}" onclick="toggleLevel(${levelNumber})">
+        <div class="level-header" onclick="toggleLevel(${levelNumber})">
             <div class="level-title">
                 <span class="material-symbols-outlined">layers</span>
                 <span>Nivel ${levelNumber} - ${levelName}</span>
             </div>
             <span class="level-toggle material-symbols-outlined">expand_more</span>
         </div>
-        <div class="level-content ${isActive}" id="level-content-${levelNumber}">
+        <div class="level-content" id="level-content-${levelNumber}">
             <div class="level-grid">
+                <!-- Enable Subdivisions Section -->
                 <div class="settings-section">
-                    <h4>
+                    <h5>
+                        <span class="material-symbols-outlined">view_module</span>
+                        Configurare Subdiviziuni
+                    </h5>
+                    <div class="form-group">
+                        <label class="form-check-label">
+                            <input type="checkbox" 
+                                   id="level_${levelNumber}_enable_subdivisions" 
+                                   name="level_${levelNumber}_enable_subdivisions"
+                                   onchange="toggleSubdivisions(${levelNumber})">
+                            Permite subdiviziuni în acest nivel
+                        </label>
+                        <small class="form-help">Când este activat, nivelul va permite mai multe produse diferite în subdiviziuni separate</small>
+                    </div>
+                </div>
+                
+                <!-- Storage Policy Section (Updated) -->
+                <div class="settings-section" id="storage-policy-${levelNumber}">
+                    <h5>
                         <span class="material-symbols-outlined">policy</span>
                         Politica de Stocare
-                    </h4>
+                    </h5>
                     <div class="storage-policy-options">
                         <div class="policy-option selected" onclick="selectStoragePolicy(${levelNumber}, 'multiple_products')">
                             <input type="radio" name="level_${levelNumber}_storage_policy" value="multiple_products" checked>
@@ -1091,108 +1173,428 @@ function createLevelSettingsDiv(levelNumber) {
                                 <div class="policy-description">Permite doar un tip de produs pe nivel</div>
                             </div>
                         </div>
-                        <div class="policy-option" onclick="selectStoragePolicy(${levelNumber}, 'category_restricted')">
-                            <input type="radio" name="level_${levelNumber}_storage_policy" value="category_restricted">
-                            <div>
-                                <div class="policy-title">Restricționat pe Categorie</div>
-                                <div class="policy-description">Permite doar anumite categorii de produse</div>
-                            </div>
-                        </div>
                     </div>
                 </div>
                 
-                <div class="settings-section">
-                    <h4>
+                <!-- Traditional Level Settings -->
+                <div class="settings-section" id="traditional-settings-${levelNumber}">
+                    <h5>
                         <span class="material-symbols-outlined">straighten</span>
-                        Dimensiuni Nivel
-                    </h4>
+                        Setări Nivel
+                    </h5>
                     <div class="form-group">
                         <label class="form-label">Înălțime nivel (mm)</label>
                         <input type="number" name="level_${levelNumber}_height" id="level_${levelNumber}_height" 
-                               class="form-control" value="300" min="100" max="1000">
-                    </div>
-                   <div class="form-group">
-                       <label class="form-label">Capacitate greutate (kg)</label>
-                       <input type="number" name="level_${levelNumber}_weight" id="level_${levelNumber}_weight"
-                              class="form-control" value="50" min="1" max="500" step="0.1">
-                   </div>
-                    <div class="form-group">
-                        <label class="form-label">Articole pe nivel</label>
-                        <input type="number" name="level_${levelNumber}_capacity" id="level_${levelNumber}_capacity"
-                               class="form-control" min="0">
+                               class="form-control" value="300" min="100" max="2000">
                     </div>
                     <div class="form-group">
+                        <label class="form-label">Capacitate greutate (kg)</label>
+                        <input type="number" name="level_${levelNumber}_weight" id="level_${levelNumber}_weight" 
+                               class="form-control" value="50" min="1" max="500" step="0.1">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Capacitate articole</label>
+                        <input type="number" name="level_${levelNumber}_capacity" id="level_${levelNumber}_capacity" 
+                               class="form-control" placeholder="Opțional">
+                    </div>
+                    <div class="form-group" id="single-product-settings-${levelNumber}" style="display: none;">
                         <label class="form-label">Produs dedicat</label>
-                        <select name="level_${levelNumber}_dedicated_product" id="level_${levelNumber}_dedicated_product" class="form-control">
-                            ${generateInternalProductOptions()}
+                        <select name="level_${levelNumber}_dedicated_product" id="level_${levelNumber}_dedicated_product" 
+                                class="form-control">
+                            <option value="">-- Selectează produs --</option>
                         </select>
-                        <div class="form-check" style="margin-top:0.5rem;">
-                            <input type="checkbox" id="level_${levelNumber}_allow_others" name="level_${levelNumber}_allow_others" checked>
-                            <label for="level_${levelNumber}_allow_others" class="form-label">Permite alte produse</label>
-                        </div>
                     </div>
                 </div>
                 
-                <div class="settings-section">
-                    <h4>
-                        <span class="material-symbols-outlined">tune</span>
-                        Restricții Produse
-                    </h4>
-                    <div class="form-group">
-                        <label class="form-label">Volum minim (L)</label>
-                        <input type="number" name="level_${levelNumber}_volume_min" 
-                               class="form-control" step="0.1" min="0">
+                <!-- Subdivisions Management Section -->
+                <div class="settings-section subdivisions-section" id="subdivisions-section-${levelNumber}" style="display: none;">
+                    <h5>
+                        <span class="material-symbols-outlined">grid_view</span>
+                        Gestiune Subdiviziuni
+                    </h5>
+                    <div class="subdivisions-list" id="subdivisions-list-${levelNumber}">
+                        <!-- Subdivisions will be added here -->
                     </div>
-                    <div class="form-group">
-                        <label class="form-label">Volum maxim (L)</label>
-                        <input type="number" name="level_${levelNumber}_volume_max" 
-                               class="form-control" step="0.1" min="0">
-                    </div>
-                </div>
-                
-                <div class="settings-section">
-                    <h4>
-                        <span class="material-symbols-outlined">auto_fix_high</span>
-                        Repartizare Automată
-                    </h4>
-                    <div class="form-check">
-                        <input type="checkbox" id="level_${levelNumber}_auto_repartition" 
-                               name="level_${levelNumber}_auto_repartition">
-                        <label for="level_${levelNumber}_auto_repartition" class="form-label">
-                            Activează pentru acest nivel
-                        </label>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Prag activare (%)</label>
-                        <input type="number" name="level_${levelNumber}_threshold" 
-                               class="form-control" value="80" min="50" max="95">
-                    </div>
-                <div class="form-group">
-                    <label class="form-label">Prioritate nivel</label>
-                    <input type="number" name="level_${levelNumber}_priority"
-                               class="form-control" value="${currentLevels - levelNumber + 1}" min="1" max="10">
-                    <small class="form-help">Prioritate mai mare = plasat primul</small>
-                </div>
-                </div>
-                <div class="settings-section">
-                    <h4>
-                        <span class="material-symbols-outlined">view_column</span>
-                        Subdiviziuni
-                    </h4>
-                    <div class="form-group">
-                        <label class="form-label">Număr subdiviziuni</label>
-                        <div class="subdivision-control">
-                            <button type="button" class="btn btn-secondary btn-sm" onclick="changeSubdivision(${levelNumber}, -1)">-</button>
-                            <input type="number" name="level_${levelNumber}_subdivisions" id="level_${levelNumber}_subdivisions" class="form-control" value="1" min="1" style="width:60px;display:inline-block;margin:0 0.5rem;">
-                            <button type="button" class="btn btn-secondary btn-sm" onclick="changeSubdivision(${levelNumber}, 1)">+</button>
-                        </div>
-                    </div>
+                    <button type="button" class="btn btn-sm btn-primary" onclick="addSubdivision(${levelNumber})">
+                        <span class="material-symbols-outlined">add</span>
+                        Adaugă Subdiviziune
+                    </button>
                 </div>
             </div>
         </div>
     `;
     
     return levelDiv;
+}
+
+function toggleSubdivisions(levelNumber) {
+    const enableCheckbox = document.getElementById(`level_${levelNumber}_enable_subdivisions`);
+    const subdivisionSection = document.getElementById(`subdivisions-section-${levelNumber}`);
+    const traditionalSettings = document.getElementById(`traditional-settings-${levelNumber}`);
+    const storagePolicy = document.getElementById(`storage-policy-${levelNumber}`);
+    
+    if (enableCheckbox.checked) {
+        // Enable subdivisions mode
+        subdivisionSection.style.display = 'block';
+        
+        // Force Multiple Products policy and disable other options
+        const multipleProductsRadio = document.querySelector(`input[name="level_${levelNumber}_storage_policy"][value="multiple_products"]`);
+        if (multipleProductsRadio) {
+            multipleProductsRadio.checked = true;
+        }
+        
+        // Disable policy selection
+        const policyOptions = storagePolicy.querySelectorAll('.policy-option');
+        policyOptions.forEach((option, index) => {
+            if (index === 0) { // Multiple products option
+                option.classList.add('selected');
+                option.style.opacity = '1';
+            } else {
+                option.classList.remove('selected');
+                option.style.opacity = '0.5';
+                option.style.pointerEvents = 'none';
+            }
+        });
+        
+        // Hide single product settings
+        const singleProductSettings = document.getElementById(`single-product-settings-${levelNumber}`);
+        if (singleProductSettings) {
+            singleProductSettings.style.display = 'none';
+        }
+        
+        // Add policy note
+        if (!document.getElementById(`subdivision-policy-note-${levelNumber}`)) {
+            const note = document.createElement('div');
+            note.id = `subdivision-policy-note-${levelNumber}`;
+            note.className = 'form-help';
+            note.style.color = 'var(--success-color)';
+            note.innerHTML = '<span class="material-symbols-outlined">info</span> Politica "Multiple Produse" este activată automat pentru subdiviziuni';
+            storagePolicy.appendChild(note);
+        }
+        
+        // Initialize with one subdivision if none exist
+        const subdivisionsList = document.getElementById(`subdivisions-list-${levelNumber}`);
+        if (subdivisionsList.children.length === 0) {
+            addSubdivision(levelNumber);
+        }
+        
+    } else {
+        // Disable subdivisions mode
+        subdivisionSection.style.display = 'none';
+        
+        // Re-enable policy selection
+        const policyOptions = storagePolicy.querySelectorAll('.policy-option');
+        policyOptions.forEach(option => {
+            option.style.opacity = '1';
+            option.style.pointerEvents = 'auto';
+        });
+        
+        // Remove policy note
+        const note = document.getElementById(`subdivision-policy-note-${levelNumber}`);
+        if (note) {
+            note.remove();
+        }
+        
+        // Clear all subdivisions
+        clearSubdivisions(levelNumber);
+    }
+}
+
+function addSubdivision(levelNumber) {
+    const subdivisionsList = document.getElementById(`subdivisions-list-${levelNumber}`);
+    const subdivisionIndex = subdivisionsList.children.length + 1;
+    
+    const subdivisionDiv = document.createElement('div');
+    subdivisionDiv.className = 'subdivision-item';
+    subdivisionDiv.setAttribute('data-subdivision', subdivisionIndex);
+    
+    subdivisionDiv.innerHTML = `
+        <div class="subdivision-header">
+            <span class="subdivision-title">
+                <span class="material-symbols-outlined">view_module</span>
+                Subdiviziunea ${subdivisionIndex}
+            </span>
+            <button type="button" class="btn btn-sm btn-danger" onclick="removeSubdivision(${levelNumber}, ${subdivisionIndex})">
+                <span class="material-symbols-outlined">delete</span>
+            </button>
+        </div>
+        <div class="subdivision-content">
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Produs *</label>
+                    <div class="product-search-container">
+                        <input type="hidden" 
+                               name="level_${levelNumber}_subdivision_${subdivisionIndex}_product_id" 
+                               id="level_${levelNumber}_subdivision_${subdivisionIndex}_product_id">
+                        <input type="text" 
+                               class="form-control product-search-input" 
+                               id="level_${levelNumber}_subdivision_${subdivisionIndex}_product_search"
+                               placeholder="Caută produs..." 
+                               autocomplete="off"
+                               onkeyup="searchProductsForSubdivision(${levelNumber}, ${subdivisionIndex}, this.value)"
+                               onfocus="showProductResults(${levelNumber}, ${subdivisionIndex})">
+                        <div class="product-search-results" 
+                             id="level_${levelNumber}_subdivision_${subdivisionIndex}_results"
+                             style="display: none;"></div>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Capacitate articole *</label>
+                    <input type="number" 
+                           name="level_${levelNumber}_subdivision_${subdivisionIndex}_capacity" 
+                           id="level_${levelNumber}_subdivision_${subdivisionIndex}_capacity"
+                           class="form-control" 
+                           min="1" 
+                           placeholder="Nr. articole"
+                           required>
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Notițe</label>
+                <textarea name="level_${levelNumber}_subdivision_${subdivisionIndex}_notes" 
+                          class="form-control" 
+                          rows="2" 
+                          placeholder="Notițe opționale pentru această subdiviziune"></textarea>
+            </div>
+        </div>
+    `;
+    
+    subdivisionsList.appendChild(subdivisionDiv);
+    
+    // Focus on product search
+    setTimeout(() => {
+        const searchInput = document.getElementById(`level_${levelNumber}_subdivision_${subdivisionIndex}_product_search`);
+        if (searchInput) {
+            searchInput.focus();
+        }
+    }, 100);
+}
+
+/**
+ * Remove a subdivision
+ */
+function removeSubdivision(levelNumber, subdivisionIndex) {
+    if (!confirm('Ești sigur că vrei să ștergi această subdiviziune?')) {
+        return;
+    }
+    
+    const subdivisionDiv = document.querySelector(`#subdivisions-list-${levelNumber} [data-subdivision="${subdivisionIndex}"]`);
+    if (subdivisionDiv) {
+        subdivisionDiv.remove();
+    }
+    
+    // Renumber remaining subdivisions
+    renumberSubdivisions(levelNumber);
+}
+
+/**
+ * Clear all subdivisions
+ */
+function clearSubdivisions(levelNumber) {
+    const subdivisionsList = document.getElementById(`subdivisions-list-${levelNumber}`);
+    if (subdivisionsList) {
+        subdivisionsList.innerHTML = '';
+    }
+}
+
+/**
+ * Renumber subdivisions after removal
+ */
+function renumberSubdivisions(levelNumber) {
+    const subdivisionsList = document.getElementById(`subdivisions-list-${levelNumber}`);
+    const subdivisions = subdivisionsList.querySelectorAll('.subdivision-item');
+    
+    subdivisions.forEach((subdivision, index) => {
+        const newIndex = index + 1;
+        const oldIndex = subdivision.getAttribute('data-subdivision');
+        
+        // Update data attribute
+        subdivision.setAttribute('data-subdivision', newIndex);
+        
+        // Update title
+        const title = subdivision.querySelector('.subdivision-title');
+        if (title) {
+            title.innerHTML = `<span class="material-symbols-outlined">view_module</span> Subdiviziunea ${newIndex}`;
+        }
+        
+        // Update all IDs and names
+        const elements = subdivision.querySelectorAll('[id*="_subdivision_"], [name*="_subdivision_"]');
+        elements.forEach(element => {
+            if (element.id) {
+                element.id = element.id.replace(`_subdivision_${oldIndex}_`, `_subdivision_${newIndex}_`);
+            }
+            if (element.name) {
+                element.name = element.name.replace(`_subdivision_${oldIndex}_`, `_subdivision_${newIndex}_`);
+            }
+        });
+        
+        // Update onclick attributes
+        const deleteBtn = subdivision.querySelector('.btn-danger');
+        if (deleteBtn) {
+            deleteBtn.setAttribute('onclick', `removeSubdivision(${levelNumber}, ${newIndex})`);
+        }
+        
+        // Update search function calls
+        const searchInput = subdivision.querySelector('.product-search-input');
+        if (searchInput) {
+            searchInput.setAttribute('onkeyup', `searchProductsForSubdivision(${levelNumber}, ${newIndex}, this.value)`);
+            searchInput.setAttribute('onfocus', `showProductResults(${levelNumber}, ${newIndex})`);
+        }
+    });
+}
+
+let searchTimeouts = {};
+let productSearchCache = {};
+
+/**
+ * Search products for subdivision
+ */
+function searchProductsForSubdivision(levelNumber, subdivisionIndex, query) {
+    const timeoutKey = `${levelNumber}_${subdivisionIndex}`;
+    
+    // Clear previous timeout
+    if (searchTimeouts[timeoutKey]) {
+        clearTimeout(searchTimeouts[timeoutKey]);
+    }
+    
+    // Set new timeout to avoid too many requests
+    searchTimeouts[timeoutKey] = setTimeout(async () => {
+        if (query.length < 2) {
+            hideProductResults(levelNumber, subdivisionIndex);
+            return;
+        }
+        
+        try {
+            // Check cache first
+            if (productSearchCache[query]) {
+                displayProductResults(levelNumber, subdivisionIndex, productSearchCache[query]);
+                return;
+            }
+            
+            const response = await fetch(`api/products.php?search=${encodeURIComponent(query)}&limit=10`);
+            const products = await response.json();
+            
+            if (response.ok && Array.isArray(products)) {
+                productSearchCache[query] = products;
+                displayProductResults(levelNumber, subdivisionIndex, products);
+            }
+        } catch (error) {
+            console.error('Product search error:', error);
+        }
+    }, 300);
+}
+
+/**
+ * Display product search results
+ */
+function displayProductResults(levelNumber, subdivisionIndex, products) {
+    const resultsContainer = document.getElementById(`level_${levelNumber}_subdivision_${subdivisionIndex}_results`);
+    if (!resultsContainer) return;
+    
+    if (products.length === 0) {
+        resultsContainer.innerHTML = '<div class="search-result-item no-results">Nu s-au găsit produse</div>';
+    } else {
+        resultsContainer.innerHTML = products.map(product => `
+            <div class="search-result-item" onclick="selectProduct(${levelNumber}, ${subdivisionIndex}, ${product.id}, '${escapeHtml(product.name)}')">
+                <div class="product-name">${escapeHtml(product.name)}</div>
+                <div class="product-details">${escapeHtml(product.code)} - ${escapeHtml(product.category)}</div>
+            </div>
+        `).join('');
+    }
+    
+    resultsContainer.style.display = 'block';
+}
+
+/**
+ * Select a product for subdivision
+ */
+function selectProduct(levelNumber, subdivisionIndex, productId, productName) {
+    const hiddenInput = document.getElementById(`level_${levelNumber}_subdivision_${subdivisionIndex}_product_id`);
+    const searchInput = document.getElementById(`level_${levelNumber}_subdivision_${subdivisionIndex}_product_search`);
+    
+    if (hiddenInput) hiddenInput.value = productId;
+    if (searchInput) searchInput.value = productName;
+    
+    hideProductResults(levelNumber, subdivisionIndex);
+}
+
+/**
+ * Show product results
+ */
+function showProductResults(levelNumber, subdivisionIndex) {
+    const resultsContainer = document.getElementById(`level_${levelNumber}_subdivision_${subdivisionIndex}_results`);
+    const searchInput = document.getElementById(`level_${levelNumber}_subdivision_${subdivisionIndex}_product_search`);
+    
+    if (resultsContainer && searchInput && searchInput.value.length >= 2) {
+        resultsContainer.style.display = 'block';
+    }
+}
+
+/**
+ * Hide product results
+ */
+function hideProductResults(levelNumber, subdivisionIndex) {
+    const resultsContainer = document.getElementById(`level_${levelNumber}_subdivision_${subdivisionIndex}_results`);
+    if (resultsContainer) {
+        resultsContainer.style.display = 'none';
+    }
+}
+
+/**
+ * Escape HTML for security
+ */
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// ==============================================================================
+// 5. FORM SUBMISSION DATA COLLECTION
+// ==============================================================================
+
+/**
+ * Collect subdivision data for form submission
+ * This should be called in the existing form submission handler
+ */
+function collectSubdivisionData() {
+    const subdivisionData = {};
+    
+    for (let level = 1; level <= currentLevels; level++) {
+        const enableCheckbox = document.getElementById(`level_${level}_enable_subdivisions`);
+        
+        if (enableCheckbox && enableCheckbox.checked) {
+            const subdivisionsList = document.getElementById(`subdivisions-list-${level}`);
+            const subdivisions = subdivisionsList.querySelectorAll('.subdivision-item');
+            
+            subdivisionData[level] = {
+                enabled: true,
+                subdivisions: []
+            };
+            
+            subdivisions.forEach((subdivision, index) => {
+                const subdivisionIndex = index + 1;
+                const productId = document.getElementById(`level_${level}_subdivision_${subdivisionIndex}_product_id`)?.value;
+                const capacity = document.getElementById(`level_${level}_subdivision_${subdivisionIndex}_capacity`)?.value;
+                const notes = document.querySelector(`[name="level_${level}_subdivision_${subdivisionIndex}_notes"]`)?.value;
+                
+                if (productId && capacity) {
+                    subdivisionData[level].subdivisions.push({
+                        product_id: productId,
+                        capacity: parseInt(capacity),
+                        notes: notes || ''
+                    });
+                }
+            });
+        } else {
+            subdivisionData[level] = {
+                enabled: false,
+                subdivisions: []
+            };
+        }
+    }
+    
+    return subdivisionData;
 }
 
 /**
@@ -1763,7 +2165,7 @@ document.getElementById('locationForm')?.addEventListener('submit', function(eve
  */
 function initializeDynamicLevelSystem() {
     // Remove the old level settings functionality
-    levelSettingsEnabled = false;
+    levelSettingsEnabled = true;
     
     // Clear any existing level settings
     const levelSettingsSection = document.getElementById('level-settings-section');
@@ -2337,3 +2739,13 @@ window.toggleLevel = toggleLevel;
 window.removeLevel = removeLevel;
 window.populateDynamicLevels = populateDynamicLevels;
 window.changeSubdivision = changeSubdivision;
+
+// Make functions globally available
+window.toggleSubdivisions = toggleSubdivisions;
+window.addSubdivision = addSubdivision;
+window.removeSubdivision = removeSubdivision;
+window.searchProductsForSubdivision = searchProductsForSubdivision;
+window.selectProduct = selectProduct;
+window.showProductResults = showProductResults;
+window.hideProductResults = hideProductResults;
+window.collectSubdivisionData = collectSubdivisionData;

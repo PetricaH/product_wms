@@ -194,6 +194,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     } else {
                         error_log("Warning: QR code generation had issues, but location was created");
                     }
+
+                    $subdivisionResult = processSubdivisionData($locationId, $_POST);
+                    if (!$subdivisionResult['success']) {
+                        throw new Exception($subdivisionResult['message']);
+                    }
                     
                     $db->commit();
                     error_log("Transaction committed successfully for dynamic location creation");
@@ -212,193 +217,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $messageType = 'error';
                 }
                 
-            } else {
-                // Fallback to old system if dynamic_levels_data is not provided
-                error_log("Using legacy location creation system");
-                
-                $locationData = [
-                    'location_code' => trim($_POST['location_code'] ?? ''),
-                    'zone' => trim($_POST['zone'] ?? ''),
-                    'type' => trim($_POST['type'] ?? 'shelf'),
-                    'capacity' => intval($_POST['capacity'] ?? 0),
-                    'levels' => intval($_POST['levels'] ?? 3),
-                    'length_mm' => intval($_POST['length_mm'] ?? 1000),
-                    'depth_mm' => intval($_POST['depth_mm'] ?? 400),
-                    'height_mm' => intval($_POST['height_mm'] ?? 900),
-                    'max_weight_kg' => floatval($_POST['max_weight_kg'] ?? 150),
-                    'description' => trim($_POST['description'] ?? ''),
-                    'status' => intval($_POST['status'] ?? 1)
-                ];
-                
-                error_log("Legacy Location Data: " . json_encode($locationData));
-                
-                // Check if location code already exists first
-                $existingLocation = $locationModel->getLocationByCode($locationData['location_code']);
-                if ($existingLocation) {
-                    error_log("ERROR: Location code already exists: " . $locationData['location_code']);
-                    $message = 'Eroare: Codul locației există deja!';
-                    $messageType = 'error';
-                    break;
-                }
-                
-                try {
-                    // Start transaction manually to get better error handling
-                    $db->beginTransaction();
-                    error_log("Transaction started for legacy creation");
-                    
-                    // Insert location record directly
-                    $statusMap = [0 => 'inactive', 1 => 'active', 2 => 'maintenance'];
-                    $status = $statusMap[$locationData['status'] ?? 1] ?? 'active';
-                    
-                    $insertQuery = "INSERT INTO locations
-                                    (location_code, zone, type, levels, capacity, length_mm, depth_mm, height_mm, max_weight_kg, notes, status, created_at)
-                                    VALUES (:location_code, :zone, :type, :levels, :capacity, :length_mm, :depth_mm, :height_mm, :max_weight_kg, :notes, :status, NOW())";
-                    
-                    $stmt = $db->prepare($insertQuery);
-                    $params = [
-                        ':location_code' => $locationData['location_code'],
-                        ':zone' => $locationData['zone'],
-                        ':type' => $locationData['type'],
-                        ':levels' => $locationData['levels'],
-                        ':capacity' => $locationData['capacity'],
-                        ':length_mm' => $locationData['length_mm'],
-                        ':depth_mm' => $locationData['depth_mm'],
-                        ':height_mm' => $locationData['height_mm'],
-                        ':max_weight_kg' => $locationData['max_weight_kg'],
-                        ':notes' => $locationData['description'],
-                        ':status' => $status
-                    ];
-                    
-                    error_log("Executing legacy location insert with params: " . json_encode($params));
-                    
-                    if (!$stmt->execute($params)) {
-                        $errorInfo = $stmt->errorInfo();
-                        error_log("Location insert failed: " . json_encode($errorInfo));
-                        throw new Exception("Failed to insert location: " . $errorInfo[2]);
-                    }
-                    
-                    $locationId = (int)$db->lastInsertId();
-                    error_log("Location inserted successfully with ID: " . $locationId);
-                    
-                    // Create default level settings for legacy system
-                    $levels = $locationData['levels'];
-                    error_log("Creating default level settings for $levels levels");
-                    
-                    $customLevelData = [];
-                    if (!empty($_POST['level_settings_data'])) {
-                        $customLevelData = json_decode($_POST['level_settings_data'], true) ?? [];
-                    }
-        
-                    for ($level = 1; $level <= $levels; $level++) {
-                        error_log("Creating settings for level $level");
-        
-                        $levelSettings = [
-                            'level_name' => match($level) {
-                                1 => 'Bottom',
-                                2 => 'Middle', 
-                                3 => 'Top',
-                                default => "Level $level"
-                            },
-                            'storage_policy' => 'multiple_products',
-                            'allowed_product_types' => null,
-                            'max_different_products' => null,
-                            'length_mm' => 1000,
-                            'depth_mm' => 400,
-                            'height_mm' => 300,
-                            'max_weight_kg' => 50.0,
-                            'volume_min_liters' => null,
-                            'volume_max_liters' => null,
-                            'weight_min_kg' => null,
-                            'weight_max_kg' => null,
-                            'enable_auto_repartition' => false,
-                            'repartition_trigger_threshold' => 80,
-                            'priority_order' => $levels - $level + 1,
-                            'requires_special_handling' => false,
-                            'temperature_controlled' => false,
-                            'items_capacity' => null,
-                            'dedicated_product_id' => null,
-                            'allow_other_products' => true,
-                            'notes' => null
-                        ];
-        
-                        if (isset($customLevelData[$level])) {
-                            $levelSettings = array_merge($levelSettings, $customLevelData[$level]);
-                        }
-                        
-                        error_log("Level $level settings: " . json_encode($levelSettings));
-                        
-                        // Insert level settings directly
-                        $levelQuery = "INSERT INTO location_level_settings
-                                      (location_id, level_number, level_name, storage_policy, allowed_product_types,
-                                       max_different_products, length_mm, depth_mm, height_mm, max_weight_kg, items_capacity,
-                                       dedicated_product_id, allow_other_products,
-                                       volume_min_liters, volume_max_liters, weight_min_kg, weight_max_kg,
-                                       enable_auto_repartition, repartition_trigger_threshold, priority_order,
-                                       requires_special_handling, temperature_controlled, notes, created_at)
-                                      VALUES
-                                      (:location_id, :level_number, :level_name, :storage_policy, :allowed_product_types,
-                                       :max_different_products, :length_mm, :depth_mm, :height_mm, :max_weight_kg, :items_capacity,
-                                       :dedicated_product_id, :allow_other_products,
-                                       :volume_min_liters, :volume_max_liters, :weight_min_kg, :weight_max_kg,
-                                       :enable_auto_repartition, :repartition_trigger_threshold, :priority_order,
-                                       :requires_special_handling, :temperature_controlled, :notes, NOW())";
-                        
-                        $levelStmt = $db->prepare($levelQuery);
-                        $levelParams = [
-                            ':location_id' => $locationId,
-                            ':level_number' => $level,
-                            ':level_name' => $levelSettings['level_name'],
-                            ':storage_policy' => $levelSettings['storage_policy'],
-                            ':allowed_product_types' => $levelSettings['allowed_product_types'],
-                            ':max_different_products' => $levelSettings['max_different_products'],
-                            ':length_mm' => $levelSettings['length_mm'],
-                            ':depth_mm' => $levelSettings['depth_mm'],
-                            ':height_mm' => $levelSettings['height_mm'],
-                            ':max_weight_kg' => $levelSettings['max_weight_kg'],
-                           ':items_capacity' => $levelSettings['items_capacity'],
-                            ':dedicated_product_id' => $levelSettings['dedicated_product_id'],
-                            ':allow_other_products' => $levelSettings['allow_other_products'] ? 1 : 0,
-                            ':volume_min_liters' => $levelSettings['volume_min_liters'],
-                            ':volume_max_liters' => $levelSettings['volume_max_liters'],
-                            ':weight_min_kg' => $levelSettings['weight_min_kg'],
-                            ':weight_max_kg' => $levelSettings['weight_max_kg'],
-                            ':enable_auto_repartition' => $levelSettings['enable_auto_repartition'] ? 1 : 0,
-                            ':repartition_trigger_threshold' => $levelSettings['repartition_trigger_threshold'],
-                            ':priority_order' => $levelSettings['priority_order'],
-                            ':requires_special_handling' => $levelSettings['requires_special_handling'] ? 1 : 0,
-                            ':temperature_controlled' => $levelSettings['temperature_controlled'] ? 1 : 0,
-                            ':notes' => $levelSettings['notes']
-                        ];
-                        
-                        error_log("Executing level settings insert for level $level with params: " . json_encode($levelParams));
-                        
-                        if (!$levelStmt->execute($levelParams)) {
-                            $errorInfo = $levelStmt->errorInfo();
-                            error_log("Level settings insert failed for level $level: " . json_encode($errorInfo));
-                            throw new Exception("Failed to insert level settings for level $level: " . $errorInfo[2]);
-                        }
-                        
-                        error_log("Level $level settings created successfully");
-                    }
-                    
-                    $db->commit();
-                    error_log("Transaction committed successfully for legacy creation");
-                    
-                    $message = 'Locația a fost creată cu succes.';
-                    $messageType = 'success';
-                    
-                } catch (Exception $e) {
-                    if ($db->inTransaction()) {
-                        $db->rollBack();
-                        error_log("Transaction rolled back for legacy creation");
-                    }
-                    error_log("LEGACY CREATION FAILED: " . $e->getMessage());
-                    error_log("Stack trace: " . $e->getTraceAsString());
-                    $message = 'Eroare la crearea locației: ' . $e->getMessage();
-                    $messageType = 'error';
-                }
             }
-            
+
             error_log("=== LOCATION CREATION DEBUG END ===");
             break;
             
@@ -519,7 +339,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $messageType = 'error';
                             $location = [];
                         }
+
+                        $subdivisionResult = processSubdivisionData($locationId, $_POST);
+                        if (!$subdivisionResult['success']) {
+                            throw new Exception($subdivisionResult['message']);
+                        }
                         
+                        $db->commit();
+        
+                        echo json_encode([
+                            'success' => true,
+                            'message' => 'Locația a fost actualizată cu succes!',
+                            'location_id' => $locationId
+                        ]);
+
                     } catch (Exception $e) {
                         error_log("ERROR: Exception during location update: " . $e->getMessage());
                         error_log("ERROR: Stack trace: " . $e->getTraceAsString());
@@ -546,11 +379,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $locationId = intval($_POST['id'] ?? 0);
             $details = $locationModel->getLocationWithLevelSettings($locationId);
             
-            header('Content-Type: application/json');
-            if ($details) {
-                echo json_encode(['success' => true, 'location' => $details]);
-            } else {
-                echo json_encode(['success' => false, 'message' => 'Locația nu a fost găsită.']);
+            if ($_POST['action'] === 'get_location_details') {
+                $locationId = (int)$_POST['id'];
+                $result = getLocationWithSubdivisionData($locationId);
+                
+                header('Content-Type: application/json');
+                echo json_encode($result);
+                exit;
             }
             exit;
 
@@ -679,6 +514,196 @@ function generateQRCodeImage(string $data, string $filePath): bool {
         return false;
     }
 }
+/**
+ * Process subdivision data from form submission
+ * Call this method in your CREATE and UPDATE action handlers
+ * 
+ * @param int $locationId
+ * @param array $postData
+ * @return array Response array
+ */
+function processSubdivisionData($locationId, $postData) {
+    global $db; // Assuming $db is your PDO connection
+    
+    try {
+        // Initialize models
+        $levelSettingsModel = new LocationLevelSettings($db);
+        $subdivisionModel = new LocationSubdivision($db);
+        
+        // Extract subdivision data from form
+        $subdivisionData = extractSubdivisionDataFromForm($postData);
+        
+        // Validate subdivision data
+        $validationErrors = validateAllSubdivisions($subdivisionData);
+        if (!empty($validationErrors)) {
+            return [
+                'success' => false,
+                'message' => 'Erori de validare pentru subdiviziuni',
+                'errors' => $validationErrors
+            ];
+        }
+        
+        // Process each level's subdivision data
+        foreach ($subdivisionData as $levelNumber => $levelData) {
+            // Update level settings with subdivision configuration
+            if (!$levelSettingsModel->updateLevelSettingsWithSubdivisions($locationId, $levelNumber, $levelData)) {
+                throw new Exception("Failed to update level {$levelNumber} subdivision settings");
+            }
+        }
+        
+        return [
+            'success' => true,
+            'message' => 'Subdiviziunile au fost configurate cu succes',
+            'subdivision_data' => $subdivisionData
+        ];
+        
+    } catch (Exception $e) {
+        error_log("Error processing subdivision data: " . $e->getMessage());
+        return [
+            'success' => false,
+            'message' => 'Eroare la procesarea subdiviziunilor: ' . $e->getMessage()
+        ];
+    }
+}
+
+/**
+ * Extract subdivision data from form POST data
+ * 
+ * @param array $postData
+ * @return array
+ */
+function extractSubdivisionDataFromForm($postData) {
+    $subdivisionData = [];
+    
+    // Find all subdivision-related fields
+    foreach ($postData as $key => $value) {
+        // Match patterns like: level_1_enable_subdivisions, level_1_subdivision_1_product_id, etc.
+        if (preg_match('/^level_(\d+)_enable_subdivisions$/', $key, $matches)) {
+            $levelNumber = (int)$matches[1];
+            $subdivisionData[$levelNumber]['subdivisions_enabled'] = !empty($value);
+        }
+        
+        if (preg_match('/^level_(\d+)_subdivision_(\d+)_(.+)$/', $key, $matches)) {
+            $levelNumber = (int)$matches[1];
+            $subdivisionIndex = (int)$matches[2];
+            $fieldType = $matches[3];
+            
+            $subdivisionData[$levelNumber]['subdivisions'][$subdivisionIndex - 1][$fieldType] = $value;
+        }
+    }
+    
+    // Clean up subdivision data - remove empty or incomplete subdivisions
+    foreach ($subdivisionData as $levelNumber => &$levelData) {
+        if (isset($levelData['subdivisions'])) {
+            $levelData['subdivisions'] = array_filter($levelData['subdivisions'], function($subdivision) {
+                return !empty($subdivision['product_id']) && !empty($subdivision['capacity']);
+            });
+            
+            // Re-index array to remove gaps
+            $levelData['subdivisions'] = array_values($levelData['subdivisions']);
+        }
+        
+        // Convert capacity to integer
+        if (isset($levelData['subdivisions'])) {
+            foreach ($levelData['subdivisions'] as &$subdivision) {
+                $subdivision['capacity'] = (int)($subdivision['capacity'] ?? 0);
+                $subdivision['product_id'] = (int)($subdivision['product_id'] ?? 0);
+            }
+        }
+    }
+    
+    return $subdivisionData;
+}
+
+/**
+ * Validate all subdivision data
+ * 
+ * @param array $subdivisionData
+ * @return array Array of validation errors
+ */
+function validateAllSubdivisions($subdivisionData) {
+    $allErrors = [];
+    $levelSettingsModel = new LocationLevelSettings($GLOBALS['db']);
+    
+    foreach ($subdivisionData as $levelNumber => $levelData) {
+        if ($levelData['subdivisions_enabled'] ?? false) {
+            $subdivisions = $levelData['subdivisions'] ?? [];
+            $validation = $levelSettingsModel->validateSubdivisionConfiguration($subdivisions);
+            
+            if (!$validation['valid']) {
+                $allErrors["level_{$levelNumber}"] = $validation['errors'];
+            }
+        }
+    }
+    
+    return $allErrors;
+}
+
+/**
+ * Get location with subdivision data for editing
+ * Call this in your get_location_details action
+ * 
+ * @param int $locationId
+ * @return array
+ */
+function getLocationWithSubdivisionData($locationId) {
+    global $db;
+    
+    try {
+        // Initialize models
+        $locationModel = new Location($db);
+        $levelSettingsModel = new LocationLevelSettings($db);
+        $subdivisionModel = new LocationSubdivision($db);
+        
+        // Get basic location data
+        $location = $locationModel->getLocationById($locationId);
+        if (!$location) {
+            return [
+                'success' => false,
+                'message' => 'Location not found'
+            ];
+        }
+        
+        // Get level settings with subdivision information
+        $levelSettings = $levelSettingsModel->getLevelSettingsWithSubdivisions($locationId);
+        
+        // Get subdivision details with product information
+        $subdivisions = $subdivisionModel->getSubdivisionsWithProducts($locationId);
+        
+        // Group subdivisions by level for easier frontend processing
+        $subdivisionsByLevel = [];
+        foreach ($subdivisions as $subdivision) {
+            $level = $subdivision['level_number'];
+            $subdivisionsByLevel[$level][] = $subdivision;
+        }
+        
+        // Enhance level settings with subdivision data
+        foreach ($levelSettings as &$level) {
+            $levelNumber = $level['level_number'];
+            $level['subdivisions'] = $subdivisionsByLevel[$levelNumber] ?? [];
+            $level['has_subdivisions'] = !empty($level['subdivisions']);
+        }
+        
+        // Get subdivision statistics
+        $subdivisionStats = $subdivisionModel->getSubdivisionStats($locationId);
+        
+        $location['level_settings'] = $levelSettings;
+        $location['subdivision_stats'] = $subdivisionStats;
+        
+        return [
+            'success' => true,
+            'location' => $location
+        ];
+        
+    } catch (Exception $e) {
+        error_log("Error getting location with subdivision data: " . $e->getMessage());
+        return [
+            'success' => false,
+            'message' => 'Error loading location data: ' . $e->getMessage()
+        ];
+    }
+}
+
 
 // Get filter parameters
 $zoneFilter = trim($_GET['zone'] ?? '');

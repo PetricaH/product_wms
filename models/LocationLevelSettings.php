@@ -370,4 +370,218 @@ class LocationLevelSettings {
         
         return $success;
     }
+
+    /**
+ * Toggle subdivisions for a level
+ * @param int $locationId
+ * @param int $levelNumber
+ * @param bool $enabled
+ * @return bool
+ */
+public function toggleSubdivisions(int $locationId, int $levelNumber, bool $enabled): bool {
+    try {
+        // When enabling subdivisions, force multiple_products policy
+        $storagePolicy = $enabled ? 'multiple_products' : null;
+        
+        $query = "UPDATE {$this->table} 
+                  SET subdivisions_enabled = :enabled,
+                      storage_policy = COALESCE(:storage_policy, storage_policy),
+                      updated_at = CURRENT_TIMESTAMP
+                  WHERE location_id = :location_id AND level_number = :level_number";
+        
+        $stmt = $this->conn->prepare($query);
+        return $stmt->execute([
+            ':enabled' => $enabled,
+            ':storage_policy' => $storagePolicy,
+            ':location_id' => $locationId,
+            ':level_number' => $levelNumber
+        ]);
+        
+    } catch (PDOException $e) {
+        error_log("Error toggling subdivisions: " . $e->getMessage());
+        return false;
+    }
+}
+
+/**
+ * Get subdivision-enabled levels for a location
+ * @param int $locationId
+ * @return array
+ */
+public function getSubdivisionEnabledLevels(int $locationId): array {
+    try {
+        $query = "SELECT level_number, level_name, subdivision_count 
+                  FROM {$this->table} 
+                  WHERE location_id = :location_id 
+                  AND subdivisions_enabled = TRUE 
+                  ORDER BY level_number";
+        
+        $stmt = $this->conn->prepare($query);
+        $stmt->execute([':location_id' => $locationId]);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+    } catch (PDOException $e) {
+        error_log("Error getting subdivision-enabled levels: " . $e->getMessage());
+        return [];
+    }
+}
+
+/**
+ * Update level settings with subdivision data
+ * Enhanced version of existing updateLevelSettings to handle subdivisions
+ * @param int $locationId
+ * @param int $levelNumber
+ * @param array $settings - Should include 'subdivisions_enabled' and 'subdivisions' keys
+ * @return bool
+ */
+public function updateLevelSettingsWithSubdivisions(int $locationId, int $levelNumber, array $settings): bool {
+    try {
+        $this->conn->beginTransaction();
+        
+        // Handle subdivision toggle
+        $subdivisionsEnabled = $settings['subdivisions_enabled'] ?? false;
+        $subdivisions = $settings['subdivisions'] ?? [];
+        
+        // Update subdivision count based on actual subdivisions
+        if ($subdivisionsEnabled && !empty($subdivisions)) {
+            $settings['subdivision_count'] = count($subdivisions);
+            $settings['storage_policy'] = 'multiple_products'; // Force multiple products
+        } else {
+            $settings['subdivision_count'] = 1;
+            $subdivisionsEnabled = false;
+        }
+        
+        $settings['subdivisions_enabled'] = $subdivisionsEnabled;
+        
+        // Update the level settings using existing method
+        if (!$this->updateLevelSettings($locationId, $levelNumber, $settings)) {
+            throw new Exception("Failed to update level settings");
+        }
+        
+        // Handle subdivisions through LocationSubdivision model
+        $subdivisionModel = new LocationSubdivision($this->conn);
+        
+        if ($subdivisionsEnabled && !empty($subdivisions)) {
+            // Clear existing subdivisions
+            $subdivisionModel->deleteSubdivisions($locationId, $levelNumber);
+            
+            // Create new subdivisions
+            foreach ($subdivisions as $index => $subdivisionData) {
+                $subdivisionModel->createSubdivision(
+                    $locationId, 
+                    $levelNumber, 
+                    $index + 1, 
+                    $subdivisionData
+                );
+            }
+        } else {
+            // Clear subdivisions if disabled
+            $subdivisionModel->deleteSubdivisions($locationId, $levelNumber);
+        }
+        
+        $this->conn->commit();
+        return true;
+        
+    } catch (Exception $e) {
+        $this->conn->rollBack();
+        error_log("Error updating level settings with subdivisions: " . $e->getMessage());
+        return false;
+    }
+}
+
+/**
+ * Check if a level has subdivisions enabled
+ * @param int $locationId
+ * @param int $levelNumber
+ * @return bool
+ */
+public function hasSubdivisionsEnabled(int $locationId, int $levelNumber): bool {
+    try {
+        $query = "SELECT subdivisions_enabled FROM {$this->table} 
+                  WHERE location_id = :location_id AND level_number = :level_number";
+        
+        $stmt = $this->conn->prepare($query);
+        $stmt->execute([
+            ':location_id' => $locationId,
+            ':level_number' => $levelNumber
+        ]);
+        
+        return (bool)$stmt->fetchColumn();
+        
+    } catch (PDOException $e) {
+        error_log("Error checking subdivisions enabled: " . $e->getMessage());
+        return false;
+    }
+}
+
+/**
+ * Get level settings with subdivision information
+ * Enhanced version that includes subdivision data
+ * @param int $locationId
+ * @return array
+ */
+public function getLevelSettingsWithSubdivisions(int $locationId): array {
+    try {
+        // Get basic level settings
+        $levelSettings = $this->getLevelSettings($locationId);
+        
+        // Get subdivision data
+        $subdivisionModel = new LocationSubdivision($this->conn);
+        $subdivisions = $subdivisionModel->getAllSubdivisions($locationId);
+        
+        // Merge subdivision data with level settings
+        foreach ($levelSettings as &$level) {
+            $levelNumber = $level['level_number'];
+            $level['subdivisions'] = $subdivisions[$levelNumber] ?? [];
+            $level['has_subdivisions'] = !empty($level['subdivisions']);
+        }
+        
+        return $levelSettings;
+        
+    } catch (Exception $e) {
+        error_log("Error getting level settings with subdivisions: " . $e->getMessage());
+        return [];
+    }
+}
+
+/**
+ * Validate subdivision configuration for a level
+ * @param array $subdivisions
+ * @return array ['valid' => bool, 'errors' => array]
+ */
+public function validateSubdivisionConfiguration(array $subdivisions): array {
+    $errors = [];
+    $productIds = [];
+    
+    if (empty($subdivisions)) {
+        $errors[] = "At least one subdivision is required when subdivisions are enabled";
+        return ['valid' => false, 'errors' => $errors];
+    }
+    
+    foreach ($subdivisions as $index => $subdivision) {
+        $subdivisionNum = $index + 1;
+        
+        // Check required fields
+        if (empty($subdivision['product_id'])) {
+            $errors[] = "Subdivision {$subdivisionNum}: Product is required";
+        }
+        
+        if (empty($subdivision['capacity']) || $subdivision['capacity'] < 1) {
+            $errors[] = "Subdivision {$subdivisionNum}: Capacity must be at least 1";
+        }
+        
+        // Check for duplicate products
+        if (!empty($subdivision['product_id'])) {
+            if (in_array($subdivision['product_id'], $productIds)) {
+                $errors[] = "Subdivision {$subdivisionNum}: Same product cannot be in multiple subdivisions on the same level";
+            }
+            $productIds[] = $subdivision['product_id'];
+        }
+    }
+    
+    return [
+        'valid' => empty($errors),
+        'errors' => $errors
+    ];
+}
 }

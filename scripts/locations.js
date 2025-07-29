@@ -1352,68 +1352,6 @@ function openCreateModal() {
     }, 100);
 }
 
-/**
- * Enhanced openEditModal to support level settings
- */
-function openEditModal(location) {
-    document.getElementById('modalTitle').textContent = 'Editează Locație';
-    document.getElementById('formAction').value = 'update';
-    document.getElementById('locationId').value = location.id;
-    document.getElementById('submitBtn').textContent = 'Actualizează';
-    
-    // Populate basic form fields
-    document.getElementById('location_code').value = location.location_code;
-    document.getElementById('zone').value = location.zone;
-    document.getElementById('type').value = location.type || 'Shelf';
-    document.getElementById('capacity').value = location.capacity || '';
-    
-    const levelsFieldEdit = document.getElementById('levels');
-    if (levelsFieldEdit) {
-        levelsFieldEdit.value = location.levels || 3;
-        currentLevels = parseInt(location.levels) || 3;
-    }
-    
-    // Populate dimensions if available
-    if (document.getElementById('length_mm')) {
-        document.getElementById('length_mm').value = location.length_mm || 1000;
-    }
-    if (document.getElementById('depth_mm')) {
-        document.getElementById('depth_mm').value = location.depth_mm || 400;
-    }
-    if (document.getElementById('height_mm')) {
-        document.getElementById('height_mm').value = location.height_mm || 900;
-    }
-    if (document.getElementById('max_weight_kg')) {
-        document.getElementById('max_weight_kg').value = location.max_weight_kg || 150;
-    }
-    
-    // Convert database status to form value
-    const statusValue = location.status === 'active' ? '1' : '0';
-    document.getElementById('status').value = statusValue;
-    
-    document.getElementById('description').value = location.notes || '';
-    
-    // Initialize level settings if available
-    if (levelSettingsEnabled) {
-        generateLevelSettings();
-
-        // Populate level settings if provided
-        if (location.level_settings) {
-            populateLevelSettings(location.level_settings);
-        }
-
-        distributeLevelHeights();
-        distributeWeightCapacity();
-        distributeItemCapacity();
-        
-        // Switch to basic tab
-        switchLocationTab('basic');
-    }
-    
-    // Show modal
-    document.getElementById('locationModal').classList.add('show');
-}
-
 function openEditModalById(id) {
     fetch('locations.php', {
         method: 'POST',

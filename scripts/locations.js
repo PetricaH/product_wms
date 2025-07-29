@@ -193,6 +193,7 @@ document.getElementById('locationForm').addEventListener('submit', function(even
                 storage_policy: document.querySelector(`input[name="level_${lvl}_storage_policy"]:checked`)?.value || 'multiple_products',
                 height_mm: parseInt(document.getElementById(`level_${lvl}_height`)?.value) || 0,
                 max_weight_kg: parseFloat(document.getElementById(`level_${lvl}_weight`)?.value) || 0,
+                items_capacity: parseInt(document.getElementById(`level_${lvl}_capacity`)?.value) || null,
                 volume_min_liters: parseFloat(document.querySelector(`input[name="level_${lvl}_volume_min"]`)?.value) || null,
                 volume_max_liters: parseFloat(document.querySelector(`input[name="level_${lvl}_volume_max"]`)?.value) || null,
                 enable_auto_repartition: document.getElementById(`level_${lvl}_auto_repartition`)?.checked || false,
@@ -963,6 +964,7 @@ function updateLevelSettings() {
     generateLevelSettings();
     distributeLevelHeights();
     distributeWeightCapacity();
+    distributeItemCapacity();
 }
 
 /**
@@ -1042,10 +1044,15 @@ function createLevelSettingsDiv(levelNumber) {
                         <input type="number" name="level_${levelNumber}_height" id="level_${levelNumber}_height" 
                                class="form-control" value="300" min="100" max="1000">
                     </div>
+                   <div class="form-group">
+                       <label class="form-label">Capacitate greutate (kg)</label>
+                       <input type="number" name="level_${levelNumber}_weight" id="level_${levelNumber}_weight"
+                              class="form-control" value="50" min="1" max="500" step="0.1">
+                   </div>
                     <div class="form-group">
-                        <label class="form-label">Capacitate greutate (kg)</label>
-                        <input type="number" name="level_${levelNumber}_weight" id="level_${levelNumber}_weight" 
-                               class="form-control" value="50" min="1" max="500" step="0.1">
+                        <label class="form-label">Articole pe nivel</label>
+                        <input type="number" name="level_${levelNumber}_capacity" id="level_${levelNumber}_capacity"
+                               class="form-control" min="0">
                     </div>
                 </div>
                 
@@ -1164,6 +1171,17 @@ function distributeWeightCapacity() {
     }
 }
 
+function distributeItemCapacity() {
+    const totalCap = parseInt(document.getElementById('capacity')?.value) || 0;
+    const perLevel = currentLevels > 0 ? Math.floor(totalCap / currentLevels) : 0;
+    for (let level = 1; level <= currentLevels; level++) {
+        const input = document.getElementById(`level_${level}_capacity`);
+        if (input) {
+            input.value = perLevel;
+        }
+    }
+}
+
 /**
  * Distribute dimensions based on input
  * @param {string} inputId - Input element ID
@@ -1173,6 +1191,8 @@ function distributeDimensions(inputId) {
         distributeLevelHeights();
     } else if (inputId === 'max_weight_kg') {
         distributeWeightCapacity();
+    } else if (inputId === 'capacity') {
+         distributeItemCapacity();
     }
 }
 
@@ -1227,6 +1247,7 @@ function openCreateModal() {
         generateLevelSettings();
         distributeLevelHeights();
         distributeWeightCapacity();
+        distributeItemCapacity();
         
         // Switch to basic tab
         switchLocationTab('basic');
@@ -1288,14 +1309,15 @@ function openEditModal(location) {
     // Initialize level settings if available
     if (levelSettingsEnabled) {
         generateLevelSettings();
-        
+
         // Populate level settings if provided
         if (location.level_settings) {
             populateLevelSettings(location.level_settings);
         }
-        
+
         distributeLevelHeights();
         distributeWeightCapacity();
+        distributeItemCapacity();
         
         // Switch to basic tab
         switchLocationTab('basic');
@@ -1346,6 +1368,9 @@ function populateLevelSettings(levelSettings) {
         
         const weightInput = document.getElementById(`level_${level}_weight`);
         if (weightInput) weightInput.value = setting.max_weight_kg || 50;
+
+        const capacityInput = document.getElementById(`level_${level}_capacity`);
+        if (capacityInput) capacityInput.value = setting.items_capacity || '';
         
         // Restrictions
         const volumeMinInput = document.querySelector(`input[name="level_${level}_volume_min"]`);
@@ -1643,6 +1668,7 @@ window.toggleLevel = toggleLevel;
 window.selectStoragePolicy = selectStoragePolicy;
 window.distributeLevelHeights = distributeLevelHeights;
 window.distributeWeightCapacity = distributeWeightCapacity;
+window.distributeItemCapacity = distributeItemCapacity;
 
 // QR CODES
 window.updateLocationQr = updateLocationQr;

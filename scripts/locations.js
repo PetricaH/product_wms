@@ -1,101 +1,1345 @@
 /**
- * Enhanced Locations JavaScript - Complete Updated File
+ * Enhanced Locations JavaScript - Dynamic Level Creation System
  * File: scripts/locations.js
- * Auto-populates zone from location_code and enhanced warehouse visualization
- * Includes all fixes and enhancements for storage-focused visualization
+ * Dynamic level creation with enhanced subdivisions per level
  */
 
+// =================== GLOBAL VARIABLES ===================
 let qr = null;
-
 let levelCounter = 0;
 let createdLevels = [];
+let currentLevels = 0; // Start with 0, user creates levels dynamically
+let levelSettingsEnabled = true; // Force enable enhanced system
+let dynamicSystemInitialized = false; // Flag to prevent duplicate initialization
 
+// =================== INITIALIZATION ===================
 document.addEventListener('DOMContentLoaded', function() {
-    console.log('Enhanced Locations page loaded');
+    console.log('Enhanced Locations page loaded - Dynamic Level System');
     
     // Initialize warehouse visualization if data exists
     if (typeof window.warehouseData !== 'undefined') {
         window.warehouseViz = new EnhancedWarehouseVisualization();
     }
 
+    // Initialize core functionality
     initializeQRCode();
     setupEventListeners();
     
-    const subdivisionData = collectSubdivisionDataForSubmission();
-
-    if (subdivisionData && Object.keys(subdivisionData).length > 0) {
-        // Add subdivision data as hidden field
-        let subdivisionField = document.getElementById('subdivision_form_data');
-        if (!subdivisionField) {
-            subdivisionField = document.createElement('input');
-            subdivisionField.type = 'hidden';
-            subdivisionField.id = 'subdivision_form_data';
-            subdivisionField.name = 'subdivision_form_data';
-            this.appendChild(subdivisionField);
-        }
-        
-        subdivisionField.value = JSON.stringify(subdivisionData);
+    // Initialize the DYNAMIC level system
+    initializeDynamicLevelSystem();
+    
+    // Make sure Add Location button works
+    const addLocationBtn = document.querySelector('[onclick="openCreateModal()"]');
+    if (addLocationBtn) {
+        addLocationBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            openCreateModal();
+        });
+        console.log('✅ Add Location button connected');
     }
     
-    // Auto-populate zone when location_code changes
-    const locationCodeInput = document.getElementById('location_code');
-    const zoneInput = document.getElementById('zone');
-    const qrCanvas = document.getElementById('locationQrCanvas');
-    if (qrCanvas && window.QRious) {
-        qr = new QRious({ element: qrCanvas, size: 150, value: '' });
-    }
-
-    if (locationCodeInput && zoneInput) {
-        locationCodeInput.addEventListener('input', function() {
-            const locationCode = this.value.trim();
-            if (locationCode && locationCode.includes('-')) {
-                const extractedZone = locationCode.split('-')[0].toUpperCase();
-                zoneInput.value = extractedZone;
-                zoneInput.style.backgroundColor = 'var(--success-color-light, #d4edda)';
-
-                // Show success message briefly
-                showZoneAutoFill(extractedZone);
-            } else {
-                zoneInput.value = '';
-                zoneInput.style.backgroundColor = '';
+    // Initialize view switching buttons
+    document.querySelectorAll('.view-btn').forEach(btn => {
+        btn.addEventListener('click', function(e) {
+            e.preventDefault();
+            const view = this.dataset.view;
+            if (window.warehouseViz) {
+                window.warehouseViz.switchView(view);
             }
-            updateLocationQr();
         });
-    }
+    });
+    
+    console.log('✅ All functionality initialized');
 });
 
 /**
- * Collect subdivision data for form submission
- * This function should be called before form submission
+ * Initialize the dynamic level system
  */
-function collectSubdivisionDataForSubmission() {
+function initializeDynamicLevelSystem() {
+    if (dynamicSystemInitialized) {
+        console.log('⚠️ Dynamic system already initialized, skipping...');
+        return;
+    }
+    
+    console.log('🔧 Initializing dynamic level system...');
+    
+    // STEP 1: Remove basic form fields first
+    updateModalStructure();
+    
+    // STEP 2: Add tabbed interface (this creates the #dynamic-levels-section)
+    addEnhancedTabs();
+    
+    // STEP 3: Now populate the dynamic level container (after tabs are created)
+    createDynamicLevelContainer();
+    
+    // STEP 4: Enhance form submission
+    enhanceFormSubmission();
+    
+    // Mark as initialized
+    dynamicSystemInitialized = true;
+    console.log('✅ Dynamic level system initialized successfully');
+}
+
+/**
+ * Update modal structure to remove old elements and add tabs
+ */
+function updateModalStructure() {
+    // Remove old general settings fields that will be replaced by dynamic levels
+    const fieldsToRemove = [
+        'capacity',
+        'levels', 
+        'length_mm',
+        'depth_mm', 
+        'height_mm',
+        'max_weight_kg'
+    ];
+    
+    fieldsToRemove.forEach(fieldId => {
+        const field = document.getElementById(fieldId);
+        if (field) {
+            const formGroup = field.closest('.form-group');
+            if (formGroup) formGroup.remove();
+        }
+    });
+    
+    // Remove description field from basic tab (will be moved to basic info)
+    const descField = document.getElementById('description');
+    if (descField) {
+        const formGroup = descField.closest('.form-group');
+        if (formGroup) formGroup.remove();
+    }
+}
+
+/**
+ * Add enhanced tabs to modal
+ */
+function addEnhancedTabs() {
+    const modalBody = document.querySelector('#locationModal .modal-body');
+    if (!modalBody) return;
+    
+    // Check if tabs already exist
+    let tabsContainer = modalBody.querySelector('.location-tabs');
+    
+    if (!tabsContainer) {
+        // Create tabs container
+        tabsContainer = document.createElement('div');
+        tabsContainer.className = 'location-tabs';
+        tabsContainer.innerHTML = `
+            <button type="button" class="tab-button active" onclick="switchLocationTab('basic')">
+                <span class="material-symbols-outlined">info</span>
+                Informații de Bază
+            </button>
+            <button type="button" class="tab-button" onclick="switchLocationTab('dimensions')">
+                <span class="material-symbols-outlined">straighten</span>
+                Dimensiuni Globale
+            </button>
+            <button type="button" class="tab-button" onclick="switchLocationTab('levels')">
+                <span class="material-symbols-outlined">layers</span>
+                Configurare Niveluri
+            </button>
+        `;
+        
+        // Insert tabs at the beginning of modal body
+        modalBody.insertBefore(tabsContainer, modalBody.firstChild);
+    }
+    
+    // Wrap existing form content in tabs
+    const existingContent = modalBody.querySelector('form').innerHTML;
+    modalBody.querySelector('form').innerHTML = `
+        <!-- Basic Information Tab -->
+        <div id="basic-tab" class="tab-content active">
+            ${existingContent}
+            <!-- Add description field back to basic tab -->
+            <div class="form-group">
+                <label for="description" class="form-label">
+                    <span class="material-symbols-outlined">description</span>
+                    Descriere
+                </label>
+                <textarea id="description" name="description" class="form-control" rows="3" 
+                          placeholder="Descriere opțională a locației"></textarea>
+            </div>
+        </div>
+        
+        <!-- Global Dimensions Tab -->
+        <div id="dimensions-tab" class="tab-content">
+            <div class="form-grid">
+                <div class="form-group">
+                    <label for="global_length_mm" class="form-label">
+                        <span class="material-symbols-outlined">straighten</span>
+                        Lungime Globală (mm)
+                    </label>
+                    <input type="number" id="global_length_mm" name="global_length_mm" class="form-control" 
+                           value="1000" min="100" max="10000">
+                    <small class="form-help">Lungimea totală a structurii de stocare</small>
+                </div>
+                
+                <div class="form-group">
+                    <label for="global_depth_mm" class="form-label">
+                        <span class="material-symbols-outlined">width</span>
+                        Adâncime Globală (mm)
+                    </label>
+                    <input type="number" id="global_depth_mm" name="global_depth_mm" class="form-control" 
+                           value="400" min="100" max="2000">
+                    <small class="form-help">Adâncimea structurii de stocare</small>
+                </div>
+                
+                <div class="form-group">
+                    <label for="global_max_weight_kg" class="form-label">
+                        <span class="material-symbols-outlined">scale</span>
+                        Greutate Maximă Globală (kg)
+                    </label>
+                    <input type="number" id="global_max_weight_kg" name="global_max_weight_kg" class="form-control" 
+                           value="500" min="10" max="5000" step="0.1">
+                    <small class="form-help">Greutatea maximă suportată de întreaga structură</small>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Dynamic Levels Tab -->
+        <div id="levels-tab" class="tab-content">
+            <div id="dynamic-levels-section">
+                <!-- This will be populated by createDynamicLevelContainer -->
+            </div>
+        </div>
+    `;
+}
+
+/**
+ * Create the dynamic level management container
+ */
+function createDynamicLevelContainer() {
+    const levelsSection = document.getElementById('dynamic-levels-section');
+    if (!levelsSection) {
+        console.error('❌ dynamic-levels-section not found! Cannot create level container.');
+        return;
+    }
+    
+    console.log('✅ Creating dynamic level container...');
+    
+    levelsSection.innerHTML = `
+        <div class="section-header">
+            <h4 class="form-section-title">
+                <span class="material-symbols-outlined">layers</span>
+                Configurare Niveluri Dinamice
+            </h4>
+            <button type="button" class="btn btn-success add-level-btn" onclick="addNewLevel()">
+                <span class="material-symbols-outlined">add</span>
+                Adaugă Nivel
+            </button>
+        </div>
+        <div id="levels-container" class="levels-container">
+            <!-- Dynamic levels will be added here -->
+        </div>
+        <div class="levels-summary" id="levels-summary" style="display: none;">
+            <small class="text-muted">
+                <span class="material-symbols-outlined">info</span>
+                Total niveluri: <span id="total-levels-count">0</span>
+            </small>
+        </div>
+    `;
+    
+    console.log('✅ Dynamic level container created successfully');
+}
+
+// =================== TAB SWITCHING ===================
+
+/**
+ * Switch between location tabs
+ */
+function switchLocationTab(tabName) {
+    console.log('🔄 Switching to tab:', tabName);
+    
+    // Hide all tab contents
+    const allTabContents = document.querySelectorAll('.tab-content');
+    console.log(`Found ${allTabContents.length} tab contents`);
+    
+    allTabContents.forEach((content, index) => {
+        content.classList.remove('active');
+        content.style.display = 'none'; // Force hide with style
+        console.log(`Tab ${index}: ${content.id} - hidden`);
+    });
+    
+    // Remove active class from all tab buttons
+    const allTabButtons = document.querySelectorAll('.tab-button');
+    console.log(`Found ${allTabButtons.length} tab buttons`);
+    
+    allTabButtons.forEach(button => {
+        button.classList.remove('active');
+    });
+    
+    // Show selected tab content
+    const targetTab = document.getElementById(tabName + '-tab');
+    if (targetTab) {
+        targetTab.classList.add('active');
+        targetTab.style.display = 'block'; // Force show with style
+        console.log(`✅ Activated tab: ${targetTab.id}`);
+    } else {
+        console.error(`❌ Target tab not found: ${tabName}-tab`);
+    }
+    
+    // Add active class to clicked button
+    const tabButtons = document.querySelectorAll('.tab-button');
+    tabButtons.forEach(button => {
+        const onclick = button.getAttribute('onclick');
+        if (onclick && onclick.includes(`switchLocationTab('${tabName}')`)) {
+            button.classList.add('active');
+            console.log(`✅ Activated button for: ${tabName}`);
+        }
+    });
+    
+    console.log(`✅ Tab switch completed: ${tabName}`);
+}
+
+// =================== DYNAMIC LEVEL MANAGEMENT ===================
+
+/**
+ * Add a new level with full configuration
+ */
+function addNewLevel() {
+    console.log('🔧 Adding new level...');
+    
+    // Safety check - make sure container exists
+    const container = document.getElementById('levels-container');
+    if (!container) {
+        console.error('❌ levels-container not found! Cannot add level.');
+        alert('Error: Level container not found. Please refresh the page.');
+        return;
+    }
+    
+    levelCounter++;
+    const levelId = levelCounter;
+    
+    // Create level object
+    const newLevel = {
+        id: levelId,
+        name: `Nivel ${levelId}`,
+        position: getLevelPosition(levelId)
+    };
+    
+    createdLevels.push(newLevel);
+    currentLevels = createdLevels.length;
+    
+    // Create the level HTML
+    const levelElement = document.createElement('div');
+    levelElement.className = 'dynamic-level-item';
+    levelElement.id = `level-item-${levelId}`;
+    levelElement.innerHTML = createLevelHTML(newLevel);
+    
+    // Add to container
+    container.appendChild(levelElement);
+    
+    // Update summary
+    updateLevelsSummary();
+    
+    // Initialize level interactions
+    initializeLevelInteractions(levelId);
+    
+    // Scroll to new level
+    levelElement.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    
+    // Focus on level name input
+    setTimeout(() => {
+        const nameInput = levelElement.querySelector('.level-name-input');
+        if (nameInput) nameInput.focus();
+    }, 300);
+    
+    console.log('✅ Added new level:', levelId);
+}
+
+/**
+ * Create HTML for a single level with enhanced subdivisions
+ */
+function createLevelHTML(level) {
+    return `
+        <div class="level-card" data-level-id="${level.id}">
+            <div class="level-header">
+                <div class="level-header-content">
+                    <div class="level-icon">
+                        <span class="material-symbols-outlined">layers</span>
+                    </div>
+                    <div class="level-info">
+                        <input type="text" class="level-name-input" value="${level.name}" 
+                               placeholder="Nume nivel" onchange="updateLevelName(${level.id}, this.value)">
+                        <small class="level-position">${level.position}</small>
+                    </div>
+                </div>
+                <div class="level-actions">
+                    <button type="button" class="btn-icon btn-toggle" onclick="toggleLevel(${level.id})" 
+                            title="Expandează/Restrânge">
+                        <span class="material-symbols-outlined">expand_more</span>
+                    </button>
+                    <button type="button" class="btn-icon btn-danger" onclick="removeLevel(${level.id})" 
+                            title="Șterge nivel">
+                        <span class="material-symbols-outlined">delete</span>
+                    </button>
+                </div>
+            </div>
+            
+            <div class="level-content" id="level-content-${level.id}" style="display: none;">
+                <div class="level-settings-grid">
+                    <!-- Enhanced Subdivisions Section -->
+                    <div class="settings-section">
+                        <h5>
+                            <span class="material-symbols-outlined">view_module</span>
+                            Configurare Subdiviziuni
+                        </h5>
+                        <div class="form-group">
+                            <label class="form-check-label">
+                                <input type="checkbox" 
+                                       id="level_${level.id}_enable_subdivisions" 
+                                       name="level_${level.id}_enable_subdivisions"
+                                       onchange="toggleSubdivisions(${level.id})">
+                                Permite subdiviziuni în acest nivel
+                            </label>
+                            <small class="form-help">Când este activat, nivelul va permite mai multe produse diferite în subdiviziuni separate</small>
+                        </div>
+                    </div>
+
+                    <!-- Storage Policy Section -->
+                    <div class="settings-section" id="storage-policy-${level.id}">
+                        <h5>
+                            <span class="material-symbols-outlined">policy</span>
+                            Politica de Stocare
+                        </h5>
+                        <div class="storage-policy-options">
+                            <div class="policy-option selected" onclick="selectStoragePolicy(${level.id}, 'multiple_products')">
+                                <input type="radio" name="level_${level.id}_storage_policy" value="multiple_products" checked>
+                                <div>
+                                    <div class="policy-title">Multiple Produse</div>
+                                    <div class="policy-description">Permite stocarea mai multor tipuri de produse</div>
+                                </div>
+                            </div>
+                            <div class="policy-option" onclick="selectStoragePolicy(${level.id}, 'single_product_type')">
+                                <input type="radio" name="level_${level.id}_storage_policy" value="single_product_type">
+                                <div>
+                                    <div class="policy-title">Un Singur Tip</div>
+                                    <div class="policy-description">Permite doar un tip de produs pe nivel</div>
+                                </div>
+                            </div>
+                            <div class="policy-option" onclick="selectStoragePolicy(${level.id}, 'category_restricted')">
+                                <input type="radio" name="level_${level.id}_storage_policy" value="category_restricted">
+                                <div>
+                                    <div class="policy-title">Restricționat pe Categorie</div>
+                                    <div class="policy-description">Permite doar anumite categorii de produse</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Dimensions Section -->
+                    <div class="settings-section">
+                        <h5>
+                            <span class="material-symbols-outlined">straighten</span>
+                            Dimensiuni Nivel
+                        </h5>
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label>Înălțime nivel (mm)</label>
+                                <input type="number" id="level_${level.id}_height" name="level_${level.id}_height" 
+                                       class="form-control" value="300" min="100" max="1000">
+                            </div>
+                            <div class="form-group">
+                                <label>Capacitate greutate (kg)</label>
+                                <input type="number" id="level_${level.id}_weight" name="level_${level.id}_weight" 
+                                       class="form-control" value="50" min="1" max="500" step="0.1">
+                            </div>
+                            <div class="form-group">
+                                <label>Capacitate articole</label>
+                                <input type="number" id="level_${level.id}_capacity" name="level_${level.id}_capacity" 
+                                       class="form-control" min="1" placeholder="Nr. articole">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Product Restrictions Section -->
+                    <div class="settings-section">
+                        <h5>
+                            <span class="material-symbols-outlined">tune</span>
+                            Restricții Produse
+                        </h5>
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label>Produs dedicat</label>
+                                <select id="level_${level.id}_dedicated_product" name="level_${level.id}_dedicated_product" 
+                                        class="form-control">
+                                    <option value="">-- Selectează produs --</option>
+                                </select>
+                            </div>
+                            <div class="form-group form-check-container">
+                                <label class="form-check">
+                                    <input type="checkbox" id="level_${level.id}_allow_others" 
+                                           name="level_${level.id}_allow_others" checked>
+                                    Permite alte produse
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Enhanced Subdivisions Management Section -->
+                    <div class="settings-section subdivisions-section" id="subdivisions-section-${level.id}" style="display: none;">
+                        <h5>
+                            <span class="material-symbols-outlined">grid_view</span>
+                            Gestiune Subdiviziuni
+                        </h5>
+                        <div class="subdivisions-list" id="subdivisions-list-${level.id}">
+                            <!-- Subdivisions will be added here -->
+                        </div>
+                        <button type="button" class="btn btn-sm btn-primary" onclick="addSubdivision(${level.id})">
+                            <span class="material-symbols-outlined">add</span>
+                            Adaugă Subdiviziune
+                        </button>
+                    </div>
+
+                    <!-- QR Code Section -->
+                    <div class="settings-section">
+                        <h5>
+                            <span class="material-symbols-outlined">qr_code_2</span>
+                            Cod QR Nivel
+                        </h5>
+                        <div class="form-group">
+                            <canvas id="level_qr_canvas_${level.id}" width="120" height="120" 
+                                    style="border: 1px solid #ddd; margin-bottom: 0.5rem; display: block;"></canvas>
+                            <button type="button" class="btn btn-secondary btn-sm" 
+                                    onclick="downloadLevelQR(${level.id})" title="Descarcă QR">
+                                <span class="material-symbols-outlined">download</span>
+                                Descarcă QR Nivel
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+/**
+ * Get level position description
+ */
+function getLevelPosition(levelNumber) {
+    if (levelNumber === 1) return "Primul nivel";
+    if (levelNumber === 2) return "Al doilea nivel"; 
+    if (levelNumber === 3) return "Al treilea nivel";
+    return `Al ${levelNumber}-lea nivel`;
+}
+
+/**
+ * Initialize interactions for a specific level
+ */
+function initializeLevelInteractions(levelId) {
+    console.log('Initializing interactions for level:', levelId);
+    
+    // Initialize storage policy radio buttons
+    const policyRadios = document.querySelectorAll(`input[name="level_${levelId}_storage_policy"]`);
+    policyRadios.forEach(radio => {
+        radio.addEventListener('change', function() {
+            updatePolicyOptions(levelId, this.value);
+        });
+    });
+    
+    // Initialize product selection
+    populateProductOptions(levelId);
+    
+    // Initialize QR code for this level
+    initializeLevelQRCode(levelId);
+}
+
+/**
+ * Initialize QR code for a specific level
+ */
+function initializeLevelQRCode(levelId) {
+    const canvas = document.getElementById(`level_qr_canvas_${levelId}`);
+    if (!canvas || !window.QRious) return;
+    
+    try {
+        const locationCode = document.getElementById('location_code')?.value || 'LEVEL';
+        const levelName = document.querySelector(`#level-item-${levelId} .level-name-input`)?.value || `Nivel ${levelId}`;
+        const qrValue = `${locationCode}\n${levelName}`;
+        
+        const levelQR = new QRious({
+            element: canvas,
+            size: 120,
+            value: qrValue,
+            foreground: '#000000',
+            background: '#ffffff'
+        });
+        
+        // Store QR instance for later updates
+        canvas._qrInstance = levelQR;
+        
+        console.log('QR initialized for level:', levelId);
+    } catch (error) {
+        console.error('Error initializing level QR:', error);
+    }
+}
+
+/**
+ * Download QR code for a specific level
+ */
+function downloadLevelQR(levelId) {
+    const canvas = document.getElementById(`level_qr_canvas_${levelId}`);
+    if (!canvas) return;
+    
+    const locationCode = document.getElementById('location_code')?.value || 'LOCATION';
+    const levelName = document.querySelector(`#level-item-${levelId} .level-name-input`)?.value || `Nivel_${levelId}`;
+    
+    try {
+        const link = document.createElement('a');
+        link.href = canvas.toDataURL('image/png');
+        link.download = `${locationCode}_${levelName}_QR.png`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        console.log('Downloaded QR for level:', levelId);
+    } catch (error) {
+        console.error('Error downloading level QR:', error);
+    }
+}
+
+/**
+ * Update level name
+ */
+function updateLevelName(levelId, newName) {
+    const level = createdLevels.find(l => l.id === levelId);
+    if (level) {
+        level.name = newName || `Nivel ${levelId}`;
+        
+        // Update QR code with new name
+        const canvas = document.getElementById(`level_qr_canvas_${levelId}`);
+        if (canvas && canvas._qrInstance) {
+            const locationCode = document.getElementById('location_code')?.value || 'LEVEL';
+            const qrValue = `${locationCode}\n${level.name}`;
+            canvas._qrInstance.set({ value: qrValue });
+        }
+    }
+}
+
+/**
+ * Toggle level content visibility
+ */
+function toggleLevel(levelId) {
+    const content = document.getElementById(`level-content-${levelId}`);
+    const toggleBtn = document.querySelector(`[onclick="toggleLevel(${levelId})"] span`);
+    
+    if (content.style.display === 'none' || !content.style.display) {
+        content.style.display = 'block';
+        toggleBtn.textContent = 'expand_less';
+        console.log('Expanded level:', levelId);
+    } else {
+        content.style.display = 'none';
+        toggleBtn.textContent = 'expand_more';
+        console.log('Collapsed level:', levelId);
+    }
+}
+
+/**
+ * Remove a level
+ */
+function removeLevel(levelId) {
+    if (!confirm('Sigur doriți să ștergeți acest nivel?')) {
+        return;
+    }
+    
+    console.log('Removing level:', levelId);
+    
+    // Remove from DOM
+    const levelElement = document.getElementById(`level-item-${levelId}`);
+    if (levelElement) {
+        levelElement.remove();
+    }
+    
+    // Remove from array
+    createdLevels = createdLevels.filter(l => l.id !== levelId);
+    currentLevels = createdLevels.length;
+    
+    // Update summary
+    updateLevelsSummary();
+    
+    console.log('Level removed. Remaining levels:', createdLevels.length);
+}
+
+/**
+ * Update levels summary
+ */
+function updateLevelsSummary() {
+    const summary = document.getElementById('levels-summary');
+    const countSpan = document.getElementById('total-levels-count');
+    
+    // Safety check - elements might not exist yet
+    if (!summary || !countSpan) {
+        console.log('⚠️ Summary elements not found, skipping update');
+        return;
+    }
+    
+    if (createdLevels.length > 0) {
+        summary.style.display = 'block';
+        countSpan.textContent = createdLevels.length;
+    } else {
+        summary.style.display = 'none';
+    }
+}
+
+/**
+ * Update policy options based on selection
+ */
+function updatePolicyOptions(levelId, policy) {
+    const dedicatedProduct = document.getElementById(`level_${levelId}_dedicated_product`);
+    const allowOthers = document.getElementById(`level_${levelId}_allow_others`);
+    
+    if (policy === 'single_product_type') {
+        dedicatedProduct.required = true;
+        allowOthers.checked = false;
+        allowOthers.disabled = true;
+    } else {
+        dedicatedProduct.required = false;
+        allowOthers.disabled = false;
+    }
+}
+
+/**
+ * Populate product options for a level
+ */
+function populateProductOptions(levelId) {
+    const select = document.getElementById(`level_${levelId}_dedicated_product`);
+    if (!select) return;
+    
+    // Add products if available
+    if (typeof window.allProducts !== 'undefined') {
+        window.allProducts.forEach(product => {
+            const option = document.createElement('option');
+            option.value = product.product_id;
+            option.textContent = `${product.name} (${product.sku})`;
+            select.appendChild(option);
+        });
+    }
+}
+
+/**
+ * Select storage policy for a level
+ */
+function selectStoragePolicy(levelId, policy) {
+    const container = document.querySelector(`#level-content-${levelId} .storage-policy-options`);
+    const options = container.querySelectorAll('.policy-option');
+    
+    options.forEach(option => option.classList.remove('selected'));
+    event.currentTarget.classList.add('selected');
+    
+    // Update radio button
+    const radio = event.currentTarget.querySelector('input[type="radio"]');
+    radio.checked = true;
+    
+    // Update policy options
+    updatePolicyOptions(levelId, policy);
+}
+
+// =================== ENHANCED SUBDIVISION FUNCTIONS ===================
+
+/**
+ * Toggle subdivisions for a level (ENHANCED system)
+ */
+function toggleSubdivisions(levelId) {
+    const enableCheckbox = document.getElementById(`level_${levelId}_enable_subdivisions`);
+    const subdivisionSection = document.getElementById(`subdivisions-section-${levelId}`);
+    const storagePolicy = document.getElementById(`storage-policy-${levelId}`);
+    
+    if (enableCheckbox.checked) {
+        // Enable subdivisions mode
+        subdivisionSection.style.display = 'block';
+        
+        // Force Multiple Products policy and disable other options
+        const multipleProductsRadio = document.querySelector(`input[name="level_${levelId}_storage_policy"][value="multiple_products"]`);
+        if (multipleProductsRadio) {
+            multipleProductsRadio.checked = true;
+        }
+        
+        // Disable policy selection
+        const policyOptions = storagePolicy.querySelectorAll('.policy-option');
+        policyOptions.forEach((option, index) => {
+            if (index === 0) { // Multiple products option
+                option.classList.add('selected');
+                option.style.opacity = '1';
+            } else {
+                option.classList.remove('selected');
+                option.style.opacity = '0.5';
+                option.style.pointerEvents = 'none';
+            }
+        });
+        
+        // Add policy note
+        if (!document.getElementById(`subdivision-policy-note-${levelId}`)) {
+            const note = document.createElement('div');
+            note.id = `subdivision-policy-note-${levelId}`;
+            note.className = 'form-help';
+            note.style.color = 'var(--success-color)';
+            note.innerHTML = '<span class="material-symbols-outlined">info</span> Politica "Multiple Produse" este activată automat pentru subdiviziuni';
+            storagePolicy.appendChild(note);
+        }
+        
+        // Initialize with one subdivision if none exist
+        const subdivisionsList = document.getElementById(`subdivisions-list-${levelId}`);
+        if (subdivisionsList.children.length === 0) {
+            addSubdivision(levelId);
+        }
+        
+    } else {
+        // Disable subdivisions mode
+        subdivisionSection.style.display = 'none';
+        
+        // Re-enable policy selection
+        const policyOptions = storagePolicy.querySelectorAll('.policy-option');
+        policyOptions.forEach(option => {
+            option.style.opacity = '1';
+            option.style.pointerEvents = 'auto';
+        });
+        
+        // Remove policy note
+        const note = document.getElementById(`subdivision-policy-note-${levelId}`);
+        if (note) {
+            note.remove();
+        }
+        
+        // Clear all subdivisions
+        clearSubdivisions(levelId);
+    }
+}
+
+/**
+ * Add a subdivision to a level
+ */
+function addSubdivision(levelId) {
+    const subdivisionsList = document.getElementById(`subdivisions-list-${levelId}`);
+    const subdivisionIndex = subdivisionsList.children.length + 1;
+    
+    const subdivisionDiv = document.createElement('div');
+    subdivisionDiv.className = 'subdivision-item';
+    subdivisionDiv.setAttribute('data-subdivision', subdivisionIndex);
+    
+    subdivisionDiv.innerHTML = `
+        <div class="subdivision-header">
+            <span class="subdivision-title">
+                <span class="material-symbols-outlined">view_module</span>
+                Subdiviziunea ${subdivisionIndex}
+            </span>
+            <button type="button" class="btn btn-sm btn-danger" onclick="removeSubdivision(${levelId}, ${subdivisionIndex})">
+                <span class="material-symbols-outlined">delete</span>
+            </button>
+        </div>
+        <div class="subdivision-content">
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Produs *</label>
+                    <div class="product-search-container">
+                        <input type="hidden" 
+                               name="level_${levelId}_subdivision_${subdivisionIndex}_product_id" 
+                               id="level_${levelId}_subdivision_${subdivisionIndex}_product_id">
+                        <input type="text" 
+                               class="form-control product-search-input" 
+                               id="level_${levelId}_subdivision_${subdivisionIndex}_product_search"
+                               placeholder="Caută produs..." 
+                               autocomplete="off"
+                               onkeyup="searchProductsForSubdivision(${levelId}, ${subdivisionIndex}, this.value)"
+                               onfocus="showProductResults(${levelId}, ${subdivisionIndex})">
+                        <div class="product-search-results" 
+                             id="level_${levelId}_subdivision_${subdivisionIndex}_results"
+                             style="display: none;"></div>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Capacitate articole *</label>
+                    <input type="number" 
+                           name="level_${levelId}_subdivision_${subdivisionIndex}_capacity" 
+                           id="level_${levelId}_subdivision_${subdivisionIndex}_capacity"
+                           class="form-control" 
+                           min="1" 
+                           placeholder="Nr. articole"
+                           required>
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Notițe</label>
+                <textarea name="level_${levelId}_subdivision_${subdivisionIndex}_notes" 
+                          class="form-control" 
+                          rows="2" 
+                          placeholder="Notițe opționale pentru această subdiviziune"></textarea>
+            </div>
+        </div>
+    `;
+    
+    subdivisionsList.appendChild(subdivisionDiv);
+    
+    // Focus on product search
+    setTimeout(() => {
+        const searchInput = document.getElementById(`level_${levelId}_subdivision_${subdivisionIndex}_product_search`);
+        if (searchInput) {
+            searchInput.focus();
+        }
+    }, 100);
+}
+
+/**
+ * Remove a subdivision
+ */
+function removeSubdivision(levelId, subdivisionIndex) {
+    if (!confirm('Ești sigur că vrei să ștergi această subdiviziune?')) {
+        return;
+    }
+    
+    const subdivisionDiv = document.querySelector(`#subdivisions-list-${levelId} [data-subdivision="${subdivisionIndex}"]`);
+    if (subdivisionDiv) {
+        subdivisionDiv.remove();
+    }
+    
+    // Renumber remaining subdivisions
+    renumberSubdivisions(levelId);
+}
+
+/**
+ * Clear all subdivisions
+ */
+function clearSubdivisions(levelId) {
+    const subdivisionsList = document.getElementById(`subdivisions-list-${levelId}`);
+    if (subdivisionsList) {
+        subdivisionsList.innerHTML = '';
+    }
+}
+
+/**
+ * Renumber subdivisions after removal
+ */
+function renumberSubdivisions(levelId) {
+    const subdivisionsList = document.getElementById(`subdivisions-list-${levelId}`);
+    const subdivisions = subdivisionsList.querySelectorAll('.subdivision-item');
+    
+    subdivisions.forEach((subdivision, index) => {
+        const newIndex = index + 1;
+        const oldIndex = subdivision.getAttribute('data-subdivision');
+        
+        // Update data attribute
+        subdivision.setAttribute('data-subdivision', newIndex);
+        
+        // Update title
+        const title = subdivision.querySelector('.subdivision-title');
+        if (title) {
+            title.innerHTML = `<span class="material-symbols-outlined">view_module</span> Subdiviziunea ${newIndex}`;
+        }
+        
+        // Update all IDs and names
+        const elements = subdivision.querySelectorAll('[id*="_subdivision_"], [name*="_subdivision_"]');
+        elements.forEach(element => {
+            if (element.id) {
+                element.id = element.id.replace(`_subdivision_${oldIndex}_`, `_subdivision_${newIndex}_`);
+            }
+            if (element.name) {
+                element.name = element.name.replace(`_subdivision_${oldIndex}_`, `_subdivision_${newIndex}_`);
+            }
+        });
+        
+        // Update onclick attributes
+        const deleteBtn = subdivision.querySelector('.btn-danger');
+        if (deleteBtn) {
+            deleteBtn.setAttribute('onclick', `removeSubdivision(${levelId}, ${newIndex})`);
+        }
+        
+        // Update search function calls
+        const searchInput = subdivision.querySelector('.product-search-input');
+        if (searchInput) {
+            searchInput.setAttribute('onkeyup', `searchProductsForSubdivision(${levelId}, ${newIndex}, this.value)`);
+            searchInput.setAttribute('onfocus', `showProductResults(${levelId}, ${newIndex})`);
+        }
+    });
+}
+
+// =================== PRODUCT SEARCH FOR SUBDIVISIONS ===================
+
+let searchTimeouts = {};
+let productSearchCache = {};
+
+/**
+ * Search products for subdivision
+ */
+function searchProductsForSubdivision(levelId, subdivisionIndex, query) {
+    const timeoutKey = `${levelId}_${subdivisionIndex}`;
+    
+    // Clear previous timeout
+    if (searchTimeouts[timeoutKey]) {
+        clearTimeout(searchTimeouts[timeoutKey]);
+    }
+    
+    // Set new timeout to avoid too many requests
+    searchTimeouts[timeoutKey] = setTimeout(async () => {
+        if (query.length < 2) {
+            hideProductResults(levelId, subdivisionIndex);
+            return;
+        }
+        
+        try {
+            // Check cache first
+            if (productSearchCache[query]) {
+                displayProductResults(levelId, subdivisionIndex, productSearchCache[query]);
+                return;
+            }
+            
+            const response = await fetch(`api/products.php?search=${encodeURIComponent(query)}&limit=10`);
+            const products = await response.json();
+            
+            if (response.ok && Array.isArray(products)) {
+                productSearchCache[query] = products;
+                displayProductResults(levelId, subdivisionIndex, products);
+            }
+        } catch (error) {
+            console.error('Product search error:', error);
+        }
+    }, 300);
+}
+
+/**
+ * Display product search results
+ */
+function displayProductResults(levelId, subdivisionIndex, products) {
+    const resultsContainer = document.getElementById(`level_${levelId}_subdivision_${subdivisionIndex}_results`);
+    if (!resultsContainer) return;
+    
+    if (products.length === 0) {
+        resultsContainer.innerHTML = '<div class="search-result-item no-results">Nu s-au găsit produse</div>';
+    } else {
+        resultsContainer.innerHTML = products.map(product => `
+            <div class="search-result-item" onclick="selectProduct(${levelId}, ${subdivisionIndex}, ${product.id}, '${escapeHtml(product.name)}')">
+                <div class="product-name">${escapeHtml(product.name)}</div>
+                <div class="product-details">${escapeHtml(product.code)} - ${escapeHtml(product.category)}</div>
+            </div>
+        `).join('');
+    }
+    
+    resultsContainer.style.display = 'block';
+}
+
+/**
+ * Select a product for subdivision
+ */
+function selectProduct(levelId, subdivisionIndex, productId, productName) {
+    const hiddenInput = document.getElementById(`level_${levelId}_subdivision_${subdivisionIndex}_product_id`);
+    const searchInput = document.getElementById(`level_${levelId}_subdivision_${subdivisionIndex}_product_search`);
+    
+    if (hiddenInput) hiddenInput.value = productId;
+    if (searchInput) searchInput.value = productName;
+    
+    hideProductResults(levelId, subdivisionIndex);
+}
+
+/**
+ * Show product results
+ */
+function showProductResults(levelId, subdivisionIndex) {
+    const resultsContainer = document.getElementById(`level_${levelId}_subdivision_${subdivisionIndex}_results`);
+    const searchInput = document.getElementById(`level_${levelId}_subdivision_${subdivisionIndex}_product_search`);
+    
+    if (resultsContainer && searchInput && searchInput.value.length >= 2) {
+        resultsContainer.style.display = 'block';
+    }
+}
+
+/**
+ * Hide product results
+ */
+function hideProductResults(levelId, subdivisionIndex) {
+    const resultsContainer = document.getElementById(`level_${levelId}_subdivision_${subdivisionIndex}_results`);
+    if (resultsContainer) {
+        resultsContainer.style.display = 'none';
+    }
+}
+
+// =================== MODAL FUNCTIONS ===================
+
+/**
+ * Open create modal with proper initialization
+ */
+function openCreateModal() {
+    console.log('🚀 Opening create modal...');
+    
+    try {
+        document.getElementById('modalTitle').textContent = 'Adaugă Locație';
+        document.getElementById('formAction').value = 'create';
+        document.getElementById('locationId').value = '';
+        document.getElementById('submitBtn').textContent = 'Salvează';
+        
+        // Clear form and reset zone input styling
+        document.getElementById('locationForm').reset();
+        const zoneInput = document.getElementById('zone');
+        if (zoneInput) {
+            zoneInput.style.backgroundColor = '';
+        }
+        
+        // Clear any existing auto-fill messages
+        const existingMessage = document.querySelector('.zone-autofill-message');
+        if (existingMessage) {
+            existingMessage.remove();
+        }
+        
+        // CRITICAL: Initialize the dynamic system if not already done
+        if (!dynamicSystemInitialized) {
+            console.log('🔧 Initializing dynamic system for create modal...');
+            initializeDynamicLevelSystem();
+        }
+        
+        // Clear all existing levels
+        levelCounter = 0;
+        createdLevels = [];
+        currentLevels = 0;
+        const container = document.getElementById('levels-container');
+        if (container) {
+            container.innerHTML = '';
+            console.log('✅ Cleared existing levels');
+        } else {
+            console.log('⚠️ levels-container not found during create modal open');
+        }
+        updateLevelsSummary();
+
+        // Update QR code
+        setTimeout(() => {
+            updateLocationQr();
+        }, 100);
+        
+        // Switch to basic tab
+        switchLocationTab('basic');
+        
+        // Show modal
+        const modal = document.getElementById('locationModal');
+        if (modal) {
+            modal.classList.add('show');
+            console.log('✅ Modal shown successfully');
+        } else {
+            console.error('❌ Modal element not found');
+        }
+        
+        // Focus on location code input
+        setTimeout(() => {
+            const locationCodeInput = document.getElementById('location_code');
+            if (locationCodeInput) {
+                locationCodeInput.focus();
+                console.log('✅ Focused on location code input');
+            }
+        }, 100);
+        
+        console.log('✅ Create modal opened successfully');
+        
+    } catch (error) {
+        console.error('❌ Error opening create modal:', error);
+    }
+}
+
+/**
+ * Open edit modal with proper initialization
+ */
+function openEditModal(location) {
+    console.log('🔧 Opening edit modal for location:', location.id);
+    
+    document.getElementById('modalTitle').textContent = 'Editează Locație';
+    document.getElementById('formAction').value = 'update';
+    document.getElementById('locationId').value = location.id;
+    document.getElementById('submitBtn').textContent = 'Actualizează';
+    
+    // CRITICAL: Initialize the dynamic system FIRST before populating
+    if (!dynamicSystemInitialized) {
+        console.log('🔧 Initializing dynamic system for edit modal...');
+        initializeDynamicLevelSystem();
+    }
+    
+    // Clear existing levels first
+    levelCounter = 0;
+    createdLevels = [];
+    currentLevels = 0;
+    const container = document.getElementById('levels-container');
+    if (container) {
+        container.innerHTML = '';
+        console.log('✅ Cleared existing levels for edit');
+    }
+    
+    // Populate form with null checks
+    const locationCodeInput = document.getElementById('location_code');
+    if (locationCodeInput) locationCodeInput.value = location.location_code || '';
+    
+    const zoneInput = document.getElementById('zone');
+    if (zoneInput) zoneInput.value = location.zone || '';
+    
+    const typeInput = document.getElementById('type');
+    if (typeInput) typeInput.value = location.type || 'Shelf';
+    
+    // Populate global dimensions
+    const globalLengthInput = document.getElementById('global_length_mm');
+    if (globalLengthInput) globalLengthInput.value = location.length_mm || 1000;
+    
+    const globalDepthInput = document.getElementById('global_depth_mm');
+    if (globalDepthInput) globalDepthInput.value = location.depth_mm || 400;
+    
+    const globalWeightInput = document.getElementById('global_max_weight_kg');
+    if (globalWeightInput) globalWeightInput.value = location.max_weight_kg || 500;
+    
+    // Convert database status to form value
+    const statusInput = document.getElementById('status');
+    if (statusInput) {
+        const statusValue = location.status === 'active' ? '1' : '0';
+        statusInput.value = statusValue;
+    }
+    
+    const descriptionInput = document.getElementById('description');
+    if (descriptionInput) descriptionInput.value = location.notes || '';
+    
+    // NOW populate dynamic levels after the system is initialized
+    if (location.level_settings && Array.isArray(location.level_settings)) {
+        console.log('🔧 Populating levels after system init...');
+        setTimeout(() => {
+            populateDynamicLevels(location.level_settings);
+        }, 100);
+    }
+    
+    // Update QR code
+    setTimeout(() => {
+        updateLocationQr();
+    }, 200);
+    
+    // Switch to basic tab
+    switchLocationTab('basic');
+    
+    // Show modal
+    document.getElementById('locationModal').classList.add('show');
+}
+
+function openEditModalById(id) {
+    fetch('locations.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ action: 'get_location_details', id })
+    })
+    .then(resp => resp.json())
+    .then(data => {
+        if (data.success && data.location) {
+            openEditModal(data.location);
+        } else {
+            alert(data.message || 'Eroare la încărcarea detaliilor locației');
+        }
+    })
+    .catch(err => {
+        console.error('Failed to load location details', err);
+        alert('Eroare la încărcarea detaliilor locației');
+    });
+}
+
+/**
+ * Populate dynamic levels from loaded data
+ */
+function populateDynamicLevels(levelSettings) {
+    console.log('Populating dynamic levels:', levelSettings);
+    
+    // Safety check - make sure container exists before adding levels
+    const container = document.getElementById('levels-container');
+    if (!container) {
+        console.error('❌ Cannot populate levels - levels-container not found!');
+        return;
+    }
+    
+    levelSettings.forEach((setting, index) => {
+        // Add new level
+        console.log(`Adding level ${index + 1} from settings...`);
+        addNewLevel();
+        const levelId = levelCounter;
+
+        // Populate level data
+        const nameInput = document.querySelector(`#level-item-${levelId} .level-name-input`);
+        if (nameInput) nameInput.value = setting.level_name || `Nivel ${levelId}`;
+
+        const policyRadio = document.querySelector(`input[name="level_${levelId}_storage_policy"][value="${setting.storage_policy}"]`);
+        if (policyRadio) {
+            policyRadio.checked = true;
+            selectStoragePolicy(levelId, setting.storage_policy);
+        }
+
+        const heightInput = document.getElementById(`level_${levelId}_height`);
+        if (heightInput) heightInput.value = setting.height_mm || 300;
+        
+        const weightInput = document.getElementById(`level_${levelId}_weight`);
+        if (weightInput) weightInput.value = setting.max_weight_kg || 50;
+        
+        const capacityInput = document.getElementById(`level_${levelId}_capacity`);
+        if (capacityInput) capacityInput.value = setting.items_capacity || '';
+        
+        const productSelect = document.getElementById(`level_${levelId}_dedicated_product`);
+        if (productSelect) productSelect.value = setting.dedicated_product_id || '';
+        
+        const allowOthersInput = document.getElementById(`level_${levelId}_allow_others`);
+        if (allowOthersInput) allowOthersInput.checked = setting.allow_other_products !== false;
+
+        // Initialize level QR code
+        setTimeout(() => {
+            initializeLevelQRCode(levelId);
+        }, 100);
+    });
+
+    updateLevelsSummary();
+    console.log('✅ Dynamic levels populated successfully');
+}
+
+function closeModal() {
+    document.getElementById('locationModal').classList.remove('show');
+    
+    // Clear any existing auto-fill messages
+    const existingMessage = document.querySelector('.zone-autofill-message'); 
+    if (existingMessage) {
+        existingMessage.remove();
+    }
+}
+
+// =================== FORM SUBMISSION AND DATA COLLECTION ===================
+
+/**
+ * Collect all level data for form submission
+ */
+function collectLevelData() {
+    const levelData = {};
+    
+    createdLevels.forEach(level => {
+        const levelId = level.id;
+        
+        levelData[levelId] = {
+            name: level.name,
+            storage_policy: document.querySelector(`input[name="level_${levelId}_storage_policy"]:checked`)?.value || 'multiple_products',
+            height_mm: parseInt(document.getElementById(`level_${levelId}_height`)?.value) || 300,
+            max_weight_kg: parseFloat(document.getElementById(`level_${levelId}_weight`)?.value) || 50,
+            items_capacity: parseInt(document.getElementById(`level_${levelId}_capacity`)?.value) || null,
+            dedicated_product_id: document.getElementById(`level_${levelId}_dedicated_product`)?.value || null,
+            allow_other_products: document.getElementById(`level_${levelId}_allow_others`)?.checked ?? true
+        };
+    });
+    
+    return levelData;
+}
+
+/**
+ * Collect subdivision data for form submission
+ */
+function collectSubdivisionData() {
     const subdivisionData = {};
     
-    // Find all levels with subdivisions enabled
-    const enabledLevels = document.querySelectorAll('input[id*="_enable_subdivisions"]:checked');
-    
-    enabledLevels.forEach(checkbox => {
-        const levelMatch = checkbox.id.match(/level_(\d+)_enable_subdivisions/);
-        if (levelMatch) {
-            const levelNumber = parseInt(levelMatch[1]);
+    createdLevels.forEach(level => {
+        const levelId = level.id;
+        const enableCheckbox = document.getElementById(`level_${levelId}_enable_subdivisions`);
+        
+        if (enableCheckbox && enableCheckbox.checked) {
+            const subdivisionsList = document.getElementById(`subdivisions-list-${levelId}`);
+            const subdivisions = subdivisionsList.querySelectorAll('.subdivision-item');
             
-            subdivisionData[levelNumber] = {
-                subdivisions_enabled: true,
+            subdivisionData[levelId] = {
+                enabled: true,
                 subdivisions: []
             };
             
-            // Collect all subdivisions for this level
-            const subdivisionItems = document.querySelectorAll(`#subdivisions-list-${levelNumber} .subdivision-item`);
-            
-            subdivisionItems.forEach((item, index) => {
+            subdivisions.forEach((subdivision, index) => {
                 const subdivisionIndex = index + 1;
-                const productId = document.getElementById(`level_${levelNumber}_subdivision_${subdivisionIndex}_product_id`)?.value;
-                const capacity = document.getElementById(`level_${levelNumber}_subdivision_${subdivisionIndex}_capacity`)?.value;
-                const notes = document.querySelector(`[name="level_${levelNumber}_subdivision_${subdivisionIndex}_notes"]`)?.value;
+                const productId = document.getElementById(`level_${levelId}_subdivision_${subdivisionIndex}_product_id`)?.value;
+                const capacity = document.getElementById(`level_${levelId}_subdivision_${subdivisionIndex}_capacity`)?.value;
+                const notes = document.querySelector(`[name="level_${levelId}_subdivision_${subdivisionIndex}_notes"]`)?.value;
                 
                 if (productId && capacity) {
-                    subdivisionData[levelNumber].subdivisions.push({
-                        product_id: parseInt(productId),
+                    subdivisionData[levelId].subdivisions.push({
+                        product_id: productId,
                         capacity: parseInt(capacity),
                         notes: notes || ''
                     });
@@ -107,7 +1351,173 @@ function collectSubdivisionDataForSubmission() {
     return subdivisionData;
 }
 
-// Show zone auto-fill message
+/**
+ * Enhanced form submission with level data
+ */
+function enhanceFormSubmission() {
+    const form = document.getElementById('locationForm');
+    if (!form) return;
+    
+    form.addEventListener('submit', function(event) {
+        console.log('Form submission started. Created levels:', createdLevels.length);
+        
+        if (createdLevels.length === 0) {
+            event.preventDefault();
+            alert('Trebuie să adăugați cel puțin un nivel!');
+            return false;
+        }
+        
+        // Collect level data
+        const levelData = collectLevelData();
+        console.log('Level data collected:', levelData);
+        
+        // Add to form as hidden field
+        let hiddenField = document.getElementById('dynamic_levels_data');
+        if (!hiddenField) {
+            hiddenField = document.createElement('input');
+            hiddenField.type = 'hidden';
+            hiddenField.id = 'dynamic_levels_data';
+            hiddenField.name = 'dynamic_levels_data';
+            form.appendChild(hiddenField);
+        }
+        
+        hiddenField.value = JSON.stringify(levelData);
+        
+        // Collect subdivision data
+        const subdivisionData = collectSubdivisionData();
+        if (Object.keys(subdivisionData).length > 0) {
+            let subdivisionField = document.getElementById('subdivision_form_data');
+            if (!subdivisionField) {
+                subdivisionField = document.createElement('input');
+                subdivisionField.type = 'hidden';
+                subdivisionField.id = 'subdivision_form_data';
+                subdivisionField.name = 'subdivision_form_data';
+                form.appendChild(subdivisionField);
+            }
+            subdivisionField.value = JSON.stringify(subdivisionData);
+            console.log('Subdivision data collected:', subdivisionData);
+        }
+        
+        console.log('Form submission data prepared');
+    });
+}
+
+// =================== QR CODE FUNCTIONS ===================
+
+function initializeQRCode() {
+    const qrCanvas = document.getElementById('locationQrCanvas');
+    
+    if (!qrCanvas) {
+        console.error('QR Canvas not found');
+        return;
+    }
+    
+    if (!window.QRious) {
+        console.error('QRious library not loaded');
+        return;
+    }
+    
+    try {
+        const locationCodeInput = document.getElementById('location_code');
+        const initialValue = locationCodeInput ? locationCodeInput.value.trim() : '';
+        
+        qr = new QRious({ 
+            element: qrCanvas, 
+            size: 150, 
+            value: initialValue || 'EMPTY',
+            foreground: '#000000',
+            background: '#ffffff'
+        });
+        
+        console.log('QR initialized with value:', initialValue || 'EMPTY');
+        
+    } catch (error) {
+        console.error('Error initializing QR code:', error);
+    }
+}
+
+function updateLocationQr() {
+    if (!qr) {
+        console.error('QR object not initialized, trying to reinitialize...');
+        initializeQRCode();
+        return;
+    }
+    
+    const codeInput = document.getElementById('location_code');
+    const code = codeInput ? codeInput.value.trim() : '';
+    
+    try {
+        if (code && code.length > 0) {
+            qr.set({ value: code });
+            
+            // Also update all level QR codes
+            createdLevels.forEach(level => {
+                const canvas = document.getElementById(`level_qr_canvas_${level.id}`);
+                if (canvas && canvas._qrInstance) {
+                    const qrValue = `${code}\n${level.name}`;
+                    canvas._qrInstance.set({ value: qrValue });
+                }
+            });
+        } else {
+            qr.set({ value: 'EMPTY' });
+        }
+    } catch (error) {
+        console.error('Error updating QR code:', error);
+    }
+}
+
+function downloadLocationQr() {
+    const canvas = document.getElementById('locationQrCanvas');
+    if (!canvas) {
+        console.error('Canvas not found for download');
+        return;
+    }
+    
+    const codeInput = document.getElementById('location_code');
+    const code = codeInput ? codeInput.value.trim() : 'location';
+    
+    try {
+        const link = document.createElement('a');
+        link.href = canvas.toDataURL('image/png');
+        link.download = `${code}_qr.png`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    } catch (error) {
+        console.error('Error downloading QR code:', error);
+    }
+}
+
+// =================== EVENT LISTENERS ===================
+
+function setupEventListeners() {
+    // Location code input listener
+    const locationCodeInput = document.getElementById('location_code');
+    const zoneInput = document.getElementById('zone');
+    
+    if (locationCodeInput) {
+        locationCodeInput.addEventListener('input', function() {
+            const code = this.value.trim();
+            
+            // Update QR code immediately
+            updateLocationQr();
+            
+            // Also update zone extraction
+            if (zoneInput && code && code.includes('-')) {
+                const extractedZone = code.split('-')[0].toUpperCase();
+                zoneInput.value = extractedZone;
+                zoneInput.style.backgroundColor = 'var(--success-color-light, #d4edda)';
+                showZoneAutoFill(extractedZone);
+            } else if (zoneInput) {
+                zoneInput.value = '';
+                zoneInput.style.backgroundColor = '';
+            }
+        });
+    }
+}
+
+// =================== UTILITY FUNCTIONS ===================
+
 function showZoneAutoFill(zone) {
     const existingMessage = document.querySelector('.zone-autofill-message');
     if (existingMessage) {
@@ -133,97 +1543,13 @@ function showZoneAutoFill(zone) {
     }, 3000);
 }
 
-function openEditModal(location) {
-    document.getElementById('modalTitle').textContent = 'Editează Locație';
-    document.getElementById('formAction').value = 'update';
-    document.getElementById('locationId').value = location.id;
-    document.getElementById('submitBtn').textContent = 'Actualizează';
-    
-    // Populate form with null checks
-    const locationCodeInput = document.getElementById('location_code');
-    if (locationCodeInput) locationCodeInput.value = location.location_code;
-    
-    const zoneInput = document.getElementById('zone');
-    if (zoneInput) zoneInput.value = location.zone;
-    
-    const typeInput = document.getElementById('type');
-    if (typeInput) typeInput.value = location.type || 'Shelf';
-    
-    // These fields might be removed by dynamic level system
-    const capacityInput = document.getElementById('capacity');
-    if (capacityInput) capacityInput.value = location.capacity || '';
-    
-    const levelsFieldEdit = document.getElementById('levels');
-    if (levelsFieldEdit) {
-        levelsFieldEdit.value = location.levels || 3;
-        currentLevels = parseInt(location.levels) || 3;
-    }
-    
-    // Populate dimensions if available (might be in tabs)
-    const lengthInput = document.getElementById('length_mm');
-    if (lengthInput) lengthInput.value = location.length_mm || 1000;
-    
-    const depthInput = document.getElementById('depth_mm');
-    if (depthInput) depthInput.value = location.depth_mm || 400;
-    
-    const heightInput = document.getElementById('height_mm');
-    if (heightInput) heightInput.value = location.height_mm || 900;
-    
-    const weightInput = document.getElementById('max_weight_kg');
-    if (weightInput) weightInput.value = location.max_weight_kg || 150;
-    
-    // Convert database status to form value
-    const statusInput = document.getElementById('status');
-    if (statusInput) {
-        const statusValue = location.status === 'active' ? '1' : '0';
-        statusInput.value = statusValue;
-    }
-    
-    const descriptionInput = document.getElementById('description');
-    if (descriptionInput) descriptionInput.value = location.notes || '';
-    
-    // Initialize level settings or dynamic levels
-    if (levelSettingsEnabled) {
-        generateLevelSettings();
-
-        // Populate level settings if provided
-        if (location.level_settings) {
-            populateLevelSettings(location.level_settings);
-        }
-
-        distributeLevelHeights();
-        distributeWeightCapacity();
-        distributeItemCapacity();
-
-        // Switch to basic tab
-        switchLocationTab('basic');
-    } else if (typeof populateDynamicLevels === 'function') {
-        if (location.level_settings) {
-            populateDynamicLevels(location.level_settings);
-        } else if (location.levels) {
-            const placeholders = Array.from({ length: location.levels }, () => ({}));
-            populateDynamicLevels(placeholders);
-        }
-    }
-    
-    // Update QR code with the location code
-    setTimeout(() => {
-        updateLocationQr();
-    }, 100);
-    
-    // Show modal
-    document.getElementById('locationModal').classList.add('show');
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
 }
 
-function closeModal() {
-    document.getElementById('locationModal').classList.remove('show');
-    
-    // Clear any existing auto-fill messages
-    const existingMessage = document.querySelector('.zone-autofill-message');
-    if (existingMessage) {
-        existingMessage.remove();
-    }
-}
+// =================== ADDITIONAL MODAL FUNCTIONS ===================
 
 function openDeleteModal(locationId, locationCode) {
     document.getElementById('deleteLocationId').value = locationId;
@@ -256,74 +1582,7 @@ document.addEventListener('keydown', function(event) {
     }
 });
 
-// Enhanced form validation with validation support
-document.getElementById('locationForm').addEventListener('submit', function(event) {
-    const locationCode = document.getElementById('location_code').value.trim();
-    const zone = document.getElementById('zone').value.trim();
-    const type = document.getElementById('type').value;
-    
-    if (!locationCode || !zone) {
-        event.preventDefault();
-        alert('Codul locației și zona sunt obligatorii!');
-        return false;
-    }
-    
-    // Use enhanced validation if available
-    if (window.locationValidation) {
-        const validation = window.locationValidation.validateLocationCode(locationCode, type);
-        if (!validation.valid) {
-            event.preventDefault();
-            alert('Erori de validare:\n' + validation.errors.join('\n'));
-            return false;
-        }
-        
-        // Validate that zone matches location code prefix for shelves
-        if (type === 'Shelf' && validation.extractedZone && zone.toUpperCase() !== validation.extractedZone) {
-            event.preventDefault();
-            alert(`Zona "${zone}" nu corespunde cu prefixul din codul locației "${validation.extractedZone}"`);
-            return false;
-        }
-    } else {
-        // Fallback validation
-        if (type === 'Shelf' && !locationCode.includes('-')) {
-            event.preventDefault();
-            alert('Pentru rafturi, codul locației trebuie să conțină cratimă (ex: MID-1A)');
-            return false;
-        }
-        
-        if (type === 'Shelf' && locationCode.includes('-')) {
-            const extractedZone = locationCode.split('-')[0].toUpperCase();
-            if (zone.toUpperCase() !== extractedZone) {
-                event.preventDefault();
-                alert(`Zona "${zone}" nu corespunde cu prefixul din codul locației "${extractedZone}"`);
-                return false;
-            }
-        }
-    }
-
-    if (levelSettingsEnabled && currentLevels > 0) {
-        const data = {};
-        for (let lvl = 1; lvl <= currentLevels; lvl++) {
-            data[lvl] = {
-                storage_policy: document.querySelector(`input[name="level_${lvl}_storage_policy"]:checked`)?.value || 'multiple_products',
-                height_mm: parseInt(document.getElementById(`level_${lvl}_height`)?.value) || 0,
-                max_weight_kg: parseFloat(document.getElementById(`level_${lvl}_weight`)?.value) || 0,
-                items_capacity: parseInt(document.getElementById(`level_${lvl}_capacity`)?.value) || null,
-                dedicated_product_id: document.getElementById(`level_${lvl}_dedicated_product`)?.value || null,
-                allow_other_products: document.getElementById(`level_${lvl}_allow_others`)?.checked ?? true,
-                volume_min_liters: parseFloat(document.querySelector(`input[name="level_${lvl}_volume_min"]`)?.value) || null,
-                volume_max_liters: parseFloat(document.querySelector(`input[name="level_${lvl}_volume_max"]`)?.value) || null,
-                enable_auto_repartition: document.getElementById(`level_${lvl}_auto_repartition`)?.checked || false,
-                repartition_trigger_threshold: parseInt(document.querySelector(`input[name="level_${lvl}_threshold"]`)?.value) || 80,
-                priority_order: parseInt(document.querySelector(`input[name="level_${lvl}_priority"]`)?.value) || 1
-            };
-        }
-        const field = document.getElementById('level_settings_data');
-        if (field) {
-            field.value = JSON.stringify(data);
-        }
-    }
-});
+// =================== WAREHOUSE VISUALIZATION ===================
 
 /**
  * Enhanced Warehouse Visualization Class
@@ -357,50 +1616,50 @@ class EnhancedWarehouseVisualization {
     }
 
     extractZones() {
-    // Use dynamic zones from PHP if available, otherwise extract from locations
-    if (window.dynamicZones && window.dynamicZones.length > 0) {
-        return window.dynamicZones.map(zone => ({
-            name: zone.zone_name,
-            shelfCount: parseInt(zone.shelf_count) || 0,
-            avgOccupancy: parseFloat(zone.avg_occupancy) || 0,
-            totalCapacity: parseInt(zone.total_capacity) || 0,
-            totalItems: parseInt(zone.total_items) || 0,
-            // FIXED: Case insensitive filtering
-            shelves: this.locations.filter(l => l.zone === zone.zone_name && l.type.toLowerCase() === 'shelf')
-        }));
-    }
-    
-    // Fallback: extract from locations data
-    const zoneMap = new Map();
-    
-    this.locations.forEach(location => {
-        const zoneName = location.zone;
-        // FIXED: Case insensitive type check
-        if (zoneName && location.type.toLowerCase() === 'shelf') {
-            if (!zoneMap.has(zoneName)) {
-                zoneMap.set(zoneName, {
-                    name: zoneName,
-                    shelves: [],
-                    totalOccupancy: 0,
-                    shelfCount: 0
-                });
-            }
-            
-            const zone = zoneMap.get(zoneName);
-            zone.shelves.push(location);
-            zone.shelfCount++;
-            zone.totalOccupancy += (location.occupancy?.total || 0);
+        // Use dynamic zones from PHP if available, otherwise extract from locations
+        if (window.dynamicZones && window.dynamicZones.length > 0) {
+            return window.dynamicZones.map(zone => ({
+                name: zone.zone_name,
+                shelfCount: parseInt(zone.shelf_count) || 0,
+                avgOccupancy: parseFloat(zone.avg_occupancy) || 0,
+                totalCapacity: parseInt(zone.total_capacity) || 0,
+                totalItems: parseInt(zone.total_items) || 0,
+                // FIXED: Case insensitive filtering
+                shelves: this.locations.filter(l => l.zone === zone.zone_name && l.type.toLowerCase() === 'shelf')
+            }));
         }
-    });
-    
-    // Calculate average occupancy for each zone
-    const zones = Array.from(zoneMap.values()).map(zone => ({
-        ...zone,
-        avgOccupancy: zone.shelfCount > 0 ? zone.totalOccupancy / zone.shelfCount : 0
-    }));
-    
-    return zones.sort((a, b) => a.name.localeCompare(b.name));
-}
+        
+        // Fallback: extract from locations data
+        const zoneMap = new Map();
+        
+        this.locations.forEach(location => {
+            const zoneName = location.zone;
+            // FIXED: Case insensitive type check
+            if (zoneName && location.type.toLowerCase() === 'shelf') {
+                if (!zoneMap.has(zoneName)) {
+                    zoneMap.set(zoneName, {
+                        name: zoneName,
+                        shelves: [],
+                        totalOccupancy: 0,
+                        shelfCount: 0
+                    });
+                }
+                
+                const zone = zoneMap.get(zoneName);
+                zone.shelves.push(location);
+                zone.shelfCount++;
+                zone.totalOccupancy += (location.occupancy?.total || 0);
+            }
+        });
+        
+        // Calculate average occupancy for each zone
+        const zones = Array.from(zoneMap.values()).map(zone => ({
+            ...zone,
+            avgOccupancy: zone.shelfCount > 0 ? zone.totalOccupancy / zone.shelfCount : 0
+        }));
+        
+        return zones.sort((a, b) => a.name.localeCompare(b.name));
+    }
 
     createTooltip() {
         if (document.getElementById('enhancedTooltip')) return;
@@ -578,43 +1837,43 @@ class EnhancedWarehouseVisualization {
     }
 
     renderShelves() {
-    const shelvesGrid = document.getElementById('shelvesGrid');
-    const shelvesContainer = document.getElementById('shelvesContainer');
-    const shelvesTitle = document.getElementById('shelvesTitle');
-    
-    if (!shelvesGrid) return;
-    
-    if (!this.currentZone) {
-        shelvesGrid.innerHTML = this.getEmptyShelvesState();
-        if (shelvesTitle) {
-            shelvesTitle.textContent = 'Selectează o zonă pentru a vedea rafturile';
+        const shelvesGrid = document.getElementById('shelvesGrid');
+        const shelvesContainer = document.getElementById('shelvesContainer');
+        const shelvesTitle = document.getElementById('shelvesTitle');
+        
+        if (!shelvesGrid) return;
+        
+        if (!this.currentZone) {
+            shelvesGrid.innerHTML = this.getEmptyShelvesState();
+            if (shelvesTitle) {
+                shelvesTitle.textContent = 'Selectează o zonă pentru a vedea rafturile';
+            }
+            this.toggleLegend(false);
+            return;
         }
-        this.toggleLegend(false);
-        return;
+        
+        // Update header
+        if (shelvesTitle) {
+            shelvesTitle.textContent = `Rafturi - Zona ${this.currentZone}`;
+        }
+        
+        // FIXED: Case insensitive type filtering
+        const zoneShelves = this.locations.filter(l => 
+            l.zone === this.currentZone && l.type.toLowerCase() === 'shelf'
+        );
+        
+        if (zoneShelves.length === 0) {
+            shelvesGrid.innerHTML = this.getEmptyShelvesState(`Nu există rafturi în zona ${this.currentZone}`);
+            this.toggleLegend(false);
+            return;
+        }
+        
+        // Sort shelves by location code for consistent display
+        zoneShelves.sort((a, b) => a.location_code.localeCompare(b.location_code));
+        
+        shelvesGrid.innerHTML = zoneShelves.map(shelf => this.createShelfElement(shelf)).join('');
+        this.toggleLegend(true);
     }
-    
-    // Update header
-    if (shelvesTitle) {
-        shelvesTitle.textContent = `Rafturi - Zona ${this.currentZone}`;
-    }
-    
-    // FIXED: Case insensitive type filtering
-    const zoneShelves = this.locations.filter(l => 
-        l.zone === this.currentZone && l.type.toLowerCase() === 'shelf'
-    );
-    
-    if (zoneShelves.length === 0) {
-        shelvesGrid.innerHTML = this.getEmptyShelvesState(`Nu există rafturi în zona ${this.currentZone}`);
-        this.toggleLegend(false);
-        return;
-    }
-    
-    // Sort shelves by location code for consistent display
-    zoneShelves.sort((a, b) => a.location_code.localeCompare(b.location_code));
-    
-    shelvesGrid.innerHTML = zoneShelves.map(shelf => this.createShelfElement(shelf)).join('');
-    this.toggleLegend(true);
-}
 
     createShelfElement(shelf) {
         const occupancyTotal = shelf.occupancy?.total || 0;
@@ -674,62 +1933,62 @@ class EnhancedWarehouseVisualization {
     }
 
     renderTable() {
-    const tbody = document.getElementById('locationsTableBody');
-    if (!tbody) return;
+        const tbody = document.getElementById('locationsTableBody');
+        if (!tbody) return;
 
-    let filteredLocations = [...this.locations];
-    
-    // Apply current filters
-    const zoneFilter = document.getElementById('zoneFilter')?.value;
-    const typeFilter = document.getElementById('typeFilter')?.value;
-    const searchFilter = document.getElementById('searchFilter')?.value.toLowerCase();
-    
-    if (zoneFilter) {
-        filteredLocations = filteredLocations.filter(l => l.zone === zoneFilter);
-    }
-    
-    if (typeFilter) {
-        // FIXED: Case insensitive type filtering
-        filteredLocations = filteredLocations.filter(l => l.type.toLowerCase() === typeFilter.toLowerCase());
-    }
-    
-    if (searchFilter) {
-        filteredLocations = filteredLocations.filter(l => 
-            l.location_code.toLowerCase().includes(searchFilter)
-        );
-    }
-    
-    tbody.innerHTML = filteredLocations.map(location => {
-        const occupancyClass = this.getOccupancyClass(location.occupancy?.total || 0);
-        // FIXED: Case insensitive type check
-        const isShelf = location.type.toLowerCase() === 'shelf';
+        let filteredLocations = [...this.locations];
         
-        return `
-                <tr>
-                    <td><strong>${location.location_code}</strong></td>
-                    <td>Zona ${location.zone}</td>
-                    <td>${location.type}</td>
-                    <td><span class="occupancy-badge ${occupancyClass}">${Math.round(location.occupancy?.total || 0)}%</span></td>
-                    <td>${isShelf ? Math.round(location.occupancy?.bottom || 0) + '%' : '-'}</td>
-                    <td>${isShelf ? Math.round(location.occupancy?.middle || 0) + '%' : '-'}</td>
-                   <td>${isShelf ? Math.round(location.occupancy?.top || 0) + '%' : '-'}</td>
-                    <td>${location.items?.total || location.total_items || 0}</td>
-                    <td>${location.unique_products || 0}</td>
-                    <td>
-                        <button class="btn btn-sm btn-outline" onclick="openEditModalById(${location.id})" title="Editează">
-                            <span class="material-symbols-outlined">edit</span>
-                        </button>
-                        <button class="btn btn-sm btn-outline-danger" onclick="openDeleteModal(${location.id}, '${location.location_code}')" title="Șterge">
-                            <span class="material-symbols-outlined">delete</span>
-                        </button>
-                    </td>
-                </tr>
-            `;
-    }).join('');
-    
-    // Update table info
-    this.updateTableInfo(filteredLocations.length, this.locations.length);
-}
+        // Apply current filters
+        const zoneFilter = document.getElementById('zoneFilter')?.value;
+        const typeFilter = document.getElementById('typeFilter')?.value;
+        const searchFilter = document.getElementById('searchFilter')?.value.toLowerCase();
+        
+        if (zoneFilter) {
+            filteredLocations = filteredLocations.filter(l => l.zone === zoneFilter);
+        }
+        
+        if (typeFilter) {
+            // FIXED: Case insensitive type filtering
+            filteredLocations = filteredLocations.filter(l => l.type.toLowerCase() === typeFilter.toLowerCase());
+        }
+        
+        if (searchFilter) {
+            filteredLocations = filteredLocations.filter(l => 
+                l.location_code.toLowerCase().includes(searchFilter)
+            );
+        }
+        
+        tbody.innerHTML = filteredLocations.map(location => {
+            const occupancyClass = this.getOccupancyClass(location.occupancy?.total || 0);
+            // FIXED: Case insensitive type check
+            const isShelf = location.type.toLowerCase() === 'shelf';
+            
+            return `
+                    <tr>
+                        <td><strong>${location.location_code}</strong></td>
+                        <td>Zona ${location.zone}</td>
+                        <td>${location.type}</td>
+                        <td><span class="occupancy-badge ${occupancyClass}">${Math.round(location.occupancy?.total || 0)}%</span></td>
+                        <td>${isShelf ? Math.round(location.occupancy?.bottom || 0) + '%' : '-'}</td>
+                        <td>${isShelf ? Math.round(location.occupancy?.middle || 0) + '%' : '-'}</td>
+                       <td>${isShelf ? Math.round(location.occupancy?.top || 0) + '%' : '-'}</td>
+                        <td>${location.items?.total || location.total_items || 0}</td>
+                        <td>${location.unique_products || 0}</td>
+                        <td>
+                            <button class="btn btn-sm btn-outline" onclick="openEditModalById(${location.id})" title="Editează">
+                                <span class="material-symbols-outlined">edit</span>
+                            </button>
+                            <button class="btn btn-sm btn-outline-danger" onclick="openDeleteModal(${location.id}, '${location.location_code}')" title="Șterge">
+                                <span class="material-symbols-outlined">delete</span>
+                            </button>
+                        </td>
+                    </tr>
+                `;
+        }).join('');
+        
+        // Update table info
+        this.updateTableInfo(filteredLocations.length, this.locations.length);
+    }
 
     updateTableInfo(filtered, total) {
         // You can add table pagination info here if needed
@@ -852,1895 +2111,49 @@ class EnhancedWarehouseVisualization {
     }
 
     debugLocationsData() {
-    console.log('=== DEBUGGING LOCATIONS DATA ===');
-    console.log('Total locations:', this.locations.length);
-    console.log('Locations by type:');
-    
-    const typeMap = new Map();
-    this.locations.forEach(loc => {
-        const type = loc.type;
-        if (!typeMap.has(type)) {
-            typeMap.set(type, []);
-        }
-        typeMap.get(type).push(loc.location_code);
-    });
-    
-    typeMap.forEach((codes, type) => {
-        console.log(`  ${type}: ${codes.length} locations - ${codes.slice(0, 5).join(', ')}${codes.length > 5 ? '...' : ''}`);
-    });
-    
-    console.log('Dynamic zones:', window.dynamicZones);
-    console.log('Extracted zones:', this.zones);
-    console.log('================================');
-}
-
+        console.log('=== DEBUGGING LOCATIONS DATA ===');
+        console.log('Total locations:', this.locations.length);
+        console.log('Locations by type:');
+        
+        const typeMap = new Map();
+        this.locations.forEach(loc => {
+            const type = loc.type;
+            if (!typeMap.has(type)) {
+                typeMap.set(type, []);
+            }
+            typeMap.get(type).push(loc.location_code);
+        });
+        
+        typeMap.forEach((codes, type) => {
+            console.log(`  ${type}: ${codes.length} locations - ${codes.slice(0, 5).join(', ')}${codes.length > 5 ? '...' : ''}`);
+        });
+        
+        console.log('Dynamic zones:', window.dynamicZones);
+        console.log('Extracted zones:', this.zones);
+        console.log('================================');
+    }
 }
 
 // Export for global access
 window.EnhancedWarehouseVisualization = EnhancedWarehouseVisualization;
-/**
- * Enhanced Locations Management JavaScript
- * Includes per-level configuration functionality
- */
 
-/**
- * Initialize the locations page
- */
-document.addEventListener('DOMContentLoaded', function() {
-    // Check if enhanced models are available
-    checkLevelSettingsAvailability();
-    
-    // Initialize existing functionality
-    initializeExistingFunctionality();
-    
-    // Initialize enhanced functionality if available
-    if (levelSettingsEnabled) {
-        initializeLevelSettings();
-    }
-});
-
-/**
- * Check if level settings functionality is available
- */
-function checkLevelSettingsAvailability() {
-    // Try to detect if enhanced models are available by checking for specific elements
-    // This would be set by the PHP side if models are available
-    levelSettingsEnabled = window.levelSettingsAvailable || false;
-}
-
-/**
- * Initialize level settings functionality
- */
-function initializeLevelSettings() {
-    // Add level settings tab if not exists
-    addLevelSettingsTab();
-    
-    // Initialize level configuration
-    const levelsInput = document.getElementById('levels');
-    if (levelsInput) {
-        levelsInput.addEventListener('change', updateLevelSettings);
-        // Initialize with current value
-        updateLevelSettings();
-    }
-    
-    // Initialize dimension distribution
-    const dimensionInputs = ['height_mm', 'max_weight_kg'];
-    dimensionInputs.forEach(inputId => {
-        const input = document.getElementById(inputId);
-        if (input) {
-            input.addEventListener('change', () => distributeDimensions(inputId));
-        }
-    });
-}
-
-/**
- * Add level settings tab to the existing modal
- */
-function addLevelSettingsTab() {
-    const modalBody = document.querySelector('#locationModal .modal-body');
-    if (!modalBody) return;
-    
-    // Check if tabs already exist
-    let tabsContainer = modalBody.querySelector('.location-tabs');
-    
-    if (!tabsContainer) {
-        // Create tabs container
-        tabsContainer = document.createElement('div');
-        tabsContainer.className = 'location-tabs';
-        tabsContainer.innerHTML = `
-            <button type="button" class="tab-button active" onclick="switchLocationTab('basic')">
-                <span class="material-symbols-outlined">info</span>
-                Informații de Bază
-            </button>
-            <button type="button" class="tab-button" onclick="switchLocationTab('dimensions')">
-                <span class="material-symbols-outlined">straighten</span>
-                Dimensiuni
-            </button>
-            <button type="button" class="tab-button" onclick="switchLocationTab('levels')">
-                <span class="material-symbols-outlined">layers</span>
-                Configurare Niveluri
-            </button>
-        `;
-        
-        // Insert tabs at the beginning of modal body
-        modalBody.insertBefore(tabsContainer, modalBody.firstChild);
-    }
-    
-    // Wrap existing form content in basic tab
-    const existingContent = modalBody.querySelector('form').innerHTML;
-    modalBody.querySelector('form').innerHTML = `
-        <!-- Basic Information Tab -->
-        <div id="basic-tab" class="tab-content active">
-            ${existingContent}
-        </div>
-        
-        <!-- Dimensions Tab -->
-        <div id="dimensions-tab" class="tab-content">
-            <div class="form-grid">
-                <div class="form-group">
-                    <label for="length_mm" class="form-label">
-                        <span class="material-symbols-outlined">straighten</span>
-                        Lungime (mm)
-                    </label>
-                    <input type="number" id="length_mm" name="length_mm" class="form-control" 
-                           value="1000" min="100" max="10000">
-                    <small class="form-help">Lungimea totală a raftului</small>
-                </div>
-                
-                <div class="form-group">
-                    <label for="depth_mm" class="form-label">
-                        <span class="material-symbols-outlined">width</span>
-                        Adâncime (mm)
-                    </label>
-                    <input type="number" id="depth_mm" name="depth_mm" class="form-control" 
-                           value="400" min="100" max="2000">
-                    <small class="form-help">Adâncimea raftului</small>
-                </div>
-                
-                <div class="form-group">
-                    <label for="height_mm" class="form-label">
-                        <span class="material-symbols-outlined">height</span>
-                        Înălțime Totală (mm)
-                    </label>
-                    <input type="number" id="height_mm" name="height_mm" class="form-control" 
-                           value="900" min="200" max="5000" onchange="distributeLevelHeights()">
-                    <small class="form-help">Înălțimea totală (distribuită pe niveluri)</small>
-                </div>
-                
-                <div class="form-group">
-                    <label for="max_weight_kg" class="form-label">
-                        <span class="material-symbols-outlined">scale</span>
-                        Greutate Maximă (kg)
-                    </label>
-                    <input type="number" id="max_weight_kg" name="max_weight_kg" class="form-control" 
-                           value="150" min="10" max="2000" step="0.1" onchange="distributeWeightCapacity()">
-                    <small class="form-help">Greutatea maximă suportată (distribuită pe niveluri)</small>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Level Settings Tab -->
-        <div id="levels-tab" class="tab-content">
-            <div class="form-check" style="margin-bottom: 1.5rem;">
-                <input type="checkbox" id="enable_global_auto_repartition" name="enable_global_auto_repartition">
-                <label for="enable_global_auto_repartition" class="form-label">
-                    Activează repartizarea automată pentru toate nivelurile
-                </label>
-            </div>
-            
-            <div id="level-settings-container">
-                <!-- Level settings will be generated dynamically -->
-            </div>
-        </div>
-    `;
-}
-
-/**
- * Switch between location tabs
- * @param {string} tabName - Name of the tab to switch to
- */
-function switchLocationTab(tabName) {
-    // Hide all tab contents
-    document.querySelectorAll('.tab-content').forEach(content => {
-        content.classList.remove('active');
-    });
-    
-    // Remove active class from all tab buttons
-    document.querySelectorAll('.tab-button').forEach(button => {
-        button.classList.remove('active');
-    });
-    
-    // Show selected tab content
-    const targetTab = document.getElementById(tabName + '-tab');
-    if (targetTab) {
-        targetTab.classList.add('active');
-    }
-    
-    // Add active class to clicked button
-    // Check if event exists and has a target before trying to access it
-    if (typeof event !== 'undefined' && event && event.target) {
-        const tabButton = event.target.closest('.tab-button');
-        if (tabButton) {
-            tabButton.classList.add('active');
-        }
-    } else {
-        // When called programmatically, find and activate the correct tab button
-        const tabButtons = document.querySelectorAll('.tab-button');
-        tabButtons.forEach(button => {
-            const onclick = button.getAttribute('onclick');
-            if (onclick && onclick.includes(`switchLocationTab('${tabName}')`)) {
-                button.classList.add('active');
-            }
-        });
-    }
-}
-
-/**
- * Update level settings when number of levels changes
- */
-function updateLevelSettings() {
-    if (!levelSettingsEnabled) return;
-    
-    const levelsInput = document.getElementById('levels');
-    const newLevels = parseInt(levelsInput.value) || 3;
-    
-    if (newLevels === currentLevels) return;
-    
-    currentLevels = newLevels;
-    generateLevelSettings();
-    distributeLevelHeights();
-    distributeWeightCapacity();
-    distributeItemCapacity();
-}
-
-/**
- * Generate level settings dynamically
- */
-function generateLevelSettings() {
-    const container = document.getElementById('level-settings-container');
-    if (!container) return;
-    
-    container.innerHTML = '';
-    
-    for (let level = 1; level <= currentLevels; level++) {
-        const levelDiv = createLevelSettingsDiv(level);
-        container.appendChild(levelDiv);
-        
-        // Populate product dropdown for this level
-        populateProductDropdown(level);
-    }
-}
-
-
-/**
- * Create level settings div
- * @param {number} levelNumber - Level number
- * @returns {HTMLElement} - Level settings element
- * test
- */
-function createLevelSettingsDiv(levelNumber) {
-    const levelDiv = document.createElement('div');
-    levelDiv.className = 'level-settings-container';
-    
-    const levelName = getLevelName(levelNumber);
-    
-    levelDiv.innerHTML = `
-        <div class="level-header" onclick="toggleLevel(${levelNumber})">
-            <div class="level-title">
-                <span class="material-symbols-outlined">layers</span>
-                <span>Nivel ${levelNumber} - ${levelName}</span>
-            </div>
-            <span class="level-toggle material-symbols-outlined">expand_more</span>
-        </div>
-        <div class="level-content" id="level-content-${levelNumber}">
-            <div class="level-grid">
-                <!-- Enable Subdivisions Section -->
-                <div class="settings-section">
-                    <h5>
-                        <span class="material-symbols-outlined">view_module</span>
-                        Configurare Subdiviziuni
-                    </h5>
-                    <div class="form-group">
-                        <label class="form-check-label">
-                            <input type="checkbox" 
-                                   id="level_${levelNumber}_enable_subdivisions" 
-                                   name="level_${levelNumber}_enable_subdivisions"
-                                   onchange="toggleSubdivisions(${levelNumber})">
-                            Permite subdiviziuni în acest nivel
-                        </label>
-                        <small class="form-help">Când este activat, nivelul va permite mai multe produse diferite în subdiviziuni separate</small>
-                    </div>
-                </div>
-                
-                <!-- Storage Policy Section (Updated) -->
-                <div class="settings-section" id="storage-policy-${levelNumber}">
-                    <h5>
-                        <span class="material-symbols-outlined">policy</span>
-                        Politica de Stocare
-                    </h5>
-                    <div class="storage-policy-options">
-                        <div class="policy-option selected" onclick="selectStoragePolicy(${levelNumber}, 'multiple_products')">
-                            <input type="radio" name="level_${levelNumber}_storage_policy" value="multiple_products" checked>
-                            <div>
-                                <div class="policy-title">Multiple Produse</div>
-                                <div class="policy-description">Permite stocarea mai multor tipuri de produse</div>
-                            </div>
-                        </div>
-                        <div class="policy-option" onclick="selectStoragePolicy(${levelNumber}, 'single_product_type')">
-                            <input type="radio" name="level_${levelNumber}_storage_policy" value="single_product_type">
-                            <div>
-                                <div class="policy-title">Un Singur Tip</div>
-                                <div class="policy-description">Permite doar un tip de produs pe nivel</div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                
-                <!-- Traditional Level Settings -->
-                <div class="settings-section" id="traditional-settings-${levelNumber}">
-                    <h5>
-                        <span class="material-symbols-outlined">straighten</span>
-                        Setări Nivel
-                    </h5>
-                    <div class="form-group">
-                        <label class="form-label">Înălțime nivel (mm)</label>
-                        <input type="number" name="level_${levelNumber}_height" id="level_${levelNumber}_height" 
-                               class="form-control" value="300" min="100" max="2000">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Capacitate greutate (kg)</label>
-                        <input type="number" name="level_${levelNumber}_weight" id="level_${levelNumber}_weight" 
-                               class="form-control" value="50" min="1" max="500" step="0.1">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Capacitate articole</label>
-                        <input type="number" name="level_${levelNumber}_capacity" id="level_${levelNumber}_capacity" 
-                               class="form-control" placeholder="Opțional">
-                    </div>
-                    <div class="form-group" id="single-product-settings-${levelNumber}" style="display: none;">
-                        <label class="form-label">Produs dedicat</label>
-                        <select name="level_${levelNumber}_dedicated_product" id="level_${levelNumber}_dedicated_product" 
-                                class="form-control">
-                            <option value="">-- Selectează produs --</option>
-                        </select>
-                    </div>
-                </div>
-                
-                <!-- Subdivisions Management Section -->
-                <div class="settings-section subdivisions-section" id="subdivisions-section-${levelNumber}" style="display: none;">
-                    <h5>
-                        <span class="material-symbols-outlined">grid_view</span>
-                        Gestiune Subdiviziuni
-                    </h5>
-                    <div class="subdivisions-list" id="subdivisions-list-${levelNumber}">
-                        <!-- Subdivisions will be added here -->
-                    </div>
-                    <button type="button" class="btn btn-sm btn-primary" onclick="addSubdivision(${levelNumber})">
-                        <span class="material-symbols-outlined">add</span>
-                        Adaugă Subdiviziune
-                    </button>
-                </div>
-            </div>
-        </div>
-    `;
-    
-    return levelDiv;
-}
-
-function toggleSubdivisions(levelNumber) {
-    const enableCheckbox = document.getElementById(`level_${levelNumber}_enable_subdivisions`);
-    const subdivisionSection = document.getElementById(`subdivisions-section-${levelNumber}`);
-    const traditionalSettings = document.getElementById(`traditional-settings-${levelNumber}`);
-    const storagePolicy = document.getElementById(`storage-policy-${levelNumber}`);
-    
-    if (enableCheckbox.checked) {
-        // Enable subdivisions mode
-        subdivisionSection.style.display = 'block';
-        
-        // Force Multiple Products policy and disable other options
-        const multipleProductsRadio = document.querySelector(`input[name="level_${levelNumber}_storage_policy"][value="multiple_products"]`);
-        if (multipleProductsRadio) {
-            multipleProductsRadio.checked = true;
-        }
-        
-        // Disable policy selection
-        const policyOptions = storagePolicy.querySelectorAll('.policy-option');
-        policyOptions.forEach((option, index) => {
-            if (index === 0) { // Multiple products option
-                option.classList.add('selected');
-                option.style.opacity = '1';
-            } else {
-                option.classList.remove('selected');
-                option.style.opacity = '0.5';
-                option.style.pointerEvents = 'none';
-            }
-        });
-        
-        // Hide single product settings
-        const singleProductSettings = document.getElementById(`single-product-settings-${levelNumber}`);
-        if (singleProductSettings) {
-            singleProductSettings.style.display = 'none';
-        }
-        
-        // Add policy note
-        if (!document.getElementById(`subdivision-policy-note-${levelNumber}`)) {
-            const note = document.createElement('div');
-            note.id = `subdivision-policy-note-${levelNumber}`;
-            note.className = 'form-help';
-            note.style.color = 'var(--success-color)';
-            note.innerHTML = '<span class="material-symbols-outlined">info</span> Politica "Multiple Produse" este activată automat pentru subdiviziuni';
-            storagePolicy.appendChild(note);
-        }
-        
-        // Initialize with one subdivision if none exist
-        const subdivisionsList = document.getElementById(`subdivisions-list-${levelNumber}`);
-        if (subdivisionsList.children.length === 0) {
-            addSubdivision(levelNumber);
-        }
-        
-    } else {
-        // Disable subdivisions mode
-        subdivisionSection.style.display = 'none';
-        
-        // Re-enable policy selection
-        const policyOptions = storagePolicy.querySelectorAll('.policy-option');
-        policyOptions.forEach(option => {
-            option.style.opacity = '1';
-            option.style.pointerEvents = 'auto';
-        });
-        
-        // Remove policy note
-        const note = document.getElementById(`subdivision-policy-note-${levelNumber}`);
-        if (note) {
-            note.remove();
-        }
-        
-        // Clear all subdivisions
-        clearSubdivisions(levelNumber);
-    }
-}
-
-function addSubdivision(levelNumber) {
-    const subdivisionsList = document.getElementById(`subdivisions-list-${levelNumber}`);
-    const subdivisionIndex = subdivisionsList.children.length + 1;
-    
-    const subdivisionDiv = document.createElement('div');
-    subdivisionDiv.className = 'subdivision-item';
-    subdivisionDiv.setAttribute('data-subdivision', subdivisionIndex);
-    
-    subdivisionDiv.innerHTML = `
-        <div class="subdivision-header">
-            <span class="subdivision-title">
-                <span class="material-symbols-outlined">view_module</span>
-                Subdiviziunea ${subdivisionIndex}
-            </span>
-            <button type="button" class="btn btn-sm btn-danger" onclick="removeSubdivision(${levelNumber}, ${subdivisionIndex})">
-                <span class="material-symbols-outlined">delete</span>
-            </button>
-        </div>
-        <div class="subdivision-content">
-            <div class="form-row">
-                <div class="form-group">
-                    <label class="form-label">Produs *</label>
-                    <div class="product-search-container">
-                        <input type="hidden" 
-                               name="level_${levelNumber}_subdivision_${subdivisionIndex}_product_id" 
-                               id="level_${levelNumber}_subdivision_${subdivisionIndex}_product_id">
-                        <input type="text" 
-                               class="form-control product-search-input" 
-                               id="level_${levelNumber}_subdivision_${subdivisionIndex}_product_search"
-                               placeholder="Caută produs..." 
-                               autocomplete="off"
-                               onkeyup="searchProductsForSubdivision(${levelNumber}, ${subdivisionIndex}, this.value)"
-                               onfocus="showProductResults(${levelNumber}, ${subdivisionIndex})">
-                        <div class="product-search-results" 
-                             id="level_${levelNumber}_subdivision_${subdivisionIndex}_results"
-                             style="display: none;"></div>
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Capacitate articole *</label>
-                    <input type="number" 
-                           name="level_${levelNumber}_subdivision_${subdivisionIndex}_capacity" 
-                           id="level_${levelNumber}_subdivision_${subdivisionIndex}_capacity"
-                           class="form-control" 
-                           min="1" 
-                           placeholder="Nr. articole"
-                           required>
-                </div>
-            </div>
-            <div class="form-group">
-                <label class="form-label">Notițe</label>
-                <textarea name="level_${levelNumber}_subdivision_${subdivisionIndex}_notes" 
-                          class="form-control" 
-                          rows="2" 
-                          placeholder="Notițe opționale pentru această subdiviziune"></textarea>
-            </div>
-        </div>
-    `;
-    
-    subdivisionsList.appendChild(subdivisionDiv);
-    
-    // Focus on product search
-    setTimeout(() => {
-        const searchInput = document.getElementById(`level_${levelNumber}_subdivision_${subdivisionIndex}_product_search`);
-        if (searchInput) {
-            searchInput.focus();
-        }
-    }, 100);
-}
-
-/**
- * Remove a subdivision
- */
-function removeSubdivision(levelNumber, subdivisionIndex) {
-    if (!confirm('Ești sigur că vrei să ștergi această subdiviziune?')) {
-        return;
-    }
-    
-    const subdivisionDiv = document.querySelector(`#subdivisions-list-${levelNumber} [data-subdivision="${subdivisionIndex}"]`);
-    if (subdivisionDiv) {
-        subdivisionDiv.remove();
-    }
-    
-    // Renumber remaining subdivisions
-    renumberSubdivisions(levelNumber);
-}
-
-/**
- * Clear all subdivisions
- */
-function clearSubdivisions(levelNumber) {
-    const subdivisionsList = document.getElementById(`subdivisions-list-${levelNumber}`);
-    if (subdivisionsList) {
-        subdivisionsList.innerHTML = '';
-    }
-}
-
-/**
- * Renumber subdivisions after removal
- */
-function renumberSubdivisions(levelNumber) {
-    const subdivisionsList = document.getElementById(`subdivisions-list-${levelNumber}`);
-    const subdivisions = subdivisionsList.querySelectorAll('.subdivision-item');
-    
-    subdivisions.forEach((subdivision, index) => {
-        const newIndex = index + 1;
-        const oldIndex = subdivision.getAttribute('data-subdivision');
-        
-        // Update data attribute
-        subdivision.setAttribute('data-subdivision', newIndex);
-        
-        // Update title
-        const title = subdivision.querySelector('.subdivision-title');
-        if (title) {
-            title.innerHTML = `<span class="material-symbols-outlined">view_module</span> Subdiviziunea ${newIndex}`;
-        }
-        
-        // Update all IDs and names
-        const elements = subdivision.querySelectorAll('[id*="_subdivision_"], [name*="_subdivision_"]');
-        elements.forEach(element => {
-            if (element.id) {
-                element.id = element.id.replace(`_subdivision_${oldIndex}_`, `_subdivision_${newIndex}_`);
-            }
-            if (element.name) {
-                element.name = element.name.replace(`_subdivision_${oldIndex}_`, `_subdivision_${newIndex}_`);
-            }
-        });
-        
-        // Update onclick attributes
-        const deleteBtn = subdivision.querySelector('.btn-danger');
-        if (deleteBtn) {
-            deleteBtn.setAttribute('onclick', `removeSubdivision(${levelNumber}, ${newIndex})`);
-        }
-        
-        // Update search function calls
-        const searchInput = subdivision.querySelector('.product-search-input');
-        if (searchInput) {
-            searchInput.setAttribute('onkeyup', `searchProductsForSubdivision(${levelNumber}, ${newIndex}, this.value)`);
-            searchInput.setAttribute('onfocus', `showProductResults(${levelNumber}, ${newIndex})`);
-        }
-    });
-}
-
-let searchTimeouts = {};
-let productSearchCache = {};
-
-/**
- * Search products for subdivision
- */
-function searchProductsForSubdivision(levelNumber, subdivisionIndex, query) {
-    const timeoutKey = `${levelNumber}_${subdivisionIndex}`;
-    
-    // Clear previous timeout
-    if (searchTimeouts[timeoutKey]) {
-        clearTimeout(searchTimeouts[timeoutKey]);
-    }
-    
-    // Set new timeout to avoid too many requests
-    searchTimeouts[timeoutKey] = setTimeout(async () => {
-        if (query.length < 2) {
-            hideProductResults(levelNumber, subdivisionIndex);
-            return;
-        }
-        
-        try {
-            // Check cache first
-            if (productSearchCache[query]) {
-                displayProductResults(levelNumber, subdivisionIndex, productSearchCache[query]);
-                return;
-            }
-            
-            const response = await fetch(`api/products.php?search=${encodeURIComponent(query)}&limit=10`);
-            const products = await response.json();
-            
-            if (response.ok && Array.isArray(products)) {
-                productSearchCache[query] = products;
-                displayProductResults(levelNumber, subdivisionIndex, products);
-            }
-        } catch (error) {
-            console.error('Product search error:', error);
-        }
-    }, 300);
-}
-
-/**
- * Display product search results
- */
-function displayProductResults(levelNumber, subdivisionIndex, products) {
-    const resultsContainer = document.getElementById(`level_${levelNumber}_subdivision_${subdivisionIndex}_results`);
-    if (!resultsContainer) return;
-    
-    if (products.length === 0) {
-        resultsContainer.innerHTML = '<div class="search-result-item no-results">Nu s-au găsit produse</div>';
-    } else {
-        resultsContainer.innerHTML = products.map(product => `
-            <div class="search-result-item" onclick="selectProduct(${levelNumber}, ${subdivisionIndex}, ${product.id}, '${escapeHtml(product.name)}')">
-                <div class="product-name">${escapeHtml(product.name)}</div>
-                <div class="product-details">${escapeHtml(product.code)} - ${escapeHtml(product.category)}</div>
-            </div>
-        `).join('');
-    }
-    
-    resultsContainer.style.display = 'block';
-}
-
-/**
- * Select a product for subdivision
- */
-function selectProduct(levelNumber, subdivisionIndex, productId, productName) {
-    const hiddenInput = document.getElementById(`level_${levelNumber}_subdivision_${subdivisionIndex}_product_id`);
-    const searchInput = document.getElementById(`level_${levelNumber}_subdivision_${subdivisionIndex}_product_search`);
-    
-    if (hiddenInput) hiddenInput.value = productId;
-    if (searchInput) searchInput.value = productName;
-    
-    hideProductResults(levelNumber, subdivisionIndex);
-}
-
-/**
- * Show product results
- */
-function showProductResults(levelNumber, subdivisionIndex) {
-    const resultsContainer = document.getElementById(`level_${levelNumber}_subdivision_${subdivisionIndex}_results`);
-    const searchInput = document.getElementById(`level_${levelNumber}_subdivision_${subdivisionIndex}_product_search`);
-    
-    if (resultsContainer && searchInput && searchInput.value.length >= 2) {
-        resultsContainer.style.display = 'block';
-    }
-}
-
-/**
- * Hide product results
- */
-function hideProductResults(levelNumber, subdivisionIndex) {
-    const resultsContainer = document.getElementById(`level_${levelNumber}_subdivision_${subdivisionIndex}_results`);
-    if (resultsContainer) {
-        resultsContainer.style.display = 'none';
-    }
-}
-
-/**
- * Escape HTML for security
- */
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-}
-
-// ==============================================================================
-// 5. FORM SUBMISSION DATA COLLECTION
-// ==============================================================================
-
-/**
- * Collect subdivision data for form submission
- * This should be called in the existing form submission handler
- */
-function collectSubdivisionData() {
-    const subdivisionData = {};
-    
-    for (let level = 1; level <= currentLevels; level++) {
-        const enableCheckbox = document.getElementById(`level_${level}_enable_subdivisions`);
-        
-        if (enableCheckbox && enableCheckbox.checked) {
-            const subdivisionsList = document.getElementById(`subdivisions-list-${level}`);
-            const subdivisions = subdivisionsList.querySelectorAll('.subdivision-item');
-            
-            subdivisionData[level] = {
-                enabled: true,
-                subdivisions: []
-            };
-            
-            subdivisions.forEach((subdivision, index) => {
-                const subdivisionIndex = index + 1;
-                const productId = document.getElementById(`level_${level}_subdivision_${subdivisionIndex}_product_id`)?.value;
-                const capacity = document.getElementById(`level_${level}_subdivision_${subdivisionIndex}_capacity`)?.value;
-                const notes = document.querySelector(`[name="level_${level}_subdivision_${subdivisionIndex}_notes"]`)?.value;
-                
-                if (productId && capacity) {
-                    subdivisionData[level].subdivisions.push({
-                        product_id: productId,
-                        capacity: parseInt(capacity),
-                        notes: notes || ''
-                    });
-                }
-            });
-        } else {
-            subdivisionData[level] = {
-                enabled: false,
-                subdivisions: []
-            };
-        }
-    }
-    
-    return subdivisionData;
-}
-
-/**
- * Toggle level visibility
- * @param {number} levelNumber - Level number
- */
-function toggleLevel(levelNumber) {
-    const header = event.currentTarget;
-    const content = document.getElementById(`level-content-${levelNumber}`);
-    const toggle = header.querySelector('.level-toggle');
-    
-    if (content.classList.contains('active')) {
-        content.classList.remove('active');
-        header.classList.remove('active');
-        toggle.style.transform = 'rotate(0deg)';
-    } else {
-        content.classList.add('active');
-        header.classList.add('active');
-        toggle.style.transform = 'rotate(180deg)';
-    }
-}
-
-/**
- * Select storage policy for a level
- * @param {number} levelNumber - Level number
- * @param {string} policy - Policy type
- */
-function selectStoragePolicy(levelNumber, policy) {
-    const container = document.querySelector(`#level-content-${levelNumber} .storage-policy-options`);
-    const options = container.querySelectorAll('.policy-option');
-    
-    options.forEach(option => option.classList.remove('selected'));
-    event.currentTarget.classList.add('selected');
-    
-    // Update radio button
-    const radio = event.currentTarget.querySelector('input[type="radio"]');
-    radio.checked = true;
-}
-
-/**
- * Distribute level heights
- */
-function distributeLevelHeights() {
-    const totalHeight = parseInt(document.getElementById('height_mm')?.value) || 900;
-    const levelHeight = Math.floor(totalHeight / currentLevels);
-    
-    for (let level = 1; level <= currentLevels; level++) {
-        const input = document.getElementById(`level_${level}_height`);
-        if (input) {
-            input.value = levelHeight;
-        }
-    }
-}
-
-/**
- * Distribute weight capacity
- */
-function distributeWeightCapacity() {
-    const totalWeight = parseFloat(document.getElementById('max_weight_kg')?.value) || 150;
-    const levelWeight = (totalWeight / currentLevels).toFixed(1);
-    
-    for (let level = 1; level <= currentLevels; level++) {
-        const input = document.getElementById(`level_${level}_weight`);
-        if (input) {
-            input.value = levelWeight;
-        }
-    }
-}
-
-function distributeItemCapacity() {
-    const totalCap = parseInt(document.getElementById('capacity')?.value) || 0;
-    const perLevel = currentLevels > 0 ? Math.floor(totalCap / currentLevels) : 0;
-    for (let level = 1; level <= currentLevels; level++) {
-        const input = document.getElementById(`level_${level}_capacity`);
-        if (input) {
-            input.value = perLevel;
-        }
-    }
-}
-
-function changeSubdivision(levelId, delta) {
-    const input = document.getElementById(`level_${levelId}_subdivisions`);
-    if (!input) return;
-    let value = parseInt(input.value) || 1;
-    value += delta;
-    if (value < 1) value = 1;
-    input.value = value;
-}
-
-function generateInternalProductOptions() {
-    if (typeof window.allProducts !== 'undefined') {
-        let options = '<option value="">-- Produs intern --</option>';
-        window.allProducts.forEach(p => {
-            options += `<option value="${p.product_id}">${escapeHtml(p.name)} (${escapeHtml(p.sku)})</option>`;
-        });
-        return options;
-    }
-    return '<option value="">-- Produs intern --</option>';
-}
-
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-}
-
-/**
- * Distribute dimensions based on input
- * @param {string} inputId - Input element ID
- */
-function distributeDimensions(inputId) {
-    if (inputId === 'height_mm') {
-        distributeLevelHeights();
-    } else if (inputId === 'max_weight_kg') {
-        distributeWeightCapacity();
-    } else if (inputId === 'capacity') {
-         distributeItemCapacity();
-    }
-}
-
-/**
- * Get level name based on number
- * @param {number} levelNumber - Level number
- * @returns {string} - Level name
- */
-function getLevelName(levelNumber) {
-    switch (levelNumber) {
-        case 1: return 'Jos';
-        case 2: return 'Mijloc';
-        case 3: return 'Sus';
-        default: return `Nivel ${levelNumber}`;
-    }
-}
-
-/**
- * Enhanced openCreateModal to support level settings
- */
-function openCreateModal() {
-    document.getElementById('modalTitle').textContent = 'Adaugă Locație';
-    document.getElementById('formAction').value = 'create';
-    document.getElementById('locationId').value = '';
-    document.getElementById('submitBtn').textContent = 'Salvează';
-    
-    // Clear form and reset zone input styling
-    document.getElementById('locationForm').reset();
-    const zoneInput = document.getElementById('zone');
-    if (zoneInput) {
-        zoneInput.style.backgroundColor = '';
-    }
-    
-    // Clear any existing auto-fill messages
-    const existingMessage = document.querySelector('.zone-autofill-message');
-    if (existingMessage) {
-        existingMessage.remove();
-    }
-    
-    // Set default levels
-    const levelsField = document.getElementById('levels');
-    if (levelsField) levelsField.value = '3';
-
-    // Update QR code after a short delay to ensure form is reset
-    setTimeout(() => {
-        updateLocationQr();
-    }, 100);
-    
-    // Initialize level settings if available
-    if (levelSettingsEnabled) {
-        currentLevels = 3;
-        generateLevelSettings();
-        distributeLevelHeights();
-        distributeWeightCapacity();
-        distributeItemCapacity();
-        
-        // Switch to basic tab
-        switchLocationTab('basic');
-    }
-    
-    // Show modal
-    document.getElementById('locationModal').classList.add('show');
-    
-    // Focus on location code input
-    setTimeout(() => {
-        const locationCodeInput = document.getElementById('location_code');
-        if (locationCodeInput) {
-            locationCodeInput.focus();
-        }
-    }, 100);
-}
-
-function openEditModalById(id) {
-    fetch('locations.php', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({ action: 'get_location_details', id })
-    })
-    .then(resp => resp.json())
-    .then(data => {
-        if (data.success && data.location) {
-            openEditModal(data.location);
-        } else {
-            alert(data.message || 'Eroare la încărcarea detaliilor locației');
-        }
-    })
-    .catch(err => {
-        console.error('Failed to load location details', err);
-        alert('Eroare la încărcarea detaliilor locației');
-    });
-}
-
-/**
- * Populate level settings from loaded data
- * @param {Array} levelSettings - Level settings data
- */
-function populateLevelSettings(levelSettings) {
-    levelSettings.forEach(setting => {
-        const level = setting.level_number;
-        
-        // Storage policy
-        const policyRadio = document.querySelector(`input[name="level_${level}_storage_policy"][value="${setting.storage_policy}"]`);
-        if (policyRadio) {
-            policyRadio.checked = true;
-            selectStoragePolicy(level, setting.storage_policy);
-        }
-        
-        // Dimensions
-        const heightInput = document.getElementById(`level_${level}_height`);
-        if (heightInput) heightInput.value = setting.height_mm || 300;
-        
-        const weightInput = document.getElementById(`level_${level}_weight`);
-        if (weightInput) weightInput.value = setting.max_weight_kg || 50;
-
-        const capacityInput = document.getElementById(`level_${level}_capacity`);
-        if (capacityInput) capacityInput.value = setting.items_capacity || '';
-
-        const productSelect = document.getElementById(`level_${level}_dedicated_product`);
-        if (productSelect) productSelect.value = setting.dedicated_product_id || '';
-
-        const allowOthersCheckbox = document.getElementById(`level_${level}_allow_others`);
-        if (allowOthersCheckbox) allowOthersCheckbox.checked = setting.allow_other_products !== false;
-        
-        // Restrictions
-        const volumeMinInput = document.querySelector(`input[name="level_${level}_volume_min"]`);
-        if (volumeMinInput) volumeMinInput.value = setting.volume_min_liters || '';
-        
-        const volumeMaxInput = document.querySelector(`input[name="level_${level}_volume_max"]`);
-        if (volumeMaxInput) volumeMaxInput.value = setting.volume_max_liters || '';
-        
-        // Auto repartition
-        const autoRepartitionCheckbox = document.getElementById(`level_${level}_auto_repartition`);
-        if (autoRepartitionCheckbox) autoRepartitionCheckbox.checked = setting.enable_auto_repartition || false;
-        
-        const thresholdInput = document.querySelector(`input[name="level_${level}_threshold"]`);
-        if (thresholdInput) thresholdInput.value = setting.repartition_trigger_threshold || 80;
-        
-        const priorityInput = document.querySelector(`input[name="level_${level}_priority"]`);
-        if (priorityInput) priorityInput.value = setting.priority_order || 1;
-
-        const subdivInput = document.getElementById(`level_${level}_subdivisions`);
-        if (subdivInput) subdivInput.value = setting.subdivision_count || 1;
-    });
-}
-
-// =================== PRESERVE ALL EXISTING FUNCTIONS ===================
-
-function extractZoneFromCode() {
-    const locationCode = document.getElementById('location_code').value.trim().toUpperCase();
-    const zoneInput = document.getElementById('zone');
-    
-    if (!locationCode || !zoneInput) return;
-    
-    // Extract zone from location code (before first dash)
-    const parts = locationCode.split('-');
-    if (parts.length >= 2) {
-        const zone = parts[0];
-        
-        if (zone && zone !== zoneInput.value) {
-            zoneInput.value = zone;
-            zoneInput.style.backgroundColor = 'rgba(25, 135, 84, 0.1)';
-            zoneInput.style.borderColor = 'var(--success-color)';
-            
-            showZoneAutoFill(zone);
-            
-            setTimeout(() => {
-                zoneInput.style.backgroundColor = '';
-                zoneInput.style.borderColor = '';
-            }, 2000);
-        }
-    }
-}
-
-function initializeQRCode() {
-    const qrCanvas = document.getElementById('locationQrCanvas');
-    
-    if (!qrCanvas) {
-        console.error('QR Canvas not found');
-        return;
-    }
-    
-    if (!window.QRious) {
-        console.error('QRious library not loaded');
-        return;
-    }
-    
-    try {
-        // Get initial value from input
-        const locationCodeInput = document.getElementById('location_code');
-        const initialValue = locationCodeInput ? locationCodeInput.value.trim() : '';
-        
-        // Initialize QRious
-        qr = new QRious({ 
-            element: qrCanvas, 
-            size: 150, 
-            value: initialValue || 'EMPTY',
-            foreground: '#000000',
-            background: '#ffffff'
-        });
-        
-        console.log('QR initialized with value:', initialValue || 'EMPTY');
-        
-    } catch (error) {
-        console.error('Error initializing QR code:', error);
-    }
-}
-
-function setupEventListeners() {
-    // Location code input listener
-    const locationCodeInput = document.getElementById('location_code');
-    const zoneInput = document.getElementById('zone');
-    
-    if (locationCodeInput) {
-        locationCodeInput.addEventListener('input', function() {
-            const code = this.value.trim();
-            console.log('Location code changed to:', code);
-            
-            // Update QR code immediately
-            updateLocationQr();
-            
-            // Also update zone extraction
-            if (zoneInput && code && code.includes('-')) {
-                const extractedZone = code.split('-')[0].toUpperCase();
-                zoneInput.value = extractedZone;
-                zoneInput.style.backgroundColor = 'var(--success-color-light, #d4edda)';
-                showZoneAutoFill(extractedZone);
-            } else if (zoneInput) {
-                zoneInput.value = '';
-                zoneInput.style.backgroundColor = '';
-            }
-        });
-    }
-    
-    // Levels input listener
-    const levelsInput = document.getElementById('levels');
-    if (levelsInput) {
-        levelsInput.addEventListener('change', updateLocationQr);
-    }
-}
-
-function updateLocationQr() {
-    if (!qr) {
-        console.error('QR object not initialized, trying to reinitialize...');
-        initializeQRCode();
-        return;
-    }
-    
-    const codeInput = document.getElementById('location_code');
-    const code = codeInput ? codeInput.value.trim() : '';
-    
-    console.log('Updating QR with code:', code);
-    
-    try {
-        if (code && code.length > 0) {
-            qr.set({ value: code });
-            console.log('✅ QR updated successfully with:', code);
-        } else {
-            qr.set({ value: 'EMPTY' });
-            console.log('QR updated with EMPTY placeholder');
-        }
-    } catch (error) {
-        console.error('Error updating QR code:', error);
-    }
-}
-
-function downloadLocationQr() {
-    const canvas = document.getElementById('locationQrCanvas');
-    if (!canvas) {
-        console.error('Canvas not found for download');
-        return;
-    }
-    
-    const codeInput = document.getElementById('location_code');
-    const code = codeInput ? codeInput.value.trim() : 'location';
-    
-    try {
-        const link = document.createElement('a');
-        link.href = canvas.toDataURL('image/png');
-        link.download = `${code}_qr.png`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        console.log('QR download initiated for:', code);
-    } catch (error) {
-        console.error('Error downloading QR code:', error);
-    }
-}
-
-/**
- * Generate QR images for all levels after location creation
- */
-function generateLevelQRImages(locationId, locationCode, levelNames) {
-    Object.entries(levelNames).forEach(([level, name]) => {
-        const levelCode = `${locationCode}\n${name}`;
-
-        // Create canvas for this level
-        const canvas = document.createElement('canvas');
-        const qr = new QRious({
-            element: canvas,
-            size: 150,
-            value: levelCode,
-            foreground: '#000000',
-            background: '#ffffff'
-        });
-        
-        // Convert to blob and save (you can implement saving logic here)
-        canvas.toBlob(function(blob) {
-            // Create download link for each level QR
-            const link = document.createElement('a');
-            link.href = URL.createObjectURL(blob);
-            link.download = `${locationCode}_level_${level}_qr.png`;
-            
-            // Optionally auto-download or just log
-            console.log(`QR code generated for ${levelCode}`);
-            
-            // You could also send this to server to save the file
-            uploadQRCodeToServer(blob, locationId, level);
-        });
-    });
-}
-
-function showZoneAutoFill(zone) {
-    const existingMessage = document.querySelector('.zone-autofill-message');
-    if (existingMessage) {
-        existingMessage.remove();
-    }
-    
-    const zoneInput = document.getElementById('zone');
-    const message = document.createElement('small');
-    message.className = 'zone-autofill-message';
-    message.style.color = 'var(--success-color, #198754)';
-    message.style.fontSize = '0.75rem';
-    message.style.marginTop = '0.25rem';
-    message.style.display = 'block';
-    message.textContent = `✓ Zonă detectată automat: ${zone}`;
-    
-    zoneInput.parentNode.appendChild(message);
-    
-    // Remove message after 3 seconds
-    setTimeout(() => {
-        if (message.parentNode) {
-            message.parentNode.removeChild(message);
-        }
-    }, 3000);
-}
-
-function closeModal() {
-    document.getElementById('locationModal').classList.remove('show');
-    
-    // Clear any existing auto-fill messages
-    const existingMessage = document.querySelector('.zone-autofill-message');
-    if (existingMessage) {
-        existingMessage.remove();
-    }
-}
-
-function openDeleteModal(locationId, locationCode) {
-    document.getElementById('deleteLocationId').value = locationId;
-    document.getElementById('deleteLocationCode').textContent = locationCode;
-    document.getElementById('deleteModal').classList.add('show');
-}
-
-function closeDeleteModal() {
-    document.getElementById('deleteModal').classList.remove('show');
-}
-
-// Close modals when clicking outside
-window.onclick = function(event) {
-    const locationModal = document.getElementById('locationModal');
-    const deleteModal = document.getElementById('deleteModal');
-    
-    if (event.target === locationModal) {
-        closeModal();
-    }
-    if (event.target === deleteModal) {
-        closeDeleteModal();
-    }
-}
-
-// Close modals with Escape key
-document.addEventListener('keydown', function(event) {
-    if (event.key === 'Escape') {
-        closeModal();
-        closeDeleteModal();
-    }
-});
-
-// Enhanced form validation with level settings support
-document.getElementById('locationForm')?.addEventListener('submit', function(event) {
-    const locationCode = document.getElementById('location_code').value.trim();
-    const zone = document.getElementById('zone').value.trim();
-    const type = document.getElementById('type').value;
-    
-    if (!locationCode || !zone) {
-        event.preventDefault();
-        alert('Codul locației și zona sunt obligatorii!');
-        return false;
-    }
-    
-    // Additional validation for level settings if enabled
-    if (levelSettingsEnabled && currentLevels > 0) {
-        let validationErrors = [];
-        
-        for (let level = 1; level <= currentLevels; level++) {
-            const heightInput = document.getElementById(`level_${level}_height`);
-            const weightInput = document.getElementById(`level_${level}_weight`);
-            
-            if (heightInput && parseInt(heightInput.value) < 100) {
-                validationErrors.push(`Înălțimea nivelului ${level} trebuie să fie cel puțin 100mm`);
-            }
-            
-            if (weightInput && parseFloat(weightInput.value) < 1) {
-                validationErrors.push(`Capacitatea de greutate a nivelului ${level} trebuie să fie cel puțin 1kg`);
-            }
-        }
-        
-        if (validationErrors.length > 0) {
-            event.preventDefault();
-            alert('Erori de validare:\n' + validationErrors.join('\n'));
-            return false;
-        }
-
-        // Collect level settings data and store in hidden field
-        const levelData = {};
-        for (let level = 1; level <= currentLevels; level++) {
-            levelData[level] = {
-                storage_policy: document.querySelector(`input[name="level_${level}_storage_policy"]:checked`)?.value || 'multiple_products',
-                height_mm: parseInt(document.getElementById(`level_${level}_height`)?.value) || 0,
-                max_weight_kg: parseFloat(document.getElementById(`level_${level}_weight`)?.value) || 0,
-                items_capacity: parseInt(document.getElementById(`level_${level}_capacity`)?.value) || null,
-                dedicated_product_id: document.getElementById(`level_${level}_dedicated_product`)?.value || null,
-                allow_other_products: document.getElementById(`level_${level}_allow_others`)?.checked ?? true,
-                volume_min_liters: parseFloat(document.querySelector(`input[name="level_${level}_volume_min"]`)?.value) || null,
-                volume_max_liters: parseFloat(document.querySelector(`input[name="level_${level}_volume_max"]`)?.value) || null,
-                enable_auto_repartition: document.getElementById(`level_${level}_auto_repartition`)?.checked || false,
-                repartition_trigger_threshold: parseInt(document.querySelector(`input[name="level_${level}_threshold"]`)?.value) || 80,
-                priority_order: parseInt(document.querySelector(`input[name="level_${level}_priority"]`)?.value) || 1
-            };
-        }
-        const hiddenField = document.getElementById('level_settings_data');
-        if (hiddenField) {
-            hiddenField.value = JSON.stringify(levelData);
-        }
-    }
-
-    return true;
-});
-
-/**
- * Initialize the dynamic level system
- */
-function initializeDynamicLevelSystem() {
-    // Remove the old level settings functionality
-    levelSettingsEnabled = true;
-    
-    // Clear any existing level settings
-    const levelSettingsSection = document.getElementById('level-settings-section');
-    if (levelSettingsSection) {
-        levelSettingsSection.remove();
-    }
-    
-    // Create the dynamic level management container
-    createDynamicLevelContainer();
-    
-    // Update modal structure
-    updateModalStructure();
-}
-
-/**
- * Create the dynamic level management container
- */
-function createDynamicLevelContainer() {
-    const formElement = document.getElementById('locationForm');
-    if (!formElement) return;
-    
-    // Find where to insert the new container (after basic fields)
-    const insertAfter = document.querySelector('.form-row:last-of-type') || 
-                       document.getElementById('description')?.closest('.form-group');
-    
-    if (!insertAfter) return;
-    
-    // Create the dynamic levels container
-    const dynamicContainer = document.createElement('div');
-    dynamicContainer.id = 'dynamic-levels-section';
-    dynamicContainer.className = 'form-section';
-    dynamicContainer.style.marginTop = '2rem';
-    
-    dynamicContainer.innerHTML = `
-        <div class="section-header">
-            <h4 class="form-section-title">
-                <span class="material-symbols-outlined">layers</span>
-                Configurare Niveluri
-            </h4>
-            <button type="button" class="btn btn-success add-level-btn" onclick="addNewLevel()">
-                <span class="material-symbols-outlined">add</span>
-                Adaugă Nivel
-            </button>
-        </div>
-        <div id="levels-container" class="levels-container">
-            <!-- Dynamic levels will be added here -->
-        </div>
-        <div class="levels-summary" id="levels-summary" style="display: none;">
-            <small class="text-muted">
-                <span class="material-symbols-outlined">info</span>
-                Total niveluri: <span id="total-levels-count">0</span>
-            </small>
-        </div>
-    `;
-    
-    // Insert after the last form row
-    insertAfter.parentNode.insertBefore(dynamicContainer, insertAfter.nextSibling);
-}
-
-/**
- * Add a new level with full configuration
- */
-function addNewLevel() {
-    levelCounter++;
-    const levelId = `level_${levelCounter}`;
-    
-    // Create level object
-    const newLevel = {
-        id: levelCounter,
-        name: `Nivel ${levelCounter}`,
-        position: getLevelPosition(levelCounter)
-    };
-    
-    createdLevels.push(newLevel);
-    
-    // Create the level HTML
-    const levelHTML = createLevelHTML(newLevel);
-    
-    // Add to container
-    const container = document.getElementById('levels-container');
-    const levelElement = document.createElement('div');
-    levelElement.className = 'dynamic-level-item';
-    levelElement.id = `level-item-${levelCounter}`;
-    levelElement.innerHTML = levelHTML;
-    
-    container.appendChild(levelElement);
-    
-    // Update summary
-    updateLevelsSummary();
-    
-    // Initialize level interactions
-    initializeLevelInteractions(levelCounter);
-    
-    // Scroll to new level
-    levelElement.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    
-    // Focus on level name input
-    setTimeout(() => {
-        const nameInput = levelElement.querySelector('.level-name-input');
-        if (nameInput) nameInput.focus();
-    }, 300);
-}
-
-/**
- * Create HTML for a single level
- */
-function createLevelHTML(level) {
-    return `
-        <div class="level-card" data-level-id="${level.id}">
-            <div class="level-header">
-                <div class="level-header-content">
-                    <div class="level-icon">
-                        <span class="material-symbols-outlined">layers</span>
-                    </div>
-                    <div class="level-info">
-                        <input type="text" class="level-name-input" value="${level.name}" 
-                               placeholder="Nume nivel" onchange="updateLevelName(${level.id}, this.value)">
-                        <small class="level-position">${level.position}</small>
-                    </div>
-                </div>
-                <div class="level-actions">
-                    <button type="button" class="btn-icon btn-toggle" onclick="toggleLevel(${level.id})" 
-                            title="Expandează/Restrânge">
-                        <span class="material-symbols-outlined">expand_more</span>
-                    </button>
-                    <button type="button" class="btn-icon btn-danger" onclick="removeLevel(${level.id})" 
-                            title="Șterge nivel">
-                        <span class="material-symbols-outlined">delete</span>
-                    </button>
-                </div>
-            </div>
-            
-            <div class="level-content" id="level-content-${level.id}">
-                <div class="level-settings-grid">
-                    <!-- Storage Policy Section -->
-                    <div class="settings-section">
-                        <h5>
-                            <span class="material-symbols-outlined">policy</span>
-                            Politica de Stocare
-                        </h5>
-                        <div class="storage-policy-options">
-                            <label class="policy-option">
-                                <input type="radio" name="level_${level.id}_storage_policy" value="multiple_products" checked>
-                                <div class="policy-content">
-                                    <strong>Multiple Produse</strong>
-                                    <div class="policy-description">Permite stocarea mai multor tipuri de produse</div>
-                                </div>
-                            </label>
-                            <label class="policy-option">
-                            <input type="radio" name="level_${level.id}_storage_policy" value="single_product_type">
-                                <div class="policy-content">
-                                    <strong>Un Singur Tip</strong>
-                                    <div class="policy-description">Permite doar un tip de produs pe nivel</div>
-                                </div>
-                            </label>
-                            <label class="policy-option">
-                                <input type="radio" name="level_${level.id}_storage_policy" value="category_restricted">
-                                <div class="policy-content">
-                                    <strong>Restricționat pe Categorie</strong>
-                                    <div class="policy-description">Permite doar anumite categorii de produse</div>
-                                </div>
-                            </label>
-                        </div>
-                    </div>
-
-                    <!-- Dimensions Section -->
-                    <div class="settings-section">
-                        <h5>
-                            <span class="material-symbols-outlined">straighten</span>
-                            Dimensiuni Nivel
-                        </h5>
-                        <div class="form-grid">
-                            <div class="form-group">
-                                <label>Înălțime nivel (mm)</label>
-                                <input type="number" id="level_${level.id}_height" name="level_${level.id}_height" 
-                                       class="form-control" value="300" min="100" max="1000">
-                            </div>
-                            <div class="form-group">
-                                <label>Capacitate greutate (kg)</label>
-                                <input type="number" id="level_${level.id}_weight" name="level_${level.id}_weight" 
-                                       class="form-control" value="50" min="1" max="500" step="0.1">
-                            </div>
-                            <div class="form-group">
-                                <label>Articole pe nivel</label>
-                                <input type="number" id="level_${level.id}_capacity" name="level_${level.id}_capacity" 
-                                       class="form-control" min="1" placeholder="Nr. articole">
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Product Restrictions Section -->
-                    <div class="settings-section">
-                        <h5>
-                            <span class="material-symbols-outlined">tune</span>
-                            Restricții Produse
-                        </h5>
-                        <div class="form-grid">
-                            <div class="form-group">
-                                <label>Produs dedicat</label>
-                                <select id="level_${level.id}_dedicated_product" name="level_${level.id}_dedicated_product" 
-                                        class="form-control">
-                                    <option value="">-- Selectează produs --</option>
-                                    <!-- Products will be populated dynamically -->
-                                </select>
-                            </div>
-                            <div class="form-group form-check-container">
-                                <label class="form-check">
-                                    <input type="checkbox" id="level_${level.id}_allow_others" 
-                                           name="level_${level.id}_allow_others" checked>
-                                    Permite alte produse
-                                </label>
-                            </div>
-                            <div class="form-group">
-                                <label>Volum minim (L)</label>
-                                <input type="number" id="level_${level.id}_volume_min" name="level_${level.id}_volume_min" 
-                                       class="form-control" step="0.1" placeholder="Volum minim">
-                            </div>
-                            <div class="form-group">
-                                <label>Volum maxim (L)</label>
-                                <input type="number" id="level_${level.id}_volume_max" name="level_${level.id}_volume_max" 
-                                       class="form-control" step="0.1" placeholder="Volum maxim">
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Auto-Repartition Section -->
-                    <div class="settings-section">
-                        <h5>
-                            <span class="material-symbols-outlined">auto_fix_high</span>
-                            Repartizare Automată
-                        </h5>
-                        <div class="form-group form-check-container">
-                            <label class="form-check">
-                                <input type="checkbox" id="level_${level.id}_auto_repartition" 
-                                       name="level_${level.id}_auto_repartition">
-                                Activează pentru acest nivel
-                            </label>
-                        </div>
-                        <div class="form-grid">
-                            <div class="form-group">
-                                <label>Prag activare (%)</label>
-                                <input type="number" id="level_${level.id}_threshold" name="level_${level.id}_threshold" 
-                                       class="form-control" value="80" min="50" max="95">
-                            </div>
-                            <div class="form-group">
-                                <label>Prioritate nivel</label>
-                                <input type="number" id="level_${level.id}_priority" name="level_${level.id}_priority" 
-                                       class="form-control" value="1" min="1" max="10">
-                                <small class="form-help">Prioritate mai mare = plasat primul</small>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="settings-section">
-                        <h5>
-                            <span class="material-symbols-outlined">view_column</span>
-                            Subdiviziuni
-                        </h5>
-                        <div class="form-group">
-                            <label>Număr subdiviziuni</label>
-                            <div class="subdivision-control">
-                                <button type="button" class="btn btn-secondary btn-sm" onclick="changeSubdivision(${level.id}, -1)">-</button>
-                                <input type="number" id="level_${level.id}_subdivisions" name="level_${level.id}_subdivisions" class="form-control" value="1" min="1" style="width:60px;display:inline-block;margin:0 0.5rem;">
-                                <button type="button" class="btn btn-secondary btn-sm" onclick="changeSubdivision(${level.id}, 1)">+</button>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="settings-section">
-                        <h5>
-                            <span class="material-symbols-outlined">qr_code_2</span>
-                            Cod QR Nivel
-                        </h5>
-                        <div class="form-group">
-                            <img id="level_qr_img_${level.id}" src="" alt="QR Nivel" style="width:120px;height:120px;display:block;margin-bottom:0.5rem;" />
-                            <a id="level_qr_link_${level.id}" href="#" download class="btn btn-secondary btn-sm">Descarcă QR</a>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    `;
-}
-
-/**
- * Get level position description
- */
-function getLevelPosition(levelNumber) {
-    if (levelNumber === 1) return "Primul nivel";
-    if (levelNumber === 2) return "Al doilea nivel";
-    if (levelNumber === 3) return "Al treilea nivel";
-    return `Al ${levelNumber}-lea nivel`;
-}
-
-/**
- * Initialize interactions for a specific level
- */
-function initializeLevelInteractions(levelId) {
-    // Initialize storage policy radio buttons
-    const policyRadios = document.querySelectorAll(`input[name="level_${levelId}_storage_policy"]`);
-    policyRadios.forEach(radio => {
-        radio.addEventListener('change', function() {
-            updatePolicyOptions(levelId, this.value);
-        });
-    });
-    
-    // Initialize product selection
-    populateProductOptions(levelId);
-}
-
-/**
- * Update level name
- */
-function updateLevelName(levelId, newName) {
-    const level = createdLevels.find(l => l.id === levelId);
-    if (level) {
-        level.name = newName || `Nivel ${levelId}`;
-    }
-}
-
-/**
- * Toggle level content visibility
- */
-function toggleLevel(levelId) {
-    const content = document.getElementById(`level-content-${levelId}`);
-    const toggleBtn = document.querySelector(`[onclick="toggleLevel(${levelId})"] span`);
-    
-    if (content.style.display === 'none' || !content.style.display) {
-        content.style.display = 'block';
-        toggleBtn.textContent = 'expand_less';
-    } else {
-        content.style.display = 'none';
-        toggleBtn.textContent = 'expand_more';
-    }
-}
-
-/**
- * Remove a level
- */
-function removeLevel(levelId) {
-    if (confirm('Sigur doriți să ștergeți acest nivel?')) {
-        // Remove from DOM
-        const levelElement = document.getElementById(`level-item-${levelId}`);
-        if (levelElement) {
-            levelElement.remove();
-        }
-        
-        // Remove from array
-        createdLevels = createdLevels.filter(l => l.id !== levelId);
-        
-        // Update summary and counter
-        updateLevelsSummary();
-        levelCounter = createdLevels.length;
-    }
-}
-
-/**
- * Update policy options based on selection
- */
-function updatePolicyOptions(levelId, policy) {
-    const dedicatedProduct = document.getElementById(`level_${levelId}_dedicated_product`);
-    const allowOthers = document.getElementById(`level_${levelId}_allow_others`);
-    
-    if (policy === 'single_product_type') {
-        dedicatedProduct.required = true;
-        allowOthers.checked = false;
-        allowOthers.disabled = true;
-    } else {
-        dedicatedProduct.required = false;
-        allowOthers.disabled = false;
-    }
-}
-
-/**
- * Populate product options for a level
- */
-function populateProductOptions(levelId) {
-    const select = document.getElementById(`level_${levelId}_dedicated_product`);
-    if (!select) return;
-    
-    // Add default option
-    select.innerHTML = '<option value="">-- Selectează produs --</option>';
-    
-    // Add products if available
-    if (typeof window.allProducts !== 'undefined') {
-        window.allProducts.forEach(product => {
-            const option = document.createElement('option');
-            option.value = product.product_id;
-            option.textContent = `${product.name} (${product.sku})`;
-            select.appendChild(option);
-        });
-    }
-}
-
-/**
- * Update levels summary
- */
-function updateLevelsSummary() {
-    const summary = document.getElementById('levels-summary');
-    const countSpan = document.getElementById('total-levels-count');
-    
-    if (createdLevels.length > 0) {
-        summary.style.display = 'block';
-        countSpan.textContent = createdLevels.length;
-    } else {
-        summary.style.display = 'none';
-    }
-}
-
-/**
- * Update modal structure to remove old elements
- */
-function updateModalStructure() {
-    // Remove old general settings fields
-    const fieldsToRemove = [
-        'capacity',
-        'levels', 
-        'length_mm',
-        'depth_mm',
-        'height_mm',
-        'max_weight_kg'
-    ];
-    
-    fieldsToRemove.forEach(fieldId => {
-        const field = document.getElementById(fieldId);
-        if (field) {
-            const formGroup = field.closest('.form-group');
-            if (formGroup) formGroup.remove();
-        }
-    });
-    
-    // Remove old level settings section if exists
-    const oldSection = document.getElementById('level-settings-section');
-    if (oldSection) oldSection.remove();
-}
-
-/**
- * Collect all level data for form submission
- */
-function collectLevelData() {
-    const levelData = {};
-    
-    createdLevels.forEach(level => {
-        const levelId = level.id;
-        
-        levelData[levelId] = {
-            name: level.name,
-            storage_policy: document.querySelector(`input[name="level_${levelId}_storage_policy"]:checked`)?.value || 'multiple_products',
-            height_mm: parseInt(document.getElementById(`level_${levelId}_height`)?.value) || 300,
-            max_weight_kg: parseFloat(document.getElementById(`level_${levelId}_weight`)?.value) || 50,
-            items_capacity: parseInt(document.getElementById(`level_${levelId}_capacity`)?.value) || null,
-            dedicated_product_id: document.getElementById(`level_${levelId}_dedicated_product`)?.value || null,
-            allow_other_products: document.getElementById(`level_${levelId}_allow_others`)?.checked ?? true,
-            volume_min_liters: parseFloat(document.getElementById(`level_${levelId}_volume_min`)?.value) || null,
-            volume_max_liters: parseFloat(document.getElementById(`level_${levelId}_volume_max`)?.value) || null,
-            enable_auto_repartition: document.getElementById(`level_${levelId}_auto_repartition`)?.checked || false,
-            repartition_trigger_threshold: parseInt(document.getElementById(`level_${levelId}_threshold`)?.value) || 80,
-            priority_order: parseInt(document.getElementById(`level_${levelId}_priority`)?.value) || 1
-        };
-        const subdivInput = document.getElementById(`level_${levelId}_subdivisions`);
-        if (subdivInput) {
-            levelData[levelId].subdivision_count = parseInt(subdivInput.value) || 1;
-        }
-    });
-    
-    return levelData;
-}
-
-function populateDynamicLevels(levelSettings) {
-    const container = document.getElementById('levels-container');
-    if (!container) return;
-
-    container.innerHTML = '';
-    createdLevels = [];
-    levelCounter = 0;
-
-    levelSettings.forEach(setting => {
-        addNewLevel();
-        const id = levelCounter;
-
-        const nameInput = document.querySelector(`#level-item-${id} .level-name-input`);
-        if (nameInput) nameInput.value = setting.level_name || `Nivel ${id}`;
-
-        const policyRadio = document.querySelector(`input[name="level_${id}_storage_policy"][value="${setting.storage_policy}"]`);
-        if (policyRadio) policyRadio.checked = true;
-
-        document.getElementById(`level_${id}_height`).value = setting.height_mm || 300;
-        document.getElementById(`level_${id}_weight`).value = setting.max_weight_kg || 50;
-        document.getElementById(`level_${id}_capacity`).value = setting.items_capacity || '';
-        document.getElementById(`level_${id}_dedicated_product`).value = setting.dedicated_product_id || '';
-        document.getElementById(`level_${id}_allow_others`).checked = setting.allow_other_products !== false;
-        document.getElementById(`level_${id}_volume_min`).value = setting.volume_min_liters || '';
-        document.getElementById(`level_${id}_volume_max`).value = setting.volume_max_liters || '';
-        document.getElementById(`level_${id}_auto_repartition`).checked = setting.enable_auto_repartition || false;
-        document.getElementById(`level_${id}_threshold`).value = setting.repartition_trigger_threshold || 80;
-        document.getElementById(`level_${id}_priority`).value = setting.priority_order || id;
-        document.getElementById(`level_${id}_subdivisions`).value = setting.subdivision_count || 1;
-
-        if (setting.qr_code_path) {
-            const link = document.getElementById(`level_qr_link_${id}`);
-            const img = document.getElementById(`level_qr_img_${id}`);
-            if (link) link.href = setting.qr_code_path;
-            if (img) img.src = setting.qr_code_path;
-        }
-    });
-
-    updateLevelsSummary();
-}
-
-/**
- * Enhanced form submission with level data
- */
-function enhanceFormSubmission() {
-    const form = document.getElementById('locationForm');
-    if (!form) return;
-    
-    form.addEventListener('submit', function(event) {
-        if (createdLevels.length === 0) {
-            event.preventDefault();
-            alert('Trebuie să adăugați cel puțin un nivel!');
-            return false;
-        }
-        
-        // Collect level data
-        const levelData = collectLevelData();
-        
-        // Add to form as hidden field
-        let hiddenField = document.getElementById('dynamic_levels_data');
-        if (!hiddenField) {
-            hiddenField = document.createElement('input');
-            hiddenField.type = 'hidden';
-            hiddenField.id = 'dynamic_levels_data';
-            hiddenField.name = 'dynamic_levels_data';
-            form.appendChild(hiddenField);
-        }
-        
-        hiddenField.value = JSON.stringify(levelData);
-    });
-}
-
-// Initialize when DOM is loaded
-document.addEventListener('DOMContentLoaded', function() {
-    // Wait a bit for other scripts to load
-    setTimeout(() => {
-        initializeDynamicLevelSystem();
-        enhanceFormSubmission();
-    }, 500);
-});
+// =================== GLOBAL FUNCTION EXPORTS ===================
 
 // Make functions globally available
 window.closeModal = closeModal;
 window.openDeleteModal = openDeleteModal;
 window.closeDeleteModal = closeDeleteModal;
 window.switchLocationTab = switchLocationTab;
-window.updateLevelSettings = updateLevelSettings;
 window.toggleLevel = toggleLevel;
 window.selectStoragePolicy = selectStoragePolicy;
-window.distributeLevelHeights = distributeLevelHeights;
-window.distributeWeightCapacity = distributeWeightCapacity;
-window.distributeItemCapacity = distributeItemCapacity;
-window.generateInternalProductOptions = generateInternalProductOptions;
-
-// QR CODES
 window.updateLocationQr = updateLocationQr;
 window.downloadLocationQr = downloadLocationQr;
 window.openCreateModal = openCreateModal;
 window.openEditModal = openEditModal;
 window.openEditModalById = openEditModalById;
-
 window.addNewLevel = addNewLevel;
-window.updateLevelName = updateLevelName;
-window.toggleLevel = toggleLevel;
 window.removeLevel = removeLevel;
-window.populateDynamicLevels = populateDynamicLevels;
-window.changeSubdivision = changeSubdivision;
-
-// Make functions globally available
+window.updateLevelName = updateLevelName;
 window.toggleSubdivisions = toggleSubdivisions;
 window.addSubdivision = addSubdivision;
 window.removeSubdivision = removeSubdivision;
@@ -2748,4 +2161,6 @@ window.searchProductsForSubdivision = searchProductsForSubdivision;
 window.selectProduct = selectProduct;
 window.showProductResults = showProductResults;
 window.hideProductResults = hideProductResults;
-window.collectSubdivisionData = collectSubdivisionData;
+window.downloadLevelQR = downloadLevelQR;
+
+console.log('✅ Enhanced Dynamic Locations JavaScript loaded successfully');

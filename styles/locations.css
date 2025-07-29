@@ -93,6 +93,14 @@
     border-top: 1px solid var(--border-color);
     background-color: var(--surface-background);
 }
+/* ===== LOCATION MODAL TABS ===== */
+.location-tabs{display:flex;gap:0.25rem;border-bottom:1px solid var(--border-color);margin-bottom:1rem;}
+.location-tabs .tab-button{background:none;border:none;padding:0.75rem 1rem;color:var(--text-secondary);cursor:pointer;transition:var(--transition);border-bottom:3px solid transparent;display:flex;align-items:center;gap:0.5rem;}
+.location-tabs .tab-button:hover{color:var(--text-primary);background-color:var(--button-hover);}
+.location-tabs .tab-button.active{color:var(--success-color);border-bottom-color:var(--success-color);background-color:var(--surface-background);}
+.tab-content{display:none;}
+.tab-content.active{display:block;}
+
 
 /* ===== FILTER FORM ===== */
 .filter-form {

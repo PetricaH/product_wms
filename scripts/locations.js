@@ -1090,6 +1090,8 @@ function openCreateModal() {
         }
         updateLevelsSummary();
 
+        initializeQRCode();
+        setupEventListeners();
         // Update QR code
         setTimeout(() => {
             updateLocationQr();
@@ -1150,6 +1152,8 @@ function openEditModal(location) {
         console.log('✅ Cleared existing levels for edit');
     }
     
+    initializeQRCode();
+    setupEventListeners();
     // Populate form with null checks
     const locationCodeInput = document.getElementById('location_code');
     if (locationCodeInput) locationCodeInput.value = location.location_code || '';

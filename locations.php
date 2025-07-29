@@ -21,9 +21,11 @@ $db = $dbFactory();
 // Include models
 require_once BASE_PATH . '/models/Location.php';
 require_once BASE_PATH . '/models/LocationLevelSettings.php';
+require_once BASE_PATH . '/models/Product.php';
 
 $locationModel = new Location($db);
 $levelSettingsModel = new LocationLevelSettings($db);
+$productModel = new Product($db);
 
 // Handle operations
 $message = '';
@@ -136,6 +138,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'requires_special_handling' => false,
                         'temperature_controlled' => false,
                         'items_capacity' => null,
+                        'dedicated_product_id' => null,
+                        'allow_other_products' => true,
                         'notes' => null
                     ];
 
@@ -146,15 +150,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     error_log("Level $level settings: " . json_encode($levelSettings));
                     
                     // Insert level settings directly
-                    $levelQuery = "INSERT INTO location_level_settings 
+                    $levelQuery = "INSERT INTO location_level_settings
                                   (location_id, level_number, level_name, storage_policy, allowed_product_types,
                                    max_different_products, length_mm, depth_mm, height_mm, max_weight_kg, items_capacity,
+                                   dedicated_product_id, allow_other_products,
                                    volume_min_liters, volume_max_liters, weight_min_kg, weight_max_kg,
                                    enable_auto_repartition, repartition_trigger_threshold, priority_order,
                                    requires_special_handling, temperature_controlled, notes)
                                   VALUES
                                   (:location_id, :level_number, :level_name, :storage_policy, :allowed_product_types,
                                    :max_different_products, :length_mm, :depth_mm, :height_mm, :max_weight_kg, :items_capacity,
+                                   :dedicated_product_id, :allow_other_products,
                                    :volume_min_liters, :volume_max_liters, :weight_min_kg, :weight_max_kg,
                                    :enable_auto_repartition, :repartition_trigger_threshold, :priority_order,
                                    :requires_special_handling, :temperature_controlled, :notes)";
@@ -171,7 +177,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         ':depth_mm' => $levelSettings['depth_mm'],
                         ':height_mm' => $levelSettings['height_mm'],
                         ':max_weight_kg' => $levelSettings['max_weight_kg'],
-                        ':items_capacity' => $levelSettings['items_capacity'],
+                       ':items_capacity' => $levelSettings['items_capacity'],
+                        ':dedicated_product_id' => $levelSettings['dedicated_product_id'],
+                        ':allow_other_products' => $levelSettings['allow_other_products'] ? 1 : 0,
                         ':volume_min_liters' => $levelSettings['volume_min_liters'],
                         ':volume_max_liters' => $levelSettings['volume_max_liters'],
                         ':weight_min_kg' => $levelSettings['weight_min_kg'],
@@ -374,6 +382,7 @@ $warehouseData = $locationModel->getEnhancedWarehouseData($zoneFilter, $typeFilt
 $warehouseStats = $locationModel->getEnhancedWarehouseStats();
 $dynamicZones = $locationModel->getDynamicZones();
 $uniqueZones = $locationModel->getUniqueZones();
+$allProducts = $productModel->getAllProductsForDropdown();
 
 // Calculate overall occupancy
 $totalCapacity = array_sum(array_column($warehouseData, 'capacity'));
@@ -739,6 +748,8 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
         window.dynamicZones = <?= json_encode($dynamicZones) ?>;
         window.uniqueZones = <?= json_encode($uniqueZones) ?>;
         window.allLocations = <?= json_encode($allLocations) ?>;
+        window.allProducts = <?= json_encode($allProducts) ?>;
+        window.levelSettingsAvailable = true;
         window.currentFilters = {
             zone: '<?= htmlspecialchars($zoneFilter) ?>',
             type: '<?= htmlspecialchars($typeFilter) ?>',

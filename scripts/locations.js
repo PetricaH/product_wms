@@ -123,7 +123,7 @@ function openEditModal(location) {
     const descriptionInput = document.getElementById('description');
     if (descriptionInput) descriptionInput.value = location.notes || '';
     
-    // Initialize level settings if available
+    // Initialize level settings or dynamic levels
     if (levelSettingsEnabled) {
         generateLevelSettings();
 
@@ -135,9 +135,16 @@ function openEditModal(location) {
         distributeLevelHeights();
         distributeWeightCapacity();
         distributeItemCapacity();
-        
+
         // Switch to basic tab
         switchLocationTab('basic');
+    } else if (typeof populateDynamicLevels === 'function') {
+        if (location.level_settings) {
+            populateDynamicLevels(location.level_settings);
+        } else if (location.levels) {
+            const placeholders = Array.from({ length: location.levels }, () => ({}));
+            populateDynamicLevels(placeholders);
+        }
     }
     
     // Update QR code with the location code

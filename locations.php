@@ -885,12 +885,6 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                         </div>
                     </div>
                     
-                    <div class="form-group">
-                        <h4 class="form-section-title">
-                            <span class="material-symbols-outlined">straighten</span>
-                            Dimensiuni Fizice
-                        </h4>
-                    </div>
                     <div class="form-row">
                         <div class="form-group">
                             <label for="length_mm" class="form-label">Lungime (mm)</label>

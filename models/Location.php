@@ -342,14 +342,30 @@ class Location {
             // Add level settings if requested
             if ($includeLevelSettings) {
                 $details['level_settings'] = $this->levelSettings->getLevelSettings($locationId);
-                
-                // Add occupancy data per level
+
+                // Attach QR code paths
+                $qrStmt = $this->conn->prepare(
+                    "SELECT level_number, file_path FROM location_qr_codes WHERE location_id = :id"
+                );
+                $qrStmt->bindValue(':id', $locationId, PDO::PARAM_INT);
+                $qrStmt->execute();
+                $qrRecords = $qrStmt->fetchAll(PDO::FETCH_ASSOC);
+                $qrMap = [];
+                foreach ($qrRecords as $qr) {
+                    $qrMap[(int)$qr['level_number']] = $qr['file_path'];
+                }
+
+                // Add occupancy data and QR path
                 foreach ($details['level_settings'] as &$levelSetting) {
                     $levelSetting['current_occupancy'] = $this->getLevelOccupancyData(
-                        $locationId, 
+                        $locationId,
                         $levelSetting['level_number']
                     );
+                    if (isset($qrMap[$levelSetting['level_number']])) {
+                        $levelSetting['qr_code_path'] = $qrMap[$levelSetting['level_number']];
+                    }
                 }
+                unset($levelSetting);
             }
 
             // Add zone context if requested

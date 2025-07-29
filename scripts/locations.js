@@ -1392,7 +1392,7 @@ function openEditModal(location) {
     document.getElementById('status').value = statusValue;
     
     document.getElementById('description').value = location.notes || '';
-    
+
     // Initialize level settings if available
     if (levelSettingsEnabled) {
         generateLevelSettings();
@@ -1408,6 +1408,8 @@ function openEditModal(location) {
         
         // Switch to basic tab
         switchLocationTab('basic');
+    } else if (location.level_settings) {
+        populateDynamicLevels(location.level_settings);
     }
     
     // Show modal
@@ -2045,6 +2047,16 @@ function createLevelHTML(level) {
                             </div>
                         </div>
                     </div>
+                    <div class="settings-section">
+                        <h5>
+                            <span class="material-symbols-outlined">qr_code_2</span>
+                            Cod QR Nivel
+                        </h5>
+                        <div class="form-group">
+                            <img id="level_qr_img_${level.id}" src="" alt="QR Nivel" style="width:120px;height:120px;display:block;margin-bottom:0.5rem;" />
+                            <a id="level_qr_link_${level.id}" href="#" download class="btn btn-secondary btn-sm">Descarcă QR</a>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -2235,6 +2247,46 @@ function collectLevelData() {
     return levelData;
 }
 
+function populateDynamicLevels(levelSettings) {
+    const container = document.getElementById('levels-container');
+    if (!container) return;
+
+    container.innerHTML = '';
+    createdLevels = [];
+    levelCounter = 0;
+
+    levelSettings.forEach(setting => {
+        addNewLevel();
+        const id = levelCounter;
+
+        const nameInput = document.querySelector(`#level-item-${id} .level-name-input`);
+        if (nameInput) nameInput.value = setting.level_name || `Nivel ${id}`;
+
+        const policyRadio = document.querySelector(`input[name="level_${id}_storage_policy"][value="${setting.storage_policy}"]`);
+        if (policyRadio) policyRadio.checked = true;
+
+        document.getElementById(`level_${id}_height`).value = setting.height_mm || 300;
+        document.getElementById(`level_${id}_weight`).value = setting.max_weight_kg || 50;
+        document.getElementById(`level_${id}_capacity`).value = setting.items_capacity || '';
+        document.getElementById(`level_${id}_dedicated_product`).value = setting.dedicated_product_id || '';
+        document.getElementById(`level_${id}_allow_others`).checked = setting.allow_other_products !== false;
+        document.getElementById(`level_${id}_volume_min`).value = setting.volume_min_liters || '';
+        document.getElementById(`level_${id}_volume_max`).value = setting.volume_max_liters || '';
+        document.getElementById(`level_${id}_auto_repartition`).checked = setting.enable_auto_repartition || false;
+        document.getElementById(`level_${id}_threshold`).value = setting.repartition_trigger_threshold || 80;
+        document.getElementById(`level_${id}_priority`).value = setting.priority_order || id;
+
+        if (setting.qr_code_path) {
+            const link = document.getElementById(`level_qr_link_${id}`);
+            const img = document.getElementById(`level_qr_img_${id}`);
+            if (link) link.href = setting.qr_code_path;
+            if (img) img.src = setting.qr_code_path;
+        }
+    });
+
+    updateLevelsSummary();
+}
+
 /**
  * Enhanced form submission with level data
  */
@@ -2299,3 +2351,4 @@ window.addNewLevel = addNewLevel;
 window.updateLevelName = updateLevelName;
 window.toggleLevel = toggleLevel;
 window.removeLevel = removeLevel;
+window.populateDynamicLevels = populateDynamicLevels;

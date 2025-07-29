@@ -1392,7 +1392,7 @@ function openEditModal(location) {
     document.getElementById('status').value = statusValue;
     
     document.getElementById('description').value = location.notes || '';
-
+    
     // Initialize level settings if available
     if (levelSettingsEnabled) {
         generateLevelSettings();
@@ -1408,8 +1408,6 @@ function openEditModal(location) {
         
         // Switch to basic tab
         switchLocationTab('basic');
-    } else if (location.level_settings) {
-        populateDynamicLevels(location.level_settings);
     }
     
     // Show modal

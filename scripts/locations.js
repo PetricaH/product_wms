@@ -1258,11 +1258,25 @@ function openEditModal(location) {
     if (descriptionInput) descriptionInput.value = location.notes || '';
     
     // NOW populate dynamic levels after the system is initialized
-    if (location.level_settings && Array.isArray(location.level_settings)) {
-        console.log('🔧 Populating levels after system init...');
-        setTimeout(() => {
-            populateDynamicLevels(location.level_settings);
-        }, 100);
+    if (location.level_settings) {
+        let levelData = location.level_settings;
+
+        // Support objects keyed by level number by converting to an array
+        if (!Array.isArray(levelData)) {
+            try {
+                levelData = Object.values(levelData);
+            } catch (e) {
+                console.error('❌ Failed to normalize level settings', e);
+                levelData = [];
+            }
+        }
+
+        if (Array.isArray(levelData) && levelData.length > 0) {
+            console.log('🔧 Populating levels after system init...');
+            setTimeout(() => {
+                populateDynamicLevels(levelData);
+            }, 100);
+        }
     }
     
     // Update QR code

@@ -1520,6 +1520,34 @@ async function populateDynamicLevels(levelSettings) {
         const allowOthersInput = document.getElementById(`level_${levelId}_allow_others`);
         if (allowOthersInput) allowOthersInput.checked = setting.allow_other_products !== false;
 
+        // === Populate subdivision data if available ===
+        const hasSubs = setting.has_subdivisions || setting.subdivisions_enabled ||
+            (Array.isArray(setting.subdivisions) && setting.subdivisions.length > 0);
+
+        if (hasSubs) {
+            const enableCheckbox = document.getElementById(`level_${levelId}_enable_subdivisions`);
+            if (enableCheckbox) {
+                enableCheckbox.checked = true;
+                toggleSubdivisions(levelId); // show section and enforce policy
+                clearSubdivisions(levelId);  // remove default blank subdivision
+            }
+
+            if (Array.isArray(setting.subdivisions)) {
+                for (const [subIdx, sub] of setting.subdivisions.entries()) {
+                    addSubdivision(levelId);
+                    const index = subIdx + 1;
+
+                    if (sub.dedicated_product_id) {
+                        selectProduct(levelId, index, sub.dedicated_product_id, sub.product_name || `Product ID: ${sub.dedicated_product_id}`);
+                    }
+                    const capInput = document.getElementById(`level_${levelId}_subdivision_${index}_capacity`);
+                    if (capInput) capInput.value = sub.items_capacity || '';
+                    const notesInput = document.querySelector(`[name="level_${levelId}_subdivision_${index}_notes"]`);
+                    if (notesInput) notesInput.value = sub.notes || '';
+                }
+            }
+        }
+
         // Initialize level QR code
         setTimeout(() => {
             initializeLevelQRCode(levelId);

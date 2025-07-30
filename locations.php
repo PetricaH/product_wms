@@ -132,14 +132,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     
                     // Insert individual level settings from dynamic data
                     $levelQuery = "INSERT INTO location_level_settings
-                                  (location_id, level_number, level_name, storage_policy, 
+                                  (location_id, level_number, level_name, storage_policy, allowed_product_types,
                                    length_mm, depth_mm, height_mm, max_weight_kg, items_capacity,
                                    dedicated_product_id, allow_other_products,
                                    volume_min_liters, volume_max_liters,
                                    enable_auto_repartition, repartition_trigger_threshold, priority_order,
                                    created_at)
                                   VALUES
-                                  (:location_id, :level_number, :level_name, :storage_policy,
+                                  (:location_id, :level_number, :level_name, :storage_policy, :allowed_product_types,
                                    :length_mm, :depth_mm, :height_mm, :max_weight_kg, :items_capacity,
                                    :dedicated_product_id, :allow_other_products,
                                    :volume_min_liters, :volume_max_liters,
@@ -158,6 +158,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             ':level_number' => $levelNumber,
                             ':level_name' => $levelData['name'] ?? "Nivel {$levelNumber}",
                             ':storage_policy' => $levelData['storage_policy'] ?? 'multiple_products',
+                            ':allowed_product_types' => !empty($levelData['allowed_product_types']) ? json_encode($levelData['allowed_product_types']) : null,
                             ':length_mm' => $defaultLength,
                             ':depth_mm' => $defaultDepth,
                             ':height_mm' => intval($levelData['height_mm'] ?? 300),
@@ -266,6 +267,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $levelSettings[$levelNum] = [
                                 'level_name' => $lvl['name'] ?? "Nivel {$levelNum}",
                                 'storage_policy' => $lvl['storage_policy'] ?? 'multiple_products',
+                                'allowed_product_types' => !empty($lvl['allowed_product_types']) ? $lvl['allowed_product_types'] : null,
                                 'length_mm' => 1000,
                                 'depth_mm' => 400,
                                 'height_mm' => intval($lvl['height_mm'] ?? 300),
@@ -716,6 +718,7 @@ $warehouseStats = $locationModel->getEnhancedWarehouseStats();
 $dynamicZones = $locationModel->getDynamicZones();
 $uniqueZones = $locationModel->getUniqueZones();
 $allProducts = $productModel->getAllProductsForDropdown();
+$categories = $productModel->getCategories();
 
 // Calculate overall occupancy
 $totalCapacity = array_sum(array_column($warehouseData, 'capacity'));
@@ -1076,6 +1079,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
         window.uniqueZones = <?= json_encode($uniqueZones) ?>;
         window.allLocations = <?= json_encode($allLocations) ?>;
         window.allProducts = <?= json_encode($allProducts) ?>;
+        window.allCategories = <?= json_encode($categories) ?>;
         window.levelSettingsAvailable = true;
         window.currentFilters = {
             zone: '<?= htmlspecialchars($zoneFilter) ?>',

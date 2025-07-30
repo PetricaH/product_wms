@@ -485,6 +485,24 @@ function createLevelHTML(level) {
                         </div>
                     </div>
 
+                    
+                    <!-- QR Code Section -->
+                    <div class="settings-section">
+                    <h5>
+                    <span class="material-symbols-outlined">qr_code_2</span>
+                    Cod QR Nivel
+                    </h5>
+                    <div class="form-group">
+                    <canvas id="level_qr_canvas_${level.id}" width="120" height="120" 
+                    style="border: 1px solid #ddd; margin-bottom: 0.5rem; display: block;"></canvas>
+                    <button type="button" class="btn btn-secondary btn-sm" 
+                    onclick="downloadLevelQR(${level.id})" title="Descarcă QR">
+                    <span class="material-symbols-outlined">download</span>
+                    Descarcă QR Nivel
+                    </button>
+                    </div>
+                    </div>
+                    </div>
                     <!-- Enhanced Subdivisions Management Section -->
                     <div class="settings-section subdivisions-section" id="subdivisions-section-${level.id}" style="display: none;">
                         <h5>
@@ -499,26 +517,8 @@ function createLevelHTML(level) {
                             Adaugă Subdiviziune
                         </button>
                     </div>
-
-                    <!-- QR Code Section -->
-                    <div class="settings-section">
-                        <h5>
-                            <span class="material-symbols-outlined">qr_code_2</span>
-                            Cod QR Nivel
-                        </h5>
-                        <div class="form-group">
-                            <canvas id="level_qr_canvas_${level.id}" width="120" height="120" 
-                                    style="border: 1px solid #ddd; margin-bottom: 0.5rem; display: block;"></canvas>
-                            <button type="button" class="btn btn-secondary btn-sm" 
-                                    onclick="downloadLevelQR(${level.id})" title="Descarcă QR">
-                                <span class="material-symbols-outlined">download</span>
-                                Descarcă QR Nivel
-                            </button>
-                        </div>
                     </div>
-                </div>
-            </div>
-        </div>
+                    </div>
     `;
 }
 

@@ -408,25 +408,25 @@ function createLevelHTML(level) {
                             Politica de Stocare
                         </h5>
                         <div class="storage-policy-options">
-                            <div class="policy-option selected" onclick="selectStoragePolicy(${level.id}, 'multiple_products')">
+                            <div class="policy-option selected" onclick="selectStoragePolicy(${level.id}, 'multiple_products', event)">
                                 <input type="radio" name="level_${level.id}_storage_policy" value="multiple_products" checked>
                                 <div>
                                     <div class="policy-title">Multiple Produse</div>
                                     <div class="policy-description">Permite stocarea mai multor tipuri de produse</div>
                                 </div>
                             </div>
-                            <div class="policy-option" onclick="selectStoragePolicy(${level.id}, 'single_product_type')">
+                            <div class="policy-option" onclick="selectStoragePolicy(${level.id}, 'single_product_type', event)">
                                 <input type="radio" name="level_${level.id}_storage_policy" value="single_product_type">
                                 <div>
                                     <div class="policy-title">Un Singur Tip</div>
                                     <div class="policy-description">Permite doar un tip de produs pe nivel</div>
                                 </div>
                             </div>
-                            <div class="policy-option" onclick="selectStoragePolicy(${level.id}, 'category_restricted')">
+                            <div class="policy-option" onclick="selectStoragePolicy(${level.id}, 'category_restricted', event)">
                                 <input type="radio" name="level_${level.id}_storage_policy" value="category_restricted">
                                 <div>
                                     <div class="policy-title">Restricționat pe Categorie</div>
-                                    <div class="policy-description">Permite doar anumite categorii de produse</div>
+                                    <div class="policy-description">Permite doar produse din aceeași categorie</div>
                                 </div>
                             </div>
                         </div>
@@ -708,16 +708,83 @@ function updatePolicyOptions(levelId, policy) {
 /**
  * Select storage policy for a level
  */
-function selectStoragePolicy(levelId, policy) {
+function selectStoragePolicy(levelId, policy, eventOrElement = null) {
     const container = document.querySelector(`#level-content-${levelId} .storage-policy-options`);
+    if (!container) {
+        console.error(`Storage policy container not found for level ${levelId}`);
+        return;
+    }
+    
     const options = container.querySelectorAll('.policy-option');
     
+    // Clear all selected states
     options.forEach(option => option.classList.remove('selected'));
-    event.currentTarget.classList.add('selected');
     
-    // Update radio button
-    const radio = event.currentTarget.querySelector('input[type="radio"]');
-    radio.checked = true;
+    let targetElement = null;
+    
+    // Determine the target element
+    if (eventOrElement && eventOrElement.currentTarget) {
+        // Called from event (user click)
+        targetElement = eventOrElement.currentTarget;
+    } else if (eventOrElement && eventOrElement.nodeType) {
+        // Passed an element directly
+        targetElement = eventOrElement;
+    } else {
+        // Called programmatically - find the correct element by policy value
+        targetElement = container.querySelector(`.policy-option input[value="${policy}"]`)?.closest('.policy-option');
+    }
+    
+    if (targetElement) {
+        targetElement.classList.add('selected');
+        
+        // Update radio button
+        const radio = targetElement.querySelector('input[type="radio"]');
+        if (radio) {
+            radio.checked = true;
+        }
+    } else {
+        console.warn(`Could not find policy option for policy: ${policy} in level ${levelId}`);
+        
+        // Fallback: try to find and select the radio button directly
+        const radio = container.querySelector(`input[value="${policy}"]`);
+        if (radio) {
+            radio.checked = true;
+            const policyOption = radio.closest('.policy-option');
+            if (policyOption) {
+                policyOption.classList.add('selected');
+            }
+        }
+    }
+    
+    // Update policy options
+    updatePolicyOptions(levelId, policy);
+}
+
+/**
+ * Alternative version that completely avoids event handling
+ * Call this version when populating from database
+ */
+function selectStoragePolicyProgrammatic(levelId, policy) {
+    const container = document.querySelector(`#level-content-${levelId} .storage-policy-options`);
+    if (!container) {
+        console.error(`Storage policy container not found for level ${levelId}`);
+        return;
+    }
+    
+    const options = container.querySelectorAll('.policy-option');
+    
+    // Clear all selected states
+    options.forEach(option => option.classList.remove('selected'));
+    
+    // Find and select the correct option
+    const targetRadio = container.querySelector(`input[name="level_${levelId}_storage_policy"][value="${policy}"]`);
+    if (targetRadio) {
+        targetRadio.checked = true;
+        const policyOption = targetRadio.closest('.policy-option');
+        if (policyOption) {
+            policyOption.classList.add('selected');
+        }
+    }
     
     // Update policy options
     updatePolicyOptions(levelId, policy);
@@ -1312,9 +1379,60 @@ function openEditModalById(id) {
 }
 
 /**
+ * Fetch product name by ID using the updated API
+ */
+async function fetchProductName(productId) {
+    if (!productId) return null;
+    
+    try {
+        // Use the modified products API with the ID parameter
+        const response = await fetch(`api/products.php?id=${productId}`);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        // The API returns an array, check if we have results
+        if (Array.isArray(data) && data.length > 0) {
+            return data[0].name;
+        }
+        
+    } catch (error) {
+        console.error('Error fetching product name:', error);
+    }
+    
+    // Fallback display
+    return `Product ID: ${productId}`;
+}
+
+/**
+ * Set dedicated product for a level (both hidden ID and visible name)
+ */
+async function setLevelDedicatedProduct(levelId, productId) {
+    const hiddenInput = document.getElementById(`level_${levelId}_dedicated_product`);
+    const searchInput = document.getElementById(`level_${levelId}_dedicated_product_search`);
+    
+    if (hiddenInput) {
+        hiddenInput.value = productId || '';
+    }
+    
+    if (searchInput) {
+        if (productId) {
+            // Fetch and display the product name
+            const productName = await fetchProductName(productId);
+            searchInput.value = productName || `Product ID: ${productId}`;
+        } else {
+            searchInput.value = '';
+        }
+    }
+}
+
+/**
  * Populate dynamic levels from loaded data
  */
-function populateDynamicLevels(levelSettings) {
+async function populateDynamicLevels(levelSettings) {
     console.log('Populating dynamic levels:', levelSettings);
     
     // Safety check - make sure container exists before adding levels
@@ -1324,7 +1442,8 @@ function populateDynamicLevels(levelSettings) {
         return;
     }
     
-    levelSettings.forEach((setting, index) => {
+    // Process each level setting
+    for (const [index, setting] of levelSettings.entries()) {
         // Add new level
         console.log(`Adding level ${index + 1} from settings...`);
         addNewLevel();
@@ -1334,10 +1453,9 @@ function populateDynamicLevels(levelSettings) {
         const nameInput = document.querySelector(`#level-item-${levelId} .level-name-input`);
         if (nameInput) nameInput.value = setting.level_name || `Nivel ${levelId}`;
 
-        const policyRadio = document.querySelector(`input[name="level_${levelId}_storage_policy"][value="${setting.storage_policy}"]`);
-        if (policyRadio) {
-            policyRadio.checked = true;
-            selectStoragePolicy(levelId, setting.storage_policy);
+        // FIX: Use the programmatic version to avoid event error
+        if (setting.storage_policy) {
+            selectStoragePolicyProgrammatic(levelId, setting.storage_policy);
         }
 
         const heightInput = document.getElementById(`level_${levelId}_height`);
@@ -1349,8 +1467,10 @@ function populateDynamicLevels(levelSettings) {
         const capacityInput = document.getElementById(`level_${levelId}_capacity`);
         if (capacityInput) capacityInput.value = setting.items_capacity || '';
         
-        const productSelect = document.getElementById(`level_${levelId}_dedicated_product`);
-        if (productSelect) productSelect.value = setting.dedicated_product_id || '';
+        // FIX: Set dedicated product with both ID and name
+        if (setting.dedicated_product_id) {
+            await setLevelDedicatedProduct(levelId, setting.dedicated_product_id);
+        }
         
         const allowOthersInput = document.getElementById(`level_${levelId}_allow_others`);
         if (allowOthersInput) allowOthersInput.checked = setting.allow_other_products !== false;
@@ -1359,7 +1479,7 @@ function populateDynamicLevels(levelSettings) {
         setTimeout(() => {
             initializeLevelQRCode(levelId);
         }, 100);
-    });
+    }
 
     updateLevelsSummary();
     console.log('✅ Dynamic levels populated successfully');
@@ -2269,5 +2389,8 @@ window.searchProductForLevel = searchProductForLevel;
 window.showLevelProductResults = showLevelProductResults;
 window.hideLevelProductResults = hideLevelProductResults;
 window.selectLevelProduct = selectLevelProduct;
+window.selectStoragePolicyProgrammatic = selectStoragePolicyProgrammatic;
+window.fetchProductName = fetchProductName;
+window.setLevelDedicatedProduct = setLevelDedicatedProduct;
 
 console.log('✅ Enhanced Dynamic Locations JavaScript loaded successfully');

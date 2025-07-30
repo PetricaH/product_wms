@@ -9,7 +9,8 @@ if (!isset($currentPage)) {
 <script>
     window.APP_CONFIG = {
         // Correctly check if the BASE_URL constant is defined.
-        baseUrl: '<?php echo defined('BASE_URL') ? rtrim(BASE_URL, '/') : ''; ?>'
+        baseUrl: '<?php echo defined('BASE_URL') ? rtrim(BASE_URL, '/') : ''; ?>',
+        apiKey: '<?php echo getenv('WMS_API_KEY') ?: ''; ?>'
     };
 </script>
 

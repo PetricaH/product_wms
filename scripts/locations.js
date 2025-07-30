@@ -1618,10 +1618,31 @@ function collectSubdivisionData() {
 function enhanceFormSubmission() {
     const form = document.getElementById('locationForm');
     if (!form) return;
-    
+
     form.addEventListener('submit', function(event) {
         console.log('Form submission started. Created levels:', createdLevels.length);
-        
+
+        // Validate form fields across tabs
+        if (!form.checkValidity()) {
+            event.preventDefault();
+            const firstInvalid = form.querySelector(':invalid');
+            if (firstInvalid) {
+                // If the field is inside a hidden tab, switch to that tab first
+                const tabContent = firstInvalid.closest('.tab-content');
+                if (tabContent && !tabContent.classList.contains('active')) {
+                    const tabName = tabContent.id.replace('-tab', '');
+                    switchLocationTab(tabName);
+                }
+
+                // Delay focus to allow tab visibility change to apply
+                setTimeout(() => {
+                    firstInvalid.focus();
+                    firstInvalid.reportValidity();
+                }, 50);
+            }
+            return false;
+        }
+
         if (createdLevels.length === 0) {
             event.preventDefault();
             alert('Trebuie să adăugați cel puțin un nivel!');

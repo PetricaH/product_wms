@@ -5,6 +5,13 @@
  * Manages per-level configuration for locations
  */
 class LocationLevelSettings {
+    private function debugLog($message) {
+        $logFile = dirname(__DIR__) . '/subdivision_debug.log';
+        $timestamp = date('Y-m-d H:i:s');
+        $logMessage = "[$timestamp] LocationLevelSettings: $message" . PHP_EOL;
+        file_put_contents($logFile, $logMessage, FILE_APPEND | LOCK_EX);
+        error_log("LocationLevelSettings: " . $message);
+    }
     private PDO $conn;
     private string $table = 'location_level_settings';
     
@@ -435,64 +442,137 @@ public function getSubdivisionEnabledLevels(int $locationId): array {
  * @return bool
  */
 public function updateLevelSettingsWithSubdivisions(int $locationId, int $levelNumber, array $settings): bool {
+    $this->debugLog("=== DEBUG updateLevelSettingsWithSubdivisions START ===");
+    $this->debugLog("Location ID: $locationId, Level: $levelNumber");
+    $this->debugLog("Settings received: " . json_encode($settings));
+    
+    // Check if we're already in a transaction
     $startedTransaction = false;
+    if (!$this->conn->inTransaction()) {
+        $this->debugLog("Starting new transaction");
+        $this->conn->beginTransaction();
+        $startedTransaction = true;
+    } else {
+        $this->debugLog("Already in transaction, not starting new one");
+    }
+    
     try {
-        if (!$this->conn->inTransaction()) {
-            $this->conn->beginTransaction();
-            $startedTransaction = true;
-        }
-        
         // Handle subdivision toggle
         $subdivisionsEnabled = $settings['subdivisions_enabled'] ?? false;
         $subdivisions = $settings['subdivisions'] ?? [];
+        
+        $this->debugLog("Subdivisions enabled: " . ($subdivisionsEnabled ? 'true' : 'false'));
+        $this->debugLog("Subdivisions data: " . json_encode($subdivisions));
         
         // Update subdivision count based on actual subdivisions
         if ($subdivisionsEnabled && !empty($subdivisions)) {
             $settings['subdivision_count'] = count($subdivisions);
             $settings['storage_policy'] = 'multiple_products'; // Force multiple products
+            $this->debugLog("Setting subdivision_count to: " . count($subdivisions));
         } else {
             $settings['subdivision_count'] = 1;
             $subdivisionsEnabled = false;
+            $this->debugLog("Disabling subdivisions, setting subdivision_count to 1");
         }
         
         $settings['subdivisions_enabled'] = $subdivisionsEnabled;
         
         // Update the level settings using existing method
-        if (!$this->updateLevelSettings($locationId, $levelNumber, $settings)) {
+        $this->debugLog("Calling updateLevelSettings...");
+        $this->debugLog("Final settings being passed to updateLevelSettings: " . json_encode($settings));
+        
+        $updateResult = $this->updateLevelSettings($locationId, $levelNumber, $settings);
+        $this->debugLog("updateLevelSettings returned: " . ($updateResult ? 'true' : 'false'));
+        
+        if (!$updateResult) {
+            $this->debugLog("updateLevelSettings returned false - this is the failure point");
             throw new Exception("Failed to update level settings");
         }
+        $this->debugLog("updateLevelSettings completed successfully");
         
         // Handle subdivisions through LocationSubdivision model
-        $subdivisionModel = new LocationSubdivision($this->conn);
+        $this->debugLog("Creating LocationSubdivision model...");
+        try {
+            $subdivisionModel = new LocationSubdivision($this->conn);
+            $this->debugLog("LocationSubdivision model created successfully");
+        } catch (Exception $e) {
+            $this->debugLog("Failed to create LocationSubdivision model: " . $e->getMessage());
+            throw $e;
+        }
         
         if ($subdivisionsEnabled && !empty($subdivisions)) {
+            $this->debugLog("Processing subdivisions - clearing existing first");
+            
             // Clear existing subdivisions
-            $subdivisionModel->deleteSubdivisions($locationId, $levelNumber);
+            try {
+                $deleteResult = $subdivisionModel->deleteSubdivisions($locationId, $levelNumber);
+                $this->debugLog("Delete subdivisions result: " . ($deleteResult ? 'success' : 'failed'));
+                if (!$deleteResult) {
+                    $this->debugLog("Warning: deleteSubdivisions returned false, but continuing...");
+                }
+            } catch (Exception $e) {
+                $this->debugLog("Error deleting existing subdivisions: " . $e->getMessage());
+                throw new Exception("Failed to delete existing subdivisions: " . $e->getMessage());
+            }
             
             // Create new subdivisions
+            $this->debugLog("Creating " . count($subdivisions) . " new subdivisions");
             foreach ($subdivisions as $index => $subdivisionData) {
-                $subdivisionModel->createSubdivision(
-                    $locationId, 
-                    $levelNumber, 
-                    $index + 1, 
-                    $subdivisionData
-                );
+                $subdivisionIndex = $index + 1;
+                $this->debugLog("Creating subdivision $subdivisionIndex with data: " . json_encode($subdivisionData));
+                
+                try {
+                    $createResult = $subdivisionModel->createSubdivision(
+                        $locationId, 
+                        $levelNumber, 
+                        $subdivisionIndex, 
+                        $subdivisionData
+                    );
+                    
+                    if (!$createResult) {
+                        $this->debugLog("createSubdivision returned false for subdivision $subdivisionIndex");
+                        throw new Exception("Failed to create subdivision $subdivisionIndex");
+                    }
+                    $this->debugLog("Subdivision $subdivisionIndex created successfully");
+                    
+                } catch (Exception $e) {
+                    $this->debugLog("Exception creating subdivision $subdivisionIndex: " . $e->getMessage());
+                    throw new Exception("Failed to create subdivision $subdivisionIndex: " . $e->getMessage());
+                }
             }
+            $this->debugLog("All subdivisions created successfully");
+            
         } else {
+            $this->debugLog("Subdivisions disabled or empty - clearing existing subdivisions");
+            
             // Clear subdivisions if disabled
-            $subdivisionModel->deleteSubdivisions($locationId, $levelNumber);
+            try {
+                $deleteResult = $subdivisionModel->deleteSubdivisions($locationId, $levelNumber);
+                $this->debugLog("Clear subdivisions result: " . ($deleteResult ? 'success' : 'failed'));
+            } catch (Exception $e) {
+                $this->debugLog("Error clearing subdivisions: " . $e->getMessage());
+                // Don't throw here as this is cleanup
+            }
         }
         
         if ($startedTransaction) {
             $this->conn->commit();
+            $this->debugLog("Transaction committed successfully");
         }
+        
+        $this->debugLog("=== DEBUG updateLevelSettingsWithSubdivisions SUCCESS ===");
         return true;
 
     } catch (Exception $e) {
+        $this->debugLog("=== DEBUG updateLevelSettingsWithSubdivisions ERROR ===");
+        $this->debugLog("Exception: " . $e->getMessage());
+        $this->debugLog("Stack trace: " . $e->getTraceAsString());
+        
         if ($startedTransaction && $this->conn->inTransaction()) {
             $this->conn->rollBack();
+            $this->debugLog("Transaction rolled back");
         }
-        error_log("Error updating level settings with subdivisions: " . $e->getMessage());
+        
         return false;
     }
 }

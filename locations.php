@@ -11,6 +11,14 @@ if (!defined('BASE_PATH')) {
 require_once BASE_PATH . '/bootstrap.php';
 $config = require BASE_PATH . '/config/config.php';
 
+function debugLog($message) {
+    $logFile = __DIR__ . '/subdivision_debug.log';
+    $timestamp = date('Y-m-d H:i:s');
+    $logMessage = "[$timestamp] $message" . PHP_EOL;
+    file_put_contents($logFile, $logMessage, FILE_APPEND | LOCK_EX);
+    error_log($message); // Also try the regular error_log
+}
+
 // Database connection
 if (!isset($config['connection_factory']) || !is_callable($config['connection_factory'])) {
     die("Database connection factory not configured correctly.");
@@ -525,33 +533,132 @@ function generateQRCodeImage(string $data, string $filePath): bool {
  * @return array Response array
  */
 function processSubdivisionData($locationId, $postData) {
-    global $db; // Assuming $db is your PDO connection
+    global $db;
+    
+    debugLog("=== SUBDIVISION PROCESSING DEBUG START ===");
+    debugLog("Location ID: " . $locationId);
+    debugLog("POST data keys: " . implode(', ', array_keys($postData)));
     
     try {
+        // Check if LocationSubdivision class exists
+        if (!class_exists('LocationSubdivision')) {
+            debugLog("ERROR: LocationSubdivision class not found!");
+            
+            // Try to load it manually
+            $subdivisionFile = __DIR__ . '/models/LocationSubdivision.php';
+            if (file_exists($subdivisionFile)) {
+                require_once $subdivisionFile;
+                debugLog("Manually loaded LocationSubdivision.php");
+            } else {
+                debugLog("LocationSubdivision.php file not found at: " . $subdivisionFile);
+            }
+            
+            if (!class_exists('LocationSubdivision')) {
+                debugLog("FATAL: LocationSubdivision class still not available");
+                return [
+                    'success' => false,
+                    'message' => 'LocationSubdivision model not loaded'
+                ];
+            }
+        }
+        debugLog("LocationSubdivision class is available");
+        
+        // Check if LocationLevelSettings class exists
+        if (!class_exists('LocationLevelSettings')) {
+            debugLog("ERROR: LocationLevelSettings class not found!");
+            
+            // Try to load it manually
+            $levelSettingsFile = __DIR__ . '/models/LocationLevelSettings.php';
+            if (file_exists($levelSettingsFile)) {
+                require_once $levelSettingsFile;
+                debugLog("Manually loaded LocationLevelSettings.php");
+            } else {
+                debugLog("LocationLevelSettings.php file not found at: " . $levelSettingsFile);
+            }
+            
+            if (!class_exists('LocationLevelSettings')) {
+                debugLog("FATAL: LocationLevelSettings class still not available");
+                return [
+                    'success' => false,
+                    'message' => 'LocationLevelSettings model not loaded'
+                ];
+            }
+        }
+        debugLog("LocationLevelSettings class is available");
+        
         // Initialize models
-        $levelSettingsModel = new LocationLevelSettings($db);
-        $subdivisionModel = new LocationSubdivision($db);
+        debugLog("Creating model instances...");
+        try {
+            $levelSettingsModel = new LocationLevelSettings($db);
+            debugLog("LocationLevelSettings model created");
+        } catch (Exception $e) {
+            debugLog("ERROR creating LocationLevelSettings: " . $e->getMessage());
+            throw $e;
+        }
+        
+        try {
+            $subdivisionModel = new LocationSubdivision($db);
+            debugLog("LocationSubdivision model created");
+        } catch (Exception $e) {
+            debugLog("ERROR creating LocationSubdivision: " . $e->getMessage());
+            throw $e;
+        }
+        
+        debugLog("Both models created successfully");
         
         // Extract subdivision data from form
+        debugLog("Extracting subdivision data from form...");
         $subdivisionData = extractSubdivisionDataFromForm($postData);
+        debugLog("Extracted subdivision data: " . json_encode($subdivisionData));
+        
+        // Check if extractSubdivisionDataFromForm returned empty data
+        if (empty($subdivisionData)) {
+            debugLog("WARNING: No subdivision data extracted from form");
+        }
         
         // Validate subdivision data
+        debugLog("Validating subdivision data...");
         $validationErrors = validateAllSubdivisions($subdivisionData);
         if (!empty($validationErrors)) {
+            debugLog("Validation errors found: " . json_encode($validationErrors));
             return [
                 'success' => false,
                 'message' => 'Erori de validare pentru subdiviziuni',
                 'errors' => $validationErrors
             ];
         }
+        debugLog("Validation passed");
         
         // Process each level's subdivision data
+        debugLog("Processing " . count($subdivisionData) . " levels");
         foreach ($subdivisionData as $levelNumber => $levelData) {
+            debugLog("Processing level {$levelNumber} with data: " . json_encode($levelData));
+            
+            // Check if method exists
+            if (!method_exists($levelSettingsModel, 'updateLevelSettingsWithSubdivisions')) {
+                debugLog("ERROR: updateLevelSettingsWithSubdivisions method does not exist!");
+                throw new Exception("updateLevelSettingsWithSubdivisions method not found");
+            }
+            
             // Update level settings with subdivision configuration
-            if (!$levelSettingsModel->updateLevelSettingsWithSubdivisions($locationId, $levelNumber, $levelData)) {
-                throw new Exception("Failed to update level {$levelNumber} subdivision settings");
+            debugLog("Calling updateLevelSettingsWithSubdivisions for level {$levelNumber}");
+            try {
+                $result = $levelSettingsModel->updateLevelSettingsWithSubdivisions($locationId, $levelNumber, $levelData);
+                debugLog("updateLevelSettingsWithSubdivisions returned: " . ($result ? 'true' : 'false'));
+                
+                if (!$result) {
+                    debugLog("updateLevelSettingsWithSubdivisions returned false for level {$levelNumber}");
+                    throw new Exception("Failed to update level {$levelNumber} subdivision settings");
+                }
+                debugLog("Successfully updated level {$levelNumber} subdivision settings");
+            } catch (Exception $e) {
+                debugLog("Exception in updateLevelSettingsWithSubdivisions for level {$levelNumber}: " . $e->getMessage());
+                debugLog("Exception trace: " . $e->getTraceAsString());
+                throw $e;
             }
         }
+        
+        debugLog("=== SUBDIVISION PROCESSING DEBUG SUCCESS ===");
         
         return [
             'success' => true,
@@ -560,7 +667,9 @@ function processSubdivisionData($locationId, $postData) {
         ];
         
     } catch (Exception $e) {
-        error_log("Error processing subdivision data: " . $e->getMessage());
+        debugLog("=== SUBDIVISION PROCESSING DEBUG ERROR ===");
+        debugLog("Error processing subdivision data: " . $e->getMessage());
+        debugLog("Stack trace: " . $e->getTraceAsString());
         return [
             'success' => false,
             'message' => 'Eroare la procesarea subdiviziunilor: ' . $e->getMessage()
@@ -898,7 +1007,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                         <span class="material-symbols-outlined">close</span>
                     </button>
                 </div>
-                <form id="locationForm" method="POST">
+                <form id="locationForm" method="POST" novalidate> 
                 <div class="modal-body">
                     <input type="hidden" name="action" id="formAction" value="create">
                     <input type="hidden" name="location_id" id="locationId" value="">

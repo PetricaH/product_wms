@@ -98,15 +98,15 @@ class LocationLevelSettings {
                    max_different_products, length_mm, depth_mm, height_mm, max_weight_kg, items_capacity,
                    dedicated_product_id, allow_other_products,
                    volume_min_liters, volume_max_liters, weight_min_kg, weight_max_kg,
-                   enable_auto_repartition, repartition_trigger_threshold, priority_order, subdivision_count,
-                   requires_special_handling, temperature_controlled, notes)
+                  enable_auto_repartition, repartition_trigger_threshold, priority_order, subdivision_count,
+                   subdivisions_enabled, requires_special_handling, temperature_controlled, notes)
                   VALUES
                   (:location_id, :level_number, :level_name, :storage_policy, :allowed_product_types,
                    :max_different_products, :length_mm, :depth_mm, :height_mm, :max_weight_kg, :items_capacity,
                    :dedicated_product_id, :allow_other_products,
                    :volume_min_liters, :volume_max_liters, :weight_min_kg, :weight_max_kg,
                    :enable_auto_repartition, :repartition_trigger_threshold, :priority_order, :subdivision_count,
-                   :requires_special_handling, :temperature_controlled, :notes)
+                   :subdivisions_enabled, :requires_special_handling, :temperature_controlled, :notes)
                   ON DUPLICATE KEY UPDATE
                   level_name = VALUES(level_name),
                   storage_policy = VALUES(storage_policy),
@@ -127,6 +127,7 @@ class LocationLevelSettings {
                   repartition_trigger_threshold = VALUES(repartition_trigger_threshold),
                   priority_order = VALUES(priority_order),
                   subdivision_count = VALUES(subdivision_count),
+                  subdivisions_enabled = VALUES(subdivisions_enabled),
                   requires_special_handling = VALUES(requires_special_handling),
                   temperature_controlled = VALUES(temperature_controlled),
                   notes = VALUES(notes),
@@ -157,6 +158,7 @@ class LocationLevelSettings {
                 ':repartition_trigger_threshold' => $settings['repartition_trigger_threshold'] ?? 80,
                 ':priority_order' => $settings['priority_order'] ?? 0,
                 ':subdivision_count' => $settings['subdivision_count'] ?? 1,
+                ':subdivisions_enabled' => $settings['subdivisions_enabled'] ?? false,
                 ':requires_special_handling' => $settings['requires_special_handling'] ?? false,
                 ':temperature_controlled' => $settings['temperature_controlled'] ?? false,
                 ':notes' => $settings['notes'] ?? null
@@ -164,6 +166,7 @@ class LocationLevelSettings {
             
             return $stmt->execute($params);
         } catch (PDOException $e) {
+            $this->debugLog("PDOException in updateLevelSettings: " . $e->getMessage());
             error_log("Error updating level settings: " . $e->getMessage());
             return false;
         }

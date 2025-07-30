@@ -1,6 +1,7 @@
 // Inventory page enhancements
 let productSearchTimeout;
 let productSearchCache = {};
+const API_KEY = window.APP_CONFIG && window.APP_CONFIG.apiKey ? window.APP_CONFIG.apiKey : '';
 
 function openAddStockModal(productId = null) {
     const modal = document.getElementById('addStockModal');
@@ -99,6 +100,7 @@ function selectProduct(id, name, sku) {
     input.dataset.sku = sku;
     hideProductResults();
     updateStockCounter(sku);
+    updateSubdivisionOptions();
 }
 
 function showProductResults() {
@@ -138,7 +140,7 @@ async function updateStockCounter(sku) {
     const span = document.getElementById('total-articles');
     if (!sku) { span.textContent = ''; return; }
     try {
-        const resp = await fetch(`api/index.php?endpoint=inventory/check&skus=${encodeURIComponent(sku)}`);
+        const resp = await fetch(`api/index.php?endpoint=inventory/check&skus=${encodeURIComponent(sku)}&api_key=${API_KEY}`);
         const data = await resp.json();
         if (resp.ok && data.success && data.inventory && data.inventory[sku]) {
             span.textContent = `(Total: ${data.inventory[sku].available_quantity})`;
@@ -158,7 +160,7 @@ async function loadLocationLevels(locationId) {
     document.getElementById('subdivision_number').innerHTML = '';
     if (!locationId) return;
     try {
-        const resp = await fetch(`api/location_info.php?id=${locationId}`);
+        const resp = await fetch(`api/location_info.php?id=${locationId}&api_key=${API_KEY}`);
         const data = await resp.json();
         if (resp.ok && data.levels) {
             data.levels.forEach(l => {
@@ -172,21 +174,38 @@ async function loadLocationLevels(locationId) {
     } catch (e) { console.error(e); }
 }
 
-function updateSubdivisionOptions() {
+async function updateSubdivisionOptions() {
     const levelSelect = document.getElementById('shelf_level');
+    const locId = document.getElementById('add-location').value;
+    const productId = document.getElementById('add-product').value;
     const subContainer = document.getElementById('subdivision-container');
     const subSelect = document.getElementById('subdivision_number');
-    const opt = levelSelect.options[levelSelect.selectedIndex];
-    const count = opt ? parseInt(opt.dataset.subdivisionCount || 0) : 0;
-    if (count > 1) {
-        subSelect.innerHTML = '';
-        for (let i = 1; i <= count; i++) {
-            const o = document.createElement('option');
-            o.value = i; o.textContent = i; subSelect.appendChild(o);
+    const levelNumber = levelSelect.value;
+
+    subSelect.innerHTML = '';
+
+    if (!locId || !levelNumber) { subContainer.style.display = 'none'; return; }
+
+    try {
+        const resp = await fetch(`api/subdivision_info.php?location_id=${locId}&level=${levelNumber}&product_id=${productId}&api_key=${API_KEY}`);
+        const data = await resp.json();
+        if (resp.ok && Array.isArray(data.subdivisions) && data.subdivisions.length) {
+            data.subdivisions.forEach(sd => {
+                const opt = document.createElement('option');
+                const info = sd.capacity ? `${sd.current_stock}/${sd.capacity} articole - ${sd.occupancy_percentage}%` : `${sd.current_stock} articole`;
+                const name = sd.product_name ? sd.product_name + ' - ' : '';
+                const prefix = sd.recommended ? '⭐ ' : (sd.compatible ? '' : '❌ ');
+                opt.value = sd.subdivision_number;
+                opt.textContent = `${prefix}Subdiviziunea ${sd.subdivision_number} (${name}${info})`;
+                if (!sd.compatible) opt.disabled = true;
+                subSelect.appendChild(opt);
+            });
+            subContainer.style.display = 'block';
+        } else {
+            subContainer.style.display = 'none';
         }
-        subContainer.style.display = 'block';
-    } else {
-        subSelect.innerHTML = '';
+    } catch (e) {
+        console.error(e);
         subContainer.style.display = 'none';
     }
 }

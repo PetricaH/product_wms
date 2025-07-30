@@ -435,8 +435,12 @@ public function getSubdivisionEnabledLevels(int $locationId): array {
  * @return bool
  */
 public function updateLevelSettingsWithSubdivisions(int $locationId, int $levelNumber, array $settings): bool {
+    $startedTransaction = false;
     try {
-        $this->conn->beginTransaction();
+        if (!$this->conn->inTransaction()) {
+            $this->conn->beginTransaction();
+            $startedTransaction = true;
+        }
         
         // Handle subdivision toggle
         $subdivisionsEnabled = $settings['subdivisions_enabled'] ?? false;
@@ -479,11 +483,15 @@ public function updateLevelSettingsWithSubdivisions(int $locationId, int $levelN
             $subdivisionModel->deleteSubdivisions($locationId, $levelNumber);
         }
         
-        $this->conn->commit();
+        if ($startedTransaction) {
+            $this->conn->commit();
+        }
         return true;
-        
+
     } catch (Exception $e) {
-        $this->conn->rollBack();
+        if ($startedTransaction && $this->conn->inTransaction()) {
+            $this->conn->rollBack();
+        }
         error_log("Error updating level settings with subdivisions: " . $e->getMessage());
         return false;
     }

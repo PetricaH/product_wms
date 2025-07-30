@@ -458,7 +458,7 @@ function createLevelHTML(level) {
                     </div>
 
                     <!-- Product Restrictions Section -->
-                    <div class="settings-section">
+                    <div class="settings-section" id="product-section-${level.id}">
                         <h5>
                             <span class="material-symbols-outlined">tune</span>
                             Restricții Produse
@@ -485,7 +485,22 @@ function createLevelHTML(level) {
                         </div>
                     </div>
 
-                    
+                    <!-- Category Restriction Section -->
+                    <div class="settings-section" id="category-section-${level.id}" style="display: none;">
+                        <h5>
+                            <span class="material-symbols-outlined">category</span>
+                            Categorie Permisă
+                        </h5>
+                        <div class="form-group">
+                            <label>Selectează categoria</label>
+                            <select class="form-control" id="level_${level.id}_category" name="level_${level.id}_category">
+                                <option value="">Alege categorie...</option>
+                                ${window.allCategories.map(c => `<option value="${c}">${c}</option>`).join('')}
+                            </select>
+                        </div>
+                    </div>
+
+
                     <!-- QR Code Section -->
                     <div class="settings-section">
                     <h5>
@@ -694,14 +709,37 @@ function updateLevelsSummary() {
 function updatePolicyOptions(levelId, policy) {
     const dedicatedProduct = document.getElementById(`level_${levelId}_dedicated_product`);
     const allowOthers = document.getElementById(`level_${levelId}_allow_others`);
-    
+    const productSection = document.getElementById(`product-section-${levelId}`);
+    const categorySection = document.getElementById(`category-section-${levelId}`);
+
     if (policy === 'single_product_type') {
         dedicatedProduct.required = true;
         allowOthers.checked = false;
         allowOthers.disabled = true;
+        if (productSection) productSection.style.display = 'block';
+        if (categorySection) categorySection.style.display = 'none';
+    } else if (policy === 'category_restricted') {
+        if (dedicatedProduct) {
+            dedicatedProduct.required = false;
+            dedicatedProduct.value = '';
+        }
+        const searchInput = document.getElementById(`level_${levelId}_dedicated_product_search`);
+        if (searchInput) searchInput.value = '';
+        if (allowOthers) {
+            allowOthers.checked = true;
+            allowOthers.disabled = true;
+        }
+        if (productSection) productSection.style.display = 'none';
+        if (categorySection) categorySection.style.display = 'block';
     } else {
-        dedicatedProduct.required = false;
-        allowOthers.disabled = false;
+        if (dedicatedProduct) {
+            dedicatedProduct.required = false;
+        }
+        if (allowOthers) {
+            allowOthers.disabled = false;
+        }
+        if (productSection) productSection.style.display = 'block';
+        if (categorySection) categorySection.style.display = 'none';
     }
 }
 
@@ -1466,12 +1504,19 @@ async function populateDynamicLevels(levelSettings) {
         
         const capacityInput = document.getElementById(`level_${levelId}_capacity`);
         if (capacityInput) capacityInput.value = setting.items_capacity || '';
-        
+
         // FIX: Set dedicated product with both ID and name
         if (setting.dedicated_product_id) {
             await setLevelDedicatedProduct(levelId, setting.dedicated_product_id);
         }
-        
+
+        if (setting.allowed_product_types && Array.isArray(setting.allowed_product_types)) {
+            const catSelect = document.getElementById(`level_${levelId}_category`);
+            if (catSelect) {
+                catSelect.value = setting.allowed_product_types[0] || '';
+            }
+        }
+
         const allowOthersInput = document.getElementById(`level_${levelId}_allow_others`);
         if (allowOthersInput) allowOthersInput.checked = setting.allow_other_products !== false;
 
@@ -1513,7 +1558,15 @@ function collectLevelData() {
             max_weight_kg: parseFloat(document.getElementById(`level_${levelId}_weight`)?.value) || 50,
             items_capacity: parseInt(document.getElementById(`level_${levelId}_capacity`)?.value) || null,
             dedicated_product_id: document.getElementById(`level_${levelId}_dedicated_product`)?.value || null,
-            allow_other_products: document.getElementById(`level_${levelId}_allow_others`)?.checked ?? true
+            allow_other_products: document.getElementById(`level_${levelId}_allow_others`)?.checked ?? true,
+            allowed_product_types: (function() {
+                const policy = document.querySelector(`input[name="level_${levelId}_storage_policy"]:checked`)?.value;
+                if (policy === 'category_restricted') {
+                    const cat = document.getElementById(`level_${levelId}_category`)?.value;
+                    return cat ? [cat] : null;
+                }
+                return null;
+            })()
         };
     });
     

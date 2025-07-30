@@ -1,5 +1,12 @@
 <?php
 class LocationSubdivision {
+    private function debugLog($message) {
+        $logFile = dirname(__DIR__) . '/subdivision_debug.log';
+        $timestamp = date('Y-m-d H:i:s');
+        $logMessage = "[$timestamp] LocationLevelSettings: $message" . PHP_EOL;
+        file_put_contents($logFile, $logMessage, FILE_APPEND | LOCK_EX);
+        error_log("LocationLevelSettings: " . $message);
+    }
     private PDO $conn;
     private string $table = 'location_subdivisions';
 
@@ -71,42 +78,71 @@ class LocationSubdivision {
  * @return bool
  */
 public function createSubdivision(int $locationId, int $levelNumber, int $subdivisionNumber, array $subdivisionData): bool {
-    try {
-        // Get product information if product_id is provided
-        $productName = null;
-        if (!empty($subdivisionData['product_id'])) {
+    // Log entry into the method
+    $this->debugLog("=== DEBUG createSubdivision START ===");
+    $this->debugLog("Params: location_id={$locationId}, level_number={$levelNumber}, subdivision_number={$subdivisionNumber}, data=" . json_encode($subdivisionData));
+
+    // Resolve product name if given
+    $productName = null;
+    if (!empty($subdivisionData['product_id'])) {
+        try {
             $productName = $this->getProductName($subdivisionData['product_id']);
+            $this->debugLog("Resolved product_name: {$productName}");
+        } catch (\Exception $e) {
+            $this->debugLog("Failed to fetch product name: " . $e->getMessage());
+            // Continue anyway; product_name can be null
         }
-        
-        $query = "INSERT INTO {$this->table} 
-                  (location_id, level_number, subdivision_number, items_capacity, product_capacity,
-                   dedicated_product_id, product_name, allow_other_products, notes, created_at)
-                  VALUES (:location_id, :level_number, :subdivision_number, :items_capacity, :product_capacity,
-                          :dedicated_product_id, :product_name, :allow_other_products, :notes, NOW())
-                  ON DUPLICATE KEY UPDATE
-                      items_capacity = VALUES(items_capacity),
-                      product_capacity = VALUES(product_capacity),
-                      dedicated_product_id = VALUES(dedicated_product_id),
-                      product_name = VALUES(product_name),
-                      allow_other_products = VALUES(allow_other_products),
-                      notes = VALUES(notes),
-                      updated_at = CURRENT_TIMESTAMP";
-        
-        $stmt = $this->conn->prepare($query);
-        return $stmt->execute([
-            ':location_id' => $locationId,
-            ':level_number' => $levelNumber,
-            ':subdivision_number' => $subdivisionNumber,
-            ':items_capacity' => $subdivisionData['capacity'] ?? null,
-            ':product_capacity' => $subdivisionData['capacity'] ?? null, // Same as items_capacity for now
-            ':dedicated_product_id' => $subdivisionData['product_id'] ?? null,
-            ':product_name' => $productName,
-            ':allow_other_products' => false, // For subdivisions, each is dedicated to one product
-            ':notes' => $subdivisionData['notes'] ?? null
-        ]);
-        
-    } catch (PDOException $e) {
-        error_log("Error creating subdivision: " . $e->getMessage());
+    }
+
+    $query = "INSERT INTO {$this->table}
+              (location_id, level_number, subdivision_number, items_capacity, product_capacity,
+               dedicated_product_id, product_name, allow_other_products, notes, created_at)
+              VALUES
+              (:location_id, :level_number, :subdivision_number, :items_capacity, :product_capacity,
+               :dedicated_product_id, :product_name, :allow_other_products, :notes, NOW())
+              ON DUPLICATE KEY UPDATE
+                items_capacity        = VALUES(items_capacity),
+                product_capacity      = VALUES(product_capacity),
+                dedicated_product_id  = VALUES(dedicated_product_id),
+                product_name          = VALUES(product_name),
+                allow_other_products  = VALUES(allow_other_products),
+                notes                 = VALUES(notes),
+                updated_at            = CURRENT_TIMESTAMP";
+
+    $stmt = $this->conn->prepare($query);
+
+    // Build params, casting booleans to ints
+    $params = [
+        ':location_id'        => $locationId,
+        ':level_number'       => $levelNumber,
+        ':subdivision_number' => $subdivisionNumber,
+        ':items_capacity'     => $subdivisionData['capacity'] ?? null,
+        ':product_capacity'   => $subdivisionData['capacity'] ?? null,
+        ':dedicated_product_id'=> $subdivisionData['product_id'] ?? null,
+        ':product_name'       => $productName,
+        ':allow_other_products'=> 0, // always dedicated for subdivisions
+        ':notes'              => $subdivisionData['notes'] ?? null,
+    ];
+
+    $this->debugLog("Prepared INSERT with params: " . json_encode($params));
+
+    try {
+        if (! $stmt->execute($params)) {
+            // Log the exact SQL error
+            $err = $stmt->errorInfo();
+            $this->debugLog(sprintf(
+                "Subdivision INSERT failed (loc=%d lvl=%d idx=%d): SQLSTATE[%s] Code[%d] — %s",
+                $locationId, $levelNumber, $subdivisionNumber,
+                $err[0], $err[1], $err[2]
+            ));
+            return false;
+        }
+        $this->debugLog("Subdivision created/updated successfully");
+        return true;
+
+    } catch (\PDOException $e) {
+        // In case PDO throws instead of execute() returning false
+        $this->debugLog("PDOException in createSubdivision: " . $e->getMessage());
         return false;
     }
 }

@@ -1633,7 +1633,6 @@ function enhanceFormSubmission() {
                     const tabName = tabContent.id.replace('-tab', '');
                     switchLocationTab(tabName);
                 }
-
                 // Delay focus to allow tab visibility change to apply
                 setTimeout(() => {
                     firstInvalid.focus();

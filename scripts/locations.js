@@ -1633,8 +1633,11 @@ function enhanceFormSubmission() {
                     const tabName = tabContent.id.replace('-tab', '');
                     switchLocationTab(tabName);
                 }
-                firstInvalid.focus();
-                firstInvalid.reportValidity();
+                // Delay focus to allow tab visibility change to apply
+                setTimeout(() => {
+                    firstInvalid.focus();
+                    firstInvalid.reportValidity();
+                }, 50);
             }
             return false;
         }

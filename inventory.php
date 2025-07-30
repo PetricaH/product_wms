@@ -56,7 +56,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'lot_number' => trim($_POST['lot_number'] ?? ''),
                 'expiry_date' => $_POST['expiry_date'] ?? null,
                 'received_at' => $_POST['received_at'] ?? date('Y-m-d H:i:s'),
-                'shelf_level' => $_POST['shelf_level'] ?? null
+                'shelf_level' => $_POST['shelf_level'] ?? null,
+                'subdivision_number' => isset($_POST['subdivision_number']) ? intval($_POST['subdivision_number']) : null
             ];
             
             if ($stockData['product_id'] <= 0 || $stockData['location_id'] <= 0 || $stockData['quantity'] <= 0) {
@@ -526,15 +527,13 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                         <input type="hidden" name="action" value="add_stock">
                         
                         <div class="form-group">
-                            <label for="add-product" class="form-label">Produs *</label>
-                            <select id="add-product" name="product_id" class="form-control" required>
-                                <option value="">Selectează produs</option>
-                                <?php foreach ($allProducts as $product): ?>
-                                    <option value="<?= $product['product_id'] ?>">
-                                        <?= htmlspecialchars($product['name']) ?> (<?= htmlspecialchars($product['sku']) ?>)
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
+                            <label class="form-label">Produs *</label>
+                            <div class="product-search-container">
+                                <input type="hidden" id="add-product" name="product_id">
+                                <input type="text" id="add-product-search" class="form-control product-search-input" placeholder="Caută produs..." autocomplete="off"
+                                       onkeyup="searchProducts(this.value)" onfocus="showProductResults()">
+                                <div class="product-search-results" id="add-product-results"></div>
+                            </div>
                         </div>
                         
                         <div class="form-group">
@@ -550,17 +549,18 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                         </div>
                         <div class="form-group">
                             <label for="shelf_level" class="form-label">Nivel raft</label>
-                            <select id="shelf_level" name="shelf_level" class="form-control">
+                            <select id="shelf_level" name="shelf_level" class="form-control" onchange="updateSubdivisionOptions()">
                                 <option value="">--</option>
-                                <option value="top">Top</option>
-                                <option value="middle">Middle</option>
-                                <option value="bottom">Bottom</option>
                             </select>
+                        </div>
+                        <div class="form-group" id="subdivision-container" style="display:none;">
+                            <label for="subdivision_number" class="form-label">Subdiviziune</label>
+                            <select id="subdivision_number" name="subdivision_number" class="form-control"></select>
                         </div>
                         
                         <div class="row">
                             <div class="form-group">
-                                <label for="add-quantity" class="form-label">Cantitate *</label>
+                                <label for="add-quantity" class="form-label">Cantitate <span id="total-articles" style="font-weight:normal;color:var(--text-secondary);"></span> *</label>
                                 <input type="number" id="add-quantity" name="quantity" class="form-control" min="1" required>
                             </div>
                             <div class="form-group">

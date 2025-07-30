@@ -1,56 +1,218 @@
-  function openAddStockModal() {
-            document.getElementById('addStockModal').classList.add('show');
-        }
+// Inventory page enhancements
+let productSearchTimeout;
+let productSearchCache = {};
 
-        function closeAddStockModal() {
-            document.getElementById('addStockModal').classList.remove('show');
-        }
+function openAddStockModal(productId = null) {
+    const modal = document.getElementById('addStockModal');
+    modal.classList.add('show');
+    generateBatchLot();
+    if (productId) {
+        loadProductDetails(productId);
+    } else {
+        clearProductSelection();
+    }
+}
 
-        function openRemoveStockModal(productId, productName) {
-            document.getElementById('remove-product-id').value = productId;
-            document.getElementById('remove-product-name').textContent = productName;
-            document.getElementById('removeStockModal').classList.add('show');
-        }
+function closeAddStockModal() {
+    document.getElementById('addStockModal').classList.remove('show');
+}
 
-        function closeRemoveStockModal() {
-            document.getElementById('removeStockModal').classList.remove('show');
-        }
+function openRemoveStockModal(productId, productName) {
+    document.getElementById('remove-product-id').value = productId;
+    document.getElementById('remove-product-name').textContent = productName;
+    document.getElementById('removeStockModal').classList.add('show');
+}
 
-        function openMoveStockModal(item) {
-            document.getElementById('move-inventory-id').value = item.id;
-            document.getElementById('move-product-id').value = item.product_id;
-            document.getElementById('move-from-location-id').value = item.location_id;
-            document.getElementById('move-product-name').textContent = item.product_name;
-            document.getElementById('available-quantity').textContent = parseInt(item.quantity).toLocaleString();
-            document.getElementById('move-quantity').max = item.quantity;
-            document.getElementById('moveStockModal').classList.add('show');
-        }
+function closeRemoveStockModal() {
+    document.getElementById('removeStockModal').classList.remove('show');
+}
 
-        function closeMoveStockModal() {
-            document.getElementById('moveStockModal').classList.remove('show');
-        }
+function openMoveStockModal(item) {
+    document.getElementById('move-inventory-id').value = item.id;
+    document.getElementById('move-product-id').value = item.product_id;
+    document.getElementById('move-from-location-id').value = item.location_id;
+    document.getElementById('move-product-name').textContent = item.product_name;
+    document.getElementById('available-quantity').textContent = parseInt(item.quantity).toLocaleString();
+    document.getElementById('move-quantity').max = item.quantity;
+    document.getElementById('moveStockModal').classList.add('show');
+}
 
-        function addStockForProduct(productId) {
-            document.getElementById('add-product').value = productId;
-            openAddStockModal();
-        }
+function closeMoveStockModal() {
+    document.getElementById('moveStockModal').classList.remove('show');
+}
 
-        // Close modals when clicking outside
-        window.onclick = function(event) {
-            const modals = ['addStockModal', 'removeStockModal', 'moveStockModal'];
-            modals.forEach(modalId => {
-                const modal = document.getElementById(modalId);
-                if (event.target === modal) {
-                    modal.classList.remove('show');
-                }
+function addStockForProduct(productId) {
+    openAddStockModal(productId);
+}
+
+window.onclick = function(event) {
+    ['addStockModal','removeStockModal','moveStockModal'].forEach(id => {
+        const modal = document.getElementById(id);
+        if (event.target === modal) modal.classList.remove('show');
+    });
+};
+
+document.addEventListener('keydown', function(event) {
+    if (event.key === 'Escape') {
+        closeAddStockModal();
+        closeRemoveStockModal();
+        closeMoveStockModal();
+    }
+});
+
+// -------- Product search ---------
+function searchProducts(query) {
+    clearTimeout(productSearchTimeout);
+    productSearchTimeout = setTimeout(async () => {
+        if (query.length < 2) { hideProductResults(); return; }
+        if (productSearchCache[query]) { displayProductResults(productSearchCache[query]); return; }
+        try {
+            const resp = await fetch(`api/products.php?search=${encodeURIComponent(query)}&limit=10`);
+            const data = await resp.json();
+            if (resp.ok && Array.isArray(data)) {
+                productSearchCache[query] = data;
+                displayProductResults(data);
+            }
+        } catch (e) { console.error(e); }
+    }, 300);
+}
+
+function displayProductResults(products) {
+    const container = document.getElementById('add-product-results');
+    if (!container) return;
+    if (products.length === 0) {
+        container.innerHTML = '<div class="search-result-item no-results">Nu s-au găsit produse</div>';
+    } else {
+        container.innerHTML = products.map(p => `
+            <div class="search-result-item" onclick="selectProduct(${p.id}, '${escapeHtml(p.name)}', '${p.code}')">
+                <div class="product-name">${escapeHtml(p.name)}</div>
+                <div class="product-details">${escapeHtml(p.code)} - ${escapeHtml(p.category)}</div>
+            </div>`).join('');
+    }
+    container.classList.add('show');
+}
+
+function selectProduct(id, name, sku) {
+    document.getElementById('add-product').value = id;
+    const input = document.getElementById('add-product-search');
+    input.value = name;
+    input.dataset.sku = sku;
+    hideProductResults();
+    updateStockCounter(sku);
+}
+
+function showProductResults() {
+    const input = document.getElementById('add-product-search');
+    if (input.value.length < 2) return;
+    const container = document.getElementById('add-product-results');
+    container.classList.add('show');
+}
+
+function hideProductResults() {
+    const container = document.getElementById('add-product-results');
+    if (container) {
+        container.innerHTML = '';
+        container.classList.remove('show');
+    }
+}
+
+async function loadProductDetails(id) {
+    try {
+        const resp = await fetch(`api/products.php?id=${id}`);
+        const data = await resp.json();
+        if (resp.ok && Array.isArray(data) && data.length) {
+            const p = data[0];
+            selectProduct(p.id, p.name, p.code);
+        }
+    } catch (e) { console.error(e); }
+}
+
+function clearProductSelection() {
+    document.getElementById('add-product').value = '';
+    document.getElementById('add-product-search').value = '';
+    document.getElementById('add-product-search').dataset.sku = '';
+    document.getElementById('total-articles').textContent = '';
+}
+
+async function updateStockCounter(sku) {
+    const span = document.getElementById('total-articles');
+    if (!sku) { span.textContent = ''; return; }
+    try {
+        const resp = await fetch(`api/index.php?endpoint=inventory/check&skus=${encodeURIComponent(sku)}`);
+        const data = await resp.json();
+        if (resp.ok && data.success && data.inventory && data.inventory[sku]) {
+            span.textContent = `(Total: ${data.inventory[sku].available_quantity})`;
+        } else {
+            span.textContent = '(Total: 0)';
+        }
+    } catch (e) {
+        span.textContent = '';
+    }
+}
+
+// -------- Location Levels ---------
+async function loadLocationLevels(locationId) {
+    const levelSelect = document.getElementById('shelf_level');
+    levelSelect.innerHTML = '<option value="">--</option>';
+    document.getElementById('subdivision-container').style.display = 'none';
+    document.getElementById('subdivision_number').innerHTML = '';
+    if (!locationId) return;
+    try {
+        const resp = await fetch(`api/location_info.php?id=${locationId}`);
+        const data = await resp.json();
+        if (resp.ok && data.levels) {
+            data.levels.forEach(l => {
+                const opt = document.createElement('option');
+                opt.value = l.number;
+                opt.textContent = l.name;
+                opt.dataset.subdivisionCount = l.subdivision_count;
+                levelSelect.appendChild(opt);
             });
         }
+    } catch (e) { console.error(e); }
+}
 
-        // Close modals with Escape key
-        document.addEventListener('keydown', function(event) {
-            if (event.key === 'Escape') {
-                closeAddStockModal();
-                closeRemoveStockModal();
-                closeMoveStockModal();
-            }
-        });
+function updateSubdivisionOptions() {
+    const levelSelect = document.getElementById('shelf_level');
+    const subContainer = document.getElementById('subdivision-container');
+    const subSelect = document.getElementById('subdivision_number');
+    const opt = levelSelect.options[levelSelect.selectedIndex];
+    const count = opt ? parseInt(opt.dataset.subdivisionCount || 0) : 0;
+    if (count > 1) {
+        subSelect.innerHTML = '';
+        for (let i = 1; i <= count; i++) {
+            const o = document.createElement('option');
+            o.value = i; o.textContent = i; subSelect.appendChild(o);
+        }
+        subContainer.style.display = 'block';
+    } else {
+        subSelect.innerHTML = '';
+        subContainer.style.display = 'none';
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const locSelect = document.getElementById('add-location');
+    if (locSelect) {
+        locSelect.addEventListener('change', () => loadLocationLevels(locSelect.value));
+    }
+});
+
+function generateBatchLot() {
+    const batch = document.getElementById('add-batch');
+    const lot = document.getElementById('add-lot');
+    const now = Date.now();
+    if (batch) batch.value = 'B' + now.toString().slice(-6);
+    if (lot) lot.value = 'L' + Math.floor(Math.random()*900000 + 100000);
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+window.searchProducts = searchProducts;
+window.showProductResults = showProductResults;
+window.addStockForProduct = addStockForProduct;
+window.updateSubdivisionOptions = updateSubdivisionOptions;

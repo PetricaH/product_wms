@@ -149,18 +149,18 @@ class LocationLevelSettings {
                 ':max_weight_kg' => $settings['max_weight_kg'] ?? 0,
                 ':items_capacity' => $settings['items_capacity'] ?? null,
                 ':dedicated_product_id' => $settings['dedicated_product_id'] ?? null,
-                ':allow_other_products' => $settings['allow_other_products'] ?? true,
+                ':allow_other_products' => isset($settings['allow_other_products']) ? (int)(bool)$settings['allow_other_products'] : 1,
                 ':volume_min_liters' => $settings['volume_min_liters'] ?? null,
                 ':volume_max_liters' => $settings['volume_max_liters'] ?? null,
                 ':weight_min_kg' => $settings['weight_min_kg'] ?? null,
                 ':weight_max_kg' => $settings['weight_max_kg'] ?? null,
-                ':enable_auto_repartition' => $settings['enable_auto_repartition'] ?? false,
+                ':enable_auto_repartition' => isset($settings['enable_auto_repartition']) ? (int)(bool)$settings['enable_auto_repartition'] : 0,
                 ':repartition_trigger_threshold' => $settings['repartition_trigger_threshold'] ?? 80,
                 ':priority_order' => $settings['priority_order'] ?? 0,
                 ':subdivision_count' => $settings['subdivision_count'] ?? 1,
-                ':subdivisions_enabled' => $settings['subdivisions_enabled'] ?? false,
-                ':requires_special_handling' => $settings['requires_special_handling'] ?? false,
-                ':temperature_controlled' => $settings['temperature_controlled'] ?? false,
+                ':subdivisions_enabled' => isset($settings['subdivisions_enabled']) ? (int)(bool)$settings['subdivisions_enabled'] : 0,
+                ':requires_special_handling' => isset($settings['requires_special_handling']) ? (int)(bool)$settings['requires_special_handling'] : 0,
+                ':temperature_controlled' => isset($settings['temperature_controlled']) ? (int)(bool)$settings['temperature_controlled'] : 0,
                 ':notes' => $settings['notes'] ?? null
             ];
             

@@ -59,6 +59,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'shelf_level' => $_POST['shelf_level'] ?? null,
                 'subdivision_number' => isset($_POST['subdivision_number']) ? intval($_POST['subdivision_number']) : null
             ];
+
+            if (!empty($stockData['received_at'])) {
+                if (strpos($stockData['received_at'], 'T') !== false) {
+                    $dateTime = DateTime::createFromFormat('Y-m-d\TH:i', $stockData['received_at']);
+                    if ($dateTime) {
+                        $stockData['received_at'] = $dateTime->format('Y-m-d H:i:s');
+                    }
+                }
+            }
             
             if ($stockData['product_id'] <= 0 || $stockData['location_id'] <= 0 || $stockData['quantity'] <= 0) {
                 $message = 'Produsul, locația și cantitatea sunt obligatorii.';

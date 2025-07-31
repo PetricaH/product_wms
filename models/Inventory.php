@@ -223,8 +223,8 @@ class Inventory {
 
             // Insert inventory record
             $query = "INSERT INTO {$this->inventoryTable}
-                      (product_id, location_id, shelf_level, subdivision_number, quantity, batch_number, lot_number, expiry_date, received_at)
-                      VALUES (:product_id, :location_id, :shelf_level, :subdivision, :quantity, :batch_number, :lot_number, :expiry_date, :received_at)";
+                    (product_id, location_id, shelf_level, subdivision_number, quantity, batch_number, lot_number, expiry_date, received_at)
+                    VALUES (:product_id, :location_id, :shelf_level, :subdivision, :quantity, :batch_number, :lot_number, :expiry_date, :received_at)";
 
             $stmt = $this->conn->prepare($query);
             $stmt->bindParam(':product_id', $data['product_id'], PDO::PARAM_INT);

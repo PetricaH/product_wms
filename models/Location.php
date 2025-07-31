@@ -504,7 +504,7 @@ class Location {
      * @return array
      */
     private function getLevelOccupancyData(int $locationId, int $levelNumber): array {
-        $levelName = $this->getLevelName($levelNumber);
+        $levelName = $this->levelSettings->getLevelNameByNumber($locationId, $levelNumber) ?? ('Level ' . $levelNumber);
         
         $query = "SELECT 
                     COALESCE(SUM(i.quantity), 0) as items,
@@ -1508,14 +1508,7 @@ class Location {
      * @param int $levelNumber
      * @return string
      */
-    private function getLevelName(int $levelNumber): string {
-        return match($levelNumber) {
-            1 => 'bottom',
-            2 => 'middle',
-            3 => 'top',
-            default => 'middle'
-        };
-    }
+
 
     /**
      * Enhance location occupancy calculations

@@ -1869,6 +1869,7 @@ openPendingProductsModal() {
         this.state.pendingPagination.offset = 0;
         this.state.pendingSearch = '';
         if (this.elements.pendingSearchInput) this.elements.pendingSearchInput.value = '';
+
         this.renderPendingProductsTable();
         this.renderPendingPagination();
         this.elements.pendingProductsModal.style.display = 'block';
@@ -1886,6 +1887,7 @@ openPendingProductsModal() {
         this.state.pendingPagination.total = 0;
         this.state.pendingSearch = '';
         if (this.elements.pendingSearchInput) this.elements.pendingSearchInput.value = '';
+
         if (this.elements.pendingPagination) {
             this.elements.pendingPagination.innerHTML = '';
         }

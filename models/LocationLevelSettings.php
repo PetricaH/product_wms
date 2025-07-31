@@ -57,7 +57,7 @@ class LocationLevelSettings {
      * @return array|null
      */
     public function getLevelSetting(int $locationId, int $levelNumber): ?array {
-        $query = "SELECT * FROM {$this->table} 
+        $query = "SELECT * FROM {$this->table}
                   WHERE location_id = :location_id AND level_number = :level_number";
         
         try {
@@ -75,6 +75,25 @@ class LocationLevelSettings {
             return $result ?: null;
         } catch (PDOException $e) {
             error_log("Error getting level setting: " . $e->getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Fetch the custom level name for a location level
+     *
+     * @param int $locationId
+     * @param int $levelNumber
+     * @return string|null
+     */
+    public function getLevelNameByNumber(int $locationId, int $levelNumber): ?string {
+        try {
+            $stmt = $this->conn->prepare("SELECT level_name FROM {$this->table} WHERE location_id = :loc AND level_number = :lvl LIMIT 1");
+            $stmt->execute([':loc' => $locationId, ':lvl' => $levelNumber]);
+            $name = $stmt->fetchColumn();
+            return $name !== false ? $name : null;
+        } catch (PDOException $e) {
+            error_log("Error fetching level name: " . $e->getMessage());
             return null;
         }
     }

@@ -198,12 +198,16 @@ class Inventory {
         $batchNumber = $data['batch_number'] ?? null;
         $lotNumber   = $data['lot_number']   ?? null;
         $expiryDate  = $data['expiry_date']  ?? null;
-        $shelfLevel  = $data['shelf_level']  ?? 'middle';
+        $shelfLevel  = $data['shelf_level']  ?? null;
         $subdivision = $data['subdivision_number'] ?? null;
 
-        // Validate shelf level
-        $validLevels = ['top', 'middle', 'bottom'];
-        if (!in_array($shelfLevel, $validLevels)) {
+        // Resolve numeric level to custom level name if needed
+        if (is_numeric($shelfLevel)) {
+            require_once __DIR__ . '/LocationLevelSettings.php';
+            $lls = new LocationLevelSettings($this->conn);
+            $name = $lls->getLevelNameByNumber((int)$data['location_id'], (int)$shelfLevel);
+            $shelfLevel = $name ?: 'middle';
+        } elseif ($shelfLevel === null) {
             $shelfLevel = 'middle';
         }
 

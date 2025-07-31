@@ -166,7 +166,13 @@ async function loadLocationLevels(locationId) {
             data.levels.forEach(l => {
                 const opt = document.createElement('option');
                 opt.value = l.number;
-                opt.textContent = l.name;
+                let label = l.name;
+                if ((l.current_stock > 0) || l.dedicated_product_id) {
+                    const info = l.capacity ? `${l.current_stock}/${l.capacity} articole - ${l.occupancy_percentage}%` : `${l.current_stock} articole`;
+                    const name = l.product_name ? l.product_name + ' - ' : '';
+                    label += ` (${name}${info})`;
+                }
+                opt.textContent = label;
                 opt.dataset.subdivisionCount = l.subdivision_count;
                 levelSelect.appendChild(opt);
             });

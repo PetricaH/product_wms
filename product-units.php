@@ -792,6 +792,9 @@ $currentPage = 'product-units';
                 </button>
             </div>
             <div class="modal-body">
+                <div class="stock-search-bar">
+                    <input type="text" id="pendingSearch" class="stock-search-input" placeholder="Caută produs...">
+                </div>
                 <table class="data-table">
                     <thead>
                         <tr>
@@ -803,6 +806,7 @@ $currentPage = 'product-units';
                     <tbody id="pendingProductsList">
                     </tbody>
                 </table>
+                <div id="pendingPagination" class="pagination-wrapper"></div>
             </div>
         </div>
     </div>

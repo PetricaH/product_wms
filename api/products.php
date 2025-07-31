@@ -48,7 +48,8 @@ try {
     
     // EXISTING: Search functionality (unchanged)
     $search = trim($_GET['search'] ?? '');
-    $limit = min(100, max(1, intval($_GET['limit'] ?? 10)));
+    $limit = max(1, intval($_GET['limit'] ?? 10));
+    $offset = max(0, intval($_GET['offset'] ?? 0));
     
     $baseQuery = "
         SELECT
@@ -68,13 +69,14 @@ try {
         $params[':search'] = '%' . $search . '%';
     }
     
-    $query = "$baseQuery $where GROUP BY p.product_id, p.name, p.sku, p.category ORDER BY p.name ASC LIMIT :limit";
+    $query = "$baseQuery $where GROUP BY p.product_id, p.name, p.sku, p.category ORDER BY p.name ASC LIMIT :limit OFFSET :offset";
     
     $stmt = $db->prepare($query);
     foreach ($params as $k => $v) {
         $stmt->bindValue($k, $v);
     }
     $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+    $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
     $stmt->execute();
     $products = $stmt->fetchAll(PDO::FETCH_ASSOC);
     
@@ -87,8 +89,24 @@ try {
             'configured_units' => (int)$row['configured_units']
         ];
     }, $products);
-    
-    echo json_encode($formattedProducts);
+
+    $countQuery = "SELECT COUNT(*) FROM products p" . ($where ? " $where" : '');
+    $countStmt = $db->prepare($countQuery);
+    foreach ($params as $k => $v) {
+        $countStmt->bindValue($k, $v);
+    }
+    $countStmt->execute();
+    $total = (int)$countStmt->fetchColumn();
+
+    echo json_encode([
+        'data' => $formattedProducts,
+        'total' => $total,
+        'pagination' => [
+            'limit' => $limit,
+            'offset' => $offset,
+            'has_next' => ($offset + $limit) < $total
+        ]
+    ]);
     
 } catch (Exception $e) {
     http_response_code(500);

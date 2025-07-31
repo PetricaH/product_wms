@@ -35,6 +35,9 @@ const ProductUnitsApp = {
         products: [],
         stockSettings: [],
         stockPagination: { limit: 20, offset: 0, total: 0, has_next: false },
+        pendingPagination: { limit: 20, offset: 0, total: 0, has_next: false },
+        pendingList: [],
+        pendingSearch: '',
         stockSearch: '',
         barrelDimensions: [],
         filteredData: [],
@@ -79,6 +82,8 @@ const ProductUnitsApp = {
             showPendingProductsBtn: document.getElementById('showPendingProductsBtn'),
             pendingProductsModal: document.getElementById('pendingProductsModal'),
             pendingProductsList: document.getElementById('pendingProductsList'),
+            pendingPagination: document.getElementById('pendingPagination'),
+            pendingSearchInput: document.getElementById('pendingSearch'),
             pendingModalClose: document.querySelector('#pendingProductsModal .modal-close'),
             statusFilter: document.getElementById('statusFilter'),
             clearFilters: document.getElementById('clearFilters'),
@@ -282,6 +287,15 @@ const ProductUnitsApp = {
             }, this.config.debounceDelay));
         }
 
+        if (this.elements.pendingSearchInput) {
+            this.elements.pendingSearchInput.addEventListener('input', this.debounce(() => {
+                this.state.pendingSearch = this.elements.pendingSearchInput.value.trim().toLowerCase();
+                this.state.pendingPagination.offset = 0;
+                this.renderPendingProductsTable();
+                this.renderPendingPagination();
+            }, this.config.debounceDelay));
+        }
+
         if (this.elements.productSearchInput) {
             this.elements.productSearchInput.addEventListener('input', this.debounce(() => {
                 const q = this.elements.productSearchInput.value.trim();
@@ -314,6 +328,24 @@ const ProductUnitsApp = {
                     if (this.state.stockPagination.has_next) {
                         this.state.stockPagination.offset += this.state.stockPagination.limit;
                         this.loadStockSettings();
+                    }
+                }
+            });
+        }
+
+        if (this.elements.pendingPagination) {
+            this.elements.pendingPagination.addEventListener('click', (e) => {
+                if (e.target.classList.contains('prev-page')) {
+                    if (this.state.pendingPagination.offset >= this.state.pendingPagination.limit) {
+                        this.state.pendingPagination.offset -= this.state.pendingPagination.limit;
+                        this.renderPendingProductsTable();
+                        this.renderPendingPagination();
+                    }
+                } else if (e.target.classList.contains('next-page')) {
+                    if (this.state.pendingPagination.offset + this.state.pendingPagination.limit < this.state.pendingPagination.total) {
+                        this.state.pendingPagination.offset += this.state.pendingPagination.limit;
+                        this.renderPendingProductsTable();
+                        this.renderPendingPagination();
                     }
                 }
             });
@@ -700,6 +732,10 @@ const ProductUnitsApp = {
     // ===== MODAL MANAGEMENT =====
     openModal(productId = null) {
         if (!this.elements.modal) return;
+
+        if (this.elements.pendingProductsModal && this.elements.pendingProductsModal.style.display === 'block') {
+            this.closePendingProductsModal();
+        }
 
 
         // Reset search inputs
@@ -1828,19 +1864,13 @@ openPendingProductsModal() {
             this.loadProducts();
         }
         const pending = this.state.products.filter(p => p.configured_units === 0);
-        if (this.elements.pendingProductsList) {
-            if (pending.length === 0) {
-                this.elements.pendingProductsList.innerHTML = '<tr><td colspan="3" class="text-center">Toate produsele sunt configurate</td></tr>';
-            } else {
-                this.elements.pendingProductsList.innerHTML = pending.map(p => `
-                    <tr>
-                        <td>${this.escapeHtml(p.name)}</td>
-                        <td>${this.escapeHtml(p.code)}</td>
-                        <td><button class="btn btn-sm btn-primary" onclick="ProductUnitsApp.openModal(${p.id})">Configurează</button></td>
-                    </tr>
-                `).join('');
-            }
-        }
+        this.state.pendingList = pending;
+        this.state.pendingPagination.total = pending.length;
+        this.state.pendingPagination.offset = 0;
+        this.state.pendingSearch = '';
+        if (this.elements.pendingSearchInput) this.elements.pendingSearchInput.value = '';
+        this.renderPendingProductsTable();
+        this.renderPendingPagination();
         this.elements.pendingProductsModal.style.display = 'block';
         document.body.style.overflow = 'hidden';
     },
@@ -1852,6 +1882,59 @@ openPendingProductsModal() {
         if (this.elements.pendingProductsList) {
             this.elements.pendingProductsList.innerHTML = '';
         }
+        this.state.pendingPagination.offset = 0;
+        this.state.pendingPagination.total = 0;
+        this.state.pendingSearch = '';
+        if (this.elements.pendingSearchInput) this.elements.pendingSearchInput.value = '';
+        if (this.elements.pendingPagination) {
+            this.elements.pendingPagination.innerHTML = '';
+        }
+    },
+
+    renderPendingProductsTable() {
+        if (!this.elements.pendingProductsList) return;
+        const { offset, limit } = this.state.pendingPagination;
+        let filtered = this.state.pendingList;
+        if (this.state.pendingSearch) {
+            const search = this.state.pendingSearch;
+            filtered = filtered.filter(p =>
+                p.name.toLowerCase().includes(search) ||
+                p.code.toLowerCase().includes(search)
+            );
+        }
+        this.state.pendingPagination.total = filtered.length;
+        const slice = filtered.slice(offset, offset + limit);
+        if (slice.length === 0) {
+            this.elements.pendingProductsList.innerHTML = '<tr><td colspan="3" class="text-center">Toate produsele sunt configurate</td></tr>';
+            return;
+        }
+        this.elements.pendingProductsList.innerHTML = slice.map(p => `
+            <tr>
+                <td>${this.escapeHtml(p.name)}</td>
+                <td>${this.escapeHtml(p.code)}</td>
+                <td><button class="btn btn-sm btn-primary" onclick="ProductUnitsApp.openModal(${p.id})">Configurează</button></td>
+            </tr>
+        `).join('');
+    },
+
+    renderPendingPagination() {
+        if (!this.elements.pendingPagination) return;
+        const { limit, offset, total } = this.state.pendingPagination;
+        if (total <= limit) {
+            this.elements.pendingPagination.innerHTML = '';
+            return;
+        }
+        const start = total === 0 ? 0 : offset + 1;
+        const end = Math.min(offset + limit, total);
+        const prevDisabled = offset === 0 ? 'disabled' : '';
+        const nextDisabled = offset + limit >= total ? 'disabled' : '';
+        this.elements.pendingPagination.innerHTML = `
+            <div class="pagination-info">Afișare ${start}-${end} din ${total}</div>
+            <div class="pagination-controls">
+                <button class="btn btn-secondary prev-page" ${prevDisabled}>Anterior</button>
+                <button class="btn btn-secondary next-page" ${nextDisabled}>Următor</button>
+            </div>
+        `;
     },
 
 };

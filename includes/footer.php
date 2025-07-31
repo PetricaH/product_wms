@@ -1,8 +1,22 @@
 <?php
-// File: includes/footer.php - Corrected with script loading order
+// File: includes/footer.php - FIXED JavaScript configuration
 
 if (!isset($currentPage)) {
     $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
+}
+
+// Get the config to ensure API key is available
+$config = require BASE_PATH . '/config/config.php';
+$apiKey = $config['api']['key'] ?? '';
+
+// Fallback: try environment variable if config doesn't have it
+if (empty($apiKey)) {
+    $apiKey = getenv('WMS_API_KEY') ?: '';
+}
+
+// Fallback: try $_ENV and $_SERVER
+if (empty($apiKey)) {
+    $apiKey = $_ENV['WMS_API_KEY'] ?? $_SERVER['WMS_API_KEY'] ?? '';
 }
 ?>
 
@@ -10,8 +24,15 @@ if (!isset($currentPage)) {
     window.APP_CONFIG = {
         // Correctly check if the BASE_URL constant is defined.
         baseUrl: '<?php echo defined('BASE_URL') ? rtrim(BASE_URL, '/') : ''; ?>',
-        apiKey: '<?php echo getenv('WMS_API_KEY') ?: ''; ?>'
+        apiKey: '<?php echo htmlspecialchars($apiKey, ENT_QUOTES, 'UTF-8'); ?>'
     };
+    
+    // Debug logging (remove in production)
+    if (window.APP_CONFIG.apiKey) {
+        console.log('✅ API Key loaded successfully');
+    } else {
+        console.warn('⚠️ API Key not loaded - this may cause issues');
+    }
 </script>
 
 <?php

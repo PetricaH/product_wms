@@ -463,13 +463,21 @@ class Inventory {
      */
     public function getStockSummaryBySku(string $sku): array {
         $query = "SELECT 
-                    COALESCE(SUM(i.quantity), 0) as total_quantity,
-                    COUNT(DISTINCT i.location_id) as locations_count,
-                    GROUP_CONCAT(DISTINCT l.location_code) as locations
-                  FROM {$this->inventoryTable} i
-                  LEFT JOIN {$this->productsTable} p ON i.product_id = p.product_id
-                  LEFT JOIN {$this->locationsTable} l ON i.location_id = l.id
-                  WHERE p.sku = :sku AND i.quantity > 0";
+                    COALESCE(SUM(i.quantity), 0) as inventory_quantity,
+                    COALESCE(p.quantity, 0) as product_quantity,
+                    GREATEST(
+                        COALESCE(SUM(i.quantity), 0), 
+                        COALESCE(p.quantity, 0)
+                    ) as total_quantity,
+                    COUNT(DISTINCT CASE WHEN i.quantity > 0 THEN i.location_id END) as locations_count,
+                    GROUP_CONCAT(DISTINCT l.location_code) as locations,
+                    p.product_id,
+                    p.name as product_name
+                FROM {$this->productsTable} p
+                LEFT JOIN {$this->inventoryTable} i ON p.product_id = i.product_id AND i.quantity > 0
+                LEFT JOIN {$this->locationsTable} l ON i.location_id = l.id
+                WHERE p.sku = :sku
+                GROUP BY p.product_id, p.quantity, p.name";
 
         try {
             $stmt = $this->conn->prepare($query);
@@ -478,15 +486,32 @@ class Inventory {
             
             $result = $stmt->fetch(PDO::FETCH_ASSOC);
             
-            return [
-                'total_quantity' => floatval($result['total_quantity'] ?? 0),
-                'locations_count' => intval($result['locations_count'] ?? 0),
-                'locations' => $result['locations'] ? explode(',', $result['locations']) : []
-            ];
+            if ($result) {
+                return [
+                    'total_quantity' => floatval($result['total_quantity']),
+                    'inventory_quantity' => floatval($result['inventory_quantity']),
+                    'product_quantity' => floatval($result['product_quantity']),
+                    'locations_count' => intval($result['locations_count']),
+                    'locations' => $result['locations'] ? explode(',', $result['locations']) : [],
+                    'product_id' => intval($result['product_id']),
+                    'product_name' => $result['product_name']
+                ];
+            } else {
+                return [
+                    'total_quantity' => 0,
+                    'inventory_quantity' => 0,
+                    'product_quantity' => 0,
+                    'locations_count' => 0,
+                    'locations' => []
+                ];
+            }
+            
         } catch (PDOException $e) {
             error_log("Error getting stock summary by SKU: " . $e->getMessage());
             return [
                 'total_quantity' => 0,
+                'inventory_quantity' => 0,
+                'product_quantity' => 0,
                 'locations_count' => 0,
                 'locations' => []
             ];

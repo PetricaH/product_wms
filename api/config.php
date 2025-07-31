@@ -1,7 +1,8 @@
 <?php
 // File: api/config.php
 return [
-    'api_key' => 'WMS_API_2025_SECURE_KEY_' . md5('notsowms_warehouse_api_2025'),
+    'api_key' => getenv('WMS_API_KEY') ?: 'wms_webhook_2025_secure!',
+    
     'allowed_origins' => [
         'https://sales.aicontrol.ro',        
         'https://notsowms.ro',             
@@ -15,3 +16,4 @@ return [
     ],
     'debug' => false 
 ];
+?>

@@ -26,16 +26,13 @@ if ($locationId <= 0 || $levelNumber <= 0) {
 }
 
 require_once BASE_PATH . '/models/LocationSubdivision.php';
+require_once BASE_PATH . '/models/LocationLevelSettings.php';
 
 $subModel = new LocationSubdivision($db);
 
-// Determine shelf level name from number
-$levelName = match($levelNumber) {
-    1 => 'bottom',
-    2 => 'middle',
-    3 => 'top',
-    default => 'middle'
-};
+// Determine shelf level name from number using dynamic settings
+$lls = new LocationLevelSettings($db);
+$levelName = $lls->getLevelNameByNumber($locationId, $levelNumber) ?? 'middle';
 
 try {
     $query = "SELECT ls.*, p.name AS product_name,

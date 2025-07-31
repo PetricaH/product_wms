@@ -134,7 +134,7 @@ return [
     ],
 
     'api' => [
-        'key' => getenv('WMS_API_KEY') ?: '',
+        'key' => getenv('WMS_API_KEY') ?: 'wms_webhook_2025_secure!',
         'allowed_origins' => ['*'],
         'rate_limit' => 100,
     ],

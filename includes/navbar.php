@@ -150,6 +150,14 @@ if (isset($_SESSION['username'])) {
                 <span class="link-text">Istoric Acțiuni</span>
             </a>
         </li>
+         <li class="sidebar__item">
+            <a href="<?= getNavUrl('warehouse_hub.php') ?>"
+               class="sidebar__link <?= getActiveClass('warehouse_hub.php') ?>"
+               data-tooltip="Warehouse View">
+                <span class="material-symbols-outlined">history</span>
+                <span class="link-text">Warehouse View</span>
+            </a>
+        </li>
         
         </ul>
 

@@ -1,16 +1,38 @@
 <?php
 header('Content-Type: application/json');
+
 if (!defined('BASE_PATH')) {
     define('BASE_PATH', dirname(__DIR__));
 }
+
 require_once BASE_PATH . '/bootstrap.php';
+
+// Start session if not already started
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
 $config = require BASE_PATH . '/config/config.php';
 $db = $config['connection_factory']();
 
 $apiKey = $_GET['api_key'] ?? '';
-if (!empty($config['api']['key']) && $apiKey !== ($config['api']['key'] ?? '')) {
+
+// Dual authentication: API key OR session
+if (!empty($apiKey)) {
+    // Option 1: API key authentication (for external systems)
+    $configuredApiKey = $config['api']['key'] ?? '';
+    if (empty($configuredApiKey) || $apiKey !== $configuredApiKey) {
+        http_response_code(401);
+        echo json_encode(['error' => 'Invalid API key']);
+        exit;
+    }
+} elseif (isset($_SESSION['user_id']) && !empty($_SESSION['user_id'])) {
+    // Option 2: Session authentication (for logged-in users)
+    // User is logged in, proceed
+} else {
+    // No valid authentication found
     http_response_code(401);
-    echo json_encode(['error' => 'Invalid API key']);
+    echo json_encode(['error' => 'Authentication required']);
     exit;
 }
 
@@ -32,7 +54,10 @@ if (!$details || empty($details['level_settings'])) {
 
 // Map dedicated product IDs to names
 $productMap = [];
-$ids = array_unique(array_filter(array_map(function($l){ return $l['dedicated_product_id'] ?? null; }, $details['level_settings'])));
+$ids = array_unique(array_filter(array_map(function($l){ 
+    return $l['dedicated_product_id'] ?? null; 
+}, $details['level_settings'])));
+
 if ($ids) {
     $placeholders = implode(',', array_fill(0, count($ids), '?'));
     $stmt = $db->prepare("SELECT product_id, name FROM products WHERE product_id IN ($placeholders)");
@@ -46,6 +71,7 @@ $levels = [];
 foreach ($details['level_settings'] as $level) {
     $occ = $level['current_occupancy'] ?? ['items'=>0,'capacity'=>0,'occupancy_percent'=>0];
     $pid = !empty($level['dedicated_product_id']) ? (int)$level['dedicated_product_id'] : null;
+    
     $levels[] = [
         'number' => (int)$level['level_number'],
         'name' => $level['level_name'] ?: ('Nivel ' . $level['level_number']),
@@ -60,3 +86,4 @@ foreach ($details['level_settings'] as $level) {
 }
 
 echo json_encode(['levels' => $levels]);
+?>

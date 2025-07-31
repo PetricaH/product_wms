@@ -37,6 +37,7 @@ const ProductUnitsApp = {
         stockPagination: { limit: 20, offset: 0, total: 0, has_next: false },
         pendingPagination: { limit: 20, offset: 0, total: 0, has_next: false },
         pendingList: [],
+        pendingSearch: '',
         stockSearch: '',
         barrelDimensions: [],
         filteredData: [],
@@ -82,6 +83,7 @@ const ProductUnitsApp = {
             pendingProductsModal: document.getElementById('pendingProductsModal'),
             pendingProductsList: document.getElementById('pendingProductsList'),
             pendingPagination: document.getElementById('pendingPagination'),
+            pendingSearchInput: document.getElementById('pendingSearch'),
             pendingModalClose: document.querySelector('#pendingProductsModal .modal-close'),
             statusFilter: document.getElementById('statusFilter'),
             clearFilters: document.getElementById('clearFilters'),
@@ -282,6 +284,15 @@ const ProductUnitsApp = {
                 this.state.stockSearch = this.elements.stockSearchInput.value.trim();
                 this.state.stockPagination.offset = 0;
                 this.loadStockSettings();
+            }, this.config.debounceDelay));
+        }
+
+        if (this.elements.pendingSearchInput) {
+            this.elements.pendingSearchInput.addEventListener('input', this.debounce(() => {
+                this.state.pendingSearch = this.elements.pendingSearchInput.value.trim().toLowerCase();
+                this.state.pendingPagination.offset = 0;
+                this.renderPendingProductsTable();
+                this.renderPendingPagination();
             }, this.config.debounceDelay));
         }
 
@@ -1856,6 +1867,9 @@ openPendingProductsModal() {
         this.state.pendingList = pending;
         this.state.pendingPagination.total = pending.length;
         this.state.pendingPagination.offset = 0;
+        this.state.pendingSearch = '';
+        if (this.elements.pendingSearchInput) this.elements.pendingSearchInput.value = '';
+
         this.renderPendingProductsTable();
         this.renderPendingPagination();
         this.elements.pendingProductsModal.style.display = 'block';
@@ -1871,6 +1885,9 @@ openPendingProductsModal() {
         }
         this.state.pendingPagination.offset = 0;
         this.state.pendingPagination.total = 0;
+        this.state.pendingSearch = '';
+        if (this.elements.pendingSearchInput) this.elements.pendingSearchInput.value = '';
+
         if (this.elements.pendingPagination) {
             this.elements.pendingPagination.innerHTML = '';
         }
@@ -1879,7 +1896,16 @@ openPendingProductsModal() {
     renderPendingProductsTable() {
         if (!this.elements.pendingProductsList) return;
         const { offset, limit } = this.state.pendingPagination;
-        const slice = this.state.pendingList.slice(offset, offset + limit);
+        let filtered = this.state.pendingList;
+        if (this.state.pendingSearch) {
+            const search = this.state.pendingSearch;
+            filtered = filtered.filter(p =>
+                p.name.toLowerCase().includes(search) ||
+                p.code.toLowerCase().includes(search)
+            );
+        }
+        this.state.pendingPagination.total = filtered.length;
+        const slice = filtered.slice(offset, offset + limit);
         if (slice.length === 0) {
             this.elements.pendingProductsList.innerHTML = '<tr><td colspan="3" class="text-center">Toate produsele sunt configurate</td></tr>';
             return;

@@ -34,9 +34,6 @@ if (!isset($_SESSION['user_id'])) {
                 <div class="status-indicator" id="picking-status"></div>
                 <span class="material-symbols-outlined operation-icon">shopping_cart</span>
                 <h2 class="operation-title">Picking Comenzi</h2>
-                <p class="operation-description">
-                    Scanează comenzile, localizează produsele și finalizează task-urile de picking cu ghidare pas cu pas.
-                </p>
                 <div class="operation-stats">
                     <div class="stat-item">
                         <span class="stat-number" id="pending-picks">-</span>
@@ -54,9 +51,6 @@ if (!isset($_SESSION['user_id'])) {
                 <div class="status-indicator" id="receiving-status"></div>
                 <span class="material-symbols-outlined operation-icon">inventory_2</span>
                 <h2 class="operation-title">Recepție Marfă</h2>
-                <p class="operation-description">
-                    Procesează livrările primite, verifică produsele și actualizează stocurile cu localizare precisă.
-                </p>
                 <div class="operation-stats">
                     <div class="stat-item">
                         <span class="stat-number" id="pending-receipts">-</span>
@@ -70,13 +64,10 @@ if (!isset($_SESSION['user_id'])) {
             </div>
 
             <!-- Inventory -->
-            <!-- <div class="operation-card inventory-card" data-operation="inventory">
+            <div class="operation-card inventory-card" data-operation="inventory">
                 <div class="status-indicator" id="inventory-status"></div>
                 <span class="material-symbols-outlined operation-icon">inventory</span>
                 <h2 class="operation-title">Căutare Stoc</h2>
-                <p class="operation-description">
-                    Căutări rapide în inventar, verificări de stoc și localizări pentru managementul eficient al depozitului.
-                </p>
                 <div class="operation-stats">
                     <div class="stat-item">
                         <span class="stat-number" id="total-products">-</span>
@@ -87,16 +78,13 @@ if (!isset($_SESSION['user_id'])) {
                         <span class="stat-label">Stoc scăzut</span>
                     </div>
                 </div>
-            </div> -->
+            </div>
 
             <!-- Cycle Count -->
-            <!-- <div class="operation-card cycle-count-card" data-operation="cycle-count">
+            <div class="operation-card cycle-count-card" data-operation="cycle-count">
                 <div class="status-indicator" id="cycle-count-status"></div>
                 <span class="material-symbols-outlined operation-icon">fact_check</span>
                 <h2 class="operation-title">Inventariere Ciclică</h2>
-                <p class="operation-description">
-                    Efectuează inventarieri sistematice pentru menținerea preciziei stocurilor și identificarea discrepanțelor.
-                </p>
                 <div class="operation-stats">
                     <div class="stat-item">
                         <span class="stat-number" id="scheduled-counts">-</span>
@@ -107,7 +95,7 @@ if (!isset($_SESSION['user_id'])) {
                         <span class="stat-label">Diferențe</span>
                     </div>
                 </div>
-            </div> -->
+            </div>
         </div>
     </div>
 

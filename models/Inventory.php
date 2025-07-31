@@ -250,6 +250,9 @@ class Inventory {
             // Update product total quantity (if products table has quantity column)
             $this->updateProductTotalQuantity($data['product_id']);
 
+            // Update location occupancy within the same transaction
+            $this->updateLocationOccupancy($data['location_id']);
+
             if ($useTransaction) {
                 $this->conn->commit();
             }
@@ -369,6 +372,7 @@ class Inventory {
 
             // Remove stock using FIFO
             $remainingToRemove = $quantity;
+            $affectedLocations = [];
             foreach ($inventoryRecords as $record) {
                 if ($remainingToRemove <= 0) {
                     break;
@@ -385,6 +389,7 @@ class Inventory {
                     $removeStmt->execute();
 
                     $remainingToRemove -= $availableQty;
+                    $affectedLocations[] = (int)$record['location_id'];
                 } else {
                     // Partial removal - update quantity
                     $newQty = $availableQty - $remainingToRemove;
@@ -395,11 +400,17 @@ class Inventory {
                     $updateStmt->execute();
 
                     $remainingToRemove = 0;
+                    $affectedLocations[] = (int)$record['location_id'];
                 }
             }
 
             // Update product total quantity
             $this->updateProductTotalQuantity($productId);
+
+            // Update occupancy for affected locations within the transaction
+            foreach (array_unique($affectedLocations) as $locId) {
+                $this->updateLocationOccupancy($locId);
+            }
 
             if ($useTransaction) {
                 $this->conn->commit();
@@ -457,6 +468,28 @@ class Inventory {
             }
         } catch (PDOException $e) {
             error_log("Warning: Could not update product total quantity: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Update the current occupancy for a location
+     * @param int $locationId Location ID
+     * @return void
+     */
+    private function updateLocationOccupancy(int $locationId): void {
+        try {
+            $query = "UPDATE {$this->locationsTable} l
+                      SET current_occupancy = (
+                          SELECT COALESCE(SUM(quantity), 0)
+                          FROM {$this->inventoryTable}
+                          WHERE location_id = :loc
+                      )
+                      WHERE l.id = :loc";
+            $stmt = $this->conn->prepare($query);
+            $stmt->bindParam(':loc', $locationId, PDO::PARAM_INT);
+            $stmt->execute();
+        } catch (PDOException $e) {
+            error_log("Warning: Could not update location occupancy: " . $e->getMessage());
         }
     }
 

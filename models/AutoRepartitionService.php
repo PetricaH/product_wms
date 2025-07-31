@@ -186,7 +186,7 @@ class AutoRepartitionService {
      * @return array
      */
     private function analyzeLevelInventory(int $locationId, array $levelSettings): array {
-        $shelfLevel = $this->getLevelName($levelSettings['level_number']);
+        $shelfLevel = $this->levelSettings->getLevelNameByNumber($locationId, $levelSettings['level_number']) ?? ('Level ' . $levelSettings['level_number']);
         
         $query = "SELECT 
                     i.product_id,
@@ -435,8 +435,8 @@ class AutoRepartitionService {
         try {
             $this->conn->beginTransaction();
             
-            $fromShelfLevel = $this->getLevelName($move['from_level']);
-            $toShelfLevel = $this->getLevelName($move['to_level']);
+            $fromShelfLevel = $this->levelSettings->getLevelNameByNumber($move['location_id'] ?? 0, $move['from_level']) ?? ('Level ' . $move['from_level']);
+            $toShelfLevel = $this->levelSettings->getLevelNameByNumber($move['location_id'] ?? 0, $move['to_level']) ?? ('Level ' . $move['to_level']);
             
             // Update the inventory record
             $updateQuery = "UPDATE inventory 
@@ -530,17 +530,4 @@ class AutoRepartitionService {
         // Could also log to a dedicated repartition_log table if needed
     }
     
-    /**
-     * Convert level number to shelf level name
-     * @param int $levelNumber
-     * @return string
-     */
-    private function getLevelName(int $levelNumber): string {
-        return match($levelNumber) {
-            1 => 'bottom',
-            2 => 'middle',
-            3 => 'top',
-            default => 'middle'
-        };
-    }
 }

@@ -201,7 +201,7 @@ class Inventory {
         $shelfLevel  = $data['shelf_level']  ?? null;
         $subdivision = $data['subdivision_number'] ?? null;
 
-        // Resolve numeric level to custom level name if needed
+        // Resolve numeric level using settings table when provided
         if (is_numeric($shelfLevel)) {
             require_once __DIR__ . '/LocationLevelSettings.php';
             $lls = new LocationLevelSettings($this->conn);

@@ -232,7 +232,7 @@ class LocationLevelSettings {
                                  AND product_id != :product_id LIMIT 1";
                 
                 $existingStmt = $this->conn->prepare($existingQuery);
-                $shelfLevel = $this->getLevelName($levelNumber);
+                $shelfLevel = $this->getLevelNameByNumber($locationId, $levelNumber) ?? ('Level ' . $levelNumber);
                 $existingStmt->execute([
                     ':location_id' => $locationId,
                     ':shelf_level' => $shelfLevel,
@@ -315,7 +315,7 @@ class LocationLevelSettings {
      * @return float
      */
     private function getLevelOccupancy(int $locationId, int $levelNumber): float {
-        $shelfLevel = $this->getLevelName($levelNumber);
+        $shelfLevel = $this->getLevelNameByNumber($locationId, $levelNumber) ?? ('Level ' . $levelNumber);
         
         $query = "SELECT
                     COALESCE(lls.items_capacity, l.capacity / l.levels) as level_capacity,
@@ -347,19 +347,7 @@ class LocationLevelSettings {
         }
     }
     
-    /**
-     * Convert level number to shelf level name
-     * @param int $levelNumber
-     * @return string
-     */
-    private function getLevelName(int $levelNumber): string {
-        return match($levelNumber) {
-            1 => 'bottom',
-            2 => 'middle', 
-            3 => 'top',
-            default => 'middle'
-        };
-    }
+
     
     /**
      * Create default level settings for a new location

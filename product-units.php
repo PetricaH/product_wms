@@ -803,6 +803,7 @@ $currentPage = 'product-units';
                     <tbody id="pendingProductsList">
                     </tbody>
                 </table>
+                <div id="pendingPagination" class="pagination-wrapper"></div>
             </div>
         </div>
     </div>

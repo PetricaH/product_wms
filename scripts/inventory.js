@@ -70,11 +70,18 @@ function searchProducts(query) {
         try {
             const resp = await fetch(`api/products.php?search=${encodeURIComponent(query)}&limit=10`);
             const data = await resp.json();
-            if (resp.ok && Array.isArray(data)) {
-                productSearchCache[query] = data;
-                displayProductResults(data);
+            // API might return an object with a `data` key in addition to a raw array
+            const products = Array.isArray(data) ? data : data.data;
+            if (resp.ok && Array.isArray(products)) {
+                productSearchCache[query] = products;
+                displayProductResults(products);
+            } else {
+                hideProductResults();
             }
-        } catch (e) { console.error(e); }
+        } catch (e) {
+            console.error(e);
+            hideProductResults();
+        }
     }, 300);
 }
 

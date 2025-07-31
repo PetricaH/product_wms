@@ -852,11 +852,16 @@ const ProductUnitsApp = {
             const url = `${this.config.apiEndpoints.products}?search=${encodeURIComponent(query)}&limit=50`;
             const resp = await fetch(url);
             const data = await resp.json();
-            if (resp.ok && Array.isArray(data)) {
-                this.displayProductResults(data, context);
+            // API may return an object with a `data` key or a raw array
+            const products = Array.isArray(data) ? data : data.data;
+            if (resp.ok && Array.isArray(products)) {
+                this.displayProductResults(products, context);
+            } else {
+                this.hideProductResults(context);
             }
         } catch (err) {
             console.error('Product search error', err);
+            this.hideProductResults(context);
         }
     },
 
@@ -1900,8 +1905,7 @@ openPendingProductsModal() {
         if (this.state.pendingSearch) {
             const search = this.state.pendingSearch;
             filtered = filtered.filter(p =>
-                p.name.toLowerCase().includes(search) ||
-                p.code.toLowerCase().includes(search)
+                p.name.toLowerCase().includes(search)
             );
         }
         this.state.pendingPagination.total = filtered.length;

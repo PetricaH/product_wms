@@ -53,6 +53,8 @@ body {
 
 .header-content {
     display: flex;
+    flex-direction: row !important; 
+    flex-wrap: nowrap;
     justify-content: space-between;
     align-items: center;
     max-width: 1200px;
@@ -104,7 +106,6 @@ body {
 
 /* ===== MAIN CONTAINER ===== */
 .main-container {
-    margin-top: 80px;
     padding: var(--base-padding);
     min-height: calc(100vh - 80px);
 }

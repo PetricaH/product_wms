@@ -103,6 +103,9 @@ $currentPage = 'product-units';
                                 <div class="stat-number" id="pendingProducts">-</div>
                                 <div class="stat-label">Produse Fără Configurare</div>
                             </div>
+                            <button class="btn btn-sm btn-secondary" id="showPendingProductsBtn" title="Vezi produse">
+                                Vezi Produsele<span class="material-symbols-outlined">list</span>
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -776,6 +779,31 @@ $currentPage = 'product-units';
                     </button>
                 </div>
             </form>
+        </div>
+    </div>
+
+     <!-- Pending Products Modal -->
+    <div id="pendingProductsModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Produse Fără Configurare</h2>
+                <button class="modal-close" type="button">
+                    <span class="material-symbols-outlined">close</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Nume Produs</th>
+                            <th>Cod</th>
+                            <th>Acțiune</th>
+                        </tr>
+                    </thead>
+                    <tbody id="pendingProductsList">
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
 

@@ -76,6 +76,10 @@ const ProductUnitsApp = {
             // Filters
             productFilter: document.getElementById('productFilter'),
             unitFilter: document.getElementById('unitFilter'),
+            showPendingProductsBtn: document.getElementById('showPendingProductsBtn'),
+            pendingProductsModal: document.getElementById('pendingProductsModal'),
+            pendingProductsList: document.getElementById('pendingProductsList'),
+            pendingModalClose: document.querySelector('#pendingProductsModal .modal-close'),
             statusFilter: document.getElementById('statusFilter'),
             clearFilters: document.getElementById('clearFilters'),
             applyFilters: document.getElementById('applyFilters'),
@@ -199,6 +203,8 @@ const ProductUnitsApp = {
             if (e.target.matches('[data-action="cancel"]')) {
                 if (e.target.closest('#stockSettingsModal')) {
                     this.closeStockModal();
+                } else if (e.target.closest('#pendingProductsModal')) {
+                    this.closePendingProductsModal();
                 } else {
                     this.closeModal();
                 }
@@ -233,6 +239,10 @@ const ProductUnitsApp = {
             this.elements.refreshTable.addEventListener('click', () => this.loadProductUnits());
         }
 
+        if (this.elements.showPendingProductsBtn) {
+            this.elements.showPendingProductsBtn.addEventListener('click', () => this.openPendingProductsModal());
+        }
+
         if (this.elements.refreshStatsBtn) {
             this.elements.refreshStatsBtn.addEventListener('click', () => this.loadStatistics());
         }
@@ -253,6 +263,14 @@ const ProductUnitsApp = {
             this.elements.stockSettingsForm.addEventListener('submit', (e) => {
                 e.preventDefault();
                 this.saveStockSettings();
+            });
+        }
+
+        if (this.elements.pendingProductsModal) {
+            this.elements.pendingProductsModal.addEventListener('click', (e) => {
+                if (e.target === this.elements.pendingProductsModal) {
+                    this.closePendingProductsModal();
+                }
             });
         }
 
@@ -386,7 +404,7 @@ const ProductUnitsApp = {
     async loadStatistics() {
         try {
             const [productsResponse, productUnitsResponse] = await Promise.all([
-                this.apiCall('GET', this.config.apiEndpoints.products),
+                this.apiCall('GET', `${this.config.apiEndpoints.products}?limit=10000`),
                 this.apiCall('GET', this.config.apiEndpoints.productUnits)
             ]);
 
@@ -680,7 +698,7 @@ const ProductUnitsApp = {
     },
 
     // ===== MODAL MANAGEMENT =====
-    openModal() {
+    openModal(productId = null) {
         if (!this.elements.modal) return;
 
 
@@ -701,6 +719,13 @@ const ProductUnitsApp = {
 
         if (this.elements.barrelDimensionSelect) {
             this.elements.barrelDimensionSelect.value = '';
+        }
+
+        if (productId) {
+            const prod = this.state.products.find(p => p.id == productId);
+            if (prod) {
+                this.selectProduct(prod.id, prod.name, 'product');
+            }
         }
 
         // Show modal
@@ -1797,9 +1822,39 @@ showNotification(message, type = 'info') {
         this.elements.assignedSupplier.textContent = setting.supplier_name || 'Neasignat';
         this.elements.currentStockInfo.textContent = setting.current_stock;
     },
+openPendingProductsModal() {
+        if (!this.elements.pendingProductsModal) return;
+        if (this.state.products.length === 0) {
+            this.loadProducts();
+        }
+        const pending = this.state.products.filter(p => p.configured_units === 0);
+        if (this.elements.pendingProductsList) {
+            if (pending.length === 0) {
+                this.elements.pendingProductsList.innerHTML = '<tr><td colspan="3" class="text-center">Toate produsele sunt configurate</td></tr>';
+            } else {
+                this.elements.pendingProductsList.innerHTML = pending.map(p => `
+                    <tr>
+                        <td>${this.escapeHtml(p.name)}</td>
+                        <td>${this.escapeHtml(p.code)}</td>
+                        <td><button class="btn btn-sm btn-primary" onclick="ProductUnitsApp.openModal(${p.id})">Configurează</button></td>
+                    </tr>
+                `).join('');
+            }
+        }
+        this.elements.pendingProductsModal.style.display = 'block';
+        document.body.style.overflow = 'hidden';
+    },
+
+    closePendingProductsModal() {
+        if (!this.elements.pendingProductsModal) return;
+        this.elements.pendingProductsModal.style.display = 'none';
+        document.body.style.overflow = '';
+        if (this.elements.pendingProductsList) {
+            this.elements.pendingProductsList.innerHTML = '';
+        }
+    },
 
 };
-
 // ===== INITIALIZATION =====
 document.addEventListener('DOMContentLoaded', () => {
     ProductUnitsApp.init();

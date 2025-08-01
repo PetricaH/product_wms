@@ -355,7 +355,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             throw new Exception($subdivisionResult['message']);
                         }
                         
-                        $db->commit();
+                        if ($db->inTransaction()) {
+                            $db->commit();
+                        }
         
                         echo json_encode([
                             'success' => true,

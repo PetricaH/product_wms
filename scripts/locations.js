@@ -1075,25 +1075,59 @@ function searchProductsForSubdivision(levelId, subdivisionIndex, query) {
                 return;
             }
             
+            // FIXED: Proper API call with error handling
             const response = await fetch(`api/products.php?search=${encodeURIComponent(query)}&limit=10`);
-            const products = await response.json();
             
-            if (response.ok && Array.isArray(products)) {
-                productSearchCache[query] = products;
-                displayProductResults(levelId, subdivisionIndex, products);
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
             }
+            
+            const apiResponse = await response.json();
+            console.log('API Response:', apiResponse); // Debug log
+            
+            // FIXED: Handle different API response formats
+            let products = [];
+            if (Array.isArray(apiResponse)) {
+                // Direct array response
+                products = apiResponse;
+            } else if (apiResponse && Array.isArray(apiResponse.data)) {
+                // Structured response with data property
+                products = apiResponse.data;
+            } else if (apiResponse && apiResponse.success && Array.isArray(apiResponse.products)) {
+                // Alternative structured response
+                products = apiResponse.products;
+            } else {
+                console.warn('Unexpected API response format:', apiResponse);
+                products = [];
+            }
+            
+            // Cache successful results
+            if (products.length > 0) {
+                productSearchCache[query] = products;
+            }
+            
+            displayProductResults(levelId, subdivisionIndex, products);
+            
         } catch (error) {
             console.error('Product search error:', error);
+            // Show error message to user
+            const resultsContainer = document.getElementById(`level_${levelId}_subdivision_${subdivisionIndex}_results`);
+            if (resultsContainer) {
+                resultsContainer.innerHTML = '<div class="search-result-item no-results">Eroare la încărcarea produselor</div>';
+                resultsContainer.style.display = 'block';
+            }
         }
     }, 300);
 }
-
 /**
  * Display product search results
  */
 function displayProductResults(levelId, subdivisionIndex, products) {
     const resultsContainer = document.getElementById(`level_${levelId}_subdivision_${subdivisionIndex}_results`);
-    if (!resultsContainer) return;
+    if (!resultsContainer) {
+        console.error(`Results container not found: level_${levelId}_subdivision_${subdivisionIndex}_results`);
+        return;
+    }
     
     if (products.length === 0) {
         resultsContainer.innerHTML = '<div class="search-result-item no-results">Nu s-au găsit produse</div>';
@@ -1101,7 +1135,7 @@ function displayProductResults(levelId, subdivisionIndex, products) {
         resultsContainer.innerHTML = products.map(product => `
             <div class="search-result-item" onclick="selectProduct(${levelId}, ${subdivisionIndex}, ${product.id}, '${escapeHtml(product.name)}')">
                 <div class="product-name">${escapeHtml(product.name)}</div>
-                <div class="product-details">${escapeHtml(product.code)} - ${escapeHtml(product.category)}</div>
+                <div class="product-details">${escapeHtml(product.code || 'N/A')} - ${escapeHtml(product.category || 'General')}</div>
             </div>
         `).join('');
     }
@@ -1116,8 +1150,17 @@ function selectProduct(levelId, subdivisionIndex, productId, productName) {
     const hiddenInput = document.getElementById(`level_${levelId}_subdivision_${subdivisionIndex}_product_id`);
     const searchInput = document.getElementById(`level_${levelId}_subdivision_${subdivisionIndex}_product_search`);
     
-    if (hiddenInput) hiddenInput.value = productId;
-    if (searchInput) searchInput.value = productName;
+    if (hiddenInput) {
+        hiddenInput.value = productId;
+    } else {
+        console.error(`Hidden input not found: level_${levelId}_subdivision_${subdivisionIndex}_product_id`);
+    }
+    
+    if (searchInput) {
+        searchInput.value = productName;
+    } else {
+        console.error(`Search input not found: level_${levelId}_subdivision_${subdivisionIndex}_product_search`);
+    }
     
     hideProductResults(levelId, subdivisionIndex);
 }
@@ -1137,6 +1180,15 @@ function showProductResults(levelId, subdivisionIndex) {
 /**
  * Hide product results
  */
+function showProductResults(levelId, subdivisionIndex) {
+    const resultsContainer = document.getElementById(`level_${levelId}_subdivision_${subdivisionIndex}_results`);
+    const searchInput = document.getElementById(`level_${levelId}_subdivision_${subdivisionIndex}_product_search`);
+    
+    if (resultsContainer && searchInput && searchInput.value.length >= 2) {
+        resultsContainer.style.display = 'block';
+    }
+}
+
 function hideProductResults(levelId, subdivisionIndex) {
     const resultsContainer = document.getElementById(`level_${levelId}_subdivision_${subdivisionIndex}_results`);
     if (resultsContainer) {
@@ -1162,35 +1214,71 @@ function searchProductForLevel(levelId, query) {
         }
 
         try {
+            // Check cache first
             if (productSearchCache[query]) {
                 displayLevelProductResults(levelId, productSearchCache[query]);
                 return;
             }
 
+            // FIXED: Proper API call with error handling
             const response = await fetch(`api/products.php?search=${encodeURIComponent(query)}&limit=10`);
-            const products = await response.json();
-
-            if (response.ok && Array.isArray(products)) {
-                productSearchCache[query] = products;
-                displayLevelProductResults(levelId, products);
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
             }
+            
+            const apiResponse = await response.json();
+            console.log('Level Product API Response:', apiResponse); // Debug log
+            
+            // FIXED: Handle different API response formats
+            let products = [];
+            if (Array.isArray(apiResponse)) {
+                // Direct array response
+                products = apiResponse;
+            } else if (apiResponse && Array.isArray(apiResponse.data)) {
+                // Structured response with data property
+                products = apiResponse.data;
+            } else if (apiResponse && apiResponse.success && Array.isArray(apiResponse.products)) {
+                // Alternative structured response
+                products = apiResponse.products;
+            } else {
+                console.warn('Unexpected API response format:', apiResponse);
+                products = [];
+            }
+            
+            // Cache successful results
+            if (products.length > 0) {
+                productSearchCache[query] = products;
+            }
+            
+            displayLevelProductResults(levelId, products);
+            
         } catch (error) {
-            console.error('Product search error:', error);
+            console.error('Level product search error:', error);
+            // Show error message to user
+            const container = document.getElementById(`level_${levelId}_dedicated_product_results`);
+            if (container) {
+                container.innerHTML = '<div class="search-result-item no-results">Eroare la încărcarea produselor</div>';
+                container.style.display = 'block';
+            }
         }
     }, 300);
 }
 
 function displayLevelProductResults(levelId, products) {
     const container = document.getElementById(`level_${levelId}_dedicated_product_results`);
-    if (!container) return;
+    if (!container) {
+        console.error(`Level product results container not found: level_${levelId}_dedicated_product_results`);
+        return;
+    }
 
     if (products.length === 0) {
         container.innerHTML = '<div class="search-result-item no-results">Nu s-au găsit produse</div>';
     } else {
-        container.innerHTML = products.map(p => `
-            <div class="search-result-item" onclick="selectLevelProduct(${levelId}, ${p.id}, '${escapeHtml(p.name)}')">
-                <div class="product-name">${escapeHtml(p.name)}</div>
-                <div class="product-details">${escapeHtml(p.code)} - ${escapeHtml(p.category)}</div>
+        container.innerHTML = products.map(product => `
+            <div class="search-result-item" onclick="selectLevelProduct(${levelId}, ${product.id}, '${escapeHtml(product.name)}')">
+                <div class="product-name">${escapeHtml(product.name)}</div>
+                <div class="product-details">${escapeHtml(product.code || 'N/A')} - ${escapeHtml(product.category || 'General')}</div>
             </div>
         `).join('');
     }
@@ -1202,11 +1290,21 @@ function selectLevelProduct(levelId, productId, productName) {
     const hidden = document.getElementById(`level_${levelId}_dedicated_product`);
     const search = document.getElementById(`level_${levelId}_dedicated_product_search`);
 
-    if (hidden) hidden.value = productId;
-    if (search) search.value = productName;
+    if (hidden) {
+        hidden.value = productId;
+    } else {
+        console.error(`Level product hidden input not found: level_${levelId}_dedicated_product`);
+    }
+    
+    if (search) {
+        search.value = productName;
+    } else {
+        console.error(`Level product search input not found: level_${levelId}_dedicated_product_search`);
+    }
 
     hideLevelProductResults(levelId);
 }
+
 
 function showLevelProductResults(levelId) {
     const container = document.getElementById(`level_${levelId}_dedicated_product_results`);

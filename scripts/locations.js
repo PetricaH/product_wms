@@ -1076,8 +1076,9 @@ function searchProductsForSubdivision(levelId, subdivisionIndex, query) {
             }
             
             const response = await fetch(`api/products.php?search=${encodeURIComponent(query)}&limit=10`);
-            const products = await response.json();
-            
+            const data = await response.json();
+            const products = Array.isArray(data) ? data : data.data;
+
             if (response.ok && Array.isArray(products)) {
                 productSearchCache[query] = products;
                 displayProductResults(levelId, subdivisionIndex, products);
@@ -1168,7 +1169,8 @@ function searchProductForLevel(levelId, query) {
             }
 
             const response = await fetch(`api/products.php?search=${encodeURIComponent(query)}&limit=10`);
-            const products = await response.json();
+            const data = await response.json();
+            const products = Array.isArray(data) ? data : data.data;
 
             if (response.ok && Array.isArray(products)) {
                 productSearchCache[query] = products;

@@ -35,6 +35,17 @@ $locationModel = new Location($db);
 $levelSettingsModel = new LocationLevelSettings($db);
 $productModel = new Product($db);
 
+// Detect AJAX requests for JSON responses
+$isAjax = !empty($_SERVER['HTTP_X_REQUESTED_WITH']) &&
+    strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest';
+
+function jsonResponse(array $data)
+{
+    header('Content-Type: application/json');
+    echo json_encode($data);
+    exit;
+}
+
 // Handle operations
 $message = '';
 $messageType = '';
@@ -224,11 +235,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     error_log("Stack trace: " . $e->getTraceAsString());
                     $message = 'Eroare la crearea locației: ' . $e->getMessage();
                     $messageType = 'error';
+                    if ($isAjax) {
+                        jsonResponse([
+                            'success' => false,
+                            'message' => $message
+                        ]);
+                    }
                 }
                 
             }
 
             error_log("=== LOCATION CREATION DEBUG END ===");
+
+            if ($isAjax) {
+                jsonResponse([
+                    'success' => $messageType === 'success',
+                    'message' => $message,
+                    'location_id' => $locationId ?? null
+                ]);
+            }
+
             break;
             
             case 'update':
@@ -310,6 +336,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     error_log("DEBUG: Validation failed - ID: $locationId, Code: " . $locationData['location_code']);
                     $message = 'Date invalide pentru actualizare.';
                     $messageType = 'error';
+                    if ($isAjax) {
+                        jsonResponse([
+                            'success' => false,
+                            'message' => $message
+                        ]);
+                    }
                 } else {
                     try {
                         // Parse level settings data if provided
@@ -359,7 +391,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $db->commit();
                         }
         
-                        echo json_encode([
+                        jsonResponse([
                             'success' => true,
                             'message' => 'Locația a fost actualizată cu succes!',
                             'location_id' => $locationId
@@ -370,9 +402,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         error_log("ERROR: Stack trace: " . $e->getTraceAsString());
                         $message = 'Eroare la actualizarea locației: ' . $e->getMessage();
                         $messageType = 'error';
+                        if ($isAjax) {
+                            jsonResponse([
+                                'success' => false,
+                                'message' => $message
+                            ]);
+                        }
                     }
                 }
-                break;        
+                break;
             
         case 'delete':
             $locationId = intval($_POST['location_id'] ?? 0);

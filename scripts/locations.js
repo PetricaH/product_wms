@@ -1658,6 +1658,7 @@ function enhanceFormSubmission() {
     if (!form) return;
 
     form.addEventListener('submit', function(event) {
+        event.preventDefault();
         console.log('Form submission started. Created levels:', createdLevels.length);
 
         // Validate form fields across tabs
@@ -1722,6 +1723,27 @@ function enhanceFormSubmission() {
         }
         
         console.log('Form submission data prepared');
+
+        const formData = new FormData(form);
+        formData.append('ajax', '1');
+
+        fetch('locations.php', {
+            method: 'POST',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            body: formData
+        })
+        .then(resp => resp.json())
+        .then(data => {
+            if (data.success) {
+                window.location.reload();
+            } else {
+                alert(data.message || 'Eroare la salvarea locației');
+            }
+        })
+        .catch(err => {
+            console.error('AJAX submit failed', err);
+            alert('Eroare la salvarea locației');
+        });
     });
 }
 

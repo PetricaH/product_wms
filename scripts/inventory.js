@@ -147,7 +147,7 @@ async function updateStockCounter(sku) {
     const span = document.getElementById('total-articles');
     if (!sku) { span.textContent = ''; return; }
     try {
-        const resp = await fetch(`api/index.php?endpoint=inventory/check&skus=${encodeURIComponent(sku)}&api_key=${API_KEY}`);
+        const resp = await fetch(`api/index.php?endpoint=inventory/check&skus=${encodeURIComponent(sku)}`);
         const data = await resp.json();
         if (resp.ok && data.success && data.inventory && data.inventory[sku]) {
             span.textContent = `(Total: ${data.inventory[sku].available_quantity})`;
@@ -167,7 +167,7 @@ async function loadLocationLevels(locationId) {
     document.getElementById('subdivision_number').innerHTML = '';
     if (!locationId) return;
     try {
-        const resp = await fetch(`api/location_info.php?id=${locationId}&api_key=${API_KEY}`);
+        const resp = await fetch(`api/location_info.php?id=${locationId}`);
         const data = await resp.json();
         if (resp.ok && data.levels) {
             data.levels.forEach(l => {
@@ -200,7 +200,7 @@ async function updateSubdivisionOptions() {
     if (!locId || !levelNumber) { subContainer.style.display = 'none'; return; }
 
     try {
-        const resp = await fetch(`api/subdivision_info.php?location_id=${locId}&level=${levelNumber}&product_id=${productId}&api_key=${API_KEY}`);
+        const resp = await fetch(`api/subdivision_info.php?location_id=${locId}&level=${levelNumber}&product_id=${productId}`);
         const data = await resp.json();
         if (resp.ok && Array.isArray(data.subdivisions) && data.subdivisions.length) {
             data.subdivisions.forEach(sd => {

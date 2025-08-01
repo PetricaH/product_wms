@@ -139,11 +139,28 @@ class ProductionWMSAPI {
     }
     
     private function authenticate() {
+        // Start session if not already started
+        if (session_status() === PHP_SESSION_NONE) {
+            session_start();
+        }
+        
         $apiKey = $this->getApiKey();
         
-        if (empty($apiKey) || $apiKey !== $this->config['api_key']) {
-            throw new Exception('Invalid API key', 401);
+        // Option 1: API key authentication (for external systems)
+        if (!empty($apiKey)) {
+            if ($apiKey !== $this->config['api_key']) {
+                throw new Exception('Invalid API key', 401);
+            }
+            return; // API key is valid, proceed
         }
+        
+        // Option 2: Session authentication (for logged-in users)
+        if (isset($_SESSION['user_id']) && !empty($_SESSION['user_id'])) {
+            return; // User is logged in, proceed
+        }
+        
+        // No valid authentication found
+        throw new Exception('Authentication required - provide API key or login', 401);
     }
     
     private function getApiKey() {

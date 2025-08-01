@@ -390,9 +390,10 @@ function createLevelHTML(level) {
                             Configurare Subdiviziuni
                         </h5>
                         <div class="form-group">
+                            <input type="hidden" name="level_${level.id}_enable_subdivisions" value="0">
                             <label class="form-check-label">
-                                <input type="checkbox" 
-                                       id="level_${level.id}_enable_subdivisions" 
+                                <input type="checkbox" value="1"
+                                       id="level_${level.id}_enable_subdivisions"
                                        name="level_${level.id}_enable_subdivisions"
                                        onchange="toggleSubdivisions(${level.id})">
                                 Permite subdiviziuni în acest nivel

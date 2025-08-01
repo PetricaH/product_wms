@@ -366,7 +366,7 @@ class LocationLevelSettings {
                     3 => 'Top',
                     default => "Level $level"
                 },
-                'storage_policy' => 'multiple_products',
+                'storage_policy' => null,
                 'length_mm' => 1000,
                 'depth_mm' => 400,
                 'height_mm' => 300,
@@ -397,9 +397,6 @@ class LocationLevelSettings {
  */
 public function toggleSubdivisions(int $locationId, int $levelNumber, bool $enabled): bool {
     try {
-        // When enabling subdivisions, force multiple_products policy
-        $storagePolicy = $enabled ? 'multiple_products' : null;
-        
         $query = "UPDATE {$this->table} 
                   SET subdivisions_enabled = :enabled,
                       storage_policy = COALESCE(:storage_policy, storage_policy),

@@ -408,8 +408,8 @@ function createLevelHTML(level) {
                             Politica de Stocare
                         </h5>
                         <div class="storage-policy-options">
-                            <div class="policy-option selected" onclick="selectStoragePolicy(${level.id}, 'multiple_products', event)">
-                                <input type="radio" name="level_${level.id}_storage_policy" value="multiple_products" checked>
+                            <div class="policy-option" onclick="selectStoragePolicy(${level.id}, 'multiple_products', event)">
+                                <input type="radio" name="level_${level.id}_storage_policy" value="multiple_products">
                                 <div>
                                     <div class="policy-title">Multiple Produse</div>
                                     <div class="policy-description">Permite stocarea mai multor tipuri de produse</div>
@@ -834,6 +834,7 @@ function selectStoragePolicyProgrammatic(levelId, policy) {
  * Toggle subdivisions for a level (ENHANCED system)
  */
 function toggleSubdivisions(levelId) {
+    console.log('toggleSubdivisions called for level:', levelId, 'Stack:', new Error().stack);
     const enableCheckbox = document.getElementById(`level_${levelId}_enable_subdivisions`);
     const subdivisionSection = document.getElementById(`subdivisions-section-${levelId}`);
     const storagePolicy = document.getElementById(`storage-policy-${levelId}`);
@@ -842,18 +843,28 @@ function toggleSubdivisions(levelId) {
         // Enable subdivisions mode
         subdivisionSection.style.display = 'block';
         
-        // Force Multiple Products policy and disable other options
+        // Force Multiple Products policy and properly update UI
         const multipleProductsRadio = document.querySelector(`input[name="level_${levelId}_storage_policy"][value="multiple_products"]`);
         if (multipleProductsRadio) {
             multipleProductsRadio.checked = true;
+            
+            // Clear all selected states first
+            const allPolicyOptions = storagePolicy.querySelectorAll('.policy-option');
+            allPolicyOptions.forEach(option => option.classList.remove('selected'));
+            
+            // Select the multiple products option
+            const multipleProductsOption = multipleProductsRadio.closest('.policy-option');
+            if (multipleProductsOption) {
+                multipleProductsOption.classList.add('selected');
+            }
         }
         
-        // Disable policy selection
+        // Disable other policy options
         const policyOptions = storagePolicy.querySelectorAll('.policy-option');
         policyOptions.forEach((option, index) => {
             if (index === 0) { // Multiple products option
-                option.classList.add('selected');
                 option.style.opacity = '1';
+                option.style.pointerEvents = 'auto';
             } else {
                 option.classList.remove('selected');
                 option.style.opacity = '0.5';
@@ -1523,15 +1534,12 @@ async function populateDynamicLevels(levelSettings) {
         if (allowOthersInput) allowOthersInput.checked = setting.allow_other_products !== false;
 
         // === Populate subdivision data if available ===
-        const hasSubs = setting.has_subdivisions || setting.subdivisions_enabled ||
-            (Array.isArray(setting.subdivisions) && setting.subdivisions.length > 0);
-
-        if (hasSubs) {
+        if (setting.subdivisions_enabled === true) {
             const enableCheckbox = document.getElementById(`level_${levelId}_enable_subdivisions`);
             if (enableCheckbox) {
                 enableCheckbox.checked = true;
-                toggleSubdivisions(levelId); // show section and enforce policy
-                clearSubdivisions(levelId);  // remove default blank subdivision
+                toggleSubdivisions(levelId);
+                clearSubdivisions(levelId);
             }
 
             if (Array.isArray(setting.subdivisions)) {

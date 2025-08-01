@@ -1696,8 +1696,9 @@ function enhanceFormSubmission() {
         
         // Collect subdivision data
         const subdivisionData = collectSubdivisionData();
+        const existingSubdivisionField = document.getElementById('subdivision_form_data');
         if (Object.keys(subdivisionData).length > 0) {
-            let subdivisionField = document.getElementById('subdivision_form_data');
+            let subdivisionField = existingSubdivisionField;
             if (!subdivisionField) {
                 subdivisionField = document.createElement('input');
                 subdivisionField.type = 'hidden';
@@ -1707,6 +1708,9 @@ function enhanceFormSubmission() {
             }
             subdivisionField.value = JSON.stringify(subdivisionData);
             console.log('Subdivision data collected:', subdivisionData);
+        } else if (existingSubdivisionField) {
+            // Remove stale subdivision data to avoid unintended creation
+            existingSubdivisionField.remove();
         }
         
         console.log('Form submission data prepared');

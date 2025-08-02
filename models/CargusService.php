@@ -325,80 +325,71 @@ class CargusService
      * Generate ParcelCodes array to match Parcels + Envelopes count
      */
     private function generateParcelCodes($parcelsCount, $envelopesCount, $totalWeightAPI, $calculatedData) {
-        $this->debugLog("=== PARCEL CODES DEBUG START ===");
-        $this->debugLog("Input - Parcels: {$parcelsCount}, Envelopes: {$envelopesCount}, Total API Weight: {$totalWeightAPI}");
-        
-        $parcelCodes = [];
-        
-        // CRITICAL: We must generate exactly the number of ParcelCodes as declared in Parcels + Envelopes
-        
-        // Generate ParcelCodes for PARCELS (Type = 0)
-        if ($parcelsCount > 0) {
-            $weightPerParcel = (int)($totalWeightAPI / $parcelsCount);
-            
-            for ($i = 0; $i < $parcelsCount; $i++) {
-                $thisParcelWeight = $weightPerParcel;
-                
-                // For the last parcel, add any remaining weight
-                if ($i == $parcelsCount - 1) {
-                    $totalAssigned = $weightPerParcel * ($parcelsCount - 1);
-                    $thisParcelWeight = $totalWeightAPI - $totalAssigned;
-                }
-                
-                $thisParcelWeight = max(1, $thisParcelWeight);
-                
-                $this->debugLog("Parcel {$i}: Weight = {$thisParcelWeight} API units (" . ($thisParcelWeight/10) . "kg)");
-                
-                $parcelCodes[] = [
-                    'Code' => (string)$i,
-                    'Type' => 1, // 1 = parcel (per documentation)
-                    'Weight' => $thisParcelWeight,
-                    'Length' => 20,
-                    'Width' => 20,
-                    'Height' => 20,
-                    'ParcelContent' => 'Colet ' . ($i + 1)
-                ];
-            }
-        }
+    $this->debugLog("=== PARCEL CODES DEBUG START ===");
+    $this->debugLog("Input - Parcels: {$parcelsCount}, Envelopes: {$envelopesCount}, Total API Weight: {$totalWeightAPI}");
 
-        // Generate ParcelCodes for ENVELOPES (Type = 0) - even if envelopesCount = 0
-        if ($envelopesCount > 0) {
-            for ($i = 0; $i < $envelopesCount; $i++) {
-                $envelopeWeight = 1; // 0.1kg in API units
-                $this->debugLog("Envelope {$i}: Weight = {$envelopeWeight} API units");
+    $parcelCodes = [];
 
-                $parcelCodes[] = [
-                    'Code' => (string)($parcelsCount + $i),
-                    'Type' => 0, // 0 = envelope (per documentation)
-                    'Weight' => $envelopeWeight,
-                    'Length' => 25,
-                    'Width' => 15,
-                    'Height' => 1,
-                    'ParcelContent' => 'Plic ' . ($i + 1)
-                ];
-            }
+    // Parcels (Type = 1)
+if ($parcelsCount > 0) {
+    $weightPerParcel = (int)($totalWeightAPI / $parcelsCount);
+    for ($i = 0; $i < $parcelsCount; $i++) {
+        $thisParcelWeight = $weightPerParcel;
+        if ($i == $parcelsCount - 1) {
+            $totalAssigned = $weightPerParcel * ($parcelsCount - 1);
+            $thisParcelWeight = $totalWeightAPI - $totalAssigned;
         }
-
-        // VERIFICATION: Ensure we have the right counts
-        $actualParcels = array_filter($parcelCodes, fn($p) => $p['Type'] == 1);
-        $actualEnvelopes = array_filter($parcelCodes, fn($p) => $p['Type'] == 0);
-
-        $this->debugLog("Generated parcels (Type=1): " . count($actualParcels) . " (expected: {$parcelsCount})");
-        $this->debugLog("Generated envelopes (Type=0): " . count($actualEnvelopes) . " (expected: {$envelopesCount})");
-        
-        if (count($actualParcels) != $parcelsCount) {
-            $this->debugLog("🚨 MISMATCH: Generated parcels != declared parcels");
-        }
-        if (count($actualEnvelopes) != $envelopesCount) {
-            $this->debugLog("🚨 MISMATCH: Generated envelopes != declared envelopes");
-        }
-        
-        $this->debugLog("Total parcel codes generated: " . count($parcelCodes));
-        $this->debugLog("=== PARCEL CODES DEBUG END ===");
-        
-        // Reindex to ensure a clean 0..n numeric array as required by Cargus
-        return array_values($parcelCodes);
+        $thisParcelWeight = max(1, $thisParcelWeight);
+        $this->debugLog("Parcel {$i}: Weight = {$thisParcelWeight} kg");
+        $parcelCodes[] = [
+            'Code' => (string)$i,
+            'Type' => 1, // 1 = parcel
+            'Weight' => $thisParcelWeight,
+            'Length' => 20,
+            'Width' => 20,
+            'Height' => 20,
+            'ParcelContent' => 'Colet ' . ($i + 1)
+        ];
     }
+}
+
+// Envelopes (Type = 0)
+if ($envelopesCount > 0) {
+    for ($i = 0; $i < $envelopesCount; $i++) {
+        $envelopeWeight = 1;
+        $this->debugLog("Envelope {$i}: Weight = {$envelopeWeight} kg");
+        $parcelCodes[] = [
+            'Code' => (string)($parcelsCount + $i),
+            'Type' => 0, // 0 = envelope
+            'Weight' => $envelopeWeight,
+            'Length' => 25,
+            'Width' => 15,
+            'Height' => 1,
+            'ParcelContent' => 'Plic ' . ($i + 1)
+        ];
+    }
+}
+
+    // Verification with updated type semantics
+    $actualParcels = array_filter($parcelCodes, fn($p) => $p['Type'] === 1);
+    $actualEnvelopes = array_filter($parcelCodes, fn($p) => $p['Type'] === 0);
+
+    $this->debugLog("Generated parcels (Type=1): " . count($actualParcels) . " (expected: {$parcelsCount})");
+    $this->debugLog("Generated envelopes (Type=0): " . count($actualEnvelopes) . " (expected: {$envelopesCount})");
+
+    if (count($actualParcels) != $parcelsCount) {
+        $this->debugLog("🚨 MISMATCH: Generated parcels != declared parcels");
+    }
+    if (count($actualEnvelopes) != $envelopesCount) {
+        $this->debugLog("🚨 MISMATCH: Generated envelopes != declared envelopes");
+    }
+
+    $this->debugLog("Total parcel codes generated: " . count($parcelCodes));
+    $this->debugLog("=== PARCEL CODES DEBUG END ===");
+
+    return array_values($parcelCodes);
+}
+
     /**
      * Map recipient address using address_location_mappings table
      */
@@ -633,103 +624,99 @@ class CargusService
      */
     private function buildAWBData($order, $calculatedData, $senderLocation) {
 
-        $parcelsCount = (int)($calculatedData['parcels_count'] ?? 1);
-        // Use calculated envelopes count with order override fallback
-        $envelopesCount = (int)($calculatedData['envelopes_count'] ?? $order['envelopes_count'] ?? 0);
+    $parcelsCount = (int)($calculatedData['parcels_count'] ?? 1);
+    $envelopesCount = (int)($calculatedData['envelopes_count'] ?? $order['envelopes_count'] ?? 0);
 
-        // DEBUG OUTPUT - this will show in your logs
-        $this->debugLog("=== CARGUS AWB DEBUG START ===");
-        $this->debugLog("Order Number: " . $order['order_number']);
-        $this->debugLog("Raw weight from calculator: " . $calculatedData['total_weight'] . " kg");
+    $this->debugLog("=== CARGUS AWB DEBUG START ===");
+    $this->debugLog("Order Number: " . $order['order_number']);
+    $this->debugLog("Raw weight from calculator: " . $calculatedData['total_weight'] . " kg");
 
-        $totalWeightKg = (float)$calculatedData['total_weight'];
-        $totalWeight = (int)($totalWeightKg * 10);
+    $totalWeightKg = (float)$calculatedData['total_weight'];
+    $totalWeight = (int)round($totalWeightKg); // send real kilograms
 
-         $this->debugLog("Processed weight: " . $totalWeightKg . " kg");
-        $this->debugLog("API weight (kg × 10): " . $totalWeight . " units");
-        $this->debugLog("Parcels: " . $parcelsCount);
+    $this->debugLog("Processed weight: " . $totalWeightKg . " kg");
+    $this->debugLog("API weight (kg): " . $totalWeight);
+    $this->debugLog("Parcels: " . $parcelsCount);
 
-        // Check if this is the problem
-        if ($totalWeight > 310) {
-            $this->debugLog("🚨 PROBLEM: API weight " . $totalWeight . " exceeds 31kg limit (310 units)!");
-            $this->debugLog("This will cause the '>31kg' error from Cargus");
-        } else {
-            $this->debugLog("✅ API weight " . $totalWeight . " is within 31kg limit");
-        }
-
-         $serviceId = 34;
-        if ($totalWeightKg > 31) {
-            $serviceId = 35;
-        }
-        
-        $this->debugLog("Service ID: " . $serviceId);
-        $this->debugLog("=== CARGUS AWB DEBUG END ===");
-        return [
-            'Sender' => [
-                'SenderClientId' => null,
-                'TertiaryClientId' => null,
-                'LocationId' => $senderLocation['cargus_location_id'],
-                'Name' => $senderLocation['company_name'],
-                'CountyId' => $senderLocation['county_id'],
-                'CountyName' => 'BUCURESTI',
-                'LocalityId' => $senderLocation['locality_id'],
-                'LocalityName' => 'BUCURESTI',
-                'StreetId' => $senderLocation['street_id'] ?? 0,
-                'StreetName' => $_ENV['CARGUS_SENDER_STREET'] ?? getenv('CARGUS_SENDER_STREET') ?? 'Strada Principala',
-                'BuildingNumber' => $senderLocation['building_number'],
-                'AddressText' => $senderLocation['address_text'],
-                'ContactPerson' => $senderLocation['contact_person'],
-                'PhoneNumber' => Phone::toLocal($senderLocation['phone']),
-                'Email' => $senderLocation['email'],
-                'CodPostal' => $_ENV['CARGUS_SENDER_POSTAL'] ?? getenv('CARGUS_SENDER_POSTAL') ?? '010001',
-                'CountryId' => 0
-            ],
-            'Recipient' => [
-                'Name' => $order['customer_name'],
-                'CountyId' => $order['recipient_county_id'],
-                'CountyName' => $order['recipient_county_name'] ?? '',
-                'LocalityId' => $order['recipient_locality_id'],
-                'LocalityName' => $order['recipient_locality_name'] ?? '',
-                'StreetId' => $order['recipient_street_id'] ?? 0,
-                'StreetName' => $order['recipient_street_name'] ?? '', 
-                'BuildingNumber' => $order['recipient_building_number'] ?: '',
-                'AddressText' => $order['address_text'] ?? $order['shipping_address'],
-                'ContactPerson' => $order['recipient_contact_person'] ?: $order['customer_name'],
-                'PhoneNumber' => Phone::toLocal($order['recipient_phone']),
-                'Email' => $order['recipient_email'] ?: '',
-                'CodPostal' => $order['recipient_postal'] ?? '',
-                'CountryId' => 0
-            ],
-            'Parcels' => $parcelsCount,
-            'Envelopes' => $envelopesCount,
-            'TotalWeight' => $totalWeight,
-            'DeclaredValue' => intval($order['declared_value'] ?? $order['total_value'] ?? 0),
-            'CashRepayment' => intval($order['cash_repayment'] ?? 0),
-            'BankRepayment' => intval($order['bank_repayment'] ?? 0),
-            'OtherRepayment' => '',
-            'BarCodeRepayment' => '',
-            'PaymentInstrumentId' => 0,
-            'PaymentInstrumentValue' => 0,
-            'HasTertReimbursement' => false,
-            'OpenPackage' => boolval($order['open_package'] ?? false),
-            'PriceTableId' => 0,
-            'ShipmentPayer' => 1, // Sender pays
-            'ShippingRepayment' => 0,
-            'SaturdayDelivery' => boolval($order['saturday_delivery'] ?? false),
-            'MorningDelivery' => boolval($order['morning_delivery'] ?? false),
-            'Observations' => $order['observations'] ?: 'Comandă generată automat',
-            'PackageContent' => $calculatedData['package_content'] ?: 'Diverse produse',
-            'CustomString' => '',
-            'SenderReference1' => $order['order_number'] ?? '',
-            'RecipientReference1' => $order['recipient_reference1'] ?? '',
-            'RecipientReference2' => $order['recipient_reference2'] ?? '',
-            'InvoiceReference' => $order['invoice_reference'] ?? $order['invoice_number'] ?? '',
-            'ServiceId' => $this->config['default_service_id'] ?? 34,
-            'ParcelCodes' => $this->generateParcelCodes($parcelsCount, $envelopesCount, $totalWeight, $calculatedData)
-        ];
-        
-        $this->debugAWBData($awbData);  
+    if ($totalWeight > 31) {
+        $this->debugLog("🚨 PROBLEM: API weight " . $totalWeight . " exceeds 31kg limit!");
+    } else {
+        $this->debugLog("✅ API weight " . $totalWeight . " is within 31kg limit");
     }
+
+    $serviceId = 34;
+    if ($totalWeightKg > 31) {
+        $serviceId = 35;
+    }
+
+    $this->debugLog("Service ID: " . $serviceId);
+    $this->debugLog("=== CARGUS AWB DEBUG END ===");
+
+    return [
+        'Sender' => [
+            'SenderClientId' => null,
+            'TertiaryClientId' => null,
+            'LocationId' => $senderLocation['cargus_location_id'],
+            'Name' => $senderLocation['company_name'],
+            'CountyId' => $senderLocation['county_id'],
+            'CountyName' => 'BUCURESTI',
+            'LocalityId' => $senderLocation['locality_id'],
+            'LocalityName' => 'BUCURESTI',
+            'StreetId' => $senderLocation['street_id'] ?? 0,
+            'StreetName' => $_ENV['CARGUS_SENDER_STREET'] ?? getenv('CARGUS_SENDER_STREET') ?? 'Strada Principala',
+            'BuildingNumber' => $senderLocation['building_number'],
+            'AddressText' => $senderLocation['address_text'],
+            'ContactPerson' => $senderLocation['contact_person'],
+            'PhoneNumber' => Phone::toLocal($senderLocation['phone']),
+            'Email' => $senderLocation['email'],
+            'CodPostal' => $_ENV['CARGUS_SENDER_POSTAL'] ?? getenv('CARGUS_SENDER_POSTAL') ?? '010001',
+            'CountryId' => 0
+        ],
+        'Recipient' => [
+            'Name' => $order['customer_name'],
+            'CountyId' => $order['recipient_county_id'],
+            'CountyName' => $order['recipient_county_name'] ?? '',
+            'LocalityId' => $order['recipient_locality_id'],
+            'LocalityName' => $order['recipient_locality_name'] ?? '',
+            'StreetId' => $order['recipient_street_id'] ?? 0,
+            'StreetName' => $order['recipient_street_name'] ?? '',
+            'BuildingNumber' => $order['recipient_building_number'] ?: '',
+            'AddressText' => $order['address_text'] ?? $order['shipping_address'],
+            'ContactPerson' => $order['recipient_contact_person'] ?: $order['customer_name'],
+            'PhoneNumber' => Phone::toLocal($order['recipient_phone']),
+            'Email' => $order['recipient_email'] ?: '',
+            'CodPostal' => $order['recipient_postal'] ?? '',
+            'CountryId' => 0
+        ],
+        'Parcels' => $parcelsCount,
+        'Envelopes' => $envelopesCount,
+        'TotalWeight' => $totalWeight,
+        'DeclaredValue' => intval($order['declared_value'] ?? $order['total_value'] ?? 0),
+        'CashRepayment' => intval($order['cash_repayment'] ?? 0),
+        'BankRepayment' => intval($order['bank_repayment'] ?? 0),
+        'OtherRepayment' => '',
+        'BarCodeRepayment' => '',
+        'PaymentInstrumentId' => 0,
+        'PaymentInstrumentValue' => 0,
+        'HasTertReimbursement' => false,
+        'OpenPackage' => boolval($order['open_package'] ?? false),
+        'PriceTableId' => 0,
+        'ShipmentPayer' => 1,
+        'ShippingRepayment' => 0,
+        'SaturdayDelivery' => boolval($order['saturday_delivery'] ?? false),
+        'MorningDelivery' => boolval($order['morning_delivery'] ?? false),
+        'Observations' => $order['observations'] ?: 'Comandă generată automat',
+        'PackageContent' => $calculatedData['package_content'] ?: 'Diverse produse',
+        'CustomString' => '',
+        'SenderReference1' => $order['order_number'] ?? '',
+        'RecipientReference1' => $order['recipient_reference1'] ?? '',
+        'RecipientReference2' => $order['recipient_reference2'] ?? '',
+        'InvoiceReference' => $order['invoice_reference'] ?? $order['invoice_number'] ?? '',
+        'ServiceId' => $serviceId,
+        'ParcelCodes' => $this->generateParcelCodes($parcelsCount, $envelopesCount, $totalWeight, $calculatedData)
+    ];
+}
+
     
     /**
      * Validate AWB data before sending to API
@@ -776,46 +763,42 @@ class CargusService
             
             // Validate each ParcelCode
             $parcelTypeCount = 0;
-            $envelopeTypeCount = 0;
-            
-            foreach ($awbData['ParcelCodes'] as $i => $parcelCode) {
-                // Check required fields
-                if (!isset($parcelCode['Code'])) {
-                    $errors[] = "ParcelCode [{$i}]: Missing 'Code' field";
-                }
-                if (!isset($parcelCode['Type'])) {
-                    $errors[] = "ParcelCode [{$i}]: Missing 'Type' field";
-                } else {
-                    if ($parcelCode['Type'] === 0) {
-                        $parcelTypeCount++;
-                    } elseif ($parcelCode['Type'] === 1) {
-                        $envelopeTypeCount++;
-                    } else {
-                        $errors[] = "ParcelCode [{$i}]: Invalid Type '{$parcelCode['Type']}' (must be 0 for parcel or 1 for envelope)";
-                    }
-                }
-                
-                if (!isset($parcelCode['Weight']) || !is_int($parcelCode['Weight']) || $parcelCode['Weight'] <= 0) {
-                    $errors[] = "ParcelCode [{$i}]: Weight must be a positive integer";
-                }
-                
-                // Check other required fields
-                $requiredFields = ['Length', 'Width', 'Height', 'ParcelContent'];
-                foreach ($requiredFields as $field) {
-                    if (!isset($parcelCode[$field])) {
-                        $errors[] = "ParcelCode [{$i}]: Missing '{$field}' field";
-                    }
-                }
-            }
-            
-            // Verify Type counts match declared counts
-            if ($parcelTypeCount !== $awbData['Parcels']) {
-                $errors[] = "Type mismatch: declared {$awbData['Parcels']} parcels, but found {$parcelTypeCount} ParcelCodes with Type=0";
-            }
-            
-            if ($envelopeTypeCount !== $awbData['Envelopes']) {
-                $errors[] = "Type mismatch: declared {$awbData['Envelopes']} envelopes, but found {$envelopeTypeCount} ParcelCodes with Type=1";
-            }
+$envelopeTypeCount = 0;
+
+foreach ($awbData['ParcelCodes'] as $i => $parcelCode) {
+    if (!isset($parcelCode['Code'])) {
+        $errors[] = "ParcelCode [{$i}]: Missing 'Code' field";
+    }
+    if (!isset($parcelCode['Type'])) {
+        $errors[] = "ParcelCode [{$i}]: Missing 'Type' field";
+    } else {
+        if ($parcelCode['Type'] === 1) {
+            $parcelTypeCount++; // parcel
+        } elseif ($parcelCode['Type'] === 0) {
+            $envelopeTypeCount++; // envelope
+        } else {
+            $errors[] = "ParcelCode [{$i}]: Invalid Type '{$parcelCode['Type']}' (must be 1 for parcel or 0 for envelope)";
+        }
+    }
+
+    if (!isset($parcelCode['Weight']) || !is_int($parcelCode['Weight']) || $parcelCode['Weight'] <= 0) {
+        $errors[] = "ParcelCode [{$i}]: Weight must be a positive integer";
+    }
+
+    $requiredFields = ['Length', 'Width', 'Height', 'ParcelContent'];
+    foreach ($requiredFields as $field) {
+        if (!isset($parcelCode[$field])) {
+            $errors[] = "ParcelCode [{$i}]: Missing '{$field}' field";
+        }
+    }
+}
+
+if ($parcelTypeCount !== $awbData['Parcels']) {
+    $errors[] = "Type mismatch: declared {$awbData['Parcels']} parcels, but found {$parcelTypeCount} ParcelCodes with Type=1";
+}
+if ($envelopeTypeCount !== $awbData['Envelopes']) {
+    $errors[] = "Type mismatch: declared {$awbData['Envelopes']} envelopes, but found {$envelopeTypeCount} ParcelCodes with Type=0";
+}
         }
         
         // Phone validation
@@ -900,7 +883,9 @@ class CargusService
         CURLOPT_CUSTOMREQUEST => $method,
         CURLOPT_HTTPHEADER => $headers,
         CURLOPT_SSL_VERIFYPEER => false,
-        CURLOPT_FOLLOWLOCATION => true
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_VERBOSE => true,
+        CURLOPT_STDERR => fopen('/var/www/notsowms.ro/logs/curl_verbose.log', 'a')
     ]);
     
     if ($data !== null) {
@@ -912,7 +897,9 @@ class CargusService
             $this->debugLog("Final cURL payload length: " . strlen($jsonPayload) . " characters");
         }
     }
-    
+
+    // file_put_contents('/var/www/notsowms.ro/logs/cargus_last_awb_payload.json', $jsonPayload);
+
     $response = curl_exec($ch);
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $error = curl_error($ch);
@@ -999,7 +986,7 @@ class CargusService
         
         foreach ($awbData['ParcelCodes'] as $i => $code) {
             $type = $code['Type'] ?? 'MISSING';
-            $typeName = $type === 0 ? 'PARCEL' : ($type === 1 ? 'ENVELOPE' : 'UNKNOWN');
+            $typeName = $type === 1 ? 'PARCEL' : ($type === 0 ? 'ENVELOPE' : 'UNKNOWN');
             $weight = $code['Weight'] ?? 'MISSING';
             $codeValue = $code['Code'] ?? 'MISSING';
             $length = $code['Length'] ?? 'MISSING';

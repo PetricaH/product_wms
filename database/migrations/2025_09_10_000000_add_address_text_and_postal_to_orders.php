@@ -12,7 +12,6 @@ class AddAddressTextAndPostalToOrdersMigration {
     public function up(PDO $pdo) {
         $sql = "
             ALTER TABLE orders ADD COLUMN (
-                recipient_postal VARCHAR(20) NULL COMMENT 'Postal code',
                 address_text TEXT NULL COMMENT 'Full address text',
                 INDEX idx_recipient_postal (recipient_postal)
             )
@@ -26,8 +25,7 @@ class AddAddressTextAndPostalToOrdersMigration {
      */
     public function down(PDO $pdo) {
         $sql = "
-            ALTER TABLE orders DROP COLUMN recipient_postal,
-                                 DROP COLUMN address_text,
+            ALTER TABLE orders   DROP COLUMN address_text,
                                  DROP INDEX idx_recipient_postal
         ";
 

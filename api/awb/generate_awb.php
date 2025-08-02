@@ -201,7 +201,7 @@ try {
             try {
                 $calculatedData = $cargusService->calculateOrderShipping($order);
                 $weightInfo = [
-                    'weight' => $calculatedData['total_weight'] / 10, // Convert back to kg for display
+                    'weight' => $calculatedData['total_weight'],
                     'source' => 'calculated'
                 ];
                 

@@ -15,6 +15,9 @@
 require_once BASE_PATH . '/utils/Phone.php';
 use Utils\Phone;
 
+ini_set('log_errors', 1);
+ini_set('error_log', '/var/www/notsowms.ro/logs/php_debug.log');
+
 class CargusService 
 {
     private $apiUrl;
@@ -26,6 +29,16 @@ class CargusService
     private $config;
     private $conn;
     private $orderModel;
+
+    // Add this simple debug method
+    private function debugLog($message) {
+        $logFile = '/var/www/notsowms.ro/logs/cargus_debug.log';
+        $timestamp = date('Y-m-d H:i:s');
+        file_put_contents($logFile, "[{$timestamp}] {$message}\n", FILE_APPEND | LOCK_EX);
+        
+        // Also use error_log for backup
+        error_log("CARGUS: {$message}");
+    }
     
     public function __construct($conn = null) {
         $this->conn = $conn ?: $this->getConnection();
@@ -311,59 +324,80 @@ class CargusService
     /**
      * Generate ParcelCodes array to match Parcels + Envelopes count
      */
-    private function generateParcelCodes($parcelsCount, $envelopesCount, $totalWeight, $calculatedData) {
+    private function generateParcelCodes($parcelsCount, $envelopesCount, $totalWeightAPI, $calculatedData) {
+        $this->debugLog("=== PARCEL CODES DEBUG START ===");
+        $this->debugLog("Input - Parcels: {$parcelsCount}, Envelopes: {$envelopesCount}, Total API Weight: {$totalWeightAPI}");
+        
         $parcelCodes = [];
-        $codeIndex = 0;
         
-        // Calculate weight per parcel (distribute total weight)
-        $totalItems = $parcelsCount + $envelopesCount;
-        $weightPerItem = $totalItems > 0 ? max(1, (int)($totalWeight / $totalItems)) : $totalWeight;
+        // CRITICAL: We must generate exactly the number of ParcelCodes as declared in Parcels + Envelopes
         
-        // Generate codes for parcels using detailed data when available
-        for ($i = 0; $i < $parcelsCount; $i++) {
-            $parcelData = $calculatedData['parcels_detail'][$i] ?? [];
-            $parcelCodes[] = [
-                'Code' => (string)$codeIndex,
-                'Type' => 1, // parcels
-                'Weight' => max(1, (int)($parcelData['weight'] ?? $weightPerItem)),
-                'Length' => intval($parcelData['length'] ?? $calculatedData['package_length'] ?? 20),
-                'Width' => intval($parcelData['width'] ?? $calculatedData['package_width'] ?? 15),
-                'Height' => intval($parcelData['height'] ?? $calculatedData['package_height'] ?? 10),
-                'ParcelContent' => $parcelData['content'] ?? ($calculatedData['package_content'] ?: 'Diverse produse')
-            ];
-            $codeIndex++;
+        // Generate ParcelCodes for PARCELS (Type = 0)
+        if ($parcelsCount > 0) {
+            $weightPerParcel = (int)($totalWeightAPI / $parcelsCount);
+            
+            for ($i = 0; $i < $parcelsCount; $i++) {
+                $thisParcelWeight = $weightPerParcel;
+                
+                // For the last parcel, add any remaining weight
+                if ($i == $parcelsCount - 1) {
+                    $totalAssigned = $weightPerParcel * ($parcelsCount - 1);
+                    $thisParcelWeight = $totalWeightAPI - $totalAssigned;
+                }
+                
+                $thisParcelWeight = max(1, $thisParcelWeight);
+                
+                $this->debugLog("Parcel {$i}: Weight = {$thisParcelWeight} API units (" . ($thisParcelWeight/10) . "kg)");
+                
+                $parcelCodes[] = [
+                    'Code' => (string)$i,
+                    'Type' => 0, // 0 = parcel (per documentation)
+                    'Weight' => $thisParcelWeight,
+                    'Length' => 20,
+                    'Width' => 20,
+                    'Height' => 20,
+                    'ParcelContent' => 'Colet ' . ($i + 1)
+                ];
+            }
         }
         
-        // Generate codes for envelopes (if any)
-        for ($i = 0; $i < $envelopesCount; $i++) {
-            $parcelCodes[] = [
-                'Code' => (string)$codeIndex,
-                'Type' => 2, // Type 2 for envelopes
-                'Weight' => 1, // Minimal weight for envelope (0.1kg)
-                'Length' => 30,
-                'Width' => 20,
-                'Height' => 1,
-                'ParcelContent' => 'Factura semnata' // Invoice envelope content
-            ];
-            $codeIndex++;
+        // Generate ParcelCodes for ENVELOPES (Type = 1) - even if envelopesCount = 0
+        if ($envelopesCount > 0) {
+            for ($i = 0; $i < $envelopesCount; $i++) {
+                $envelopeWeight = 1; // 0.1kg in API units
+                $this->debugLog("Envelope {$i}: Weight = {$envelopeWeight} API units");
+                
+                $parcelCodes[] = [
+                    'Code' => (string)($parcelsCount + $i),
+                    'Type' => 1, // 1 = envelope (per documentation)
+                    'Weight' => $envelopeWeight,
+                    'Length' => 25,
+                    'Width' => 15,
+                    'Height' => 1,
+                    'ParcelContent' => 'Plic ' . ($i + 1)
+                ];
+            }
         }
         
-        // Ensure we have at least one item
-        if (empty($parcelCodes)) {
-            $parcelCodes[] = [
-                'Code' => '0',
-                'Type' => 1,
-                'Weight' => max(1, $totalWeight),
-                'Length' => 20,
-                'Width' => 15,
-                'Height' => 10,
-                'ParcelContent' => 'Diverse produse'
-            ];
+        // VERIFICATION: Ensure we have the right counts
+        $actualParcels = array_filter($parcelCodes, fn($p) => $p['Type'] == 0);
+        $actualEnvelopes = array_filter($parcelCodes, fn($p) => $p['Type'] == 1);
+        
+        $this->debugLog("Generated parcels (Type=0): " . count($actualParcels) . " (expected: {$parcelsCount})");
+        $this->debugLog("Generated envelopes (Type=1): " . count($actualEnvelopes) . " (expected: {$envelopesCount})");
+        
+        if (count($actualParcels) != $parcelsCount) {
+            $this->debugLog("🚨 MISMATCH: Generated parcels != declared parcels");
         }
+        if (count($actualEnvelopes) != $envelopesCount) {
+            $this->debugLog("🚨 MISMATCH: Generated envelopes != declared envelopes");
+        }
+        
+        $this->debugLog("Total parcel codes generated: " . count($parcelCodes));
+        $this->debugLog("=== PARCEL CODES DEBUG END ===");
         
         return $parcelCodes;
     }
-
     /**
      * Map recipient address using address_location_mappings table
      */
@@ -600,7 +634,34 @@ class CargusService
 
         $parcelsCount = (int)($calculatedData['parcels_count'] ?? 1);
         $envelopesCount = (int)($order['envelopes_count'] ?? 0);
-        $totalWeight = (int)($calculatedData['total_weight'] * 10);
+
+        // DEBUG OUTPUT - this will show in your logs
+        $this->debugLog("=== CARGUS AWB DEBUG START ===");
+        $this->debugLog("Order Number: " . $order['order_number']);
+        $this->debugLog("Raw weight from calculator: " . $calculatedData['total_weight'] . " kg");
+
+        $totalWeightKg = (float)$calculatedData['total_weight'];
+        $totalWeight = (int)($totalWeightKg * 10);
+
+         $this->debugLog("Processed weight: " . $totalWeightKg . " kg");
+        $this->debugLog("API weight (kg × 10): " . $totalWeight . " units");
+        $this->debugLog("Parcels: " . $parcelsCount);
+
+        // Check if this is the problem
+        if ($totalWeight > 310) {
+            $this->debugLog("🚨 PROBLEM: API weight " . $totalWeight . " exceeds 31kg limit (310 units)!");
+            $this->debugLog("This will cause the '>31kg' error from Cargus");
+        } else {
+            $this->debugLog("✅ API weight " . $totalWeight . " is within 31kg limit");
+        }
+
+         $serviceId = 34;
+        if ($totalWeightKg > 31) {
+            $serviceId = 35;
+        }
+        
+        $this->debugLog("Service ID: " . $serviceId);
+        $this->debugLog("=== CARGUS AWB DEBUG END ===");
 
         return [
             'Sender' => [

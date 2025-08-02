@@ -376,7 +376,7 @@ class Order
             SELECT 
                 oi.*,
                 p.name as product_name,
-                p.code as product_code,
+                p.sku as product_code,
                 p.category as product_category,
                 pu.weight_per_unit,
                 COALESCE(pu.volume_per_unit, 0) as volume_per_unit,

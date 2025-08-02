@@ -307,7 +307,7 @@ class ImportProcessor {
      */
     private function createOrder($import, $clientInfo, $invoiceInfo, $locationMapping) {
         $orderNumber = $this->generateOrderNumber();
-        $shippingAddress = $this->buildShippingAddress($import);
+        $shippingAddress = $this->buildShippingAddress($import, $clientInfo);
 
         // Look up postal code using Cargus API if possible
         $postalCode = null;
@@ -345,7 +345,7 @@ class ImportProcessor {
             'status' => 'pending',
             'priority' => $priority,
             'shipping_address' => $shippingAddress,
-            'address_text' => $shippingAddress,
+            'address_text' => $clientInfo['address'] ?? $shippingAddress,
             'notes' => $this->buildOrderNotes($import, $invoiceInfo),
             'total_value' => number_format($totalValue, 2, '.', ''), // FIXED: Ensure proper decimal format
             'created_by' => $systemUserId ?: 1,
@@ -555,11 +555,17 @@ class ImportProcessor {
     /**
      * Build shipping address string
      */
-    private function buildShippingAddress($import) {
+    private function buildShippingAddress($import, $clientInfo = []) {
         $parts = array_filter([
-            $import['delivery_street'] ?? $import['address'] ?? '',
-            $import['delivery_locality'] ?? $import['city'] ?? '',
-            $import['delivery_county'] ?? $import['county'] ?? ''
+            $import['delivery_street']
+                ?? $import['address']
+                ?? ($clientInfo['address'] ?? ''),
+            $import['delivery_locality']
+                ?? $import['city']
+                ?? ($clientInfo['city'] ?? ''),
+            $import['delivery_county']
+                ?? $import['county']
+                ?? ($clientInfo['county'] ?? ''),
         ]);
         
         return implode(', ', $parts);

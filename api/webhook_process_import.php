@@ -11,6 +11,7 @@ if (!defined('BASE_PATH')) {
 }
 require_once BASE_PATH . '/bootstrap.php';
 $config = require BASE_PATH . '/config/config.php';
+require_once BASE_PATH . '/models/WeightCalculator.php';
 
 class ImportProcessor {
     private $db;
@@ -64,6 +65,12 @@ class ImportProcessor {
             
             // Add order items with FIXED logic - NO DUPLICATES
             $this->addOrderItems($orderId, $products);
+
+              // Calculate shipping using WeightCalculator and update order
+            $calculator = new WeightCalculator($this->db);
+            $shipping = $calculator->calculateOrderShipping($orderId);
+            $this->applyShippingToOrder($orderId, $shipping);
+            $this->debugInfo['weight_summary'] = $shipping;
             
             // Mark import as completed
             $this->updateImportStatus($importId, 'converted', $orderId);
@@ -314,14 +321,6 @@ class ImportProcessor {
         
         $priority = $this->determinePriority($totalValue, $import['company_name'] ?? $import['contact_person_name']);
         
-        // Calculate weight
-        $calculatedWeight = 0;
-        if (!empty($this->debugInfo['consolidated_products'])) {
-            $calculatedWeight = $this->calculateOrderWeight($this->debugInfo['consolidated_products'], $import);
-        }
-        
-        $totalWeight = $calculatedWeight > 0 ? $calculatedWeight : $this->parseNumericValue($import['estimated_weight'] ?? 1.0);
-        
         $systemUserId = $this->getSystemUserId();
         
         // FIXED: Map payment method correctly
@@ -352,9 +351,9 @@ class ImportProcessor {
             'recipient_building_number' => '',
             
             // Weight and parcels
-            'total_weight' => number_format($totalWeight, 3, '.', ''), // FIXED: Proper decimal format
-            'declared_value' => number_format($totalValue, 2, '.', ''), // FIXED: Proper decimal format
-            'parcels_count' => $this->calculateParcelsCount($totalWeight, $this->debugInfo['consolidated_products'] ?? []),
+            'total_weight' => number_format(0, 3, '.', ''),
+            'declared_value' => number_format($totalValue, 2, '.', ''),
+            'parcels_count' => 0,
             'envelopes_count' => intval($import['envelopes_count'] ?? 0),
             
             // FIXED: Payment method mapping with proper decimal format
@@ -398,9 +397,6 @@ class ImportProcessor {
             'order_number' => $orderNumber,
             'calculated_total' => $calculatedTotal,
             'final_total_used' => $totalValue,
-            'calculated_weight' => $calculatedWeight,
-            'used_weight' => $totalWeight,
-            'parcels_count' => $orderData['parcels_count'],
             'awb_ready' => !empty($locationMapping),
             'priority' => $priority,
             'payment_method' => $invoiceInfo['payment_method'] ?? 'OP',
@@ -463,139 +459,17 @@ class ImportProcessor {
         }
     }
 
-    /**
-     * Calculate intelligent weight based on products
-     */
-    private function calculateOrderWeight($products, $import) {
-        $totalWeight = 0;
-        $weightNotes = [];
-        
-        foreach ($products as $product) {
-            $productWeight = $this->calculateProductWeight($product, $weightNotes);
-            $totalWeight += $productWeight * $product['net_quantity'];
-        }
-        
-        // Add packaging weight (5% of product weight, minimum 0.1kg)
-        $packagingWeight = max($totalWeight * 0.05, 0.1);
-        $totalWeight += $packagingWeight;
-        
-        // Store weight calculation debug
-        $this->debugInfo['weight_calculation'] = array_map(function($product) use ($weightNotes) {
-            $unitWeight = $this->calculateProductWeight($product, $weightNotes);
-            return [
-                'product_code' => $product['code'],
-                'product_name' => $product['name'],
-                'quantity' => $product['net_quantity'],
-                'unit_weight' => $unitWeight,
-                'total_weight' => $unitWeight * $product['net_quantity'],
-                'calculation_method' => $this->getWeightCalculationMethod($product['name'], $product['code'])
-            ];
-        }, $products);
-        
-        $this->debugInfo['weight_summary'] = [
-            'products_weight' => $totalWeight - $packagingWeight,
-            'packaging_weight' => $packagingWeight,
-            'final_weight' => round($totalWeight, 2),
-            'calculation_notes' => $weightNotes
-        ];
-        
-        return round($totalWeight, 2);
-    }
-
-    /**
-     * Calculate individual product weight with intelligent defaults
-     */
-    private function calculateProductWeight($product, &$weightNotes) {
-        $name = strtolower($product['name']);
-        $code = strtolower($product['code']);
-        
-        // Try to extract volume from product code (e.g., WA111.25 = 25L)
-        if (preg_match('/(\d+(?:\.\d+)?)\s*l/i', $code) || preg_match('/\.(\d+)$/i', $code)) {
-            preg_match_all('/(\d+(?:\.\d+)?)/', $code, $matches);
-            if (!empty($matches[1])) {
-                $volume = end($matches[1]); // Get the last number (usually volume)
-                if ($volume >= 0.1 && $volume <= 100) { // Reasonable volume range
-                    $weight = floatval($volume) * 1.1; // 1L ≈ 1.1kg for most chemicals
-                    $weightNotes[] = "Extracted volume from code {$product['code']}: {$volume}L = {$weight}kg";
-                    return $weight;
-                }
-            }
-        }
-        
-        // Category-based defaults
-        return $this->getWeightByCategory($product['name'], $weightNotes);
-    }
-
-    /**
-     * Get weight calculation method for debug
-     */
-    private function getWeightCalculationMethod($productName, $productCode) {
-        if (preg_match('/(\d+(?:\.\d+)?)\s*l/i', $productCode) || preg_match('/\.(\d+)$/i', $productCode)) {
-            preg_match_all('/(\d+(?:\.\d+)?)/', $productCode, $matches);
-            if (!empty($matches[1])) {
-                $volume = end($matches[1]);
-                if ($volume >= 0.1 && $volume <= 100) {
-                    return "Extracted volume from code $productCode: {$volume}L = " . ($volume * 1.1) . "kg";
-                }
-            }
-        }
-        
-        return "Category-based default weight";
-    }
-
-    /**
-     * Intelligent weight defaults based on product category/name
-     */
-    private function getWeightByCategory($productName, &$weightNotes) {
-        $name = strtolower($productName);
-        
-        // Chemical/Industrial products
-        if (preg_match('/\b(spuma|spumă|detergent|chimical|chemical|acid|spray)\b/i', $name)) {
-            $weightNotes[] = "Chemical product category: 2.5kg default";
-            return 2.5;
-        }
-        
-        // Electronic appliances
-        if (preg_match('/\b(statie|stație|calcat|iron|electronic|aparat|device)\b/i', $name)) {
-            $weightNotes[] = "Electronic appliance category: 3.0kg default";
-            return 3.0;
-        }
-        
-        // Tools/Hardware
-        if (preg_match('/\b(tool|unelte|scule|hardware|metal)\b/i', $name)) {
-            $weightNotes[] = "Tools/hardware category: 1.5kg default";
-            return 1.5;
-        }
-        
-        // Containers/Barrels (empty)
-        if (preg_match('/\b(barrel|butoias|container|bidon)\b/i', $name)) {
-            $weightNotes[] = "Container category: 4.0kg default";
-            return 4.0;
-        }
-        
-        // Small items/accessories
-        if (preg_match('/\b(accesor|piesa|component|small|mic)\b/i', $name)) {
-            $weightNotes[] = "Small item category: 0.5kg default";
-            return 0.5;
-        }
-        
-        // Default weight
-        $weightNotes[] = "Default weight: 1.0kg";
-        return 1.0;
-    }
-
-    /**
-     * Calculate number of parcels based on weight
-     */
-    private function calculateParcelsCount($totalWeight, $products) {
-        // Cargus weight limits: max 31kg per parcel for service 34
-        $maxWeightPerParcel = 31;
-        
-        if ($totalWeight <= $maxWeightPerParcel) {
-            return 1;
-        }
-        
-        return ceil($totalWeight / $maxWeightPerParcel);
+    private function applyShippingToOrder($orderId, $shipping) {
+        $stmt = $this->db->prepare(
+            "UPDATE orders SET total_weight = :total_weight, parcels_count = :parcels_count, envelopes_count = :envelopes_count, package_content = :package_content WHERE id = :order_id"
+        );
+        $stmt->execute([
+            ':total_weight' => $shipping['total_weight'] ?? 0,
+            ':parcels_count' => $shipping['parcels_count'] ?? 0,
+            ':envelopes_count' => $shipping['envelopes_count'] ?? 0,
+            ':package_content' => $shipping['package_content'] ?? '',
+            ':order_id' => $orderId
+        ]);
     }
 
     /**
@@ -707,16 +581,6 @@ class ImportProcessor {
                 $discountCount = count($discountedProducts);
                 $notes[] = "$discountCount products with discounts applied";
             }
-        }
-        
-        // Add weight calculation details
-        $totalWeight = $this->debugInfo['weight_summary']['final_weight'] ?? 0;
-        if ($totalWeight > 0) {
-            $notes[] = "Weight: {$totalWeight}kg calculated";
-            
-            $productsWeight = $this->debugInfo['weight_summary']['products_weight'] ?? 0;
-            $packagingWeight = $this->debugInfo['weight_summary']['packaging_weight'] ?? 0;
-            $notes[] = "({$productsWeight}kg products + {$packagingWeight}kg packaging)";
         }
         
         // Add payment method info

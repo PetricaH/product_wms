@@ -12,6 +12,7 @@ if (!defined('BASE_PATH')) {
 require_once BASE_PATH . '/bootstrap.php';
 $config = require BASE_PATH . '/config/config.php';
 require_once BASE_PATH . '/models/WeightCalculator.php';
+require_once BASE_PATH . '/models/CargusService.php';
 
 class ImportProcessor {
     private $db;
@@ -307,6 +308,15 @@ class ImportProcessor {
     private function createOrder($import, $clientInfo, $invoiceInfo, $locationMapping) {
         $orderNumber = $this->generateOrderNumber();
         $shippingAddress = $this->buildShippingAddress($import);
+
+        // Look up postal code using Cargus API if possible
+        $postalCode = null;
+        if (!empty($locationMapping['cargus_county_id']) && !empty($locationMapping['cargus_locality_id'])) {
+            $postalCode = $this->fetchPostalCode(
+                $locationMapping['cargus_county_id'],
+                $locationMapping['cargus_locality_id']
+            );
+        }
         
         // FIXED: Calculate correct total from consolidated products
         $calculatedTotal = 0;
@@ -335,6 +345,7 @@ class ImportProcessor {
             'status' => 'pending',
             'priority' => $priority,
             'shipping_address' => $shippingAddress,
+            'address_text' => $shippingAddress,
             'notes' => $this->buildOrderNotes($import, $invoiceInfo),
             'total_value' => number_format($totalValue, 2, '.', ''), // FIXED: Ensure proper decimal format
             'created_by' => $systemUserId ?: 1,
@@ -349,6 +360,7 @@ class ImportProcessor {
             'recipient_email' => $import['contact_email'] ?? '',
             'recipient_street_name' => $import['delivery_street'] ?? '',
             'recipient_building_number' => '',
+            'recipient_postal' => $postalCode,
             
             // Weight and parcels
             'total_weight' => number_format(0, 3, '.', ''),
@@ -687,6 +699,23 @@ class ImportProcessor {
         }
         
         return null;
+    }
+
+    /**
+     * Fetch postal code for given county and locality IDs via Cargus API
+     */
+    private function fetchPostalCode($countyId, $localityId) {
+        if (empty($countyId) || empty($localityId)) {
+            return null;
+        }
+
+        try {
+            $cargus = new CargusService($this->db);
+            return $cargus->getPostalCode($countyId, $localityId);
+        } catch (Exception $e) {
+            $this->warnings[] = "Postal code lookup failed: " . $e->getMessage();
+            return null;
+        }
     }
 
     /**

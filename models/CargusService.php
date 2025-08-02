@@ -634,7 +634,8 @@ class CargusService
     private function buildAWBData($order, $calculatedData, $senderLocation) {
 
         $parcelsCount = (int)($calculatedData['parcels_count'] ?? 1);
-        $envelopesCount = (int)($order['envelopes_count'] ?? 0);
+        // Use calculated envelopes count with order override fallback
+        $envelopesCount = (int)($calculatedData['envelopes_count'] ?? $order['envelopes_count'] ?? 0);
 
         // DEBUG OUTPUT - this will show in your logs
         $this->debugLog("=== CARGUS AWB DEBUG START ===");
@@ -663,7 +664,6 @@ class CargusService
         
         $this->debugLog("Service ID: " . $serviceId);
         $this->debugLog("=== CARGUS AWB DEBUG END ===");
-
         return [
             'Sender' => [
                 'SenderClientId' => null,
@@ -700,7 +700,6 @@ class CargusService
                 'CodPostal' => $order['recipient_postal'] ?? '',
                 'CountryId' => 0
             ],
-            // Use the calculated integer counts to match ParcelCodes exactly
             'Parcels' => $parcelsCount,
             'Envelopes' => $envelopesCount,
             'TotalWeight' => $totalWeight,
@@ -728,6 +727,8 @@ class CargusService
             'ServiceId' => $this->config['default_service_id'] ?? 34,
             'ParcelCodes' => $this->generateParcelCodes($parcelsCount, $envelopesCount, $totalWeight, $calculatedData)
         ];
+        
+        $this->debugAWBData($awbData);  
     }
     
     /**
@@ -752,10 +753,70 @@ class CargusService
         if (empty($awbData['Recipient']['LocalityId'])) $errors[] = 'Recipient locality required';
         if (empty($awbData['Recipient']['PhoneNumber'])) $errors[] = 'Recipient phone required';
         
-        // Weight and count validation
+        // Weight and count validation - CORRECTED
         if ($awbData['TotalWeight'] <= 0) $errors[] = 'Weight must be greater than 0';
-        if ($awbData['Parcels'] <= 0) $errors[] = 'Must have at least 1 parcel';
+        
+        // FIXED: Allow 0 parcels if there are envelopes
+        if ($awbData['Parcels'] <= 0 && $awbData['Envelopes'] <= 0) {
+            $errors[] = 'Must have at least 1 parcel or envelope';
+        }
+        
         if ($awbData['Envelopes'] > 9) $errors[] = 'Maximum 9 envelopes allowed';
+        
+        // CRITICAL: Validate ParcelCodes array
+        if (empty($awbData['ParcelCodes']) || !is_array($awbData['ParcelCodes'])) {
+            $errors[] = 'ParcelCodes array is required and cannot be empty';
+        } else {
+            $expectedCount = $awbData['Parcels'] + $awbData['Envelopes'];
+            $actualCount = count($awbData['ParcelCodes']);
+            
+            if ($actualCount !== $expectedCount) {
+                $errors[] = "ParcelCodes count mismatch: expected {$expectedCount} (Parcels: {$awbData['Parcels']} + Envelopes: {$awbData['Envelopes']}), got {$actualCount}";
+            }
+            
+            // Validate each ParcelCode
+            $parcelTypeCount = 0;
+            $envelopeTypeCount = 0;
+            
+            foreach ($awbData['ParcelCodes'] as $i => $parcelCode) {
+                // Check required fields
+                if (!isset($parcelCode['Code'])) {
+                    $errors[] = "ParcelCode [{$i}]: Missing 'Code' field";
+                }
+                if (!isset($parcelCode['Type'])) {
+                    $errors[] = "ParcelCode [{$i}]: Missing 'Type' field";
+                } else {
+                    if ($parcelCode['Type'] === 0) {
+                        $parcelTypeCount++;
+                    } elseif ($parcelCode['Type'] === 1) {
+                        $envelopeTypeCount++;
+                    } else {
+                        $errors[] = "ParcelCode [{$i}]: Invalid Type '{$parcelCode['Type']}' (must be 0 for parcel or 1 for envelope)";
+                    }
+                }
+                
+                if (!isset($parcelCode['Weight']) || !is_int($parcelCode['Weight']) || $parcelCode['Weight'] <= 0) {
+                    $errors[] = "ParcelCode [{$i}]: Weight must be a positive integer";
+                }
+                
+                // Check other required fields
+                $requiredFields = ['Length', 'Width', 'Height', 'ParcelContent'];
+                foreach ($requiredFields as $field) {
+                    if (!isset($parcelCode[$field])) {
+                        $errors[] = "ParcelCode [{$i}]: Missing '{$field}' field";
+                    }
+                }
+            }
+            
+            // Verify Type counts match declared counts
+            if ($parcelTypeCount !== $awbData['Parcels']) {
+                $errors[] = "Type mismatch: declared {$awbData['Parcels']} parcels, but found {$parcelTypeCount} ParcelCodes with Type=0";
+            }
+            
+            if ($envelopeTypeCount !== $awbData['Envelopes']) {
+                $errors[] = "Type mismatch: declared {$awbData['Envelopes']} envelopes, but found {$envelopeTypeCount} ParcelCodes with Type=1";
+            }
+        }
         
         // Phone validation
         $phonePattern = '/^[0-9\s\-\(\)]{10,15}$/';
@@ -764,6 +825,11 @@ class CargusService
         }
         if (!preg_match($phonePattern, $awbData['Recipient']['PhoneNumber'])) {
             $errors[] = 'Invalid recipient phone format';
+        }
+        
+        // ServiceId validation
+        if (empty($awbData['ServiceId'])) {
+            $errors[] = 'ServiceId is required';
         }
         
         return [
@@ -776,79 +842,193 @@ class CargusService
      * Make HTTP request to Cargus API
      */
     private function makeRequest($method, $endpoint, $data = null, $requireAuth = true) {
-        $url = rtrim($this->apiUrl, '/') . '/' . ltrim($endpoint, '/');
+    $url = rtrim($this->apiUrl, '/') . '/' . ltrim($endpoint, '/');
+    
+    $headers = [
+        'Accept: application/json',
+        'Content-Type: application/json'
+    ];
+    
+    if (!empty($this->subscriptionKey)) {
+        $headers[] = 'Ocp-Apim-Subscription-Key: ' . $this->subscriptionKey;
+    }
+    
+    if ($requireAuth && $this->token) {
+        $headers[] = 'Authorization: Bearer ' . $this->token;
+    }
+    
+    // CRITICAL DEBUGGING: Log exactly what we're sending to Cargus API
+    if ($data !== null && $endpoint === 'Awbs') {
+        $this->debugLog("=== CARGUS API REQUEST DEBUG ===");
+        $this->debugLog("URL: " . $url);
+        $this->debugLog("Method: " . $method);
         
-        $headers = [
-            'Accept: application/json',
-            'Content-Type: application/json'
-        ];
+        // Log the complete data structure
+        $jsonData = json_encode($data, JSON_PRETTY_PRINT);
+        $this->debugLog("Request JSON Length: " . strlen($jsonData) . " characters");
         
-        if (!empty($this->subscriptionKey)) {
-            $headers[] = 'Ocp-Apim-Subscription-Key: ' . $this->subscriptionKey;
-        }
+        // Log specific fields we care about
+        $this->debugLog("Parcels field: " . ($data['Parcels'] ?? 'MISSING'));
+        $this->debugLog("Envelopes field: " . ($data['Envelopes'] ?? 'MISSING'));
+        $this->debugLog("TotalWeight field: " . ($data['TotalWeight'] ?? 'MISSING'));
         
-        if ($requireAuth && $this->token) {
-            $headers[] = 'Authorization: Bearer ' . $this->token;
-        }
-        
-        $ch = curl_init();
-        curl_setopt_array($ch, [
-            CURLOPT_URL => $url,
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT => 30,
-            CURLOPT_CUSTOMREQUEST => $method,
-            CURLOPT_HTTPHEADER => $headers,
-            CURLOPT_SSL_VERIFYPEER => false,
-            CURLOPT_FOLLOWLOCATION => true
-        ]);
-        
-        if ($data !== null) {
-            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
-        }
-        
-        $response = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $error = curl_error($ch);
-        curl_close($ch);
-        
-        if ($error) {
-            return [
-                'success' => false,
-                'error' => 'CURL error: ' . $error,
-                'code' => 0,
-                'raw' => null
-            ];
-        }
-        
-        $decodedResponse = json_decode($response, true);
-        
-        if ($httpCode >= 200 && $httpCode < 300) {
-            return [
-                'success' => true,
-                'data' => $decodedResponse,
-                'code' => $httpCode,
-                'raw' => $response
-            ];
-        }
-        
-        $errorMessage = 'HTTP ' . $httpCode;
-        if ($decodedResponse) {
-            if (isset($decodedResponse['message'])) {
-                $errorMessage .= ': ' . $decodedResponse['message'];
-            } elseif (isset($decodedResponse['error'])) {
-                $errorMessage .= ': ' . $decodedResponse['error'];
-            } elseif (is_array($decodedResponse)) {
-                $errorMessage .= ': ' . implode(', ', array_filter($decodedResponse, 'is_string'));
+        if (isset($data['ParcelCodes'])) {
+            $this->debugLog("ParcelCodes array exists with " . count($data['ParcelCodes']) . " items");
+            foreach ($data['ParcelCodes'] as $i => $code) {
+                $this->debugLog("  ParcelCode[{$i}]: " . json_encode($code));
             }
+        } else {
+            $this->debugLog("🚨 ParcelCodes field is MISSING from request data!");
         }
         
+        // Log the complete JSON being sent (limit to first 2000 chars for log readability)
+        $this->debugLog("Complete JSON (first 2000 chars): " . substr($jsonData, 0, 2000));
+        
+        // Check for JSON encoding errors
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            $this->debugLog("🚨 JSON ENCODING ERROR: " . json_last_error_msg());
+        }
+        
+        $this->debugLog("=== CARGUS API REQUEST DEBUG END ===");
+    }
+    
+    $ch = curl_init();
+    curl_setopt_array($ch, [
+        CURLOPT_URL => $url,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 30,
+        CURLOPT_CUSTOMREQUEST => $method,
+        CURLOPT_HTTPHEADER => $headers,
+        CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_FOLLOWLOCATION => true
+    ]);
+    
+    if ($data !== null) {
+        $jsonPayload = json_encode($data);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $jsonPayload);
+        
+        // Log the exact payload being sent
+        if ($endpoint === 'Awbs') {
+            $this->debugLog("Final cURL payload length: " . strlen($jsonPayload) . " characters");
+        }
+    }
+    
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $error = curl_error($ch);
+    curl_close($ch);
+    
+    // Log response details for AWB requests
+    if ($endpoint === 'Awbs') {
+        $this->debugLog("=== CARGUS API RESPONSE DEBUG ===");
+        $this->debugLog("HTTP Code: " . $httpCode);
+        $this->debugLog("Response length: " . strlen($response) . " characters");
+        $this->debugLog("Response (first 1000 chars): " . substr($response, 0, 1000));
+        $this->debugLog("=== CARGUS API RESPONSE DEBUG END ===");
+    }
+    
+    if ($error) {
         return [
             'success' => false,
-            'error' => $errorMessage,
+            'error' => 'CURL error: ' . $error,
+            'code' => 0,
+            'raw' => null
+        ];
+    }
+    
+    $decodedResponse = json_decode($response, true);
+    
+    if ($httpCode >= 200 && $httpCode < 300) {
+        return [
+            'success' => true,
+            'data' => $decodedResponse,
             'code' => $httpCode,
             'raw' => $response
         ];
     }
+    
+    $errorMessage = 'HTTP ' . $httpCode;
+    if ($decodedResponse) {
+        if (isset($decodedResponse['message'])) {
+            $errorMessage .= ': ' . $decodedResponse['message'];
+        } elseif (isset($decodedResponse['error'])) {
+            $errorMessage .= ': ' . $decodedResponse['error'];
+        } elseif (is_array($decodedResponse)) {
+            $errorMessage .= ': ' . implode(', ', array_filter($decodedResponse, 'is_string'));
+        }
+    }
+    
+    return [
+        'success' => false,
+        'error' => $errorMessage,
+        'code' => $httpCode,
+        'raw' => $response
+    ];
+}
+
+    private function debugAWBData($awbData) {
+    $this->debugLog("=== AWB DATA VALIDATION DEBUG ===");
+    $this->debugLog("Parcels declared: " . ($awbData['Parcels'] ?? 'NOT_SET'));
+    $this->debugLog("Envelopes declared: " . ($awbData['Envelopes'] ?? 'NOT_SET'));
+    $this->debugLog("TotalWeight: " . ($awbData['TotalWeight'] ?? 'NOT_SET'));
+    $this->debugLog("ServiceId: " . ($awbData['ServiceId'] ?? 'NOT_SET'));
+    
+    // Check Sender data
+    if (isset($awbData['Sender'])) {
+        $this->debugLog("Sender Name: " . ($awbData['Sender']['Name'] ?? 'MISSING'));
+        $this->debugLog("Sender CountyId: " . ($awbData['Sender']['CountyId'] ?? 'MISSING'));
+        $this->debugLog("Sender LocalityId: " . ($awbData['Sender']['LocalityId'] ?? 'MISSING'));
+    } else {
+        $this->debugLog("🚨 Sender data: COMPLETELY MISSING!");
+    }
+    
+    // Check Recipient data
+    if (isset($awbData['Recipient'])) {
+        $this->debugLog("Recipient Name: " . ($awbData['Recipient']['Name'] ?? 'MISSING'));
+        $this->debugLog("Recipient CountyId: " . ($awbData['Recipient']['CountyId'] ?? 'MISSING'));
+        $this->debugLog("Recipient LocalityId: " . ($awbData['Recipient']['LocalityId'] ?? 'MISSING'));
+    } else {
+        $this->debugLog("🚨 Recipient data: COMPLETELY MISSING!");
+    }
+    
+    if (isset($awbData['ParcelCodes'])) {
+        $this->debugLog("ParcelCodes count: " . count($awbData['ParcelCodes']));
+        
+        $parcelCount = 0;
+        $envelopeCount = 0;
+        
+        foreach ($awbData['ParcelCodes'] as $i => $code) {
+            $type = $code['Type'] ?? 'MISSING';
+            $typeName = $type === 0 ? 'PARCEL' : ($type === 1 ? 'ENVELOPE' : 'UNKNOWN');
+            $weight = $code['Weight'] ?? 'MISSING';
+            $codeValue = $code['Code'] ?? 'MISSING';
+            $length = $code['Length'] ?? 'MISSING';
+            $width = $code['Width'] ?? 'MISSING';
+            $height = $code['Height'] ?? 'MISSING';
+            $content = $code['ParcelContent'] ?? 'MISSING';
+            
+            $this->debugLog("  [{$i}] Code: {$codeValue}, Type: {$type} ({$typeName}), Weight: {$weight}, Dims: {$length}x{$width}x{$height}, Content: {$content}");
+            
+            if ($type === 0) $parcelCount++;
+            if ($type === 1) $envelopeCount++;
+        }
+        
+        $this->debugLog("Summary - Parcel types (Type=0): {$parcelCount}, Envelope types (Type=1): {$envelopeCount}");
+        
+        // Check for mismatches
+        if ($parcelCount !== ($awbData['Parcels'] ?? 0)) {
+            $this->debugLog("🚨 MISMATCH: Declared parcels: " . ($awbData['Parcels'] ?? 0) . ", Type=0 count: {$parcelCount}");
+        }
+        if ($envelopeCount !== ($awbData['Envelopes'] ?? 0)) {
+            $this->debugLog("🚨 MISMATCH: Declared envelopes: " . ($awbData['Envelopes'] ?? 0) . ", Type=1 count: {$envelopeCount}");
+        }
+        
+    } else {
+        $this->debugLog("🚨 ParcelCodes: COMPLETELY MISSING!");
+    }
+    
+    $this->debugLog("=== AWB DATA VALIDATION DEBUG END ===");
+}
     
     /**
      * Log info message

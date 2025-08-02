@@ -251,12 +251,26 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                             <th>Prioritate</th>
                                             <th>Valoare</th>
                                             <th>Produse</th>
-                                            <th>AWB</th> 
+                                            <th>Greutate</th>
+                                            <th>AWB</th>
                                             <th>Acțiuni</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         <?php foreach ($orders as $order): ?>
+                                            <?php
+                                                $orderItems = $orderModel->getOrderItems($order['id']);
+                                                $weightParts = [];
+                                                $calculatedWeight = 0;
+                                                foreach ($orderItems as $item) {
+                                                    $itemWeightPerUnit = (float)($item['weight_per_unit'] ?? 0);
+                                                    $itemWeight = $itemWeightPerUnit * (int)$item['quantity'];
+                                                    $calculatedWeight += $itemWeight;
+                                                    $weightParts[] = $item['product_name'] . ' (' . $item['quantity'] . '×' . number_format($itemWeightPerUnit, 3, '.', '') . 'kg)';
+                                                }
+                                                $displayWeight = $order['total_weight'] > 0 ? $order['total_weight'] : $calculatedWeight;
+                                                $weightBreakdown = htmlspecialchars(implode(' + ', $weightParts));
+                                            ?>
                                             <tr>
                                                 <td>
                                                     <code class="order-number"><?= htmlspecialchars($order['order_number']) ?></code>
@@ -287,6 +301,9 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                 </td>
                                                 <td>
                                                     <span class="text-center"><?= $order['total_items'] ?? 0 ?> produse</span>
+                                                </td>
+                                                <td>
+                                                    <span title="<?= $weightBreakdown ?>"><?= number_format($displayWeight, 3, '.', '') ?> kg</span>
                                                 </td>
                                                 <td class="awb-column">
                                                     <?php if (!empty($order['awb_barcode'])): ?>

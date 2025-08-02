@@ -319,16 +319,17 @@ class CargusService
         $totalItems = $parcelsCount + $envelopesCount;
         $weightPerItem = $totalItems > 0 ? max(1, (int)($totalWeight / $totalItems)) : $totalWeight;
         
-        // Generate codes for parcels
+        // Generate codes for parcels using detailed data when available
         for ($i = 0; $i < $parcelsCount; $i++) {
+            $parcelData = $calculatedData['parcels_detail'][$i] ?? [];
             $parcelCodes[] = [
                 'Code' => (string)$codeIndex,
-                'Type' => 1, // ✅ FIXED: Use Type 1 for parcels (not 0)
-                'Weight' => $weightPerItem,
-                'Length' => intval($calculatedData['package_length'] ?? 20),
-                'Width' => intval($calculatedData['package_width'] ?? 15),
-                'Height' => intval($calculatedData['package_height'] ?? 10),
-                'ParcelContent' => $calculatedData['package_content'] ?: 'Diverse produse'
+                'Type' => 1, // parcels
+                'Weight' => max(1, (int)($parcelData['weight'] ?? $weightPerItem)),
+                'Length' => intval($parcelData['length'] ?? $calculatedData['package_length'] ?? 20),
+                'Width' => intval($parcelData['width'] ?? $calculatedData['package_width'] ?? 15),
+                'Height' => intval($parcelData['height'] ?? $calculatedData['package_height'] ?? 10),
+                'ParcelContent' => $parcelData['content'] ?? ($calculatedData['package_content'] ?: 'Diverse produse')
             ];
             $codeIndex++;
         }
@@ -525,20 +526,6 @@ class CargusService
     public function calculateOrderShipping($order) {
         $weightCalculator = new WeightCalculator($this->conn);
         return $weightCalculator->calculateOrderShipping($order['id']);
-    }
-    
-    /**
-     * Get unit weight for a product (fallback method)
-     */
-    private function getUnitWeight($productId) {
-        $stmt = $this->conn->prepare("
-            SELECT weight_per_unit FROM product_units 
-            WHERE product_id = ? AND unit_type = 'shipping'
-        ");
-        $stmt->execute([$productId]);
-        $result = $stmt->fetch(PDO::FETCH_ASSOC);
-        
-        return $result ? $result['weight_per_unit'] : 0.5; // Default 500g
     }
     
     /**

@@ -378,7 +378,7 @@ class Order
                 p.name as product_name,
                 p.code as product_code,
                 p.category as product_category,
-                COALESCE(pu.weight_per_unit, ut.default_weight_per_unit, 0.5) as weight_per_unit,
+                pu.weight_per_unit,
                 COALESCE(pu.volume_per_unit, 0) as volume_per_unit,
                 ut.unit_name,
                 ut.packaging_type,

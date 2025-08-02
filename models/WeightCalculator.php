@@ -72,11 +72,22 @@ class WeightCalculator
      */
     public function calculateOrderShipping($orderId) {
         $orderItems = $this->getOrderItemsWithUnits($orderId);
-        
+
         if (empty($orderItems)) {
             return $this->getDefaultShippingData();
         }
-        
+
+        // Ensure we have weight and dimension data for all items
+        foreach ($orderItems as &$item) {
+            if (empty($item['weight_per_unit']) || $item['weight_per_unit'] <= 0) {
+                $item['weight_per_unit'] = $this->estimateFallbackWeight($item);
+            }
+            if (empty($item['dimensions_length']) || empty($item['dimensions_width']) || empty($item['dimensions_height'])) {
+                [$item['dimensions_length'], $item['dimensions_width'], $item['dimensions_height']] = $this->getFallbackDimensions();
+            }
+        }
+        unset($item);
+
         // Group items by packaging requirements
         $itemGroups = $this->groupItemsByPackaging($orderItems);
         
@@ -98,12 +109,23 @@ class WeightCalculator
         
         // Optimize parcels if possible
         $optimizedParcels = $this->optimizeParcels($parcels);
-        
+
+        // Determine overall package dimensions
+        $maxLength = $maxWidth = $maxHeight = 0;
+        foreach ($optimizedParcels as $parcel) {
+            $maxLength = max($maxLength, $parcel['length'] ?? 0);
+            $maxWidth = max($maxWidth, $parcel['width'] ?? 0);
+            $maxHeight = max($maxHeight, $parcel['height'] ?? 0);
+        }
+
         return [
             'total_weight' => max($totalWeight, 0.1), // Minimum 100g
             'parcels_count' => count($optimizedParcels),
             'envelopes_count' => $this->calculateEnvelopes($orderItems),
             'parcels_detail' => $optimizedParcels,
+            'package_length' => $maxLength,
+            'package_width' => $maxWidth,
+            'package_height' => $maxHeight,
             'package_content' => implode(', ', $packageContentItems),
             'shipping_notes' => $this->generateShippingNotes($itemGroups),
             'calculation_metadata' => [
@@ -126,7 +148,7 @@ class WeightCalculator
                 p.name as product_name,
                 p.sku as product_code,        
                 p.category as product_category,
-                COALESCE(pu.weight_per_unit, ut.default_weight_per_unit, 0.5) as weight_per_unit,
+                pu.weight_per_unit,
                 COALESCE(pu.volume_per_unit, 0) as volume_per_unit,
                 COALESCE(pu.fragile, 0) as fragile,
                 COALESCE(pu.hazardous, 0) as hazardous,
@@ -134,7 +156,7 @@ class WeightCalculator
                 COALESCE(pu.dimensions_length, 0) as dimensions_length,
                 COALESCE(pu.dimensions_width, 0) as dimensions_width,
                 COALESCE(pu.dimensions_height, 0) as dimensions_height,
-                COALESCE(pu.max_stack_height, 1) as max_stack_height,
+                COALESCE(pu.max_stack_height, 999) as max_stack_height,
                 ut.unit_code,
                 ut.unit_name,
                 ut.base_type,
@@ -152,7 +174,7 @@ class WeightCalculator
                 ut.packaging_type = 'liquid' DESC,
                 pu.hazardous DESC,
                 pu.fragile DESC,
-                oi.quantity * COALESCE(pu.weight_per_unit, ut.default_weight_per_unit, 0.5) DESC
+                oi.quantity * COALESCE(pu.weight_per_unit, 0) DESC
         ");
         
         $stmt->execute([$orderId]);
@@ -211,6 +233,9 @@ class WeightCalculator
                         $parcels[] = [
                             'weight' => $item['weight_per_unit'],
                             'items' => 1,
+                            'length' => $item['dimensions_length'],
+                            'width' => $item['dimensions_width'],
+                            'height' => $item['dimensions_height'],
                             'type' => 'liquid',
                             'content' => $item['product_name'],
                             'special_handling' => ['liquid', 'fragile']
@@ -222,13 +247,21 @@ class WeightCalculator
             case 'hazardous_separate':
                 // Hazardous items in separate parcels
                 foreach ($items as $item) {
-                    $parcels[] = [
-                        'weight' => $item['quantity'] * $item['weight_per_unit'],
-                        'items' => $item['quantity'],
-                        'type' => 'hazardous',
-                        'content' => $item['product_name'],
-                        'special_handling' => ['hazardous']
-                    ];
+                    $remaining = $item['quantity'];
+                    while ($remaining > 0) {
+                        $fit = min($remaining, $item['max_stack_height']);
+                        $parcels[] = [
+                            'weight' => $fit * $item['weight_per_unit'],
+                            'items' => $fit,
+                            'length' => $item['dimensions_length'],
+                            'width' => $item['dimensions_width'],
+                            'height' => $item['dimensions_height'] * $fit,
+                            'type' => 'hazardous',
+                            'content' => $item['product_name'],
+                            'special_handling' => ['hazardous']
+                        ];
+                        $remaining -= $fit;
+                    }
                 }
                 break;
                 
@@ -245,13 +278,21 @@ class WeightCalculator
             case 'fragile_separate':
                 // Fragile heavy items individually
                 foreach ($items as $item) {
-                    $parcels[] = [
-                        'weight' => $item['quantity'] * $item['weight_per_unit'],
-                        'items' => $item['quantity'],
-                        'type' => 'fragile',
-                        'content' => $item['product_name'],
-                        'special_handling' => ['fragile']
-                    ];
+                    $remaining = $item['quantity'];
+                    while ($remaining > 0) {
+                        $fit = min($remaining, $item['max_stack_height']);
+                        $parcels[] = [
+                            'weight' => $fit * $item['weight_per_unit'],
+                            'items' => $fit,
+                            'length' => $item['dimensions_length'],
+                            'width' => $item['dimensions_width'],
+                            'height' => $item['dimensions_height'] * $fit,
+                            'type' => 'fragile',
+                            'content' => $item['product_name'],
+                            'special_handling' => ['fragile']
+                        ];
+                        $remaining -= $fit;
+                    }
                 }
                 break;
                 
@@ -287,6 +328,9 @@ class WeightCalculator
         $currentParcel = [
             'weight' => 0,
             'items' => 0,
+            'length' => 0,
+            'width' => 0,
+            'height' => 0,
             'type' => $rules['type'],
             'content_items' => [],
             'special_handling' => $rules['special_handling']
@@ -300,7 +344,8 @@ class WeightCalculator
             while ($quantity > 0) {
                 $maxFitByWeight = floor(($rules['max_weight'] - $currentParcel['weight']) / $item['weight_per_unit']);
                 $maxFitByCount = $rules['max_items'] - $currentParcel['items'];
-                $maxFit = min($maxFitByWeight, $maxFitByCount, $quantity);
+                $maxFitByStack = $item['max_stack_height'] ?? $rules['max_items'];
+                $maxFit = min($maxFitByWeight, $maxFitByCount, $maxFitByStack, $quantity);
                 
                 if ($maxFit <= 0) {
                     // Close current parcel and start new one
@@ -313,6 +358,9 @@ class WeightCalculator
                     $currentParcel = [
                         'weight' => 0,
                         'items' => 0,
+                        'length' => 0,
+                        'width' => 0,
+                        'height' => 0,
                         'type' => $rules['type'],
                         'content_items' => [],
                         'special_handling' => $rules['special_handling']
@@ -323,6 +371,9 @@ class WeightCalculator
                 // Add items to current parcel
                 $currentParcel['weight'] += $maxFit * $item['weight_per_unit'];
                 $currentParcel['items'] += $maxFit;
+                $currentParcel['length'] = max($currentParcel['length'], $item['dimensions_length']);
+                $currentParcel['width'] = max($currentParcel['width'], $item['dimensions_width']);
+                $currentParcel['height'] += $item['dimensions_height'] * $maxFit;
                 $currentParcel['content_items'][] = $item['product_name'] . ' (' . $maxFit . ')';
                 $quantity -= $maxFit;
             }
@@ -386,6 +437,9 @@ class WeightCalculator
                     
                     $existingParcel['weight'] += $parcel['weight'];
                     $existingParcel['items'] += $parcel['items'];
+                    $existingParcel['length'] = max($existingParcel['length'] ?? 0, $parcel['length'] ?? 0);
+                    $existingParcel['width'] = max($existingParcel['width'] ?? 0, $parcel['width'] ?? 0);
+                    $existingParcel['height'] += $parcel['height'] ?? 0;
                     $existingParcel['content'] .= ', ' . $parcel['content'];
                     $existingParcel['special_handling'] = array_unique(
                         array_merge($existingParcel['special_handling'], $parcel['special_handling'])
@@ -438,6 +492,20 @@ class WeightCalculator
         
         // Max 9 envelopes, each can hold multiple small items
         return min(9, ceil($envelopeItems / 10));
+    }
+
+    /**
+     * Get default dimensions when none are provided
+     */
+    private function getFallbackDimensions() {
+        return [20, 15, 10];
+    }
+
+    /**
+     * Estimate weight when product unit data is missing
+     */
+    private function estimateFallbackWeight($item) {
+        return 0.5; // default 500g
     }
     
     /**
@@ -543,24 +611,21 @@ class WeightCalculator
         
         foreach ($productQuantities as $productId => $data) {
             $quantity = $data['quantity'];
-            $unitMeasure = $data['unit_measure'];
-            
-            $stmt = $this->conn->prepare("
-                SELECT COALESCE(pu.weight_per_unit, ut.default_weight_per_unit, 0.5) as weight_per_unit
-                FROM products p
-                LEFT JOIN product_units pu ON p.id = pu.product_id
-                LEFT JOIN unit_types ut ON pu.unit_type_id = ut.id AND ut.unit_code = ?
-                WHERE p.id = ?
-            ");
-            
-            $stmt->execute([$unitMeasure, $productId]);
+
+            $stmt = $this->conn->prepare(
+                "SELECT weight_per_unit FROM product_units WHERE product_id = ?"
+            );
+
+            $stmt->execute([$productId]);
             $result = $stmt->fetch(PDO::FETCH_ASSOC);
-            
-            if ($result) {
+
+            if ($result && $result['weight_per_unit'] > 0) {
                 $totalWeight += $quantity * $result['weight_per_unit'];
+            } else {
+                $totalWeight += $quantity * 0.5; // fallback estimation
             }
         }
-        
+
         return max($totalWeight, 0.1);
     }
 }

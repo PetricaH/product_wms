@@ -351,7 +351,7 @@ class CargusService
                 
                 $parcelCodes[] = [
                     'Code' => (string)$i,
-                    'Type' => 0, // 0 = parcel (per documentation)
+                    'Type' => 1, // 1 = parcel (per documentation)
                     'Weight' => $thisParcelWeight,
                     'Length' => 20,
                     'Width' => 20,
@@ -360,16 +360,16 @@ class CargusService
                 ];
             }
         }
-        
-        // Generate ParcelCodes for ENVELOPES (Type = 1) - even if envelopesCount = 0
+
+        // Generate ParcelCodes for ENVELOPES (Type = 0) - even if envelopesCount = 0
         if ($envelopesCount > 0) {
             for ($i = 0; $i < $envelopesCount; $i++) {
                 $envelopeWeight = 1; // 0.1kg in API units
                 $this->debugLog("Envelope {$i}: Weight = {$envelopeWeight} API units");
-                
+
                 $parcelCodes[] = [
                     'Code' => (string)($parcelsCount + $i),
-                    'Type' => 1, // 1 = envelope (per documentation)
+                    'Type' => 0, // 0 = envelope (per documentation)
                     'Weight' => $envelopeWeight,
                     'Length' => 25,
                     'Width' => 15,
@@ -378,13 +378,13 @@ class CargusService
                 ];
             }
         }
-        
+
         // VERIFICATION: Ensure we have the right counts
-        $actualParcels = array_filter($parcelCodes, fn($p) => $p['Type'] == 0);
-        $actualEnvelopes = array_filter($parcelCodes, fn($p) => $p['Type'] == 1);
-        
-        $this->debugLog("Generated parcels (Type=0): " . count($actualParcels) . " (expected: {$parcelsCount})");
-        $this->debugLog("Generated envelopes (Type=1): " . count($actualEnvelopes) . " (expected: {$envelopesCount})");
+        $actualParcels = array_filter($parcelCodes, fn($p) => $p['Type'] == 1);
+        $actualEnvelopes = array_filter($parcelCodes, fn($p) => $p['Type'] == 0);
+
+        $this->debugLog("Generated parcels (Type=1): " . count($actualParcels) . " (expected: {$parcelsCount})");
+        $this->debugLog("Generated envelopes (Type=0): " . count($actualEnvelopes) . " (expected: {$envelopesCount})");
         
         if (count($actualParcels) != $parcelsCount) {
             $this->debugLog("🚨 MISMATCH: Generated parcels != declared parcels");

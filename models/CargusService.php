@@ -527,6 +527,36 @@ class CargusService
         $weightCalculator = new WeightCalculator($this->conn);
         return $weightCalculator->calculateOrderShipping($order['id']);
     }
+
+    /**
+     * Retrieve postal code for a locality
+     * Uses Cargus Localities endpoint to find CodPostal
+     */
+    public function getPostalCode($countyId, $localityId) {
+        if (empty($countyId) || empty($localityId)) {
+            return null;
+        }
+
+        // Ensure we have a valid token
+        if (!$this->verifyToken()) {
+            return null;
+        }
+
+        $endpoint = sprintf('Localities?countryId=1&countyId=%d', intval($countyId));
+        $response = $this->makeRequest('GET', $endpoint, null, true);
+
+        if (!$response['success'] || !is_array($response['data'])) {
+            return null;
+        }
+
+        foreach ($response['data'] as $loc) {
+            if ((int)($loc['LocalityId'] ?? 0) === (int)$localityId) {
+                return $loc['CodPostal'] ?? null;
+            }
+        }
+
+        return null;
+    }
     
     /**
      * Get sender location configuration
@@ -601,7 +631,7 @@ class CargusService
                 'StreetId' => $order['recipient_street_id'] ?? 0,
                 'StreetName' => $order['recipient_street_name'] ?? '', 
                 'BuildingNumber' => $order['recipient_building_number'] ?: '',
-                'AddressText' => $order['shipping_address'],
+                'AddressText' => $order['address_text'] ?? $order['shipping_address'],
                 'ContactPerson' => $order['recipient_contact_person'] ?: $order['customer_name'],
                 'PhoneNumber' => Phone::toLocal($order['recipient_phone']),
                 'Email' => $order['recipient_email'] ?: '',

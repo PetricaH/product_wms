@@ -81,8 +81,8 @@ try {
             $manualFields = [
                 'recipient_name', 'recipient_contact_person', 'recipient_phone', 'recipient_email',
                 'recipient_county_id', 'recipient_locality_id', 'recipient_county_name', 'recipient_locality_name',
-                'shipping_address', 'total_weight', 'declared_value', 'parcels_count', 'envelopes_count',
-                'package_content', 'cash_repayment', 'bank_repayment', 'saturday_delivery', 
+                'shipping_address', 'address_text', 'recipient_postal', 'total_weight', 'declared_value', 'parcels_count', 'envelopes_count',
+                'package_content', 'cash_repayment', 'bank_repayment', 'saturday_delivery',
                 'morning_delivery', 'open_package', 'observations', 'recipient_reference1', 'recipient_reference2'
             ];
             
@@ -186,9 +186,14 @@ try {
                 $requirements[] = 'Shipping address required';
                 $canGenerate = false;
             }
-            
+
             if (empty($order['recipient_phone'])) {
                 $requirements[] = 'Recipient phone required';
+                $canGenerate = false;
+            }
+
+            if (empty($order['recipient_postal'])) {
+                $requirements[] = 'Recipient postal code required';
                 $canGenerate = false;
             }
             

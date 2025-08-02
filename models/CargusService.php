@@ -331,7 +331,7 @@ class CargusService
         $parcelCodes = [];
         
         // CRITICAL: We must generate exactly the number of ParcelCodes as declared in Parcels + Envelopes
-        
+
         // Generate ParcelCodes for PARCELS (Type = 0)
         if ($parcelsCount > 0) {
             $weightPerParcel = (int)($totalWeightAPI / $parcelsCount);
@@ -360,13 +360,13 @@ class CargusService
                 ];
             }
         }
-        
+
         // Generate ParcelCodes for ENVELOPES (Type = 1) - even if envelopesCount = 0
         if ($envelopesCount > 0) {
             for ($i = 0; $i < $envelopesCount; $i++) {
                 $envelopeWeight = 1; // 0.1kg in API units
                 $this->debugLog("Envelope {$i}: Weight = {$envelopeWeight} API units");
-                
+
                 $parcelCodes[] = [
                     'Code' => (string)($parcelsCount + $i),
                     'Type' => 1, // 1 = envelope (per documentation)
@@ -378,11 +378,11 @@ class CargusService
                 ];
             }
         }
-        
+
         // VERIFICATION: Ensure we have the right counts
         $actualParcels = array_filter($parcelCodes, fn($p) => $p['Type'] == 0);
         $actualEnvelopes = array_filter($parcelCodes, fn($p) => $p['Type'] == 1);
-        
+
         $this->debugLog("Generated parcels (Type=0): " . count($actualParcels) . " (expected: {$parcelsCount})");
         $this->debugLog("Generated envelopes (Type=1): " . count($actualEnvelopes) . " (expected: {$envelopesCount})");
         
@@ -396,7 +396,8 @@ class CargusService
         $this->debugLog("Total parcel codes generated: " . count($parcelCodes));
         $this->debugLog("=== PARCEL CODES DEBUG END ===");
         
-        return $parcelCodes;
+        // Reindex to ensure a clean 0..n numeric array as required by Cargus
+        return array_values($parcelCodes);
     }
     /**
      * Map recipient address using address_location_mappings table
@@ -699,9 +700,10 @@ class CargusService
                 'CodPostal' => $order['recipient_postal'] ?? '',
                 'CountryId' => 0
             ],
-            'Parcels' => $calculatedData['parcels_count'],
-            'Envelopes' => $order['envelopes_count'] ?? 0,
-            'TotalWeight' => (int)($calculatedData['total_weight'] * 10),
+            // Use the calculated integer counts to match ParcelCodes exactly
+            'Parcels' => $parcelsCount,
+            'Envelopes' => $envelopesCount,
+            'TotalWeight' => $totalWeight,
             'DeclaredValue' => intval($order['declared_value'] ?? $order['total_value'] ?? 0),
             'CashRepayment' => intval($order['cash_repayment'] ?? 0),
             'BankRepayment' => intval($order['bank_repayment'] ?? 0),

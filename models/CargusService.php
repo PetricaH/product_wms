@@ -243,10 +243,10 @@ class CargusService
                     'code' => 401
                 ];
             }
-            
+
             // Calculate order weights and parcels
             $calculatedData = $this->calculateOrderShipping($order);
-            
+
             // Get sender location
             $senderLocation = $this->getSenderLocation();
             if (!$senderLocation) {
@@ -256,7 +256,7 @@ class CargusService
                     'code' => 500
                 ];
             }
-            
+
             // Map recipient address if needed
             $addressMapping = $this->mapRecipientAddress($order);
             if (!$addressMapping['success']) {
@@ -268,13 +268,13 @@ class CargusService
                     'parsed_address' => $addressMapping['parsed_address'] ?? null
                 ];
             }
-            
+
             // Merge address mapping data
             $order = array_merge($order, $addressMapping['mapped_data']);
-            
+
             // Build AWB data
             $awbData = $this->buildAWBData($order, $calculatedData, $senderLocation);
-            
+
             // Validate AWB data
             $validation = $this->validateAWBData($awbData);
             if (!$validation['valid']) {
@@ -284,24 +284,46 @@ class CargusService
                     'code' => 400
                 ];
             }
-            
+
             // Send to Cargus API
             $response = $this->makeRequest('POST', 'Awbs', $awbData);
-            
+
             if ($response['success']) {
-                $this->logInfo('AWB generated successfully', [
-                    'order_id' => $order['id'],
-                    'barcode' => $response['data']['BarCode'] ?? 'unknown'
-                ]);
-                
-                return [
-                    'success' => true,
-                    'barcode' => $response['data']['BarCode'] ?? '',
-                    'parcelCodes' => $response['data']['ParcelCodes'] ?? [],
-                    'cargusOrderId' => $response['data']['OrderId'] ?? ''
-                ];
-            }
-            
+    $data = $response['data'] ?? [];
+
+    // Try to extract barcode with fallbacks
+    $barcode = '';
+    if (!empty($data['BarCode'])) {
+        $barcode = $data['BarCode'];
+    } elseif (!empty($data['Barcode'])) {
+        $barcode = $data['Barcode'];
+    } elseif (!empty($data['ParcelCodes'][0]['Code'])) {
+        // last-resort: use first ParcelCode code if that's all that's present
+        $barcode = $data['ParcelCodes'][0]['Code'];
+    }
+
+    // Normalize (strip quotes if accidentally returned)
+    $barcode = trim($barcode, '"');
+
+    if (empty($barcode)) {
+        // Log full response for investigation
+        $this->debugLog("AWB created but barcode missing. Full response: " . ($response['raw'] ?? json_encode($data)));
+    }
+
+    $this->logInfo('AWB generated successfully', [
+        'order_id' => $order['id'],
+        'barcode' => $barcode ?: 'MISSING'
+    ]);
+
+    return [
+        'success' => true,
+        'barcode' => $barcode,
+        'parcelCodes' => $data['ParcelCodes'] ?? [],
+        'cargusOrderId' => $data['OrderId'] ?? '',
+        'raw_response' => $response['raw'] ?? null
+    ];
+}
+
             $this->logError('AWB generation failed', $response['error'], $response['raw']);
             return [
                 'success' => false,
@@ -309,7 +331,7 @@ class CargusService
                 'code' => $response['code'] ?? 500,
                 'raw' => $response['raw'] ?? null
             ];
-            
+
         } catch (Exception $e) {
             $this->logError('AWB generation exception', $e->getMessage(), $e->getTraceAsString());
             return [
@@ -319,8 +341,8 @@ class CargusService
             ];
         }
     }
+
     
-   
     /**
      * Generate ParcelCodes array to match Parcels + Envelopes count
      */

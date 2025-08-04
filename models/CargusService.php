@@ -920,7 +920,7 @@ public function getAwbDocuments($awbCodes, $type = 'PDF', $format = 1, $printMai
 
 
         // Validate API response and normalise to base64
-        $rawBody = $result['raw'] ?? '';
+        $rawBody = (string)($result['raw'] ?? '');
 
         // If API returned JSON, attempt to extract the document content
         if (!empty($result['data'])) {
@@ -938,15 +938,24 @@ public function getAwbDocuments($awbCodes, $type = 'PDF', $format = 1, $printMai
             }
         }
 
+        // Normalize whitespace that may break base64 detection
+        $rawBody = trim($rawBody);
+
         // If response is not valid base64, assume it's binary PDF and encode it
         if (base64_decode($rawBody, true) === false) {
-            $rawBody = base64_encode($rawBody);
+            $compact = preg_replace('/\s+/', '', $rawBody);
+            if (base64_decode($compact, true) !== false) {
+                $rawBody = $compact;
+            } else {
+                $rawBody = base64_encode($rawBody);
+            }
         }
 
         // Final validation - ensure we now have valid base64 data
         if (base64_decode($rawBody, true) === false) {
             return ['success' => false, 'error' => 'Invalid document data received from Cargus API'];
         }
+
 
         error_log("Cargus AWB Documents success: " . strlen($rawBody) . " bytes base64 data");
 
@@ -957,10 +966,10 @@ public function getAwbDocuments($awbCodes, $type = 'PDF', $format = 1, $printMai
             'error' => null
         ];
         
-    } catch (Exception $e) {
+    } catch (Throwable $e) {
         error_log('CargusService::getAwbDocuments error: ' . $e->getMessage());
         return [
-            'success' => false, 
+            'success' => false,
             'error' => 'Failed to get AWB documents: ' . $e->getMessage()
         ];
     }

@@ -745,6 +745,7 @@ class ImportProcessor {
                 FROM address_location_mappings
                 WHERE LOWER(county_name) = LOWER(:county)
                   AND LOWER(locality_name) = LOWER(:city)
+
                   AND cargus_postal_code IS NOT NULL
                   AND cargus_postal_code <> ''
                 ORDER BY mapping_confidence DESC, is_verified DESC
@@ -752,6 +753,7 @@ class ImportProcessor {
             ";
 
             $stmt = $this->db->prepare($query);
+
             $stmt->execute([
                 ':county' => trim($countyName),
                 ':city' => trim($cityName)
@@ -761,8 +763,8 @@ class ImportProcessor {
                 return $result['cargus_postal_code'];
             }
         }
-
         // Fallback to county-level lookup when no exact city match
+
         if (!empty($countyName)) {
             $query = "
                 SELECT cargus_postal_code

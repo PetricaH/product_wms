@@ -663,43 +663,74 @@ class ImportProcessor {
      * Look up Cargus location IDs from county/city names
      */
     private function lookupLocationMapping($countyName, $cityName) {
-        if (empty($countyName) || empty($cityName)) {
+        if (empty($countyName) && empty($cityName)) {
             return null;
         }
-        
-        // Try to find existing mapping
-        $query = "
-            SELECT cargus_county_id, cargus_locality_id, cargus_county_name, cargus_locality_name
-            FROM address_location_mappings 
-            WHERE LOWER(county_name) = LOWER(:county) 
-            AND LOWER(locality_name) = LOWER(:city)
-            AND cargus_county_id IS NOT NULL 
-            AND cargus_locality_id IS NOT NULL
-            ORDER BY mapping_confidence DESC, is_verified DESC
-            LIMIT 1
-        ";
-        
-        $stmt = $this->db->prepare($query);
-        $stmt->execute([
-            ':county' => trim($countyName),
-            ':city' => trim($cityName)
-        ]);
-        
-        $result = $stmt->fetch(PDO::FETCH_ASSOC);
-        
-        if ($result) {
-            $this->debugInfo['location_mapping'] = [
-                'input' => [
-                    'county' => $countyName,
-                    'city' => $cityName
-                ],
-                'found' => $result,
-                'source' => 'database_cache'
-            ];
-            
-            return $result;
+
+        // Primary lookup: match by both county and city
+        if (!empty($countyName) && !empty($cityName)) {
+            $query = "
+                SELECT cargus_county_id, cargus_locality_id, cargus_county_name, cargus_locality_name
+                FROM address_location_mappings
+                WHERE LOWER(county_name) = LOWER(:county)
+                  AND LOWER(locality_name) = LOWER(:city)
+                  AND cargus_county_id IS NOT NULL
+                  AND cargus_locality_id IS NOT NULL
+                ORDER BY mapping_confidence DESC, is_verified DESC
+                LIMIT 1
+            ";
+
+            $stmt = $this->db->prepare($query);
+            $stmt->execute([
+                ':county' => trim($countyName),
+                ':city' => trim($cityName)
+            ]);
+
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($result) {
+                $this->debugInfo['location_mapping'] = [
+                    'input' => [
+                        'county' => $countyName,
+                        'city' => $cityName
+                    ],
+                    'found' => $result,
+                    'source' => 'database_cache'
+                ];
+
+                return $result;
+            }
         }
-        
+
+        // Fallback: lookup by city only
+        if (!empty($cityName)) {
+            $query = "
+                SELECT cargus_county_id, cargus_locality_id, cargus_county_name, cargus_locality_name
+                FROM address_location_mappings
+                WHERE LOWER(locality_name) = LOWER(:city)
+                  AND cargus_county_id IS NOT NULL
+                  AND cargus_locality_id IS NOT NULL
+                ORDER BY mapping_confidence DESC, is_verified DESC
+                LIMIT 1
+            ";
+
+            $stmt = $this->db->prepare($query);
+            $stmt->execute([':city' => trim($cityName)]);
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if ($result) {
+                $this->debugInfo['location_mapping'] = [
+                    'input' => [
+                        'county' => $countyName,
+                        'city' => $cityName
+                    ],
+                    'found' => $result,
+                    'source' => 'database_cache(city_only)'
+                ];
+
+                return $result;
+            }
+        }
+
         return null;
     }
 

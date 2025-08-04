@@ -80,6 +80,32 @@
     transition: var(--transition);
 }
 
+/* ===== AWB COMPONENTS ===== */
+.awb-column {
+    min-width: 180px;
+}
+
+.awb-attempts {
+    font-size: 0.8rem;
+    margin-bottom: 4px;
+}
+
+.awb-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    align-items: flex-start;
+}
+
+.awb-status {
+    font-size: 0.875rem;
+}
+
+.awb-info .btn {
+    margin-top: 4px;
+    align-self: flex-start;
+}
+
 .modal-close:hover {
     background-color: var(--button-hover);
     color: var(--text-primary);

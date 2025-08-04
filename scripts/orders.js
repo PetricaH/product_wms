@@ -330,15 +330,6 @@ function generateAWB(orderId) {
 }
 
 /**
- * Placeholder function to handle printing the AWB.
- * @param {string} barcode The AWB barcode/tracking number.
- */
-function printAWB(barcode) {
-    alert(`Printează AWB: ${barcode}\n(Funcționalitatea de printare trebuie implementată.)`);
-    // Example: window.open(`/api/awb/print/${barcode}`, '_blank');
-}
-
-/**
  * Send request to generate and print the invoice for a specific order.
  * @param {number} orderId Order ID
  */
@@ -654,10 +645,12 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 // Enhanced print functions for different document types
-function printAWB(orderId, awbCode) {
-    // Similar implementation for AWB printing
-    console.log(`Print AWB ${awbCode} for order ${orderId}`);
-    showNotification('AWB printing not implemented yet', 'info');
+if (typeof window.printAWB !== 'function') {
+    window.printAWB = function(orderId, awbCode) {
+        // Placeholder if specific implementation not loaded
+        console.log(`Print AWB ${awbCode} for order ${orderId}`);
+        showNotification('AWB printing not implemented yet', 'info');
+    };
 }
 
 function printLabel(orderId, labelType = 'shipping') {

@@ -28,9 +28,13 @@ function initializeAWBStatus() {
     });
 
     document.addEventListener('click', function(e) {
-        if (e.target.matches('.refresh-status-btn')) {
-            const awb = e.target.getAttribute('data-awb');
+        const btn = e.target.closest('.refresh-status-btn');
+        if (btn) {
+            const awb = btn.getAttribute('data-awb');
             const el = document.querySelector(`.awb-status[data-awb="${awb}"]`);
+            if (el) {
+                el.textContent = 'Se verifică...';
+            }
             fetchAwbStatus(awb, el, true);
         }
     });

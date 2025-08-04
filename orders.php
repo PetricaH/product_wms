@@ -315,7 +315,9 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                     $attempts = (int)($order['awb_generation_attempts'] ?? 0);
                                                     $attemptClass = ($attempts >= 3 && (empty($order['awb_barcode']) || !preg_match('/^\\d+$/', $order['awb_barcode']))) ? 'text-danger' : '';
                                                     ?>
-                                                    <div class="awb-attempts <?= $attemptClass ?>"><?= $attempts ?>/3</div>
+                                                    <?php if (empty($order['awb_barcode']) || !preg_match('/^\\d+$/', $order['awb_barcode'])): ?>
+                                                        <div class="awb-attempts <?= $attemptClass ?>"><?= $attempts ?>/3</div>
+                                                    <?php endif; ?>
                                                     <?php if (!empty($order['awb_barcode']) && preg_match('/^\\d+$/', $order['awb_barcode'])): ?>
                                                         <div class="awb-info">
                                                             <span class="awb-barcode"><?= htmlspecialchars($order['awb_barcode']) ?></span>
@@ -323,9 +325,11 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                                 <small><?= date('d.m.Y H:i', strtotime($order['awb_created_at'])) ?></small>
                                                             <?php endif; ?>
                                                             <div class="awb-status" data-awb="<?= htmlspecialchars($order['awb_barcode']) ?>">Se verifică...</div>
-                                                            <button type="button" class="btn btn-sm btn-outline-secondary refresh-status-btn" data-awb="<?= htmlspecialchars($order['awb_barcode']) ?>">Refresh status</button>
+                                                            <button type="button" class="btn btn-sm btn-outline-secondary refresh-status-btn" data-awb="<?= htmlspecialchars($order['awb_barcode']) ?>">
+                                                                <span class="material-symbols-outlined">refresh</span> Track AWB
+                                                            </button>
                                                             <button type="button" class="btn btn-sm btn-outline-success" onclick="printAWB(<?= $order['id'] ?>, '<?= htmlspecialchars($order['awb_barcode']) ?>', '<?= htmlspecialchars(addslashes($order['order_number'])) ?>')" title="Printează AWB">
-                                                                <span class="material-symbols-outlined">local_shipping</span>
+                                                                <span class="material-symbols-outlined">print</span>
                                                             </button>
                                                         </div>
                                                     <?php else: ?>

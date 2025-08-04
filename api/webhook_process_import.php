@@ -738,12 +738,14 @@ class ImportProcessor {
      * Find postal code using address_location_mappings table
      */
     private function lookupPostalCode($countyName, $cityName) {
-        // First, attempt lookup by city/locality
-        if (!empty($cityName)) {
+        // Prefer rows where both county and city match
+        if (!empty($countyName) && !empty($cityName)) {
             $query = "
                 SELECT cargus_postal_code
                 FROM address_location_mappings
-                WHERE LOWER(locality_name) = LOWER(:city)
+                WHERE LOWER(county_name) = LOWER(:county)
+                  AND LOWER(locality_name) = LOWER(:city)
+
                   AND cargus_postal_code IS NOT NULL
                   AND cargus_postal_code <> ''
                 ORDER BY mapping_confidence DESC, is_verified DESC
@@ -751,14 +753,18 @@ class ImportProcessor {
             ";
 
             $stmt = $this->db->prepare($query);
-            $stmt->execute([':city' => trim($cityName)]);
+
+            $stmt->execute([
+                ':county' => trim($countyName),
+                ':city' => trim($cityName)
+            ]);
             $result = $stmt->fetch(PDO::FETCH_ASSOC);
             if ($result && !empty($result['cargus_postal_code'])) {
                 return $result['cargus_postal_code'];
             }
         }
+        // Fallback to county-level lookup when no exact city match
 
-        // Fallback to county-level lookup
         if (!empty($countyName)) {
             $query = "
                 SELECT cargus_postal_code

@@ -438,31 +438,32 @@ function closeAWBModal() {
  * Update order UI to show AWB generated
  */
 function updateOrderAWBStatus(orderId, barcode) {
-    // Find the order row or card
-    const orderElements = document.querySelectorAll(`[data-order-id="${orderId}"]`);
-    orderElements.forEach(element => {
-        const awbButton = element.querySelector('.generate-awb-btn');
-        if (awbButton) {
-            // Replace button with AWB info
-            awbButton.outerHTML = `
-                <div class="awb-info">
-                    <span class="awb-barcode">${barcode}</span>
-                    <small>AWB generat</small>
-                </div>
-            `;
-        }
-        
-        // Update any AWB column if present
-        const awbCell = element.querySelector('.awb-column');
-        if (awbCell) {
-            awbCell.innerHTML = `
-                <div class="awb-info">
-                    <span class="awb-barcode">${barcode}</span>
-                    <small>AWB generat</small>
-                </div>
-            `;
-        }
-    });
+    const generateBtn = document.querySelector(`.generate-awb-btn[data-order-id="${orderId}"]`);
+    if (!generateBtn) return;
+
+    const row = generateBtn.closest('tr');
+    const orderNumberEl = row ? row.querySelector('.order-number') : null;
+    const orderNumber = orderNumberEl ? orderNumberEl.textContent.trim() : '';
+    const escapedOrderNumber = orderNumber.replace(/'/g, "\\'");
+
+    const awbCell = generateBtn.closest('.awb-column');
+    if (awbCell) {
+        awbCell.innerHTML = `
+            <div class="awb-info">
+                <span class="awb-barcode">${barcode}</span>
+                <div class="awb-status" data-awb="${barcode}">Se verifică...</div>
+                <button type="button" class="btn btn-sm btn-outline-secondary refresh-status-btn" data-awb="${barcode}">
+                    <span class="material-symbols-outlined">refresh</span> Track AWB
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-success print-awb-btn" onclick="printAWB(${orderId}, '${barcode}', '${escapedOrderNumber}')">
+                    <span class="material-symbols-outlined">print</span> Printează AWB
+                </button>
+            </div>
+        `;
+
+        const statusEl = awbCell.querySelector('.awb-status');
+        fetchAwbStatus(barcode, statusEl);
+    }
 }
 
 /**

@@ -104,6 +104,9 @@
 .awb-info .btn {
     margin-top: 4px;
     align-self: flex-start;
+    display: flex;
+    align-items: center;
+    gap: 4px;
 }
 
 .modal-close:hover {

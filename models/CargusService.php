@@ -918,6 +918,7 @@ public function getAwbDocuments($awbCodes, $type = 'PDF', $format = 1, $printMai
             return ['success' => false, 'error' => $errorMsg];
         }
 
+
         // Validate base64 data or return API error message
         $base64Data = $result['raw'];
 

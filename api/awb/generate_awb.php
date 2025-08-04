@@ -114,37 +114,53 @@ try {
             
             // Generate AWB
             $result = $cargusService->generateAWB($order);
-            
+
             if ($result['success']) {
+                $awbCode = null;
+                if (!empty($result['barcode'])) {
+                    $awbCode = trim((string)$result['barcode']);
+                } elseif (!empty($result['message']) && preg_match('/^\d+$/', (string)$result['message'])) {
+                    $awbCode = trim((string)$result['message']);
+                }
+
+                if (empty($awbCode)) {
+                    error_log("AWB generation succeeded but no barcode returned for order $orderId. Raw response: " . json_encode($result));
+                    respond([
+                        'success' => false,
+                        'error' => 'AWB generation succeeded but no barcode returned',
+                        'raw' => $result
+                    ], 500);
+                }
+
                 // Update order with AWB data
                 $orderModel->updateOrderField($orderId, [
-                    'awb_barcode' => $result['barcode'],
+                    'awb_barcode' => $awbCode,
                     'awb_created_at' => date('Y-m-d H:i:s'),
                     'cargus_order_id' => $result['cargusOrderId'] ?? null,
                     'status' => 'ready_to_ship',
                     'updated_at' => date('Y-m-d H:i:s')
                 ]);
-                
+
                 // Log successful generation
-                error_log("AWB generated successfully for order $orderId: {$result['barcode']} by user {$_SESSION['user_id']}");
-                
+                error_log("AWB generated successfully for order $orderId: {$awbCode} by user {$_SESSION['user_id']}");
+
                 respond([
                     'success' => true,
                     'message' => 'AWB generat cu succes',
-                    'barcode' => $result['barcode'],
-                    'parcel_codes' => $result['parcelCodes']
+                    'barcode' => $awbCode,
+                    'parcel_codes' => $result['parcelCodes'] ?? []
                 ]);
             } else {
                 // Log failed generation
                 error_log("AWB generation failed for order $orderId: {$result['error']} by user {$_SESSION['user_id']}");
-                
+
                 $responseCode = 400;
                 if (isset($result['require_manual_input']) && $result['require_manual_input']) {
                     $responseCode = 422; // Unprocessable Entity - needs more data
                 } elseif (isset($result['code'])) {
                     $responseCode = $result['code'];
                 }
-                
+
                 respond([
                     'success' => false,
                     'error' => $result['error'],

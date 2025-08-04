@@ -289,40 +289,51 @@ class CargusService
             $response = $this->makeRequest('POST', 'Awbs', $awbData);
 
             if ($response['success']) {
-    $data = $response['data'] ?? [];
+                $data = $response['data'] ?? [];
 
-    // Try to extract barcode with fallbacks
-    $barcode = '';
-    if (!empty($data['BarCode'])) {
-        $barcode = $data['BarCode'];
-    } elseif (!empty($data['Barcode'])) {
-        $barcode = $data['Barcode'];
-    } elseif (!empty($data['ParcelCodes'][0]['Code'])) {
-        // last-resort: use first ParcelCode code if that's all that's present
-        $barcode = $data['ParcelCodes'][0]['Code'];
-    }
+                // Try to extract barcode with fallbacks
+                $candidates = [];
+                foreach (['BarCode', 'Barcode', 'AWB', 'Awb', 'awb', 'AwbNumber', 'awbNumber'] as $key) {
+                    if (!empty($data[$key])) {
+                        $candidates[] = $data[$key];
+                    }
+                }
+                if (!empty($data['message'])) {
+                    $candidates[] = $data['message'];
+                }
+                if (!empty($data['ParcelCodes'][0]['Code'])) {
+                    $candidates[] = $data['ParcelCodes'][0]['Code'];
+                }
 
-    // Normalize (strip quotes if accidentally returned)
-    $barcode = trim($barcode, '"');
+                $barcode = '';
+                foreach ($candidates as $candidate) {
+                    if (is_string($candidate)) {
+                        $candidate = trim($candidate, "\" \\t\\n\\r\\0\\x0B");
+                        if (preg_match('/^\d+$/', $candidate)) {
+                            $barcode = $candidate;
+                            break;
+                        }
+                    }
+                }
 
-    if (empty($barcode)) {
-        // Log full response for investigation
-        $this->debugLog("AWB created but barcode missing. Full response: " . ($response['raw'] ?? json_encode($data)));
-    }
+                if (empty($barcode)) {
+                    // Log full response for investigation
+                    $this->debugLog("AWB created but barcode missing. Full response: " . ($response['raw'] ?? json_encode($data)));
+                }
 
-    $this->logInfo('AWB generated successfully', [
-        'order_id' => $order['id'],
-        'barcode' => $barcode ?: 'MISSING'
-    ]);
+                $this->logInfo('AWB generated successfully', [
+                    'order_id' => $order['id'],
+                    'barcode' => $barcode ?: 'MISSING'
+                ]);
 
-    return [
-        'success' => true,
-        'barcode' => $barcode,
-        'parcelCodes' => $data['ParcelCodes'] ?? [],
-        'cargusOrderId' => $data['OrderId'] ?? '',
-        'raw_response' => $response['raw'] ?? null
-    ];
-}
+                return [
+                    'success' => true,
+                    'barcode' => $barcode,
+                    'parcelCodes' => $data['ParcelCodes'] ?? [],
+                    'cargusOrderId' => $data['OrderId'] ?? '',
+                    'raw_response' => $response['raw'] ?? null
+                ];
+            }
 
             $this->logError('AWB generation failed', $response['error'], $response['raw']);
             return [

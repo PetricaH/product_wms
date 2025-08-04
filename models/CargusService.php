@@ -919,26 +919,41 @@ public function getAwbDocuments($awbCodes, $type = 'PDF', $format = 1, $printMai
         }
 
 
-        // Validate base64 data or return API error message
-        $base64Data = $result['raw'];
+        // Validate API response and normalise to base64
+        $rawBody = $result['raw'] ?? '';
 
-        // If we got a JSON response, surface the error message instead of a base64 error
-        if (!empty($result['data']) && is_array($result['data'])) {
-            $apiError = $result['data']['message'] ?? $result['data']['error'] ?? 'Unknown error';
-            return ['success' => false, 'error' => 'AWB Documents API error: ' . $apiError];
+        // If API returned JSON, attempt to extract the document content
+        if (!empty($result['data'])) {
+            if (is_array($result['data'])) {
+                // Surface API errors rather than returning a corrupt document
+                $apiError = $result['data']['message'] ?? $result['data']['error'] ?? null;
+                if ($apiError) {
+                    return ['success' => false, 'error' => 'AWB Documents API error: ' . $apiError];
+                }
+
+                // Some responses might wrap the base64 data in a field
+                $rawBody = $result['data']['data'] ?? $result['data']['document'] ?? $result['data']['content'] ?? $rawBody;
+            } elseif (is_string($result['data'])) {
+                $rawBody = $result['data'];
+            }
         }
 
-        $decoded = base64_decode($base64Data, true);
-        if ($decoded === false) {
-            return ['success' => false, 'error' => 'Invalid base64 data received from Cargus API'];
+        // If response is not valid base64, assume it's binary PDF and encode it
+        if (base64_decode($rawBody, true) === false) {
+            $rawBody = base64_encode($rawBody);
         }
 
-        error_log("Cargus AWB Documents success: " . strlen($base64Data) . " bytes base64 data");
+        // Final validation - ensure we now have valid base64 data
+        if (base64_decode($rawBody, true) === false) {
+            return ['success' => false, 'error' => 'Invalid document data received from Cargus API'];
+        }
+
+        error_log("Cargus AWB Documents success: " . strlen($rawBody) . " bytes base64 data");
 
         // Return base64 encoded PDF data
         return [
             'success' => true,
-            'data' => $base64Data,
+            'data' => $rawBody,
             'error' => null
         ];
         

@@ -548,9 +548,8 @@ class Order
                 o.updated_at,
                 c.name as customer_name,
                 c.phone as customer_phone,
-                CASE 
+                CASE
                     WHEN o.awb_barcode IS NOT NULL AND o.awb_barcode != '' THEN 'Generat'
-                    WHEN o.status = 'picked' THEN 'Pregătit pentru AWB'
                     ELSE 'În așteptare'
                 END as awb_status,
                 CASE
@@ -560,8 +559,8 @@ class Order
             FROM orders o
             LEFT JOIN customers c ON o.customer_id = c.id
             WHERE {$whereClause}
-            ORDER BY 
-                CASE WHEN o.status = 'picked' AND (o.awb_barcode IS NULL OR o.awb_barcode = '') THEN 0 ELSE 1 END,
+            ORDER BY
+                CASE WHEN (o.awb_barcode IS NULL OR o.awb_barcode = '') THEN 0 ELSE 1 END,
                 o.created_at DESC
         ";
         
@@ -626,8 +625,7 @@ class Order
             FROM orders o
             LEFT JOIN customers c ON o.customer_id = c.id
             LEFT JOIN order_items oi ON o.id = oi.order_id
-            WHERE o.status = 'picked'
-                AND (o.awb_barcode IS NULL OR o.awb_barcode = '')
+            WHERE (o.awb_barcode IS NULL OR o.awb_barcode = '')
                 AND o.recipient_county_id IS NOT NULL
                 AND o.recipient_locality_id IS NOT NULL
                 AND o.recipient_phone IS NOT NULL
@@ -655,11 +653,6 @@ class Order
         }
         
         $errors = [];
-        
-        // Status check
-        if (strtolower($order['status']) !== 'picked') {
-            $errors[] = 'Order status must be "picked"';
-        }
         
         // AWB already exists check
         if (!empty($order['awb_barcode'])) {
@@ -926,8 +919,7 @@ class Order
         $stmt = $this->conn->prepare("
             SELECT COUNT(*) as count
             FROM orders 
-            WHERE status = 'picked' 
-            AND (awb_barcode IS NULL OR awb_barcode = '')
+            WHERE (awb_barcode IS NULL OR awb_barcode = '')
             AND recipient_county_id IS NOT NULL
             AND recipient_locality_id IS NOT NULL
             AND recipient_phone IS NOT NULL

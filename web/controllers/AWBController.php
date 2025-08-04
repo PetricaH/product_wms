@@ -59,11 +59,6 @@ class AWBController {
                 throw new Exception('Order not found', 404);
             }
             
-            // Validate order status
-            if (strtolower($order['status']) !== 'picked') {
-                throw new Exception('AWB can only be generated for picked orders', 400);
-            }
-            
             // Check if AWB already exists
             if (!empty($order['awb_barcode'])) {
                 throw new Exception('AWB already exists: ' . $order['awb_barcode'], 400);

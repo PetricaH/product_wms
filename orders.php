@@ -335,13 +335,12 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                                 title="Schimbă status">
                                                             <span class="material-symbols-outlined">edit</span>
                                                         </button>
-                                                        <?php $awbDisabled = strtolower($order['status']) !== 'picked'; ?>
                                                         <?php if (!empty($order['awb_barcode'])): ?>
                                                             <button class="btn btn-sm btn-outline-success" onclick="printAWB('<?= htmlspecialchars($order['awb_barcode']) ?>')" title="Printează AWB">
                                                                 <span class="material-symbols-outlined">local_shipping</span>
                                                             </button>
                                                         <?php else: ?>
-                                                            <button class="btn btn-sm btn-outline-warning" onclick="generateAWB(<?= $order['id'] ?>)" title="Generează AWB" <?= $awbDisabled ? 'disabled' : '' ?>>
+                                                            <button class="btn btn-sm btn-outline-warning" onclick="generateAWB(<?= $order['id'] ?>)" title="Generează AWB">
                                                                 <span class="material-symbols-outlined">local_shipping</span>
                                                             </button>
                                                         <?php endif; ?>

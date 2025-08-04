@@ -956,6 +956,7 @@ public function getAwbDocuments($awbCodes, $type = 'PDF', $format = 1, $printMai
             return ['success' => false, 'error' => 'Invalid document data received from Cargus API'];
         }
 
+
         error_log("Cargus AWB Documents success: " . strlen($rawBody) . " bytes base64 data");
 
         // Return base64 encoded PDF data

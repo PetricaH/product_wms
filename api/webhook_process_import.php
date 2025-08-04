@@ -12,7 +12,6 @@ if (!defined('BASE_PATH')) {
 require_once BASE_PATH . '/bootstrap.php';
 $config = require BASE_PATH . '/config/config.php';
 require_once BASE_PATH . '/models/WeightCalculator.php';
-require_once BASE_PATH . '/models/CargusService.php';
 
 class ImportProcessor {
     private $db;
@@ -309,14 +308,11 @@ class ImportProcessor {
         $orderNumber = $this->generateOrderNumber();
         $shippingAddress = $this->buildShippingAddress($import, $clientInfo);
 
-        // Look up postal code using Cargus API if possible
-        $postalCode = null;
-        if (!empty($locationMapping['cargus_county_id']) && !empty($locationMapping['cargus_locality_id'])) {
-            $postalCode = $this->fetchPostalCode(
-                $locationMapping['cargus_county_id'],
-                $locationMapping['cargus_locality_id']
-            );
-        }
+        // Determine postal code using address_location_mappings table
+        $postalCode = $this->lookupPostalCode(
+            $import['delivery_county'] ?? '',
+            $import['delivery_locality'] ?? ''
+        );
         
         // FIXED: Calculate correct total from consolidated products
         $calculatedTotal = 0;
@@ -667,61 +663,127 @@ class ImportProcessor {
      * Look up Cargus location IDs from county/city names
      */
     private function lookupLocationMapping($countyName, $cityName) {
-        if (empty($countyName) || empty($cityName)) {
+        if (empty($countyName) && empty($cityName)) {
             return null;
         }
-        
-        // Try to find existing mapping
-        $query = "
-            SELECT cargus_county_id, cargus_locality_id, cargus_county_name, cargus_locality_name
-            FROM address_location_mappings 
-            WHERE LOWER(county_name) = LOWER(:county) 
-            AND LOWER(locality_name) = LOWER(:city)
-            AND cargus_county_id IS NOT NULL 
-            AND cargus_locality_id IS NOT NULL
-            ORDER BY mapping_confidence DESC, is_verified DESC
-            LIMIT 1
-        ";
-        
-        $stmt = $this->db->prepare($query);
-        $stmt->execute([
-            ':county' => trim($countyName),
-            ':city' => trim($cityName)
-        ]);
-        
-        $result = $stmt->fetch(PDO::FETCH_ASSOC);
-        
-        if ($result) {
-            $this->debugInfo['location_mapping'] = [
-                'input' => [
-                    'county' => $countyName,
-                    'city' => $cityName
-                ],
-                'found' => $result,
-                'source' => 'database_cache'
-            ];
-            
-            return $result;
+
+        // Primary lookup: match by both county and city
+        if (!empty($countyName) && !empty($cityName)) {
+            $query = "
+                SELECT cargus_county_id, cargus_locality_id, cargus_county_name, cargus_locality_name
+                FROM address_location_mappings
+                WHERE LOWER(county_name) = LOWER(:county)
+                  AND LOWER(locality_name) = LOWER(:city)
+                  AND cargus_county_id IS NOT NULL
+                  AND cargus_locality_id IS NOT NULL
+                ORDER BY mapping_confidence DESC, is_verified DESC
+                LIMIT 1
+            ";
+
+            $stmt = $this->db->prepare($query);
+            $stmt->execute([
+                ':county' => trim($countyName),
+                ':city' => trim($cityName)
+            ]);
+
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($result) {
+                $this->debugInfo['location_mapping'] = [
+                    'input' => [
+                        'county' => $countyName,
+                        'city' => $cityName
+                    ],
+                    'found' => $result,
+                    'source' => 'database_cache'
+                ];
+
+                return $result;
+            }
         }
-        
+
+        // Fallback: lookup by city only
+        if (!empty($cityName)) {
+            $query = "
+                SELECT cargus_county_id, cargus_locality_id, cargus_county_name, cargus_locality_name
+                FROM address_location_mappings
+                WHERE LOWER(locality_name) = LOWER(:city)
+                  AND cargus_county_id IS NOT NULL
+                  AND cargus_locality_id IS NOT NULL
+                ORDER BY mapping_confidence DESC, is_verified DESC
+                LIMIT 1
+            ";
+
+            $stmt = $this->db->prepare($query);
+            $stmt->execute([':city' => trim($cityName)]);
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if ($result) {
+                $this->debugInfo['location_mapping'] = [
+                    'input' => [
+                        'county' => $countyName,
+                        'city' => $cityName
+                    ],
+                    'found' => $result,
+                    'source' => 'database_cache(city_only)'
+                ];
+
+                return $result;
+            }
+        }
+
         return null;
     }
 
     /**
-     * Fetch postal code for given county and locality IDs via Cargus API
+     * Find postal code using address_location_mappings table
      */
-    private function fetchPostalCode($countyId, $localityId) {
-        if (empty($countyId) || empty($localityId)) {
-            return null;
+    private function lookupPostalCode($countyName, $cityName) {
+        // Prefer rows where both county and city match
+        if (!empty($countyName) && !empty($cityName)) {
+            $query = "
+                SELECT cargus_postal_code
+                FROM address_location_mappings
+                WHERE LOWER(county_name) = LOWER(:county)
+                  AND LOWER(locality_name) = LOWER(:city)
+                  AND cargus_postal_code IS NOT NULL
+                  AND cargus_postal_code <> ''
+                ORDER BY mapping_confidence DESC, is_verified DESC
+                LIMIT 1
+            ";
+
+            $stmt = $this->db->prepare($query);
+            $stmt->execute([
+                ':county' => trim($countyName),
+                ':city' => trim($cityName)
+            ]);
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($result && !empty($result['cargus_postal_code'])) {
+                return $result['cargus_postal_code'];
+            }
         }
 
-        try {
-            $cargus = new CargusService($this->db);
-            return $cargus->getPostalCode($countyId, $localityId);
-        } catch (Exception $e) {
-            $this->warnings[] = "Postal code lookup failed: " . $e->getMessage();
-            return null;
+        // Fallback to county-level lookup when no exact city match
+        if (!empty($countyName)) {
+            $query = "
+                SELECT cargus_postal_code
+                FROM address_location_mappings
+                WHERE LOWER(county_name) = LOWER(:county)
+                  AND cargus_postal_code IS NOT NULL
+                  AND cargus_postal_code <> ''
+                ORDER BY mapping_confidence DESC, is_verified DESC
+                LIMIT 1
+            ";
+
+            $stmt = $this->db->prepare($query);
+            $stmt->execute([':county' => trim($countyName)]);
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($result && !empty($result['cargus_postal_code'])) {
+                return $result['cargus_postal_code'];
+            }
         }
+
+        // Default postal code if nothing is found
+        return '000000';
     }
 
     /**

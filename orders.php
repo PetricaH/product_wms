@@ -246,6 +246,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                     <div class="card-body">
                         <?php if (!empty($orders)): ?>
                             <div class="table-container">
+                                <div class="table-responsive">
                                 <table class="table">
                                     <thead>
                                         <tr>
@@ -362,6 +363,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                         <?php endforeach; ?>
                                     </tbody>
                                 </table>
+                                </div>
                             </div>
                             
                             <!-- Pagination -->

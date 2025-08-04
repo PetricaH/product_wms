@@ -30,6 +30,10 @@ document.addEventListener('DOMContentLoaded', () => {
         currentOrderNumber: document.getElementById('current-order-number'),
         customerName: document.getElementById('customer-name'),
         printInvoiceBtn: document.getElementById('print-invoice-btn'),
+        generateAwbBtn: document.getElementById('generate-awb-btn'),
+        printAwbBtn: document.getElementById('print-awb-btn'),
+        awbInfo: document.getElementById('awb-info'),
+        awbCode: document.getElementById('awb-code'),
         
         // Progress
         progressSection: document.getElementById('progress-section'),
@@ -102,7 +106,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function init() {
         setupEventListeners();
-        
+        updateAwbButtons();
+
         // Auto-load order if provided in URL
         if (window.PICKER_CONFIG?.hasOrderFromUrl && window.PICKER_CONFIG?.orderFromUrl) {
             loadOrder(window.PICKER_CONFIG.orderFromUrl);
@@ -124,6 +129,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 loadOrder(currentOrder.order_number);
             } else {
                 showMessage('Nu se poate reîncărca. Nicio comandă activă.', 'error');
+            }
+        });
+
+        elements.printAwbBtn?.addEventListener('click', () => {
+            if (currentOrder?.awb_barcode) {
+                printAWBDirect(currentOrder.id, currentOrder.awb_barcode, currentOrder.order_number);
             }
         });
         
@@ -190,10 +201,12 @@ document.addEventListener('DOMContentLoaded', () => {
             // Fix: Handle the correct API response structure
             currentOrder = data.data || data.order;
             orderItems = currentOrder.items || data.items || [];
-            
+
             console.log('Current order:', currentOrder);
             console.log('Order items:', orderItems);
-            
+
+            updateAwbButtons();
+
             if (!orderItems || orderItems.length === 0) {
                 console.warn('No items found in order!');
                 showMessage('Această comandă nu conține produse pentru colectare.', 'info');
@@ -219,6 +232,54 @@ document.addEventListener('DOMContentLoaded', () => {
             showLoading(false);
         }
     }
+
+    function updateAwbButtons() {
+        if (!elements.generateAwbBtn || !elements.printAwbBtn) return;
+
+        if (currentOrder?.awb_barcode) {
+            elements.generateAwbBtn.classList.add('hidden');
+            elements.printAwbBtn.classList.remove('hidden');
+            elements.printAwbBtn.disabled = false;
+
+            if (elements.awbInfo && elements.awbCode) {
+                elements.awbCode.textContent = currentOrder.awb_barcode;
+                elements.awbInfo.classList.remove('hidden');
+            }
+        } else {
+            elements.printAwbBtn.classList.add('hidden');
+            elements.generateAwbBtn.classList.remove('hidden');
+            elements.generateAwbBtn.setAttribute('data-order-id', currentOrder?.id || '');
+
+            if (elements.awbInfo) {
+                elements.awbInfo.classList.add('hidden');
+            }
+        }
+    }
+
+    function printAWBDirect(orderId, awbCode, orderNumber) {
+        const printer = (window.availablePrinters || []).find(p =>
+            p.name && p.name.toLowerCase().includes('godex') && p.name.includes('500')
+        );
+
+        if (!printer) {
+            showMessage('Imprimanta GODEX 500 nu este disponibilă.', 'error');
+            return;
+        }
+
+        try {
+            performAwbPrint(orderId, awbCode, orderNumber, printer.id);
+        } catch (err) {
+            console.error('AWB print failed:', err);
+            showMessage('Eroare la trimiterea AWB către imprimantă.', 'error');
+        }
+    }
+
+    document.addEventListener('awbGenerated', (e) => {
+        if (currentOrder && e.detail.orderId === currentOrder.id) {
+            currentOrder.awb_barcode = e.detail.awbCode;
+            updateAwbButtons();
+        }
+    });
 
     function updateOrderDisplay() {
         if (!currentOrder) return;

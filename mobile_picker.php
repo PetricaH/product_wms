@@ -27,6 +27,14 @@ $hasOrderFromUrl = !empty($orderNumber);
             <button id="print-invoice-btn" class="btn btn-secondary btn-sm <?= !$hasOrderFromUrl ? 'hidden' : '' ?>" title="Printează Factura">
                 <span class="material-symbols-outlined">print</span>
             </button>
+            <button id="generate-awb-btn" class="btn btn-primary btn-sm generate-awb-btn hidden" title="Generează AWB">
+                <span class="material-symbols-outlined">local_shipping</span>
+                Generează AWB
+            </button>
+            <button id="print-awb-btn" class="btn btn-success btn-sm hidden" title="Printează AWB">
+                <span class="material-symbols-outlined">print</span>
+                Printează AWB
+            </button>
         </div>
     </div>
 
@@ -70,18 +78,10 @@ $hasOrderFromUrl = !empty($orderNumber);
             </div>
         </div>
 
-        <?php if (!empty($order['awb_barcode'])): ?>
-            <div class="awb-status">
-                <span class="material-symbols-outlined">local_shipping</span>
-                AWB: <?= htmlspecialchars($order['awb_barcode']) ?>
-            </div>
-        <?php else: ?>
-            <button type="button" class="generate-awb-btn" 
-                    data-order-id="<?= $order['id'] ?>">
-                <span class="material-symbols-outlined">local_shipping</span>
-                Generează AWB
-            </button>
-        <?php endif; ?>
+        <div id="awb-info" class="awb-status hidden">
+            <span class="material-symbols-outlined">local_shipping</span>
+            AWB: <span id="awb-code"></span>
+        </div>
 
         <!-- Picking Workflow Sections -->
         
@@ -247,6 +247,7 @@ $hasOrderFromUrl = !empty($orderNumber);
             orderFromUrl: <?= json_encode($hasOrderFromUrl ? $orderNumber : null) ?>,
             hasOrderFromUrl: <?= json_encode($hasOrderFromUrl) ?>
         };
+        window.IS_PICKING_INTERFACE = true;
     </script>
     <script src="scripts/orders_awb.js"></script>
     <?php require_once __DIR__ . '/includes/warehouse_footer.php'; ?>

@@ -135,11 +135,14 @@ async function generateAWBDirect(orderId, manualData = {}) {
             const awbCode = result.data?.awb_barcode || result.data?.barcode || '';
             showNotification(`AWB generat cu succes: ${awbCode || 'necunoscut'}`, 'success');
 
-            updateOrderAWBStatus(orderId, awbCode);
-
-            setTimeout(() => {
-                window.location.reload();
-            }, 2000);
+            if (window.IS_PICKING_INTERFACE) {
+                document.dispatchEvent(new CustomEvent('awbGenerated', { detail: { orderId, awbCode } }));
+            } else {
+                updateOrderAWBStatus(orderId, awbCode, button);
+                setTimeout(() => {
+                    window.location.reload();
+                }, 2000);
+            }
 
         } else {
             if (result.data?.require_manual_input) {
@@ -901,3 +904,4 @@ window.closeAWBModal = closeAWBModal;
 window.showAWBRequirementsModal = showAWBRequirementsModal;
 window.showAWBManualInputModal = showAWBManualInputModal;
 window.printAWB = printAWB;
+window.performAwbPrint = performAwbPrint;

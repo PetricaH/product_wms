@@ -109,6 +109,12 @@
     gap: 4px;
 }
 
+.generate-awb-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
 .modal-close:hover {
     background-color: var(--button-hover);
     color: var(--text-primary);

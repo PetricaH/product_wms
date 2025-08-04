@@ -148,6 +148,11 @@ $orders = $orderModel->getOrdersPaginated($pageSize, $offset, $statusFilter, $pr
 // Get unique statuses and priorities for filters
 $statuses = $orderModel->getStatuses();
 $priorities = $orderModel->getPriorities();
+$priorityLabels = [
+    'normal' => 'Normal',
+    'high' => 'Înaltă',
+    'urgent' => 'Urgentă'
+];
 $allProducts = $productModel->getAllProducts();
 
 // Define current page for footer
@@ -202,9 +207,9 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                 <label class="form-label">Status</label>
                                 <select name="status" class="form-control">
                                     <option value="">Toate statusurile</option>
-                                    <?php foreach ($statuses as $status): ?>
-                                        <option value="<?= htmlspecialchars($status) ?>" <?= $statusFilter === $status ? 'selected' : '' ?>>
-                                            <?= htmlspecialchars($status) ?>
+                                    <?php foreach ($statuses as $key => $label): ?>
+                                        <option value="<?= htmlspecialchars($key) ?>" <?= $statusFilter === $key ? 'selected' : '' ?>>
+                                            <?= htmlspecialchars($label) ?>
                                         </option>
                                     <?php endforeach; ?>
                                 </select>
@@ -216,7 +221,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                     <option value="">Toate prioritățile</option>
                                     <?php foreach ($priorities as $priority): ?>
                                         <option value="<?= htmlspecialchars($priority) ?>" <?= $priorityFilter === $priority ? 'selected' : '' ?>>
-                                            <?= htmlspecialchars(ucfirst($priority)) ?>
+                                            <?= htmlspecialchars($priorityLabels[$priority] ?? ucfirst($priority)) ?>
                                         </option>
                                     <?php endforeach; ?>
                                 </select>
@@ -319,7 +324,9 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                     $attemptClass = ($attempts >= 3 && !$hasValidAwb) ? 'text-danger' : '';
                                                     ?>
                                                     <?php if (!$hasValidAwb): ?>
-                                                        <div class="awb-attempts <?= $attemptClass ?>"><?= $attempts ?>/3</div>
+                                                        <div class="awb-attempts <?= $attemptClass ?>">
+                                                            <?= max(0, 3 - $attempts) ?> încercări rămase
+                                                        </div>
                                                     <?php endif; ?>
                                                     <?php if ($hasValidAwb): ?>
                                                         <div class="awb-info">
@@ -336,7 +343,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                             </button>
                                                         </div>
                                                     <?php else: ?>
-                                                        <button type="button" class="generate-awb-btn" data-order-id="<?= $order['id'] ?>" title="Generează AWB">
+                                                        <button type="button" class="btn btn-sm btn-outline-primary generate-awb-btn" data-order-id="<?= $order['id'] ?>" title="Generează AWB">
                                                             <span class="material-symbols-outlined">local_shipping</span>
                                                             Generează AWB
                                                         </button>

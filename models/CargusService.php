@@ -847,8 +847,79 @@ class CargusService
         'ParcelCodes' => $this->generateParcelCodes($parcelsCount, $envelopesCount, $totalWeight, $calculatedData)
     ];
 }
-
     
+public function getAwbDocuments($awbCodes, $type = 'PDF', $format = 1, $printMainOnce = 1) {
+    try {
+        if (empty($awbCodes) || !is_array($awbCodes)) {
+            return ['success' => false, 'error' => 'Invalid AWB codes provided'];
+        }
+        
+        // Ensure all AWB codes are numeric strings
+        $cleanAwbCodes = array_map(function($awb) {
+            return preg_match('/^\d+$/', trim($awb)) ? trim($awb) : null;
+        }, $awbCodes);
+        
+        $cleanAwbCodes = array_filter($cleanAwbCodes);
+        
+        if (empty($cleanAwbCodes)) {
+            return ['success' => false, 'error' => 'No valid AWB codes provided'];
+        }
+        
+        // Prepare parameters
+        $jsonAwb = json_encode(array_values($cleanAwbCodes));
+        $params = [
+            'barCodes' => $jsonAwb,
+            'type' => strtoupper($type),
+            'format' => intval($format),
+            'printMainOnce' => intval($printMainOnce)
+        ];
+        
+        $queryString = http_build_query($params);
+        $endpoint = 'AwbDocuments?' . $queryString;
+        
+        error_log("Cargus AWB Documents request: {$endpoint}");
+        
+        // Get authentication token
+        $token = $this->getAuthToken();
+        if (!$token) {
+            return ['success' => false, 'error' => 'Failed to authenticate with Cargus API'];
+        }
+        
+        // Make API request
+        $result = $this->callMethod($endpoint, '', 'GET', $token);
+        
+        error_log("Cargus AWB Documents response status: " . $result['status']);
+        
+        if ($result['status'] !== '200') {
+            $errorMsg = 'AWB Documents API error: ' . ($result['message'] ?? 'Unknown error');
+            error_log($errorMsg . " (Status: {$result['status']})");
+            return ['success' => false, 'error' => $errorMsg];
+        }
+        
+        // Validate base64 data
+        $base64Data = $result['message'];
+        if (empty($base64Data) || !preg_match('/^[A-Za-z0-9+\/=]+$/', $base64Data)) {
+            return ['success' => false, 'error' => 'Invalid base64 data received from Cargus API'];
+        }
+        
+        error_log("Cargus AWB Documents success: " . strlen($base64Data) . " bytes base64 data");
+        
+        // Return base64 encoded PDF data
+        return [
+            'success' => true,
+            'data' => $base64Data,
+            'error' => null
+        ];
+        
+    } catch (Exception $e) {
+        error_log('CargusService::getAwbDocuments error: ' . $e->getMessage());
+        return [
+            'success' => false, 
+            'error' => 'Failed to get AWB documents: ' . $e->getMessage()
+        ];
+    }
+}
+
     /**
      * Validate AWB data before sending to API
      */

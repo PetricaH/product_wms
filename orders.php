@@ -159,7 +159,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
     <?php require_once __DIR__ . '/includes/header.php'; ?>
     <meta name="csrf-token" content="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
     <title>Gestionare Comenzi - WMS</title>
-    <link rel="stylesheet" href="styles/orders.css">
+    <link rel="stylesheet" href="styles/awb_generation.css?v=20250804.2">
 </head>
 <body>
     <div class="app">
@@ -600,5 +600,5 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
         </div>
     </div>
     
-    <script src="scripts/orders_awb.js"></script>
+    <script src="scripts/orders_awb.js?v=20250804.2"></script>
     <?php require_once __DIR__ . '/includes/footer.php'; ?>

@@ -677,7 +677,10 @@ class CargusService
     private function buildAWBData($order, $calculatedData, $senderLocation) {
 
     $parcelsCount = (int)($calculatedData['parcels_count'] ?? 1);
-    $envelopesCount = (int)($calculatedData['envelopes_count'] ?? $order['envelopes_count'] ?? 0);
+    $envelopesCount = (int)($calculatedData['envelopes_count'] ?? $order['envelopes_count'] ?? 1);
+    if ($envelopesCount <= 0) {
+        $envelopesCount = 1;
+    }
 
     $this->debugLog("=== CARGUS AWB DEBUG START ===");
     $this->debugLog("Order Number: " . $order['order_number']);
@@ -743,7 +746,8 @@ class CargusService
         'Parcels' => $parcelsCount,
         'Envelopes' => $envelopesCount,
         'TotalWeight' => $totalWeight,
-        'DeclaredValue' => intval($order['declared_value'] ?? $order['total_value'] ?? 0),
+        // No declared value is sent for Cargus AWBs
+        'DeclaredValue' => 0,
         'CashRepayment' => intval($order['cash_repayment'] ?? 0),
         'BankRepayment' => intval($order['bank_repayment'] ?? 0),
         'OtherRepayment' => '',

@@ -81,7 +81,7 @@ try {
             $manualFields = [
                 'recipient_name', 'recipient_contact_person', 'recipient_phone', 'recipient_email',
                 'recipient_county_id', 'recipient_locality_id', 'recipient_county_name', 'recipient_locality_name',
-                'shipping_address', 'address_text', 'recipient_postal', 'total_weight', 'declared_value', 'parcels_count', 'envelopes_count',
+                'shipping_address', 'address_text', 'recipient_postal', 'total_weight', 'parcels_count', 'envelopes_count',
                 'package_content', 'cash_repayment', 'bank_repayment', 'saturday_delivery',
                 'morning_delivery', 'open_package', 'observations', 'recipient_reference1', 'recipient_reference2'
             ];
@@ -93,7 +93,7 @@ try {
                     // Type casting for specific fields
                     if (in_array($field, ['recipient_county_id', 'recipient_locality_id', 'parcels_count', 'envelopes_count'])) {
                         $value = intval($value);
-                    } elseif (in_array($field, ['total_weight', 'declared_value', 'cash_repayment', 'bank_repayment'])) {
+                    } elseif (in_array($field, ['total_weight', 'cash_repayment', 'bank_repayment'])) {
                         $value = floatval($value);
                     } elseif (in_array($field, ['saturday_delivery', 'morning_delivery', 'open_package'])) {
                         $value = boolval($value);
@@ -105,6 +105,12 @@ try {
             
             // Apply manual overrides to order data
             $order = array_merge($order, $manualData);
+            // Ensure no declared value is sent
+            $order['declared_value'] = 0;
+            // Default to one envelope if none specified
+            if (empty($order['envelopes_count']) || $order['envelopes_count'] <= 0) {
+                $order['envelopes_count'] = 1;
+            }
             
             // Generate AWB
             $result = $cargusService->generateAWB($order);

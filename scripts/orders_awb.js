@@ -2,8 +2,8 @@
 // AWB generation functionality for orders page and picking interface
 
 document.addEventListener('DOMContentLoaded', function() {
-    // Add AWB generation functionality
     initializeAWBGeneration();
+    initializeAWBStatus();
 });
 
 function initializeAWBGeneration() {
@@ -15,6 +15,23 @@ function initializeAWBGeneration() {
             if (orderId) {
                 generateAWB(orderId);
             }
+        }
+    });
+}
+
+function initializeAWBStatus() {
+    document.querySelectorAll('.awb-status').forEach(el => {
+        const awb = el.getAttribute('data-awb');
+        if (awb) {
+            fetchAwbStatus(awb, el);
+        }
+    });
+
+    document.addEventListener('click', function(e) {
+        if (e.target.matches('.refresh-status-btn')) {
+            const awb = e.target.getAttribute('data-awb');
+            const el = document.querySelector(`.awb-status[data-awb="${awb}"]`);
+            fetchAwbStatus(awb, el, true);
         }
     });
 }
@@ -31,10 +48,14 @@ async function generateAWB(orderId) {
     try {
         // First check requirements
         const reqResponse = await fetch(`/api/awb/generate_awb.php?action=requirements&order_id=${orderId}`);
-        const requirements = await reqResponse.json();
-        
+        const reqJson = await reqResponse.json();
+        if (!reqJson.success) {
+            showNotification(reqJson.error || 'Eroare la verificarea cerințelor', 'error');
+            return;
+        }
+        const requirements = reqJson.data || {};
+
         if (!requirements.can_generate) {
-            // Show requirements modal
             showAWBRequirementsModal(orderId, requirements);
             return;
         }
@@ -84,23 +105,20 @@ async function generateAWBDirect(orderId, manualData = {}) {
         });
         
         const result = await response.json();
-        
+
         if (result.success) {
-            const awbCode = result.barcode || result.awb_barcode || '';
+            const awbCode = result.data?.awb_barcode || result.data?.barcode || '';
             showNotification(`AWB generat cu succes: ${awbCode || 'necunoscut'}`, 'success');
 
-            // Update UI to show AWB was generated
             updateOrderAWBStatus(orderId, awbCode);
-            
-            // Optionally reload page to show updated status
+
             setTimeout(() => {
                 window.location.reload();
             }, 2000);
-            
+
         } else {
-            if (result.require_manual_input) {
-                // Show manual input modal
-                showAWBManualInputModal(orderId, result);
+            if (result.data?.require_manual_input) {
+                showAWBManualInputModal(orderId, result.data);
             } else {
                 showNotification(`Eroare la generarea AWB: ${result.error}`, 'error');
             }
@@ -113,6 +131,53 @@ async function generateAWBDirect(orderId, manualData = {}) {
         if (button) {
             button.disabled = false;
             button.innerHTML = originalContent;
+        }
+    }
+}
+
+async function fetchAwbStatus(awb, el, refresh = false) {
+    if (!el) return;
+    try {
+        const url = `/api/awb/track_awb.php?awb=${encodeURIComponent(awb)}${refresh ? '&refresh=1' : ''}`;
+        const res = await fetch(url);
+        const data = await res.json();
+        if (data.success && data.data) {
+            el.textContent = data.data.status || 'Status necunoscut';
+        } else {
+            el.textContent = 'Status unavailable';
+        }
+    } catch (err) {
+        console.error('Status fetch failed', err);
+        el.textContent = 'Status unavailable';
+    }
+}
+
+function escapeHtml(str) {
+    return String(str).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[m]));
+}
+
+async function printAWB(orderId, awbCode, orderNumber) {
+    try {
+        const form = new FormData();
+        form.append('order_id', orderId);
+        form.append('awb', awbCode);
+        const csrf = getCsrfToken();
+        if (csrf) form.append('csrf_token', csrf);
+        fetch('/api/awb/log_print.php', {method: 'POST', body: form});
+    } catch (e) {}
+
+    try {
+        const w = window.open('', '_blank');
+        if (!w) throw new Error('Popup blocked');
+        w.document.write(`<!DOCTYPE html><html><head><title>AWB ${escapeHtml(awbCode)}</title><style>body{font-family:Arial,sans-serif;text-align:center;margin:40px}.barcode{font-size:32px;margin-top:20px}</style></head><body><h1>AWB: ${escapeHtml(awbCode)}</h1><p>Comanda: ${escapeHtml(orderNumber)}</p><div class="barcode">${escapeHtml(awbCode)}</div><script>window.print();</script></body></html>`);
+        w.document.close();
+    } catch (err) {
+        console.error('Print error', err);
+        try {
+            await navigator.clipboard.writeText(awbCode);
+            showNotification('AWB copiat în clipboard', 'info');
+        } catch (copyErr) {
+            showNotification('Nu se poate printa sau copia AWB', 'error');
         }
     }
 }
@@ -503,3 +568,4 @@ window.generateAWB = generateAWB;
 window.closeAWBModal = closeAWBModal;
 window.showAWBRequirementsModal = showAWBRequirementsModal;
 window.showAWBManualInputModal = showAWBManualInputModal;
+window.printAWB = printAWB;

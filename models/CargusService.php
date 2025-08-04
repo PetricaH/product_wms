@@ -353,6 +353,57 @@ class CargusService
         }
     }
 
+    /**
+     * Track AWB status via Cargus API
+     */
+    public function trackAWB(string $awb) {
+        try {
+            if (!$this->authenticate()) {
+                return ['success' => false, 'error' => 'Authentication failed'];
+            }
+
+            // Endpoint may vary; adjust as necessary
+            $response = $this->makeRequest('GET', 'Awbs/' . urlencode($awb) . '/track');
+
+            if ($response['success']) {
+                $data = $response['data'] ?? [];
+                $status = $data['status'] ?? $data['Status'] ?? ($data['CurrentStatus']['Status'] ?? 'Unknown');
+                $last = $data['last_update'] ?? $data['LastUpdate'] ?? $data['CurrentStatus']['Date'] ?? null;
+                $history = [];
+                if (!empty($data['history']) && is_array($data['history'])) {
+                    foreach ($data['history'] as $h) {
+                        $history[] = [
+                            'time' => $h['time'] ?? $h['Date'] ?? null,
+                            'event' => $h['event'] ?? $h['Status'] ?? ''
+                        ];
+                    }
+                } elseif (!empty($data['History']) && is_array($data['History'])) {
+                    foreach ($data['History'] as $h) {
+                        $history[] = [
+                            'time' => $h['Date'] ?? $h['time'] ?? null,
+                            'event' => $h['Status'] ?? $h['event'] ?? ''
+                        ];
+                    }
+                }
+
+                return [
+                    'success' => true,
+                    'data' => [
+                        'awb' => $awb,
+                        'status' => $status,
+                        'last_update' => $last,
+                        'history' => $history
+                    ],
+                    'raw' => $response['raw'] ?? null
+                ];
+            }
+
+            return ['success' => false, 'error' => $response['error'], 'raw' => $response['raw'] ?? null];
+        } catch (Exception $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
     
     /**
      * Generate ParcelCodes array to match Parcels + Envelopes count

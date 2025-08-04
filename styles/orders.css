@@ -311,9 +311,9 @@
 }
 
 .btn-sm {
-    width: 32px;
+    width: fit-content;
     height: 32px;
-    padding: 0;
+    padding: 15px 10px 15px 10px;
     display: flex;
     align-items: center;
     justify-content: center;

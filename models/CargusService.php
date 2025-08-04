@@ -584,22 +584,38 @@ if ($envelopesCount > 0) {
         if (empty($countyId) || empty($localityId)) {
             return null;
         }
-
-        // Ensure we have a valid token
-        if (!$this->verifyToken()) {
+    
+        if (!$this->authenticate()) {
+            echo "❌ Authentication failed\n";
             return null;
         }
-
+    
         $endpoint = sprintf('Localities?countryId=1&countyId=%d', intval($countyId));
         $response = $this->makeRequest('GET', $endpoint, null, true);
-
-        if (!$response['success'] || !is_array($response['data'])) {
+    
+        if (!$response['success']) {
             return null;
         }
-
+        
+        if (is_array($response['data'])) {
+            echo "Array count: " . count($response['data']) . "\n";
+            if (!empty($response['data'])) {
+                echo "First locality structure: " . json_encode($response['data'][0], JSON_PRETTY_PRINT) . "\n";
+                
+                for ($i = 0; $i < min(3, count($response['data'])); $i++) {
+                    $loc = $response['data'][$i];
+                    echo "  Locality $i: ID=" . ($loc['LocalityId'] ?? 'N/A') . 
+                         ", Name=" . ($loc['Name'] ?? 'N/A') . 
+                         ", Postal=" . ($loc['CodPostal'] ?? 'EMPTY') . "\n";
+                }
+            }
+        } else {
+            return null;
+        }
+        
         foreach ($response['data'] as $loc) {
             if ((int)($loc['LocalityId'] ?? 0) === (int)$localityId) {
-                return $loc['CodPostal'] ?? null;
+                return $loc['PostalCode'] ?? null;  // ← CHANGE THIS LINE
             }
         }
 

@@ -160,6 +160,101 @@ async function generateAWBDirect(orderId, manualData = {}) {
     }
 }
 
+/**
+ * Download AWB document directly (secure POST method)
+ */
+async function downloadAWB(orderId, awbCode, format = 'label') {
+    if (!orderId || !awbCode) {
+        showNotification('Date lipsă pentru descărcarea AWB', 'error');
+        return;
+    }
+
+    // Validate AWB number format
+    if (!/^\d+$/.test(awbCode)) {
+        showNotification('Format AWB invalid', 'error');
+        return;
+    }
+
+    try {
+        showNotification('Se descarcă documentul AWB...', 'info');
+
+        // Create form data
+        const formData = new FormData();
+        formData.append('order_id', orderId);
+        formData.append('awb', awbCode);
+        formData.append('format', format);
+        
+        const csrf = getCsrfToken();
+        if (csrf) {
+            formData.append('csrf_token', csrf);
+        }
+
+        // Make the download request
+        const response = await fetch('/api/awb/download_awb.php', {
+            method: 'POST',
+            body: formData,
+            credentials: 'same-origin'
+        });
+
+        if (!response.ok) {
+            // Try to get error message from JSON response
+            let errorMessage;
+            try {
+                const errorData = await response.json();
+                errorMessage = errorData.error || `Server error: HTTP ${response.status}`;
+            } catch (jsonError) {
+                errorMessage = `Server error: HTTP ${response.status}`;
+            }
+            throw new Error(errorMessage);
+        }
+
+        // Check content type
+        const contentType = response.headers.get('content-type');
+        
+        if (contentType && contentType.includes('application/pdf')) {
+            // Success - handle PDF download
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            
+            // Create download link
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `AWB_${awbCode}.pdf`;
+            document.body.appendChild(a);
+            a.click();
+            
+            // Cleanup
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+            
+            showNotification('AWB descărcat cu succes', 'success');
+            
+        } else {
+            // Response is likely JSON error
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Format răspuns invalid');
+        }
+
+    } catch (error) {
+        console.error('AWB download error:', error);
+        
+        let errorMessage = 'Eroare la descărcarea AWB';
+        
+        if (error.message.includes('Authentication') || error.message.includes('Access denied')) {
+            errorMessage = 'Sesiune expirată. Autentifică-te din nou.';
+        } else if (error.message.includes('CSRF')) {
+            errorMessage = 'Token securitate invalid. Reîncarcă pagina.';
+        } else if (error.message.includes('Invalid AWB')) {
+            errorMessage = 'Format AWB invalid.';
+        } else if (error.message) {
+            errorMessage = error.message;
+        }
+        
+        showNotification(errorMessage, 'error');
+    }
+}
+
+
 async function fetchAwbStatus(awb, el, refresh = false) {
     if (!el) return;
     
@@ -330,8 +425,7 @@ function showAWBPrinterSelectionModal(orderId, awbCode, orderNumber) {
                         </div>
                     </div>
                     
-                    <button type="button" class="btn btn-outline-info manual-print-btn" onclick="performAwbPrint(${orderId}, '${awbCode}', '${escapeHtml(orderNumber)}', null, getSelectedFormat())">
-                        <span class="material-symbols-outlined">download</span>
+                    <button type="button" class="btn btn-outline-info manual-print-btn" onclick="downloadAWB(${orderId}, '${awbCode}', getSelectedFormat()); this.closest('.modal').remove();">                        <span class="material-symbols-outlined">download</span>
                         Descarcă PDF (printare manuală)
                     </button>
                 </div>

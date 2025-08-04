@@ -375,25 +375,34 @@ class CargusService
                 return ['success' => false, 'error' => 'Authentication failed'];
             }
 
-            // Endpoint may vary; adjust as necessary
-            $response = $this->makeRequest('GET', 'Awbs/' . urlencode($awb) . '/track');
+            // Use AwbTrace endpoint as per Cargus API documentation
+            $endpoint = 'AwbTrace/WithRedirect?barCode=' . rawurlencode(json_encode([$awb]));
+            $response = $this->makeRequest('GET', $endpoint);
 
             if ($response['success']) {
-                $data = $response['data'] ?? [];
-                $status = $data['status'] ?? $data['Status'] ?? ($data['CurrentStatus']['Status'] ?? 'Unknown');
-                $last = $data['last_update'] ?? $data['LastUpdate'] ?? $data['CurrentStatus']['Date'] ?? null;
-                $history = [];
-                if (!empty($data['history']) && is_array($data['history'])) {
-                    foreach ($data['history'] as $h) {
-                        $history[] = [
-                            'time' => $h['time'] ?? $h['Date'] ?? null,
-                            'event' => $h['event'] ?? $h['Status'] ?? ''
-                        ];
+                $payload = $response['data'];
+                // API can return either an array or single object
+                $item = [];
+                if (is_array($payload)) {
+                    // If associative array with Code/History keys
+                    if (isset($payload['Code']) || isset($payload['History'])) {
+                        $item = $payload;
+                    } else {
+                        $item = $payload[0] ?? [];
                     }
-                } elseif (!empty($data['History']) && is_array($data['History'])) {
-                    foreach ($data['History'] as $h) {
+                } elseif (is_object($payload)) {
+                    $item = (array)$payload;
+                }
+
+                $status = $item['Status']['Status'] ?? $item['Status'] ?? 'Unknown';
+                $last   = $item['Status']['Date'] ?? $item['LastUpdate'] ?? null;
+
+                $history = [];
+                $historyData = $item['History'] ?? $item['history'] ?? [];
+                if (is_array($historyData)) {
+                    foreach ($historyData as $h) {
                         $history[] = [
-                            'time' => $h['Date'] ?? $h['time'] ?? null,
+                            'time'  => $h['Date'] ?? $h['time'] ?? null,
                             'event' => $h['Status'] ?? $h['event'] ?? ''
                         ];
                     }
@@ -411,7 +420,11 @@ class CargusService
                 ];
             }
 
-            return ['success' => false, 'error' => $response['error'], 'raw' => $response['raw'] ?? null];
+            return [
+                'success' => false,
+                'error' => $response['error'],
+                'raw' => $response['raw'] ?? null
+            ];
         } catch (Exception $e) {
             return ['success' => false, 'error' => $e->getMessage()];
         }

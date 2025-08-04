@@ -290,50 +290,29 @@ class CargusService
 
             if ($response['success']) {
                 $data = $response['data'] ?? [];
-
-                // Try to extract barcode with fallbacks
-                $candidates = [];
-                foreach (['BarCode', 'Barcode', 'AWB', 'Awb', 'awb', 'AwbNumber', 'awbNumber'] as $key) {
-                    if (!empty($data[$key])) {
-                        $candidates[] = $data[$key];
-                    }
+            
+                // Robust numeric-only extraction (handles raw string and structured responses)
+                $barcode = $this->extractNumericBarcode($data);
+                if ($barcode === '') {
+                    $this->debugLog("AWB created but no valid numeric barcode found. Full response: " . ($response['raw'] ?? json_encode($data)));
                 }
-                if (!empty($data['message'])) {
-                    $candidates[] = $data['message'];
-                }
-                if (!empty($data['ParcelCodes'][0]['Code'])) {
-                    $candidates[] = $data['ParcelCodes'][0]['Code'];
-                }
-
-                $barcode = '';
-                foreach ($candidates as $candidate) {
-                    if (is_string($candidate)) {
-                        $candidate = trim($candidate, "\" \\t\\n\\r\\0\\x0B");
-                        if (preg_match('/^\d+$/', $candidate)) {
-                            $barcode = $candidate;
-                            break;
-                        }
-                    }
-                }
-
-                if (empty($barcode)) {
-                    // Log full response for investigation
-                    $this->debugLog("AWB created but barcode missing. Full response: " . ($response['raw'] ?? json_encode($data)));
-                }
-
-                $this->logInfo('AWB generated successfully', [
-                    'order_id' => $order['id'],
+            
+                $parcelCodes = is_array($data) ? ($data['ParcelCodes'] ?? []) : [];
+                $cargusOrderId = is_array($data) ? ($data['OrderId'] ?? '') : '';
+            
+                $this->logInfo('AWB generation result', [
+                    'order_id' => $order['id'] ?? null,
                     'barcode' => $barcode ?: 'MISSING'
                 ]);
-
+            
                 return [
                     'success' => true,
                     'barcode' => $barcode,
-                    'parcelCodes' => $data['ParcelCodes'] ?? [],
-                    'cargusOrderId' => $data['OrderId'] ?? '',
-                    'raw_response' => $response['raw'] ?? null
+                    'parcelCodes' => $parcelCodes,
+                    'cargusOrderId' => $cargusOrderId,
+                    'raw' => $response['raw'] ?? null
                 ];
-            }
+            }            
 
             $this->logError('AWB generation failed', $response['error'], $response['raw']);
             return [
@@ -351,6 +330,43 @@ class CargusService
                 'code' => 500
             ];
         }
+    }
+
+    /**
+     * Extract the first purely numeric AWB/barcode from whatever the API returned.
+     */
+    private function extractNumericBarcode(mixed $data): string
+    {
+        $candidates = [];
+
+        if (is_string($data)) {
+            $candidates[] = $data;
+        }
+
+        if (is_array($data)) {
+            foreach (['BarCode', 'Barcode', 'message', 'OrderId'] as $field) {
+                if (!empty($data[$field])) {
+                    $candidates[] = $data[$field];
+                }
+            }
+
+            if (!empty($data['ParcelCodes']) && is_array($data['ParcelCodes'])) {
+                foreach ($data['ParcelCodes'] as $pc) {
+                    if (!empty($pc['Code'])) {
+                        $candidates[] = $pc['Code'];
+                    }
+                }
+            }
+        }
+
+        foreach ($candidates as $c) {
+            $s = trim((string)$c, "\" \t\n\r\0\x0B");
+            if (preg_match('/^\d+$/', $s)) {
+                return $s;
+            }
+        }
+
+        return '';
     }
 
     

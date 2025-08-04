@@ -5,7 +5,21 @@
 
 document.addEventListener('DOMContentLoaded', function() {
     console.log('Orders page successfully loaded and scripts are running.');
+    initRealtimeSearch();
 });
+
+function initRealtimeSearch() {
+    const searchInput = document.querySelector('.search-input');
+    if (!searchInput) return;
+
+    searchInput.addEventListener('input', function () {
+        const term = this.value.toLowerCase();
+        document.querySelectorAll('.table tbody tr').forEach(row => {
+            const text = row.textContent.toLowerCase();
+            row.style.display = text.includes(term) ? '' : 'none';
+        });
+    });
+}
 
 let itemCounter = 1;
 

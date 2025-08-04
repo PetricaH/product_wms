@@ -66,15 +66,38 @@ try {
             if (!$order) {
                 respond(['success' => false, 'error' => 'Order not found'], 404);
             }
-            
-            // Check if AWB already exists
-            if (!empty($order['awb_barcode'])) {
+
+            $awbValid = !empty($order['awb_barcode']) && preg_match('/^\d+$/', (string)$order['awb_barcode']);
+            $attempts = (int)($order['awb_generation_attempts'] ?? 0);
+
+            // Block if attempts exceeded and no valid AWB
+            if (!$awbValid && $attempts >= 3) {
+                error_log("AWB generation blocked for order {$orderId}: attempts {$attempts}");
+                respond([
+                    'success' => false,
+                    'error' => 'Max AWB generation attempts reached; please reset attempts or fix order data.',
+                    'data' => [
+                        'order_id' => $orderId,
+                        'awb_generation_attempts' => $attempts
+                    ]
+                ], 429);
+            }
+            // To reset attempts manually: UPDATE orders SET awb_generation_attempts = 0, awb_generation_last_attempt_at = NULL WHERE id = :order_id
+
+            // Check if AWB already exists and is valid
+            if ($awbValid) {
                 respond([
                     'success' => false,
                     'error' => 'AWB already generated for this order',
-                    'existing_barcode' => $order['awb_barcode']
+                    'data' => [
+                        'existing_barcode' => $order['awb_barcode']
+                    ]
                 ], 400);
             }
+
+            // Increment attempt counter
+            $attempts = $orderModel->incrementAwbGenerationAttempts($orderId);
+            error_log("AWB generation attempt {$attempts} for order {$orderId} by user {$_SESSION['user_id']}");
             
             // Apply manual overrides if provided
             $manualData = [];
@@ -128,7 +151,7 @@ try {
                     respond([
                         'success' => false,
                         'error' => 'AWB generation succeeded but no barcode returned',
-                        'raw' => $result
+                        'data' => ['order_id' => $orderId, 'awb_generation_attempts' => $attempts],
                     ], 500);
                 }
 
@@ -147,8 +170,12 @@ try {
                 respond([
                     'success' => true,
                     'message' => 'AWB generat cu succes',
-                    'barcode' => $awbCode,
-                    'parcel_codes' => $result['parcelCodes'] ?? []
+                    'data' => [
+                        'order_id' => $orderId,
+                        'awb_barcode' => $awbCode,
+                        'awb_generation_attempts' => $attempts,
+                        'parcel_codes' => $result['parcelCodes'] ?? []
+                    ]
                 ]);
             } else {
                 // Log failed generation
@@ -164,9 +191,13 @@ try {
                 respond([
                     'success' => false,
                     'error' => $result['error'],
-                    'require_manual_input' => $result['require_manual_input'] ?? false,
-                    'parsed_address' => $result['parsed_address'] ?? null,
-                    'raw' => $result['raw'] ?? null
+                    'data' => [
+                        'order_id' => $orderId,
+                        'awb_generation_attempts' => $attempts,
+                        'require_manual_input' => $result['require_manual_input'] ?? false,
+                        'parsed_address' => $result['parsed_address'] ?? null,
+                        'raw' => $result['raw'] ?? null
+                    ]
                 ], $responseCode);
             }
             break;
@@ -186,11 +217,14 @@ try {
                 respond(['success' => false, 'error' => 'Order not found'], 404);
             }
             
-            if (!empty($order['awb_barcode'])) {
+            if (!empty($order['awb_barcode']) && preg_match('/^\d+$/', (string)$order['awb_barcode'])) {
                 respond([
-                    'can_generate' => false,
-                    'error' => 'AWB already generated',
-                    'existing_barcode' => $order['awb_barcode']
+                    'success' => true,
+                    'data' => [
+                        'can_generate' => false,
+                        'error' => 'AWB already generated',
+                        'existing_barcode' => $order['awb_barcode']
+                    ]
                 ]);
                 return;
             }
@@ -267,11 +301,14 @@ try {
             }
             
             respond([
-                'can_generate' => $canGenerate,
-                'requirements' => $requirements,
-                'weight_info' => $weightInfo,
-                'address_parsed' => $addressParsed,
-                'order_data' => $order
+                'success' => true,
+                'data' => [
+                    'can_generate' => $canGenerate,
+                    'requirements' => $requirements,
+                    'weight_info' => $weightInfo,
+                    'address_parsed' => $addressParsed,
+                    'order_data' => $order
+                ]
             ]);
             break;
             

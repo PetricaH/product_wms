@@ -857,6 +857,22 @@ class Order
     }
 
     /**
+     * Increment AWB generation attempts and update last attempt timestamp
+     *
+     * @param int $orderId
+     * @return int Updated attempt count
+     */
+    public function incrementAwbGenerationAttempts(int $orderId): int {
+        $sql = "UPDATE orders SET awb_generation_attempts = awb_generation_attempts + 1, awb_generation_last_attempt_at = NOW() WHERE id = ?";
+        $stmt = $this->conn->prepare($sql);
+        $stmt->execute([$orderId]);
+
+        $stmt = $this->conn->prepare("SELECT awb_generation_attempts FROM orders WHERE id = ?");
+        $stmt->execute([$orderId]);
+        return (int)$stmt->fetchColumn();
+    }
+
+    /**
      * Get configuration value
      */
     private function getConfigValue($key, $default = null) {

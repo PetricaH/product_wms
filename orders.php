@@ -19,7 +19,8 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
-if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
+$allowedRoles = ['admin', 'warehouse', 'warehouse_worker'];
+if (!isset($_SESSION['user_id']) || !in_array($_SESSION['role'] ?? '', $allowedRoles, true)) {
     header('Location: ' . getNavUrl('login.php'));
     exit;
 }
@@ -37,6 +38,10 @@ require_once BASE_PATH . '/models/Product.php';
 
 $orderModel = new Order($db);
 $productModel = new Product($db);
+
+// Admin reset hint:
+// To reset AWB attempts for an order run:
+// UPDATE orders SET awb_generation_attempts = 0, awb_generation_last_attempt_at = NULL WHERE id = :order_id;
 
 // Handle operations
 $message = '';
@@ -306,18 +311,29 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                     <span title="<?= $weightBreakdown ?>"><?= number_format($displayWeight, 3, '.', '') ?> kg</span>
                                                 </td>
                                                 <td class="awb-column">
-                                                    <?php if (!empty($order['awb_barcode'])): ?>
+                                                    <?php 
+                                                    $attempts = (int)($order['awb_generation_attempts'] ?? 0);
+                                                    $attemptClass = ($attempts >= 3 && (empty($order['awb_barcode']) || !preg_match('/^\\d+$/', $order['awb_barcode']))) ? 'text-danger' : '';
+                                                    ?>
+                                                    <?php if (empty($order['awb_barcode']) || !preg_match('/^\\d+$/', $order['awb_barcode'])): ?>
+                                                        <div class="awb-attempts <?= $attemptClass ?>"><?= $attempts ?>/3</div>
+                                                    <?php endif; ?>
+                                                    <?php if (!empty($order['awb_barcode']) && preg_match('/^\\d+$/', $order['awb_barcode'])): ?>
                                                         <div class="awb-info">
                                                             <span class="awb-barcode"><?= htmlspecialchars($order['awb_barcode']) ?></span>
-                                                            <small>AWB generat</small>
                                                             <?php if (!empty($order['awb_created_at'])): ?>
                                                                 <small><?= date('d.m.Y H:i', strtotime($order['awb_created_at'])) ?></small>
                                                             <?php endif; ?>
+                                                            <div class="awb-status" data-awb="<?= htmlspecialchars($order['awb_barcode']) ?>">Se verifică...</div>
+                                                            <button type="button" class="btn btn-sm btn-outline-secondary refresh-status-btn" data-awb="<?= htmlspecialchars($order['awb_barcode']) ?>">
+                                                                <span class="material-symbols-outlined">refresh</span> Track AWB
+                                                            </button>
+                                                            <button type="button" class="btn btn-sm btn-outline-success" onclick="printAWB(<?= $order['id'] ?>, '<?= htmlspecialchars($order['awb_barcode']) ?>', '<?= htmlspecialchars(addslashes($order['order_number'])) ?>')" title="Printează AWB">
+                                                                <span class="material-symbols-outlined">print</span>
+                                                            </button>
                                                         </div>
                                                     <?php else: ?>
-                                                        <button type="button" class="generate-awb-btn" 
-                                                                data-order-id="<?= $order['id'] ?>"
-                                                                title="Generează AWB">
+                                                        <button type="button" class="generate-awb-btn" data-order-id="<?= $order['id'] ?>" title="Generează AWB">
                                                             <span class="material-symbols-outlined">local_shipping</span>
                                                             Generează AWB
                                                         </button>
@@ -325,31 +341,17 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                 </td>
                                                 <td>
                                                     <div class="btn-group">
-                                                        <button class="btn btn-sm btn-outline-primary"
-                                                                onclick="viewOrderDetails(<?= $order['id'] ?>)"
-                                                                title="Vezi detalii">
+                                                        <button class="btn btn-sm btn-outline-primary" onclick="viewOrderDetails(<?= $order['id'] ?>)" title="Vezi detalii">
                                                             <span class="material-symbols-outlined">visibility</span>
                                                         </button>
-                                                        <button class="btn btn-sm btn-outline-secondary"
-                                                                onclick="openStatusModal(<?= $order['id'] ?>, '<?= htmlspecialchars($order['status']) ?>')"
-                                                                title="Schimbă status">
+                                                        <button class="btn btn-sm btn-outline-secondary" onclick="openStatusModal(<?= $order['id'] ?>, '<?= htmlspecialchars($order['status']) ?>')" title="Schimbă status">
                                                             <span class="material-symbols-outlined">edit</span>
                                                         </button>
-                                                        <?php if (!empty($order['awb_barcode'])): ?>
-                                                            <button class="btn btn-sm btn-outline-success" onclick="printAWB('<?= htmlspecialchars($order['awb_barcode']) ?>')" title="Printează AWB">
-                                                                <span class="material-symbols-outlined">local_shipping</span>
-                                                            </button>
-                                                        <?php else: ?>
-                                                            <button class="btn btn-sm btn-outline-warning" onclick="generateAWB(<?= $order['id'] ?>)" title="Generează AWB">
-                                                                <span class="material-symbols-outlined">local_shipping</span>
-                                                            </button>
-                                                        <?php endif; ?>
                                                         <button class="btn btn-sm btn-outline-info" onclick="printInvoiceWithSelection(<?= $order['id'] ?>)" title="Printează Factura">
                                                             <span class="material-symbols-outlined">print</span>
                                                         </button>
-                                                        <button class="btn btn-sm btn-outline-danger"
-                                                                onclick="openDeleteModal(<?= $order['id'] ?>, '<?= htmlspecialchars(addslashes($order['order_number'])) ?>')"
-                                                                title="Șterge">
+                    
+                                                        <button class="btn btn-sm btn-outline-danger" onclick="openDeleteModal(<?= $order['id'] ?>, '<?= htmlspecialchars(addslashes($order['order_number'])) ?>')" title="Șterge">
                                                             <span class="material-symbols-outlined">delete</span>
                                                         </button>
                                                     </div>

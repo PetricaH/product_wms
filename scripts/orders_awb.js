@@ -86,10 +86,11 @@ async function generateAWBDirect(orderId, manualData = {}) {
         const result = await response.json();
         
         if (result.success) {
-            showNotification(`AWB generat cu succes: ${result.barcode}`, 'success');
-            
+            const awbCode = result.barcode || result.awb_barcode || '';
+            showNotification(`AWB generat cu succes: ${awbCode || 'necunoscut'}`, 'success');
+
             // Update UI to show AWB was generated
-            updateOrderAWBStatus(orderId, result.barcode);
+            updateOrderAWBStatus(orderId, awbCode);
             
             // Optionally reload page to show updated status
             setTimeout(() => {
@@ -261,13 +262,8 @@ function showAWBManualInputModal(orderId, requirementsData) {
                                 <div class="form-row">
                                     <div class="form-group">
                                         <label>Greutate (kg) *</label>
-                                        <input type="number" step="0.1" name="total_weight" 
+                                        <input type="number" step="0.1" name="total_weight"
                                                value="${requirementsData.weight_info?.weight || ''}" required>
-                                    </div>
-                                    <div class="form-group">
-                                        <label>Valoare declarată</label>
-                                        <input type="number" step="0.01" name="declared_value" 
-                                               value="${orderData.total_value || ''}">
                                     </div>
                                 </div>
                                 <div class="form-row">
@@ -277,7 +273,7 @@ function showAWBManualInputModal(orderId, requirementsData) {
                                     </div>
                                     <div class="form-group">
                                         <label>Plicuri</label>
-                                        <input type="number" name="envelopes_count" value="${orderData.envelopes_count || 0}" max="9">
+                                        <input type="number" name="envelopes_count" value="${orderData.envelopes_count || 1}" max="9">
                                     </div>
                                 </div>
                                 <div class="form-group">

@@ -333,40 +333,54 @@ class CargusService
     }
 
     /**
-     * Extract the first purely numeric AWB/barcode from whatever the API returned.
+     * Track AWB status via Cargus API
      */
-    private function extractNumericBarcode(mixed $data): string
-    {
-        $candidates = [];
-
-        if (is_string($data)) {
-            $candidates[] = $data;
-        }
-
-        if (is_array($data)) {
-            foreach (['BarCode', 'Barcode', 'message', 'OrderId'] as $field) {
-                if (!empty($data[$field])) {
-                    $candidates[] = $data[$field];
-                }
+    public function trackAWB(string $awb) {
+        try {
+            if (!$this->authenticate()) {
+                return ['success' => false, 'error' => 'Authentication failed'];
             }
 
-            if (!empty($data['ParcelCodes']) && is_array($data['ParcelCodes'])) {
-                foreach ($data['ParcelCodes'] as $pc) {
-                    if (!empty($pc['Code'])) {
-                        $candidates[] = $pc['Code'];
+            // Endpoint may vary; adjust as necessary
+            $response = $this->makeRequest('GET', 'Awbs/' . urlencode($awb) . '/track');
+
+            if ($response['success']) {
+                $data = $response['data'] ?? [];
+                $status = $data['status'] ?? $data['Status'] ?? ($data['CurrentStatus']['Status'] ?? 'Unknown');
+                $last = $data['last_update'] ?? $data['LastUpdate'] ?? $data['CurrentStatus']['Date'] ?? null;
+                $history = [];
+                if (!empty($data['history']) && is_array($data['history'])) {
+                    foreach ($data['history'] as $h) {
+                        $history[] = [
+                            'time' => $h['time'] ?? $h['Date'] ?? null,
+                            'event' => $h['event'] ?? $h['Status'] ?? ''
+                        ];
+                    }
+                } elseif (!empty($data['History']) && is_array($data['History'])) {
+                    foreach ($data['History'] as $h) {
+                        $history[] = [
+                            'time' => $h['Date'] ?? $h['time'] ?? null,
+                            'event' => $h['Status'] ?? $h['event'] ?? ''
+                        ];
                     }
                 }
-            }
-        }
 
-        foreach ($candidates as $c) {
-            $s = trim((string)$c, "\" \t\n\r\0\x0B");
-            if (preg_match('/^\d+$/', $s)) {
-                return $s;
+                return [
+                    'success' => true,
+                    'data' => [
+                        'awb' => $awb,
+                        'status' => $status,
+                        'last_update' => $last,
+                        'history' => $history
+                    ],
+                    'raw' => $response['raw'] ?? null
+                ];
             }
-        }
 
-        return '';
+            return ['success' => false, 'error' => $response['error'], 'raw' => $response['raw'] ?? null];
+        } catch (Exception $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
     }
 
     

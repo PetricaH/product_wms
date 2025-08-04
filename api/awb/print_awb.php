@@ -162,7 +162,7 @@ try {
     
     respond($result);
     
-} catch (Exception $e) {
+} catch (Throwable $e) {
     error_log("AWB print error: " . $e->getMessage() . "\n" . $e->getTraceAsString());
     respond(['success' => false, 'error' => 'Internal server error'], 500);
 }
@@ -203,7 +203,7 @@ function sendToPrintServer($serverUrl, $pdfPath) {
         
         return ['success' => false, 'error' => 'Invalid response from print server: ' . $response];
         
-    } catch (Exception $e) {
+    } catch (Throwable $e) {
         return ['success' => false, 'error' => 'Print server exception: ' . $e->getMessage()];
     }
 }

@@ -918,9 +918,18 @@ public function getAwbDocuments($awbCodes, $type = 'PDF', $format = 1, $printMai
             return ['success' => false, 'error' => $errorMsg];
         }
 
-        // Validate base64 data
+
+        // Validate base64 data or return API error message
         $base64Data = $result['raw'];
-        if (empty($base64Data) || !preg_match('/^[A-Za-z0-9+\/=\r\n]+$/', $base64Data)) {
+
+        // If we got a JSON response, surface the error message instead of a base64 error
+        if (!empty($result['data']) && is_array($result['data'])) {
+            $apiError = $result['data']['message'] ?? $result['data']['error'] ?? 'Unknown error';
+            return ['success' => false, 'error' => 'AWB Documents API error: ' . $apiError];
+        }
+
+        $decoded = base64_decode($base64Data, true);
+        if ($decoded === false) {
             return ['success' => false, 'error' => 'Invalid base64 data received from Cargus API'];
         }
 

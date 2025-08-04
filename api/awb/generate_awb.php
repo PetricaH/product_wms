@@ -116,13 +116,13 @@ try {
             $result = $cargusService->generateAWB($order);
 
             if ($result['success']) {
+
                 $awbCode = null;
                 if (!empty($result['barcode'])) {
                     $awbCode = trim((string)$result['barcode']);
                 } elseif (!empty($result['message']) && preg_match('/^\d+$/', (string)$result['message'])) {
                     $awbCode = trim((string)$result['message']);
                 }
-
                 if (empty($awbCode)) {
                     error_log("AWB generation succeeded but no barcode returned for order $orderId. Raw response: " . json_encode($result));
                     respond([

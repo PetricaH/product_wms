@@ -318,9 +318,7 @@ function generateAWB(orderId) {
         } else if (error.message.includes('CSRF')) {
             errorMessage = 'Eroare de securitate. Reîncărcați pagina și încercați din nou.';
         } else if (error.message.includes('Order not found')) {
-            errorMessage = 'Comanda nu a fost găsită sau nu este în starea corectă pentru generarea AWB.';
-        } else if (error.message.includes('AWB can only be generated for picked orders')) {
-            errorMessage = 'AWB poate fi generat doar pentru comenzile în starea "Pregătit pentru expediere".';
+            errorMessage = 'Comanda nu a fost găsită.';
         } else if (error.message.includes('AWB already exists')) {
             errorMessage = 'AWB-ul a fost deja generat pentru această comandă.';
         } else if (error.message) {

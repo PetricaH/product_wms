@@ -275,7 +275,7 @@ async function printAWB(orderId, awbCode, orderNumber) {
         
         // Show printer selection if multiple printers available
         if (availablePrinters.length > 1) {
-            showPrinterSelectionModal(orderId, awbCode, orderNumber);
+            showAWBPrinterSelectionModal(orderId, awbCode, orderNumber);
         } else if (availablePrinters.length === 1) {
             // Use the only available printer
             await performAwbPrint(orderId, awbCode, orderNumber, availablePrinters[0].id);
@@ -290,7 +290,7 @@ async function printAWB(orderId, awbCode, orderNumber) {
     }
 }
 
-function showPrinterSelectionModal(orderId, awbCode, orderNumber) {
+function showAWBPrinterSelectionModal(orderId, awbCode, orderNumber) {
     const modal = document.createElement('div');
     modal.className = 'modal';
     modal.style.display = 'flex';

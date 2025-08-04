@@ -332,6 +332,40 @@ class CargusService
         }
     }
 
+    private function extractNumericBarcode(mixed $data): string
+    {
+        $candidates = [];
+
+        if (is_string($data)) {
+            $candidates[] = $data;
+        }
+
+        if (is_array($data)) {
+            foreach (['BarCode', 'Barcode', 'message', 'OrderId'] as $field) {
+                if (!empty($data[$field])) {
+                    $candidates[] = $data[$field];
+                }
+            }
+
+            if (!empty($data['ParcelCodes']) && is_array($data['ParcelCodes'])) {
+                foreach ($data['ParcelCodes'] as $pc) {
+                    if (!empty($pc['Code'])) {
+                        $candidates[] = $pc['Code'];
+                    }
+                }
+            }
+        }
+
+        foreach ($candidates as $c) {
+            $s = trim((string)$c, "\" \t\n\r\0\x0B");
+            if (preg_match('/^\d+$/', $s)) {
+                return $s;
+            }
+        }
+
+        return '';
+    }
+
     /**
      * Track AWB status via Cargus API
      */

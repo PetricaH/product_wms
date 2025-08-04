@@ -278,25 +278,36 @@ try {
             // Check address mapping
             $addressParsed = null;
             if (empty($order['recipient_county_id']) || empty($order['recipient_locality_id'])) {
-                // Try to parse address
-                $reflection = new ReflectionClass($cargusService);
-                $parseMethod = $reflection->getMethod('parseShippingAddress');
-                $parseMethod->setAccessible(true);
-                $addressParsed = $parseMethod->invoke($cargusService, $order['shipping_address']);
-                
-                if (empty($addressParsed['county']) || empty($addressParsed['locality'])) {
-                    $requirements[] = 'Cannot determine delivery location from address';
-                    $canGenerate = false;
-                } else {
-                    // Check if mapping exists
-                    $findMethod = $reflection->getMethod('findAddressMapping');
-                    $findMethod->setAccessible(true);
-                    $mapping = $findMethod->invoke($cargusService, $addressParsed['county'], $addressParsed['locality']);
-                    
-                    if (!$mapping) {
-                        $requirements[] = 'Cargus location mapping not found (manual input needed)';
+                if (!empty($order['shipping_address'])) {
+                    try {
+                        // Try to parse address
+                        $reflection = new ReflectionClass($cargusService);
+                        $parseMethod = $reflection->getMethod('parseShippingAddress');
+                        $parseMethod->setAccessible(true);
+                        $addressParsed = $parseMethod->invoke($cargusService, (string)$order['shipping_address']);
+
+                        if (empty($addressParsed['county']) || empty($addressParsed['locality'])) {
+                            $requirements[] = 'Cannot determine delivery location from address';
+                            $canGenerate = false;
+                        } else {
+                            // Check if mapping exists
+                            $findMethod = $reflection->getMethod('findAddressMapping');
+                            $findMethod->setAccessible(true);
+                            $mapping = $findMethod->invoke($cargusService, (string)$addressParsed['county'], (string)$addressParsed['locality']);
+
+                            if (!$mapping) {
+                                $requirements[] = 'Cargus location mapping not found (manual input needed)';
+                                $canGenerate = false;
+                            }
+                        }
+                    } catch (Throwable $e) {
+                        $requirements[] = 'Address parsing failed';
                         $canGenerate = false;
+                        error_log('AWB requirements address parsing error: ' . $e->getMessage());
                     }
+                } else {
+                    $requirements[] = 'Shipping address required';
+                    $canGenerate = false;
                 }
             }
             

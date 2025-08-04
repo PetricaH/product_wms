@@ -351,46 +351,60 @@ class CargusService
     $this->debugLog("Input - Parcels: {$parcelsCount}, Envelopes: {$envelopesCount}, Total API Weight: {$totalWeightAPI}");
 
     $parcelCodes = [];
+    $parcelDetails = $calculatedData['parcels_detail'] ?? [];
 
     // Parcels (Type = 1)
-if ($parcelsCount > 0) {
-    $weightPerParcel = (int)($totalWeightAPI / $parcelsCount);
-    for ($i = 0; $i < $parcelsCount; $i++) {
-        $thisParcelWeight = $weightPerParcel;
-        if ($i == $parcelsCount - 1) {
-            $totalAssigned = $weightPerParcel * ($parcelsCount - 1);
-            $thisParcelWeight = $totalWeightAPI - $totalAssigned;
-        }
-        $thisParcelWeight = max(1, $thisParcelWeight);
-        $this->debugLog("Parcel {$i}: Weight = {$thisParcelWeight} kg");
-        $parcelCodes[] = [
-            'Code' => (string)$i,
-            'Type' => 1, // 1 = parcel
-            'Weight' => $thisParcelWeight,
-            'Length' => 20,
-            'Width' => 20,
-            'Height' => 20,
-            'ParcelContent' => 'Colet ' . ($i + 1)
-        ];
-    }
-}
+    if ($parcelsCount > 0) {
+        $weightPerParcel = $parcelsCount > 0 ? ($totalWeightAPI / $parcelsCount) : 0;
+        for ($i = 0; $i < $parcelsCount; $i++) {
+            $detail = $parcelDetails[$i] ?? [];
 
-// Envelopes (Type = 0)
-if ($envelopesCount > 0) {
-    for ($i = 0; $i < $envelopesCount; $i++) {
-        $envelopeWeight = 1;
-        $this->debugLog("Envelope {$i}: Weight = {$envelopeWeight} kg");
-        $parcelCodes[] = [
-            'Code' => (string)($parcelsCount + $i),
-            'Type' => 0, // 0 = envelope
-            'Weight' => $envelopeWeight,
-            'Length' => 25,
-            'Width' => 15,
-            'Height' => 1,
-            'ParcelContent' => 'Plic ' . ($i + 1)
-        ];
+            $thisParcelWeight = $detail['weight'] ?? $weightPerParcel;
+            if ($i == $parcelsCount - 1 && !isset($detail['weight'])) {
+                $totalAssigned = (int)$weightPerParcel * ($parcelsCount - 1);
+                $thisParcelWeight = $totalWeightAPI - $totalAssigned;
+            }
+
+            $length = $detail['length'] ?? $calculatedData['package_length'] ?? 20;
+            $width  = $detail['width'] ?? $calculatedData['package_width'] ?? 20;
+            $height = $detail['height'] ?? $calculatedData['package_height'] ?? 20;
+            $content = $detail['content'] ?? 'Colet ' . ($i + 1);
+
+            $thisParcelWeight = max(1, (int)round($thisParcelWeight));
+            $length = max(1, (int)round($length));
+            $width  = max(1, (int)round($width));
+            $height = max(1, (int)round($height));
+
+            $this->debugLog("Parcel {$i}: Weight = {$thisParcelWeight} kg, L={$length}, W={$width}, H={$height}");
+
+            $parcelCodes[] = [
+                'Code' => (string)$i,
+                'Type' => 1, // 1 = parcel
+                'Weight' => $thisParcelWeight,
+                'Length' => $length,
+                'Width' => $width,
+                'Height' => $height,
+                'ParcelContent' => $content
+            ];
+        }
     }
-}
+
+    // Envelopes (Type = 0)
+    if ($envelopesCount > 0) {
+        for ($i = 0; $i < $envelopesCount; $i++) {
+            $envelopeWeight = 1;
+            $this->debugLog("Envelope {$i}: Weight = {$envelopeWeight} kg");
+            $parcelCodes[] = [
+                'Code' => (string)($parcelsCount + $i),
+                'Type' => 0, // 0 = envelope
+                'Weight' => $envelopeWeight,
+                'Length' => 25,
+                'Width' => 15,
+                'Height' => 1,
+                'ParcelContent' => 'Plic ' . ($i + 1)
+            ];
+        }
+    }
 
     // Verification with updated type semantics
     $actualParcels = array_filter($parcelCodes, fn($p) => $p['Type'] === 1);

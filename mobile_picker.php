@@ -27,17 +27,20 @@ $hasOrderFromUrl = !empty($orderNumber);
                 </div>
                 <div class="customer-name" id="customer-name">Loading...</div>
             </div>
-            <button id="print-invoice-btn" class="btn btn-secondary btn-sm <?= !$hasOrderFromUrl ? 'hidden' : '' ?>" title="Printează Factura">
-                <span class="material-symbols-outlined">print</span>
-            </button>
-            <button id="generate-awb-btn" class="btn btn-primary btn-sm generate-awb-btn hidden" title="Generează AWB">
-                <span class="material-symbols-outlined">local_shipping</span>
-                Generează AWB
-            </button>
-            <button id="print-awb-btn" class="btn btn-success btn-sm hidden" title="Printează AWB">
-                <span class="material-symbols-outlined">print</span>
-                Printează AWB
-            </button>
+            <div class="order-actions-btns">
+                <button id="print-invoice-btn" class="btn btn-primary <?= !$hasOrderFromUrl ? 'hidden' : '' ?>" title="Printează Factura">
+                    <span class="material-symbols-outlined">print</span>
+                    Printează Factura
+                </button>
+                <button id="generate-awb-btn" class="btn btn-primary generate-awb-btn hidden" title="Generează AWB">
+                    <span class="material-symbols-outlined">local_shipping</span>
+                    Generează AWB
+                </button>
+                <button id="print-awb-btn" class="btn btn-success hidden" title="Printează AWB">
+                    <span class="material-symbols-outlined">print</span>
+                    Printează AWB
+                </button>
+            </div>
         </div>
     </div>
 

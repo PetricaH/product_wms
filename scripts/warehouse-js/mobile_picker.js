@@ -846,11 +846,11 @@ document.addEventListener('DOMContentLoaded', () => {
         
         elements.messageContainer.appendChild(messageEl);
         
-        // Auto-remove after 4 seconds
+        // Auto-remove after 1.5 seconds for snappier feedback
         setTimeout(() => {
             messageEl.style.animation = 'slideUp 0.3s ease reverse';
             setTimeout(() => messageEl.remove(), 300);
-        }, 4000);
+        }, 1500);
         
         console.log(`${type.toUpperCase()}: ${message}`);
     }

@@ -46,8 +46,7 @@ $pageSpecificJS = [
     'universal' => 'universal.js',
     'smartbill-sync' => 'smartbill_sync.js',
     'locations' => 'locations.js',
-    'orders' => 'orders.js',
-    'orders' => 'orders_awb.js',
+    'orders' => ['orders.js', 'orders_awb.js'],
     'sellers' => 'sellers.js',
     'purchase_orders' => 'purchase_orders.js',
     'product-units' => 'product-units.js',
@@ -57,28 +56,34 @@ $pageSpecificJS = [
     'warehouse_settings' => 'warehouse_settings.js'
 ];
 
-// Check if a specific script is defined for the current page in our array.
+// Check if specific scripts are defined for the current page in our array.
 if (isset($pageSpecificJS[$currentPage])) {
-    $jsFileName = $pageSpecificJS[$currentPage];
-    $jsFilePath = BASE_PATH . '/scripts/' . $jsFileName;
+    $jsFiles = $pageSpecificJS[$currentPage];
+    if (!is_array($jsFiles)) {
+        $jsFiles = [$jsFiles];
+    }
 
-    // As a safeguard, we still check if the file physically exists.
-    if (file_exists($jsFilePath)) {
-        $jsUrl = '';
-        
-        // Determine the correct URL based on the environment.
-        if (function_exists('in_prod') && in_prod()) {
-            if (function_exists('asset')) {
-                $jsUrl = asset('scripts/' . $jsFileName);
+    foreach ($jsFiles as $jsFileName) {
+        $jsFilePath = BASE_PATH . '/scripts/' . $jsFileName;
+
+        // As a safeguard, we still check if the file physically exists.
+        if (file_exists($jsFilePath)) {
+            $jsUrl = '';
+
+            // Determine the correct URL based on the environment.
+            if (function_exists('in_prod') && in_prod()) {
+                if (function_exists('asset')) {
+                    $jsUrl = asset('scripts/' . $jsFileName);
+                }
+            } else {
+                // Development environment path.
+                $jsUrl = BASE_URL . 'scripts/' . $jsFileName;
             }
-        } else {
-            // Development environment path.
-            $jsUrl = BASE_URL . 'scripts/' . $jsFileName;
-        }
-        
-        // If a URL was successfully generated, output the script tag.
-        if ($jsUrl) {
-            echo '<script src="' . $jsUrl . '?v=' . filemtime($jsFilePath) . '" defer></script>';
+
+            // If a URL was successfully generated, output the script tag.
+            if ($jsUrl) {
+                echo '<script src="' . $jsUrl . '?v=' . filemtime($jsFilePath) . '" defer></script>';
+            }
         }
     }
 }

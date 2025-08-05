@@ -275,8 +275,11 @@ class WarehouseReceiving {
         try {
             const resp = await fetch(`${this.config.apiBase}/products.php?search=${encodeURIComponent(query)}`);
             const data = await resp.json();
-            if (resp.ok && Array.isArray(data)) {
-                this.displayProducts(data);
+            if (resp.ok) {
+                const products = Array.isArray(data) ? data : data.data;
+                if (Array.isArray(products)) {
+                    this.displayProducts(products);
+                }
             }
         } catch (err) {
             console.error('Product search error:', err);

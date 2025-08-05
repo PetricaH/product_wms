@@ -103,7 +103,7 @@ try {
                 WHERE oi.order_id = o.id
             ), 0) AS remaining_items
         FROM orders o
-        WHERE o.status IN ('Pending', 'Processing', 'assigned', 'pending', 'processing')
+        WHERE o.status IN ('Pending', 'Processing', 'assigned', 'pending', 'processing', 'ready_to_ship')
         ORDER BY
             CASE LOWER(o.priority)
                 WHEN 'urgent' THEN 1

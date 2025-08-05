@@ -99,8 +99,7 @@ try {
 
     // Send to print server - using same method as successful test print
     $printServerUrl = "http://{$printer['ip_address']}:{$printer['port']}/print_server.php";
-    $printResult = sendToPrintServer($printServerUrl, $invoiceUrl);
-
+    $printResult = sendToPrintServer($printServerUrl, $invoiceUrl, $printer['network_identifier']);
     // Update print job status
     updatePrintJobStatus($db, $jobId, $printResult['success'], $printResult['error'] ?? null);
 
@@ -213,9 +212,14 @@ function createAccessiblePdfUrl(string $originalPdfPath, string $fileName): ?str
     }
 }
 
-function sendToPrintServer(string $printServerUrl, string $pdfUrl): array {
-    // Use EXACT same method as working test print
-    $url = $printServerUrl . '?url=' . urlencode($pdfUrl);
+function sendToPrintServer(string $printServerUrl, string $pdfUrl, string $printerName = null): array {
+    // Build URL with printer parameter - this was missing!
+    $params = ['url' => $pdfUrl];
+    if ($printerName) {
+        $params['printer'] = $printerName;
+    }
+    
+    $url = $printServerUrl . '?' . http_build_query($params);
     
     error_log("Sending to print server: " . $url);
     

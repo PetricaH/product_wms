@@ -105,18 +105,21 @@ try {
     
     // Create print job record
     $jobStmt = $db->prepare('
-        INSERT INTO print_jobs (order_id, printer_id, print_server_id, document_type, document_path, status, created_at, created_by)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO print_jobs (order_id, printer_id, print_server_id, job_type, file_url, status)
+        VALUES (?, ?, ?, ?, ?, ?)
     ');
+
+    if (!$printer || !$printer['id'] || !$printer['print_server_id']) {
+        respond(['success' => false, 'error' => 'Printer configuration incomplete'], 400);
+    }
+    
     $jobStmt->execute([
         $orderId,
-        $printer['id'] ?? null,
-        $printer['print_server_id'] ?? null,
+        $printer['id'],                    // Remove ?? null since it's NOT NULL
+        $printer['print_server_id'],       // Remove ?? null since it's NOT NULL  
         'awb',
         $tempFile,
-        'pending',
-        date('Y-m-d H:i:s'),
-        $_SESSION['user_id']
+        'pending'
     ]);
     $jobId = $db->lastInsertId();
     
@@ -125,16 +128,16 @@ try {
     // If printer is specified and available, send to print server
     if ($printer && $printer['ip_address'] && $printer['server_active']) {
         $printServerUrl = "http://{$printer['ip_address']}:{$printer['port']}/print_server.php";
-        $printSuccess = sendToPrintServer($printServerUrl, $tempFile);
+        $printSuccess = sendToPrintServer($printServerUrl, $tempFile, $printer['network_identifier']);
         
         // Update job status
         $statusStmt = $db->prepare('
             UPDATE print_jobs 
-            SET status = ?, printed_at = ?, error_message = ? 
+            SET status = ?, completed_at = ?, error_message = ? 
             WHERE id = ?
         ');
         $statusStmt->execute([
-            $printSuccess['success'] ? 'completed' : 'failed',
+            $printSuccess['success'] ? 'success' : 'failed',  // 'success' matches your enum
             date('Y-m-d H:i:s'),
             $printSuccess['error'] ?? null,
             $jobId
@@ -167,44 +170,55 @@ try {
     respond(['success' => false, 'error' => 'Internal server error'], 500);
 }
 
-function sendToPrintServer($serverUrl, $pdfPath) {
+function sendToPrintServer($serverUrl, $pdfPath, $printerName = null) {
     try {
-        $pdfData = file_get_contents($pdfPath);
-        if (!$pdfData) {
-            return ['success' => false, 'error' => 'Could not read PDF file'];
+        // Create accessible URL for the PDF file (same method as invoice printing)
+        $baseUrl = getExternalBaseUrl();
+        $fileName = basename($pdfPath);
+        $pdfUrl = $baseUrl . '/storage/temp/' . $fileName;
+        
+        // Build print server URL with parameters (same as working invoice printing)
+        $params = ['url' => $pdfUrl];
+        if ($printerName) {
+            $params['printer'] = $printerName;  // This was missing!
         }
         
-        $postData = [
-            'action' => 'print',
-            'type' => 'pdf', 
-            'data' => base64_encode($pdfData),
-            'copies' => 1
-        ];
+        $printUrl = $serverUrl . '?' . http_build_query($params);
+        
+        error_log("AWB Print server URL: " . $printUrl);
         
         $context = stream_context_create([
             'http' => [
-                'method' => 'POST',
-                'header' => 'Content-Type: application/x-www-form-urlencoded',
-                'content' => http_build_query($postData),
-                'timeout' => 30
+                'method' => 'GET',
+                'timeout' => 15,
+                'ignore_errors' => true
             ]
         ]);
         
-        $response = file_get_contents($serverUrl, false, $context);
+        $response = @file_get_contents($printUrl, false, $context);
+        
+        error_log("AWB Print server response: " . ($response ?: 'NO RESPONSE'));
+        
         if ($response === false) {
             return ['success' => false, 'error' => 'Failed to connect to print server'];
         }
         
-        $result = json_decode($response, true);
-        
-        if ($result && isset($result['success'])) {
-            return $result;
+        // Check for success indicators (same as invoice printing)
+        if (strpos($response, 'Trimis la imprimantă') !== false || 
+            strpos($response, 'sent to printer') !== false ||
+            strpos($response, 'Print successful') !== false) {
+            return ['success' => true];
         }
         
-        return ['success' => false, 'error' => 'Invalid response from print server: ' . $response];
+        return ['success' => false, 'error' => 'Print server returned: ' . $response];
         
     } catch (Throwable $e) {
         return ['success' => false, 'error' => 'Print server exception: ' . $e->getMessage()];
     }
+}
+
+function getExternalBaseUrl() {
+    // Use the same external IP as your invoice printing
+    return 'http://195.133.74.33';
 }
 ?>

@@ -13,6 +13,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // SILENT TIMING INTEGRATION - Initialize TimingManager
     const timingManager = new TimingManager('picking');
     let currentTaskId = null; // Track current timing task silently
+
+    let availablePrinters = [];
     
     // Global State
     let currentOrder = null;
@@ -107,6 +109,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function init() {
         setupEventListeners();
         updateAwbButtons();
+        loadAvailablePrinters();
 
         // Auto-load order if provided in URL
         if (window.PICKER_CONFIG?.hasOrderFromUrl && window.PICKER_CONFIG?.orderFromUrl) {
@@ -166,6 +169,27 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Quantity input validation
         elements.pickedQuantityInput?.addEventListener('input', validateQuantityInput);
+    }
+
+    // Add this function to load available printers
+    async function loadAvailablePrinters() {
+        try {
+            const response = await fetch('api/printer_management.php?path=printers');
+            if (response.ok) {
+                const data = await response.json();
+                availablePrinters = data.filter(p => 
+                    p.is_active && 
+                    (p.printer_type === 'awb' || p.printer_type === 'label' || p.printer_type === 'universal')
+                );
+                // Also set window.availablePrinters for compatibility
+                window.availablePrinters = availablePrinters;
+                console.log('Loaded printers:', availablePrinters);
+            }
+        } catch (error) {
+            console.error('Failed to load printers:', error);
+            availablePrinters = [];
+            window.availablePrinters = [];
+        }
     }
 
     async function handleLoadOrder() {
@@ -775,20 +799,28 @@ document.addEventListener('DOMContentLoaded', () => {
             showLoading(true);
             const formData = new FormData();
             formData.append('order_id', currentOrder.id);
-            const response = await fetch(`${API_BASE}/invoices/print_invoice.php`, {
+            
+            // Use the network printer endpoint instead
+            const response = await fetch(`${API_BASE}/invoices/print_invoice_network.php`, {
                 method: 'POST',
                 body: formData
             });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            
             const text = await response.text();
             const data = JSON.parse(text);
+            
             if (data.status === 'success') {
                 showMessage('Factura a fost trimisă la imprimantă.', 'success');
             } else {
-                throw new Error(data.message || 'Eroare la imprimare');
+                showMessage(`Eroare la printarea facturii: ${data.message}`, 'error');
             }
-        } catch (err) {
-            console.error('Print invoice error:', err);
-            showMessage(`Eroare la imprimare: ${err.message}`, 'error');
+        } catch (error) {
+            console.error('Error printing invoice:', error);
+            showMessage(`Eroare la printarea facturii: ${error.message}`, 'error');
         } finally {
             showLoading(false);
         }

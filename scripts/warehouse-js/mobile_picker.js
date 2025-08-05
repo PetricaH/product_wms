@@ -133,8 +133,9 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         elements.printAwbBtn?.addEventListener('click', () => {
-            if (currentOrder?.awb_barcode) {
-                printAWBDirect(currentOrder.id, currentOrder.awb_barcode, currentOrder.order_number);
+            const awbCode = currentOrder?.awb_barcode || currentOrder?.tracking_number;
+            if (awbCode) {
+                printAWBDirect(currentOrder.id, awbCode, currentOrder.order_number);
             }
         });
         
@@ -202,6 +203,11 @@ document.addEventListener('DOMContentLoaded', () => {
             currentOrder = data.data || data.order;
             orderItems = currentOrder.items || data.items || [];
 
+            // Normalize AWB field from API (tracking_number vs awb_barcode)
+            if (currentOrder) {
+                currentOrder.awb_barcode = currentOrder.awb_barcode || currentOrder.tracking_number || currentOrder.awb || null;
+            }
+
             console.log('Current order:', currentOrder);
             console.log('Order items:', orderItems);
 
@@ -236,14 +242,19 @@ document.addEventListener('DOMContentLoaded', () => {
     function updateAwbButtons() {
         if (!elements.generateAwbBtn || !elements.printAwbBtn) return;
 
-        if (currentOrder?.awb_barcode) {
+        const awbCode = currentOrder?.awb_barcode || currentOrder?.tracking_number || currentOrder?.awb;
+
+        if (awbCode) {
+            // Ensure AWB code is stored consistently
+            currentOrder.awb_barcode = awbCode;
+
             elements.generateAwbBtn.classList.add('hidden');
             elements.printAwbBtn.classList.remove('hidden');
             elements.printAwbBtn.disabled = false;
             elements.printAwbBtn.classList.add('btn-pulse');
 
             if (elements.orderAwb && elements.awbCode) {
-                elements.awbCode.textContent = currentOrder.awb_barcode;
+                elements.awbCode.textContent = awbCode;
                 elements.orderAwb.classList.remove('hidden');
             }
             if (elements.orderInfo) {

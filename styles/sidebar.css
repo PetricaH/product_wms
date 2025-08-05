@@ -4,7 +4,7 @@
 /* ===== SIDEBAR CONTAINER ===== */
 .sidebar {
     width: var(--sidebar-width);
-    min-height: 100vh;
+    height: 100vh;
     background: linear-gradient(180deg, var(--dark-gray) 0%, var(--darker-gray) 100%);
     border-right: 1px solid rgba(255, 255, 255, 0.1);
     display: flex;
@@ -15,6 +15,7 @@
     z-index: 1000;
     transition: var(--sidebar-transition);
     box-shadow: 2px 0 10px rgba(0, 0, 0, 0.3);
+    overflow-y: auto;
 }
 
 .sidebar.collapsed {

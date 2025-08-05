@@ -653,7 +653,12 @@ class Order
         }
         
         $errors = [];
-        
+
+        // Status validation
+        if (($order['status'] ?? '') !== 'picked') {
+            $errors[] = 'Order status must be picked';
+        }
+
         // AWB already exists check
         if (!empty($order['awb_barcode'])) {
             $errors[] = 'AWB already generated: ' . $order['awb_barcode'];

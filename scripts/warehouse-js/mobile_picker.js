@@ -849,8 +849,8 @@ document.addEventListener('DOMContentLoaded', () => {
         // Auto-remove after 1.5 seconds for snappier feedback
         setTimeout(() => {
             messageEl.style.animation = 'slideUp 0.3s ease reverse';
-            setTimeout(() => messageEl.remove(), 300);
-        }, 1500);
+            setTimeout(() => messageEl.remove(), 200);
+        }, 1000);
         
         console.log(`${type.toUpperCase()}: ${message}`);
     }

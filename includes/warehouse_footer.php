@@ -1,5 +1,5 @@
 <?php
-// File: includes/warehouse_footer.php - Enhanced with Timing Integration
+// File: includes/warehouse_footer.php - Enhanced with Timing & AWB Integration
 
 // The $currentPage variable should be defined in the main page file.
 if (!isset($currentPage)) {
@@ -20,11 +20,28 @@ if (file_exists($universalJsPath)) {
     echo '<script src="' . $universalJsUrl . '?v=' . filemtime($universalJsPath) . '"></script>';
 }
 
+// Include orders_awb.js for the orders page (stored in /scripts/)
+$specialPageScripts = [
+    'mobile_picker' => 'orders_awb.js',
+];
+if (isset($specialPageScripts[$currentPage])) {
+    $jsFileName = $specialPageScripts[$currentPage];
+    $jsFilePath = BASE_PATH . '/scripts/' . $jsFileName;
+    if (file_exists($jsFilePath)) {
+        if (function_exists('in_prod') && in_prod() && function_exists('asset')) {
+            $jsUrl = asset('scripts/' . $jsFileName);
+        } else {
+            $jsUrl = BASE_URL . 'scripts/' . $jsFileName;
+        }
+        echo '<script src="' . $jsUrl . '?v=' . filemtime($jsFilePath) . '"></script>';
+    }
+}
+
 // Define warehouse-specific JavaScript files mapping (from warehouse-js folder)
 $warehousePageJS = [
-    'warehouse_orders' => 'warehouse_orders.js',
-    'warehouse_hub' => 'warehouse_hub.js',
-    'mobile_picker' => 'mobile_picker.js',        // Will use silent timing
+    'warehouse_orders'    => 'warehouse_orders.js',
+    'warehouse_hub'       => 'warehouse_hub.js',
+    'mobile_picker'       => 'mobile_picker.js',        // Will use silent timing
     'warehouse_receiving' => 'warehouse_receiving.js',  // Will use silent timing
     'warehouse_inventory' => 'warehouse_inventory.js'
 ];

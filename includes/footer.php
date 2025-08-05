@@ -47,6 +47,7 @@ $pageSpecificJS = [
     'smartbill-sync' => 'smartbill_sync.js',
     'locations' => 'locations.js',
     'orders' => 'orders.js',
+    'orders' => 'orders_awb.js',
     'sellers' => 'sellers.js',
     'purchase_orders' => 'purchase_orders.js',
     'product-units' => 'product-units.js',

@@ -249,7 +249,7 @@ $hasOrderFromUrl = !empty($orderNumber);
         };
         window.IS_PICKING_INTERFACE = true;
     </script>
-    <script src="scripts/orders_awb.js"></script>
+    <!-- <script src="scripts/orders_awb.js?v=31231.1"></script> -->
     <?php require_once __DIR__ . '/includes/warehouse_footer.php'; ?>
 </body>
 </html>

@@ -806,6 +806,11 @@ function getCsrfToken() {
         return metaToken.getAttribute('content');
     }
     
+    // Try window.WMS_CONFIG (set by warehouse_header.php)
+    if (window.WMS_CONFIG && window.WMS_CONFIG.csrfToken) {
+        return window.WMS_CONFIG.csrfToken;
+    }
+    
     // Try hidden form input
     const formToken = document.querySelector('input[name="csrf_token"]');
     if (formToken) {
@@ -817,6 +822,7 @@ function getCsrfToken() {
         return window.csrfToken;
     }
     
+    console.warn('CSRF token not found. AWB generation may fail.');
     return null;
 }
 

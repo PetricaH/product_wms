@@ -609,5 +609,5 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
         </div>
     </div>
     
-    <script src="scripts/orders_awb.js?v=20250804.2"></script>
+    <!-- <script src="scripts/orders_awb.js?v=20250804.2"></script> -->
     <?php require_once __DIR__ . '/includes/footer.php'; ?>

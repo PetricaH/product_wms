@@ -21,7 +21,10 @@ $hasOrderFromUrl = !empty($orderNumber);
                 Mobile Picker
             </h1>
             <div id="order-info" class="order-info <?= !$hasOrderFromUrl ? 'hidden' : '' ?>">
-                <div class="order-number">#<span id="current-order-number"><?= $orderNumber ?></span></div>
+                <div class="top-row">
+                    <div class="order-number">#<span id="current-order-number"><?= $orderNumber ?></span></div>
+                    <div class="order-awb hidden" id="order-awb">AWB: <span id="order-awb-code"></span></div>
+                </div>
                 <div class="customer-name" id="customer-name">Loading...</div>
             </div>
             <button id="print-invoice-btn" class="btn btn-secondary btn-sm <?= !$hasOrderFromUrl ? 'hidden' : '' ?>" title="Printează Factura">
@@ -76,11 +79,6 @@ $hasOrderFromUrl = !empty($orderNumber);
             <div id="items-container" class="items-container">
                 <!-- Items will be loaded here -->
             </div>
-        </div>
-
-        <div id="awb-info" class="awb-status hidden">
-            <span class="material-symbols-outlined">local_shipping</span>
-            AWB: <span id="awb-code"></span>
         </div>
 
         <!-- Picking Workflow Sections -->

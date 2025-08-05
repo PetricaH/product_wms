@@ -32,8 +32,8 @@ document.addEventListener('DOMContentLoaded', () => {
         printInvoiceBtn: document.getElementById('print-invoice-btn'),
         generateAwbBtn: document.getElementById('generate-awb-btn'),
         printAwbBtn: document.getElementById('print-awb-btn'),
-        awbInfo: document.getElementById('awb-info'),
-        awbCode: document.getElementById('awb-code'),
+        orderAwb: document.getElementById('order-awb'),
+        awbCode: document.getElementById('order-awb-code'),
         
         // Progress
         progressSection: document.getElementById('progress-section'),
@@ -240,23 +240,31 @@ document.addEventListener('DOMContentLoaded', () => {
             elements.generateAwbBtn.classList.add('hidden');
             elements.printAwbBtn.classList.remove('hidden');
             elements.printAwbBtn.disabled = false;
+            elements.printAwbBtn.classList.add('btn-pulse');
 
-            if (elements.awbInfo && elements.awbCode) {
+            if (elements.orderAwb && elements.awbCode) {
                 elements.awbCode.textContent = currentOrder.awb_barcode;
-                elements.awbInfo.classList.remove('hidden');
+                elements.orderAwb.classList.remove('hidden');
+            }
+            if (elements.orderInfo) {
+                elements.orderInfo.classList.add('awb-present');
             }
         } else {
             elements.printAwbBtn.classList.add('hidden');
+            elements.printAwbBtn.classList.remove('btn-pulse');
             elements.generateAwbBtn.classList.remove('hidden');
             elements.generateAwbBtn.setAttribute('data-order-id', currentOrder?.id || '');
 
-            if (elements.awbInfo) {
-                elements.awbInfo.classList.add('hidden');
+            if (elements.orderAwb) {
+                elements.orderAwb.classList.add('hidden');
+            }
+            if (elements.orderInfo) {
+                elements.orderInfo.classList.remove('awb-present');
             }
         }
     }
 
-    function printAWBDirect(orderId, awbCode, orderNumber) {
+    async function printAWBDirect(orderId, awbCode, orderNumber) {
         const printer = (window.availablePrinters || []).find(p =>
             p.name && p.name.toLowerCase().includes('godex') && p.name.includes('500')
         );
@@ -266,11 +274,26 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        const btn = elements.printAwbBtn;
+        const originalHtml = btn ? btn.innerHTML : '';
+        if (btn) {
+            btn.disabled = true;
+            btn.classList.remove('btn-pulse');
+            btn.innerHTML = '<span class="material-symbols-outlined spinning">hourglass_empty</span> Se tipărește...';
+        }
+
         try {
-            performAwbPrint(orderId, awbCode, orderNumber, printer.id);
+            await performAwbPrint(orderId, awbCode, orderNumber, printer.id);
+            showMessage('AWB trimis la imprimantă.', 'success');
         } catch (err) {
             console.error('AWB print failed:', err);
             showMessage('Eroare la trimiterea AWB către imprimantă.', 'error');
+            if (btn) btn.classList.add('btn-pulse');
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = originalHtml;
+            }
         }
     }
 
@@ -278,6 +301,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (currentOrder && e.detail.orderId === currentOrder.id) {
             currentOrder.awb_barcode = e.detail.awbCode;
             updateAwbButtons();
+            showMessage('AWB generat. Printează AWB.', 'info');
         }
     });
 

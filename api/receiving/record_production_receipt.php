@@ -54,6 +54,10 @@ $locationInput = $input['location_id'] ?? null;
 $printer   = $input['printer'] ?? null;
 $photoDescription = trim($input['photo_description'] ?? '');
 
+$action = $input['action'] ?? 'print_and_add';
+$doPrint = in_array($action, ['print', 'print_and_add']);
+$doAddStock = in_array($action, ['add_stock', 'print_and_add']);
+
 
 error_log("Production Receipt Debug - Input: " . json_encode($input));
 
@@ -84,50 +88,49 @@ try {
         error_log("Production Receipt Debug - Product ID verified: $productId");
     }
 
-    // Handle location_id conversion (string location_code to integer id)
     $locationId = null;
-    
-    if ($locationInput) {
-        if (is_numeric($locationInput)) {
-            // It's already a location ID, verify it exists
-            $stmt = $db->prepare("SELECT id FROM locations WHERE id = ? AND status = 'active'");
-            $stmt->execute([(int)$locationInput]);
-            $locationId = $stmt->fetchColumn();
-            
-            if (!$locationId) {
-                throw new Exception('Invalid or inactive location ID: ' . $locationInput);
+    if ($doAddStock) {
+        // Handle location_id conversion (string location_code to integer id)
+        if ($locationInput) {
+            if (is_numeric($locationInput)) {
+                $stmt = $db->prepare("SELECT id FROM locations WHERE id = ? AND status = 'active'");
+                $stmt->execute([(int)$locationInput]);
+                $locationId = $stmt->fetchColumn();
+
+                if (!$locationId) {
+                    throw new Exception('Invalid or inactive location ID: ' . $locationInput);
+                }
+                error_log("Production Receipt Debug - Location ID verified: $locationId");
+            } else {
+                $stmt = $db->prepare("SELECT id FROM locations WHERE location_code = ? AND status = 'active'");
+                $stmt->execute([$locationInput]);
+                $locationId = $stmt->fetchColumn();
+
+                if (!$locationId) {
+                    throw new Exception('Location not found with code: ' . $locationInput);
+                }
+                error_log("Production Receipt Debug - Converted location_code '$locationInput' to location_id: $locationId");
             }
-            error_log("Production Receipt Debug - Location ID verified: $locationId");
-        } else {
-            // It's a location_code, convert to location_id
-            $stmt = $db->prepare("SELECT id FROM locations WHERE location_code = ? AND status = 'active'");
-            $stmt->execute([$locationInput]);
-            $locationId = $stmt->fetchColumn();
-            
-            if (!$locationId) {
-                throw new Exception('Location not found with code: ' . $locationInput);
-            }
-            error_log("Production Receipt Debug - Converted location_code '$locationInput' to location_id: $locationId");
         }
-    }
-    
-    // If no location provided or found, find a default production location
-    if (!$locationId) {
-        $stmt = $db->prepare("SELECT id FROM locations WHERE type = 'production' AND status = 'active' LIMIT 1");
-        $stmt->execute();
-        $locationId = $stmt->fetchColumn();
-        
+
+        // If no location provided or found, find a default production location
         if (!$locationId) {
-            // Try to find any active location as fallback
-            $stmt = $db->prepare("SELECT id FROM locations WHERE status = 'active' LIMIT 1");
+            $stmt = $db->prepare("SELECT id FROM locations WHERE type = 'production' AND status = 'active' LIMIT 1");
             $stmt->execute();
             $locationId = $stmt->fetchColumn();
-            
+
             if (!$locationId) {
-                throw new Exception('No active locations found in the system');
+                // Try to find any active location as fallback
+                $stmt = $db->prepare("SELECT id FROM locations WHERE status = 'active' LIMIT 1");
+                $stmt->execute();
+                $locationId = $stmt->fetchColumn();
+
+                if (!$locationId) {
+                    throw new Exception('No active locations found in the system');
+                }
             }
+            error_log("Production Receipt Debug - Using default location_id: $locationId");
         }
-        error_log("Production Receipt Debug - Using default location_id: $locationId");
     }
 
     // Format the produced_at date properly
@@ -142,73 +145,55 @@ try {
         }
     }
 
-    $inventoryModel = new Inventory($db);
 
-    // Prepare inventory data with proper types
-    $inventoryData = [
-        'product_id'   => (int)$productId,
-        'location_id'  => (int)$locationId,
-        'quantity'     => (int)$quantity,
-        'batch_number' => $batchNumber ?: null,
-        'received_at'  => $producedAt
-    ];
-
-    error_log("Production Receipt Debug - Inventory data: " . json_encode($inventoryData));
-
-    // Check for existing inventory with same product/location/batch to avoid unique constraint violation
-    if ($batchNumber) {
-        $stmt = $db->prepare("
-            SELECT id, quantity 
-            FROM inventory 
-            WHERE product_id = ? AND location_id = ? AND batch_number = ?
-        ");
-        $stmt->execute([$productId, $locationId, $batchNumber]);
-        $existing = $stmt->fetch(PDO::FETCH_ASSOC);
-        
-        if ($existing) {
-            // Update existing record instead of creating new one
-            $stmt = $db->prepare("
-                UPDATE inventory 
-                SET quantity = quantity + ?, 
-                    received_at = ?,
-                    updated_at = NOW()
-                WHERE id = ?
-            ");
-            $result = $stmt->execute([$quantity, $producedAt, $existing['id']]);
-            if (!$result) {
-                throw new Exception('Failed to update existing inventory record');
+    $invId = null;
+    if ($doAddStock) {
+        $inventoryModel = new Inventory($db);
+        $inventoryData = [
+            'product_id'   => (int)$productId,
+            'location_id'  => (int)$locationId,
+            'quantity'     => (int)$quantity,
+            'batch_number' => $batchNumber ?: null,
+            'received_at'  => $producedAt
+        ];
+        error_log("Production Receipt Debug - Inventory data: " . json_encode($inventoryData));
+        if ($batchNumber) {
+            $stmt = $db->prepare("SELECT id, quantity FROM inventory WHERE product_id = ? AND location_id = ? AND batch_number = ?");
+            $stmt->execute([$productId, $locationId, $batchNumber]);
+            $existing = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($existing) {
+                $stmt = $db->prepare("UPDATE inventory SET quantity = quantity + ?, received_at = ?, updated_at = NOW() WHERE id = ?");
+                $result = $stmt->execute([$quantity, $producedAt, $existing['id']]);
+                if (!$result) { throw new Exception('Failed to update existing inventory record'); }
+                $invId = $existing['id'];
+                error_log("Production Receipt Debug - Updated existing inventory record: $invId");
+            } else {
+                $invId = $inventoryModel->addStock($inventoryData);
+                error_log("Production Receipt Debug - Created new inventory record: $invId");
             }
-            $invId = $existing['id'];
-            error_log("Production Receipt Debug - Updated existing inventory record: $invId");
         } else {
-            // Create new record
             $invId = $inventoryModel->addStock($inventoryData);
-            error_log("Production Receipt Debug - Created new inventory record: $invId");
+            error_log("Production Receipt Debug - Created inventory record without batch: $invId");
         }
-    } else {
-        // No batch number, create new record
-        $invId = $inventoryModel->addStock($inventoryData);
-        error_log("Production Receipt Debug - Created inventory record without batch: $invId");
+        if (!$invId) { throw new Exception('Failed to add inventory - database insert failed'); }
     }
 
-    if (!$invId) {
-        throw new Exception('Failed to add inventory - database insert failed');
-    }
-
-    // Generate and send label using new combined template system
-    $labelUrl = generateCombinedTemplateLabel($db, $productId, $quantity, $batchNumber, $producedAt);
-    if ($labelUrl) {
-        $headers = @get_headers($labelUrl);
-        if ($headers && strpos($headers[0], '200') !== false) {
-            sendToPrintServer($labelUrl, $printer, $config);
-            error_log("Production Receipt Debug - Combined template label generated: $labelUrl");
-        } else {
-            error_log("Label not available yet: $labelUrl");
+    $labelUrl = null;
+    if ($doPrint) {
+        $labelUrl = generateCombinedTemplateLabel($db, $productId, $quantity, $batchNumber, $producedAt);
+        if ($labelUrl) {
+            $headers = @get_headers($labelUrl);
+            if ($headers && strpos($headers[0], '200') !== false) {
+                sendToPrintServer($labelUrl, $printer, $config);
+                error_log("Production Receipt Debug - Combined template label generated: $labelUrl");
+            } else {
+                error_log("Label not available yet: $labelUrl");
+            }
         }
     }
 
     $savedPhotos = [];
-    if (!empty($_FILES['photos']['name'][0])) {
+    if ($doAddStock && !empty($_FILES['photos']['name'][0])) {
         $baseDir = BASE_PATH . '/storage/receiving/factory/';
         if (!file_exists($baseDir)) {
             mkdir($baseDir, 0755, true);
@@ -224,7 +209,7 @@ try {
         }
     }
 
-if ($photoDescription && !empty($savedPhotos)) {
+    if ($doAddStock && $photoDescription && !empty($savedPhotos)) {
         $dir = BASE_PATH . '/storage/receiving/factory/';
         if (!file_exists($dir)) {
             mkdir($dir, 0755, true);
@@ -235,8 +220,8 @@ if ($photoDescription && !empty($savedPhotos)) {
     echo json_encode([
         'success' => true,
         'inventory_id' => $invId,
-        'message' => 'Production receipt recorded successfully',
-        'saved_photos' => $savedPhotos,
+        'message' => $doAddStock ? 'Production receipt recorded successfully' : 'Labels printed successfully',
+        'saved_photos' => $doAddStock ? $savedPhotos : [],
         'debug' => [
             'product_id' => $productId,
             'location_id' => $locationId,

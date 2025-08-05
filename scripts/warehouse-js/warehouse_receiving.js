@@ -19,7 +19,9 @@ class WarehouseReceiving {
         this.scanner = null;
         this.scannerActive = false;
         this.productionMode = false;
-    
+        this.labelsPrinted = false;
+        this.lastPrintData = null;
+
         // TIMING INTEGRATION - Silent timing for performance tracking
         this.timingManager = null;
         this.activeTimingTasks = new Map(); // receiving_item_id -> task_id
@@ -151,6 +153,11 @@ class WarehouseReceiving {
         const printBtn = document.getElementById('print-labels-btn');
         if (printBtn) {
             printBtn.addEventListener('click', () => this.printProductionLabels());
+        }
+
+        const addStockBtn = document.getElementById('add-stock-btn');
+        if (addStockBtn) {
+            addStockBtn.addEventListener('click', () => this.addProductionStock());
         }
     }
 
@@ -346,6 +353,7 @@ class WarehouseReceiving {
             formData.append('location_id', locationId);
             formData.append('printer', printerName);
             formData.append('source', 'factory');
+            formData.append('action', 'print');
 
             const desc = document.getElementById('prod-photo-description');
             if (desc && desc.value.trim()) {
@@ -377,10 +385,64 @@ class WarehouseReceiving {
             }
 
             this.showSuccess('Etichetele au fost trimise la imprimantă');
-            this.initProductionDefaults();
+            this.labelsPrinted = true;
+            this.lastPrintData = {
+                product_id: this.selectedProductId,
+                quantity: qty,
+                batch_number: batch,
+                produced_at: date,
+                location_id: locationId
+            };
+            const addBtn = document.getElementById('add-stock-btn');
+            if (addBtn) {
+                addBtn.style.display = 'inline-block';
+                addBtn.disabled = false;
+            }
             
         } catch (err) {
             console.error('Print error:', err);
+            this.showError('Eroare: ' + err.message);
+        }
+    }
+
+    async addProductionStock() {
+        if (!this.labelsPrinted || !this.lastPrintData) {
+            return;
+        }
+
+        const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content') || this.config.csrfToken;
+
+        try {
+            const formData = new FormData();
+            Object.entries(this.lastPrintData).forEach(([k, v]) => formData.append(k, v));
+            formData.append('action', 'add_stock');
+
+            const response = await fetch(`${this.config.apiBase}/receiving/record_production_receipt.php`, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    'X-CSRF-Token': csrfToken
+                },
+                body: formData
+            });
+
+            const result = await response.json();
+
+            if (!response.ok || !result.success) {
+                throw new Error(result.message || 'Eroare la adăugarea în stoc');
+            }
+
+            this.showSuccess('Produs adăugat în stoc');
+            this.initProductionDefaults();
+            const addBtn = document.getElementById('add-stock-btn');
+            if (addBtn) {
+                addBtn.disabled = true;
+                addBtn.style.display = 'none';
+            }
+            this.labelsPrinted = false;
+            this.lastPrintData = null;
+        } catch (err) {
+            console.error('Add stock error:', err);
             this.showError('Eroare: ' + err.message);
         }
     }

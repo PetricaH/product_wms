@@ -416,6 +416,10 @@ class ProductionWMSAPI {
             throw new Exception('Order not found', 404);
         }
 
+        if (($order['status'] ?? '') !== 'picked') {
+            throw new Exception('AWB can only be generated for orders with status picked', 400);
+        }
+
         if (empty($order['recipient_county_id'])) {
             throw new Exception('Order missing AWB data', 400);
         }

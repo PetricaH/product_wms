@@ -245,6 +245,15 @@ class CargusService
      */
     public function generateAWB($order) {
         try {
+            // Ensure order is eligible for AWB generation
+            if (($order['status'] ?? '') !== 'picked') {
+                return [
+                    'success' => false,
+                    'error' => 'Order status must be picked',
+                    'code' => 400
+                ];
+            }
+
             // Authenticate first
             if (!$this->authenticate()) {
                 return [

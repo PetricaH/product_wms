@@ -57,6 +57,12 @@ body {
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
+.header-content {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .header-content h1 {
   display: flex;
   align-items: center;
@@ -67,6 +73,10 @@ body {
   margin: 0;
 }
 
+.header-content button {
+  flex-shrink: 0;
+}
+
 /* Order Info */
 .order-info {
   text-align: center;
@@ -74,8 +84,9 @@ body {
   background: rgba(255, 255, 255, 0.1);
   border-radius: 6px;
   color: var(--white);
-  margin-top: 0.5rem;
   border: 1px solid rgba(255, 255, 255, 0.2);
+  flex: 1;
+  margin: 0 1rem;
 }
 
 .order-info .top-row {

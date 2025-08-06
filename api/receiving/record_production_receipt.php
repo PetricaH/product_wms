@@ -178,7 +178,7 @@ try {
 
     $labelUrl = null;
     if ($doPrint) {
-        // Templates are already in correct portrait orientation, no rotation needed
+        // Generate label with proper printer dimensions and rotation
         $labelUrl = generateCombinedTemplateLabel($db, $productId, $quantity, $batchNumber, $producedAt);
         if ($labelUrl) {
             $headers = @get_headers($labelUrl);
@@ -239,7 +239,7 @@ try {
 
 /**
  * Combined Template Label Generator for Godex Printer
- * Creates a PNG with proper portrait orientation (no rotation needed)
+ * Creates a PNG with proper printer dimensions (147mm x 200mm) and 180° rotation
  * @param PDO $db Database connection
  * @param int $productId Product ID
  * @param int $qty Quantity
@@ -285,16 +285,38 @@ function generateCombinedTemplateLabel(PDO $db, int $productId, int $qty, string
             error_log("Failed loading template: {$templatePath}");
             return null;
         }
-        error_log("✅ Template loaded: " . basename($templatePath));
+        
+        // Resize template to match printer dimensions 
+        // 147mm x 200mm at 203 DPI = 1174 x 1598 pixels
+        $targetWidth = 1174;  // 147mm at 203 DPI
+        $targetHeight = 1598; // 200mm at 203 DPI
+        
+        $originalWidth = imagesx($image);
+        $originalHeight = imagesy($image);
+        
+        // Create new image with target dimensions
+        $resizedImage = imagecreatetruecolor($targetWidth, $targetHeight);
+        imagealphablending($resizedImage, false);
+        imagesavealpha($resizedImage, true);
+        
+        // Scale template to fit new dimensions
+        imagecopyresampled($resizedImage, $image, 0, 0, 0, 0, 
+                          $targetWidth, $targetHeight, $originalWidth, $originalHeight);
+        
+        imagedestroy($image);
+        $image = $resizedImage;
+        
+        error_log("✅ Template resized from {$originalWidth}x{$originalHeight} to {$targetWidth}x{$targetHeight}");
     } else {
-        // Fallback size at 203 DPI (portrait orientation)
-        $w = 813; $h = 1220;
+        // Fallback size for printer: 147mm x 200mm at 203 DPI = 1174 x 1598 pixels
+        $w = 1174; // 147mm width
+        $h = 1598; // 200mm height
         $image = imagecreatetruecolor($w, $h);
         imagealphablending($image, false);
         imagesavealpha($image, true);
         $transparent = imagecolorallocatealpha($image, 0, 0, 0, 127);
         imagefill($image, 0, 0, $transparent);
-        error_log("⚠️ Using fallback transparent canvas: {$w}x{$h}");
+        error_log("⚠️ Using fallback canvas for printer: {$w}x{$h} (147mm x 200mm at 203 DPI)");
     }
 
     // --- Prepare for overlays ---
@@ -461,11 +483,25 @@ function generateCombinedTemplateLabel(PDO $db, int $productId, int $qty, string
     // --- Finalize transparency ---
     imagesavealpha($image, true);
 
-    // --- Templates are already in correct portrait orientation - no rotation needed ---
+    // --- Rotate entire label 180 degrees for printer orientation ---
+    error_log("Rotating label 180 degrees for printer...");
+    $transparent180 = imagecolorallocatealpha($image, 0, 0, 0, 127);
+    $rotated180 = imagerotate($image, 180, $transparent180);
+    
+    if ($rotated180) {
+        imagedestroy($image);
+        $image = $rotated180;
+        imagealphablending($image, false);
+        imagesavealpha($image, true);
+        error_log("✅ Label rotated 180 degrees successfully");
+    } else {
+        error_log("❌ Failed to rotate label 180 degrees");
+    }
+
+    // --- Final dimensions check ---
     $finalWidth = imagesx($image);
     $finalHeight = imagesy($image);
-    error_log("Final label: {$finalWidth}x{$finalHeight} " . 
-              ($finalHeight > $finalWidth ? "(Portrait ✅)" : "(Landscape ⚠️)"));
+    error_log("Final label: {$finalWidth}x{$finalHeight} (147mm x 200mm at 203 DPI, rotated 180°)");
 
     // --- Save and return URL ---
     $dir = BASE_PATH . '/storage/label_pngs';

@@ -124,6 +124,8 @@ return [
     'print_server_url' => getenv('PRINT_SERVER_URL') ?: 'http://86.124.196.102:3000/print_server.php',
     'default_printer'  => getenv('DEFAULT_PRINTER') ?: 'godex',
 
+    'label_rotation' => 90,
+
     // Cargus API credentials (set via environment variables or directly here)
     
     'cargus' => [

@@ -866,7 +866,7 @@ function sendPdfToServer(string $url, string $pdfUrl, string $printer): array {
 function getBaseUrl(): string {
     $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
     $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
-    $path = rtrim(dirname($_SERVER['SCRIPT_NAME']), '/');
-    return $scheme . '://' . $host . $path;
+    // Return root URL instead of API path
+    return $scheme . '://' . $host;
 }
 ?>

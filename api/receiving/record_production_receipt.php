@@ -295,30 +295,49 @@ function generateCombinedTemplateLabel(PDO $db, int $productId, int $qty, string
         
         // Create final image - either from template or blank
         if ($baseImage) {
-            // Use the loaded template as the base
-            $image = $baseImage;
+            // Convert template to truecolor if it's palette-based
+            if (!imageistruecolor($baseImage)) {
+                $width = imagesx($baseImage);
+                $height = imagesy($baseImage);
+                
+                // Create truecolor version
+                $trueColorImage = imagecreatetruecolor($width, $height);
+                
+                // Preserve transparency
+                imagealphablending($trueColorImage, false);
+                imagesavealpha($trueColorImage, true);
+                $transparent = imagecolorallocatealpha($trueColorImage, 0, 0, 0, 127);
+                imagefill($trueColorImage, 0, 0, $transparent);
+                
+                // Copy original with alpha preservation
+                imagealphablending($trueColorImage, true);
+                imagecopy($trueColorImage, $baseImage, 0, 0, 0, 0, $width, $height);
+                
+                // Use the converted image
+                imagedestroy($baseImage);
+                $image = $trueColorImage;
+            } else {
+                // Template is already truecolor, use it directly
+                $image = $baseImage;
+            }
+            
             $labelWidth = imagesx($image);
             $labelHeight = imagesy($image);
             
-            // Ensure we can add new elements
-            imagealphablending($image, true);
-            imagesavealpha($image, true);
+            // Prepare for adding overlays - this is the key fix
+            imagealphablending($image, true);  // Enable blending for overlays
+            // DON'T call imagesavealpha here - it can corrupt the existing image
+            
         } else {
-            // Fallback: Create blank transparent image
-            $labelWidth = 813;   // Default pixels
-            $labelHeight = 1220; // Default pixels
+            // Fallback: Create blank transparent image (your existing code is fine here)
+            $labelWidth = 813;   
+            $labelHeight = 1220; 
             
             $image = imagecreatetruecolor($labelWidth, $labelHeight);
-            
-            // Enable transparency
             imagealphablending($image, false);
             imagesavealpha($image, true);
-            
-            // Create transparent background
             $transparent = imagecolorallocatealpha($image, 0, 0, 0, 127);
             imagefill($image, 0, 0, $transparent);
-            
-            // Enable alpha blending for adding elements
             imagealphablending($image, true);
         }
         

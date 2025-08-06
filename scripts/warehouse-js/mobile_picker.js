@@ -174,7 +174,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // Add this function to load available printers
     async function loadAvailablePrinters() {
         try {
-            const response = await fetch('api/printer_management.php?path=printers');
+            const response = await fetch('api/printer_management.php?path=printers', {
+                credentials: 'same-origin'
+            });
             if (response.ok) {
                 const data = await response.json();
                 availablePrinters = data.filter(p => 
@@ -328,6 +330,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded',
                 },
+                credentials: 'same-origin',
                 body: new URLSearchParams({
                     order_id: orderId,
                     awb_code: awbCode,

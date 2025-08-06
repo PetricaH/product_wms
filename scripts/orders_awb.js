@@ -24,7 +24,9 @@ let availablePrinters = [];
 
 async function loadAvailablePrinters() {
     try {
-        const response = await fetch('api/printer_management.php?path=printers');
+        const response = await fetch('api/printer_management.php?path=printers', {
+            credentials: 'same-origin'
+        });
         if (response.ok) {
             const data = await response.json();
             availablePrinters = data.filter(p => 
@@ -483,7 +485,8 @@ async function performAwbPrint(orderId, awbCode, orderNumber, printerId = null, 
         
         const response = await fetch('api/awb/print_awb.php', {
             method: 'POST',
-            body: formData
+            body: formData,
+            credentials: 'same-origin'
         });
         
         if (!response.ok) {

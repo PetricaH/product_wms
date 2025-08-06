@@ -299,38 +299,71 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    async function printAWBDirect(orderId, awbCode, orderNumber) {
-        const printer = (window.availablePrinters || []).find(p =>
-            p.name && p.name.toLowerCase().includes('godex') && p.name.includes('500')
+    async function printAWBDirect(orderId, awbCode, orderNumber, format = 'label') {
+        // Simple printer selection - like test print
+        const printer = availablePrinters.find(p => 
+            p.is_active && 
+            (p.printer_type === 'awb' || p.printer_type === 'label' || p.printer_type === 'universal')
         );
-
+    
         if (!printer) {
-            showMessage('Imprimanta GODEX 500 nu este disponibilă.', 'error');
+            showMessage('Nu este disponibilă nicio imprimantă pentru AWB.', 'error');
             return;
         }
-
+    
         const btn = elements.printAwbBtn;
         const originalHtml = btn ? btn.innerHTML : '';
+        
+        // Show loading state
         if (btn) {
             btn.disabled = true;
             btn.classList.remove('btn-pulse');
-            btn.innerHTML = '<span class="material-symbols-outlined spinning">hourglass_empty</span> Se tipărește...';
+            btn.innerHTML = '<span class="material-symbols-outlined spinning">hourglass_empty</span> Se generează PDF...';
         }
-
+    
         try {
-            await performAwbPrint(orderId, awbCode, orderNumber, printer.id);
-            showMessage('AWB trimis la imprimantă.', 'success');
-        } catch (err) {
-            console.error('AWB print failed:', err);
-            showMessage('Eroare la trimiterea AWB către imprimantă.', 'error');
+            // SIMPLE APPROACH - Same as test print but with Cargus API integration
+            const response = await fetch('api/awb/print_awb.php', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: new URLSearchParams({
+                    order_id: orderId,
+                    awb_code: awbCode,
+                    printer_id: printer.id,
+                    format: format  // 'label' or 'a4'
+                })
+            });
+    
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+    
+            const data = await response.json();
+            
+            if (data.success) {
+                showMessage('AWB trimis la imprimantă cu succes!', 'success');
+                console.log('Print job ID:', data.job_id);
+            } else {
+                throw new Error(data.error || 'Eroare necunoscută la printare');
+            }
+    
+        } catch (error) {
+            console.error('AWB print failed:', error);
+            showMessage(`Eroare la printarea AWB: ${error.message}`, 'error');
+            
+            // Re-add pulse effect on error
             if (btn) btn.classList.add('btn-pulse');
         } finally {
+            // Restore button state
             if (btn) {
                 btn.disabled = false;
                 btn.innerHTML = originalHtml;
             }
         }
     }
+    
 
     document.addEventListener('awbGenerated', (e) => {
         if (currentOrder && e.detail.orderId === currentOrder.id) {

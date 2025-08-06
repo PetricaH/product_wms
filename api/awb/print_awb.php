@@ -179,6 +179,12 @@ function sendToPrintServer($serverUrl, $pdfPath, $printerName = null) {
         
         // Build print server URL with parameters (same as working invoice printing)
         $params = ['url' => $pdfUrl];
+        // Explicitly tell the print server the file type to ensure
+        // compatibility with printers expecting format hints
+        $params = [
+            'url' => $pdfUrl,
+            'format' => 'pdf'
+        ];
         if ($printerName) {
             $params['printer'] = $printerName;  // This was missing!
         }

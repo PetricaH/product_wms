@@ -1511,12 +1511,12 @@ async function populateDynamicLevels(levelSettings) {
 
         const heightInput = document.getElementById(`level_${levelId}_height`);
         if (heightInput) heightInput.value = setting.height_mm || 300;
-        
+
         const weightInput = document.getElementById(`level_${levelId}_weight`);
         if (weightInput) weightInput.value = setting.max_weight_kg || 50;
-        
+
         const capacityInput = document.getElementById(`level_${levelId}_capacity`);
-        if (capacityInput) capacityInput.value = setting.items_capacity || '';
+        if (capacityInput) capacityInput.value = setting.items_capacity ?? '';
 
         // FIX: Set dedicated product with both ID and name
         if (setting.dedicated_product_id) {
@@ -1531,10 +1531,10 @@ async function populateDynamicLevels(levelSettings) {
         }
 
         const allowOthersInput = document.getElementById(`level_${levelId}_allow_others`);
-        if (allowOthersInput) allowOthersInput.checked = setting.allow_other_products !== false;
+        if (allowOthersInput) allowOthersInput.checked = !!Number(setting.allow_other_products);
 
         // === Populate subdivision data if available ===
-        if (setting.subdivisions_enabled === true) {
+        if (setting.subdivisions_enabled) {
             const enableCheckbox = document.getElementById(`level_${levelId}_enable_subdivisions`);
             if (enableCheckbox) {
                 enableCheckbox.checked = true;
@@ -1551,7 +1551,7 @@ async function populateDynamicLevels(levelSettings) {
                         selectProduct(levelId, index, sub.dedicated_product_id, sub.product_name || `Product ID: ${sub.dedicated_product_id}`);
                     }
                     const capInput = document.getElementById(`level_${levelId}_subdivision_${index}_capacity`);
-                    if (capInput) capInput.value = sub.items_capacity || '';
+                    if (capInput) capInput.value = sub.items_capacity ?? '';
                     const notesInput = document.querySelector(`[name="level_${levelId}_subdivision_${index}_notes"]`);
                     if (notesInput) notesInput.value = sub.notes || '';
                 }

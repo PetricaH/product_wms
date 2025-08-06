@@ -301,17 +301,69 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    async function printAWBDirect(orderId, awbCode, orderNumber, format = 'label') {
-        // Simple printer selection - like test print
-        const printer = availablePrinters.find(p => 
-            p.is_active && 
-            (p.printer_type === 'awb' || p.printer_type === 'label' || p.printer_type === 'universal')
-        );
-    
-        if (!printer) {
-            showMessage('Nu este disponibilă nicio imprimantă pentru AWB.', 'error');
+    async function printInvoice() {
+        if (!currentOrder) {
+            showMessage('Nicio comandă activă pentru printarea facturii.', 'error');
             return;
         }
+    
+        console.log(`🖨️ Starting invoice print for order: ${currentOrder.id}`);
+    
+        showLoading(true);
+        
+        try {
+            // MOBILE FIX: Enhanced fetch configuration for mobile browsers
+            const response = await fetch('api/invoices/print_invoice_network.php', {
+                method: 'POST',
+                credentials: 'include', // CRITICAL: Include session cookies
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Cache-Control': 'no-cache',
+                    'Accept': 'application/json'
+                },
+                body: new URLSearchParams({
+                    order_id: currentOrder.id,
+                    printer_id: 2 // SIMPLE: Use printer ID 2 for invoices
+                })
+            });
+    
+            if (!response.ok) {
+                if (response.status === 403) {
+                    throw new Error('Sesiune expirată. Te rugăm să reîncarci pagina și să te autentifici din nou.');
+                }
+                throw new Error(`Eroare server: HTTP ${response.status}`);
+            }
+    
+            const data = await response.json();
+            console.log('📄 Invoice response data:', data);
+            
+            if (data.status === 'success') {
+                showMessage('Factura a fost trimisă la imprimantă.', 'success');
+                console.log('✅ Invoice print job ID:', data.job_id);
+            } else {
+                throw new Error(data.message || 'Eroare la printarea facturii');
+            }
+            
+        } catch (error) {
+            console.error('❌ Invoice print failed:', error);
+            showMessage(`Eroare la printarea facturii: ${error.message}`, 'error');
+            
+            // If session error, suggest page reload
+            if (error.message.includes('sesiune') || error.message.includes('403')) {
+                setTimeout(() => {
+                    if (confirm('Sesiune expirată. Dorești să reîncarci pagina?')) {
+                        window.location.reload();
+                    }
+                }, 2000);
+            }
+        } finally {
+            showLoading(false);
+        }
+    }
+
+    async function printAWBDirect(orderId, awbCode, orderNumber, format = 'label') {
+        console.log(`🖨️ Starting AWB print: Order=${orderId}, AWB=${awbCode}`);
     
         const btn = elements.printAwbBtn;
         const originalHtml = btn ? btn.innerHTML : '';
@@ -324,40 +376,58 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     
         try {
-            // SIMPLE APPROACH - Same as test print but with Cargus API integration
+            // MOBILE FIX: Enhanced fetch configuration for mobile browsers
             const response = await fetch('api/awb/print_awb.php', {
                 method: 'POST',
+                credentials: 'include', // CRITICAL: Include session cookies
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Cache-Control': 'no-cache',
+                    'Accept': 'application/json'
                 },
-                credentials: 'same-origin',
                 body: new URLSearchParams({
                     order_id: orderId,
                     awb_code: awbCode,
-                    printer_id: printer.id,
-                    format: format  // 'label' or 'a4'
+                    printer_id: 4, // SIMPLE: Use printer ID 4 (GODEX G500)
+                    format: format
                 })
             });
     
+            console.log(`📡 Response status: ${response.status} ${response.statusText}`);
+    
             if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
+                if (response.status === 403) {
+                    throw new Error('Sesiune expirată. Te rugăm să reîncarci pagina și să te autentifici din nou.');
+                }
+                throw new Error(`Eroare server: HTTP ${response.status}`);
             }
     
             const data = await response.json();
+            console.log('📄 Response data:', data);
             
             if (data.success) {
-                showMessage('AWB trimis la imprimantă cu succes!', 'success');
-                console.log('Print job ID:', data.job_id);
+                showMessage('AWB trimis la GODEX G500!', 'success');
+                console.log('✅ Print job ID:', data.job_id);
             } else {
                 throw new Error(data.error || 'Eroare necunoscută la printare');
             }
     
         } catch (error) {
-            console.error('AWB print failed:', error);
+            console.error('❌ AWB print failed:', error);
             showMessage(`Eroare la printarea AWB: ${error.message}`, 'error');
             
             // Re-add pulse effect on error
             if (btn) btn.classList.add('btn-pulse');
+            
+            // If session error, suggest page reload
+            if (error.message.includes('sesiune') || error.message.includes('403')) {
+                setTimeout(() => {
+                    if (confirm('Sesiune expirată. Dorești să reîncarci pagina?')) {
+                        window.location.reload();
+                    }
+                }, 2000);
+            }
         } finally {
             // Restore button state
             if (btn) {
@@ -366,7 +436,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
     }
-    
 
     document.addEventListener('awbGenerated', (e) => {
         if (currentOrder && e.detail.orderId === currentOrder.id) {
@@ -827,39 +896,6 @@ document.addEventListener('DOMContentLoaded', () => {
         elements.pickingListSection?.classList.add('hidden');
         elements.progressSection?.classList.add('hidden');
         elements.completionSection?.classList.remove('hidden');
-    }
-
-    async function printInvoice() {
-        if (!currentOrder) return;
-        try {
-            showLoading(true);
-            const formData = new FormData();
-            formData.append('order_id', currentOrder.id);
-            
-            // Use the network printer endpoint instead
-            const response = await fetch(`${API_BASE}/invoices/print_invoice_network.php`, {
-                method: 'POST',
-                body: formData
-            });
-            
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            
-            const text = await response.text();
-            const data = JSON.parse(text);
-            
-            if (data.status === 'success') {
-                showMessage('Factura a fost trimisă la imprimantă.', 'success');
-            } else {
-                showMessage(`Eroare la printarea facturii: ${data.message}`, 'error');
-            }
-        } catch (error) {
-            console.error('Error printing invoice:', error);
-            showMessage(`Eroare la printarea facturii: ${error.message}`, 'error');
-        } finally {
-            showLoading(false);
-        }
     }
 
     // Utility Functions

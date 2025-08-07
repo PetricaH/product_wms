@@ -344,42 +344,44 @@ class WarehouseReceiving {
             const printerName = await chooseLabelPrinter();
             if (!printerName) return;
 
-            const formData = new FormData();
-            formData.append('product_id', this.selectedProductId);
-            formData.append('quantity', qty);
-            formData.append('batch_number', batch);
-            formData.append('produced_at', date);
-            formData.append('printer', printerName);
-            formData.append('source', 'factory');
-            formData.append('action', 'print');
+            for (let i = 0; i < qty; i++) {
+                const formData = new FormData();
+                formData.append('product_id', this.selectedProductId);
+                formData.append('quantity', qty);
+                formData.append('batch_number', batch);
+                formData.append('produced_at', date);
+                formData.append('printer', printerName);
+                formData.append('source', 'factory');
+                formData.append('action', 'print');
 
-            const desc = document.getElementById('prod-photo-description');
-            if (desc && desc.value.trim()) {
-                formData.append('photo_description', desc.value.trim());
-            }
+                const desc = document.getElementById('prod-photo-description');
+                if (desc && desc.value.trim()) {
+                    formData.append('photo_description', desc.value.trim());
+                }
 
-            const photos = document.getElementById('prod-photos');
-            if (photos && photos.files.length) {
-                Array.from(photos.files).forEach(f => formData.append('photos[]', f));
-            }
+                const photos = document.getElementById('prod-photos');
+                if (photos && photos.files.length) {
+                    Array.from(photos.files).forEach(f => formData.append('photos[]', f));
+                }
 
-            console.log('Sending production receipt data');
+                console.log('Sending production receipt data');
 
-            const response = await fetch(`${this.config.apiBase}/receiving/record_production_receipt.php`, {
-                method: 'POST',
-                credentials: 'same-origin',
-                headers: {
-                    'X-CSRF-Token': csrfToken
-                },
-                body: formData
-            });
+                const response = await fetch(`${this.config.apiBase}/receiving/record_production_receipt.php`, {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: {
+                        'X-CSRF-Token': csrfToken
+                    },
+                    body: formData
+                });
 
-            const result = await response.json();
-            
-            console.log('API Response:', result); // Debug logging
-            
-            if (!response.ok || !result.success) {
-                throw new Error(result.message || 'Eroare la imprimare');
+                const result = await response.json();
+
+                console.log('API Response:', result); // Debug logging
+
+                if (!response.ok || !result.success) {
+                    throw new Error(result.message || 'Eroare la imprimare');
+                }
             }
 
             this.showSuccess('Etichetele au fost trimise la imprimantă');
@@ -395,7 +397,7 @@ class WarehouseReceiving {
                 addBtn.style.display = 'inline-block';
                 addBtn.disabled = false;
             }
-            
+
         } catch (err) {
             console.error('Print error:', err);
             this.showError('Eroare: ' + err.message);

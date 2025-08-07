@@ -335,39 +335,39 @@ document.addEventListener('DOMContentLoaded', () => {
         showLoading(true);
         
         try {
-            // MOBILE FIX: Enhanced fetch configuration for mobile browsers
-            const response = await fetch('api/invoices/print_invoice_network.php', {
-                method: 'POST',
-                credentials: 'include', // CRITICAL: Include session cookies
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                    'X-Requested-With': 'XMLHttpRequest',
-                    'Cache-Control': 'no-cache',
-                    'Accept': 'application/json'
-                },
-                body: new URLSearchParams({
-                    order_id: currentOrder.id,
-                    printer_id: 2 // SIMPLE: Use printer ID 2 for invoices
-                })
-            });
-    
-            if (!response.ok) {
-                if (response.status === 403) {
-                    throw new Error('Sesiune expirată. Te rugăm să reîncarci pagina și să te autentifici din nou.');
+            for (let i = 0; i < 2; i++) {
+                // MOBILE FIX: Enhanced fetch configuration for mobile browsers
+                const response = await fetch('api/invoices/print_invoice_network.php', {
+                    method: 'POST',
+                    credentials: 'include', // CRITICAL: Include session cookies
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'Cache-Control': 'no-cache',
+                        'Accept': 'application/json'
+                    },
+                    body: new URLSearchParams({
+                        order_id: currentOrder.id,
+                        printer_id: 2 // SIMPLE: Use printer ID 2 for invoices
+                    })
+                });
+
+                if (!response.ok) {
+                    if (response.status === 403) {
+                        throw new Error('Sesiune expirată. Te rugăm să reîncarci pagina și să te autentifici din nou.');
+                    }
+                    throw new Error(`Eroare server: HTTP ${response.status}`);
                 }
-                throw new Error(`Eroare server: HTTP ${response.status}`);
+
+                const data = await response.json();
+                console.log('📄 Invoice response data:', data);
+
+                if (data.status !== 'success') {
+                    throw new Error(data.message || 'Eroare la printarea facturii');
+                }
             }
-    
-            const data = await response.json();
-            console.log('📄 Invoice response data:', data);
-            
-            if (data.status === 'success') {
-                showMessage('Factura a fost trimisă la imprimantă.', 'success');
-                console.log('✅ Invoice print job ID:', data.job_id);
-            } else {
-                throw new Error(data.message || 'Eroare la printarea facturii');
-            }
-            
+
+            showMessage('Factura a fost trimisă la imprimantă.', 'success');
         } catch (error) {
             console.error('❌ Invoice print failed:', error);
             showMessage(`Eroare la printarea facturii: ${error.message}`, 'error');

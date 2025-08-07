@@ -88,9 +88,27 @@ try {
     }
 
     $locationId = null;
+    $designatedLocationId = null;
+    $finalLocationId = null;
+    $finalLocationCode = null;
+    $finalLocationType = null;
+    $message = '';
     if ($doAddStock) {
-        // Handle location_id conversion (string location_code to integer id)
-        if ($locationInput) {
+        // Try to find designated location for this product
+        $stmt = $db->prepare("SELECT location_id FROM location_subdivisions WHERE dedicated_product_id = ? LIMIT 1");
+        $stmt->execute([$productId]);
+        $designatedLocationId = $stmt->fetchColumn();
+        if (!$designatedLocationId) {
+            $stmt = $db->prepare("SELECT location_id FROM location_level_settings WHERE dedicated_product_id = ? LIMIT 1");
+            $stmt->execute([$productId]);
+            $designatedLocationId = $stmt->fetchColumn();
+        }
+
+        if ($designatedLocationId) {
+            $locationId = (int)$designatedLocationId;
+            error_log("Production Receipt Debug - Using designated location_id: $locationId");
+        } elseif ($locationInput) {
+            // Handle location_id conversion (string location_code to integer id)
             if (is_numeric($locationInput)) {
                 $stmt = $db->prepare("SELECT id FROM locations WHERE id = ? AND status = 'active'");
                 $stmt->execute([(int)$locationInput]);
@@ -112,7 +130,7 @@ try {
             }
         }
 
-        // If no location provided or found, find a default production location
+        // If no location determined yet, use default production location
         if (!$locationId) {
             $stmt = $db->prepare("SELECT id FROM locations WHERE type = 'production' AND status = 'active' LIMIT 1");
             $stmt->execute();
@@ -174,6 +192,36 @@ try {
             error_log("Production Receipt Debug - Created inventory record without batch: $invId");
         }
         if (!$invId) { throw new Exception('Failed to add inventory - database insert failed'); }
+
+        // Fetch final location details for user feedback
+        $stmt = $db->prepare("SELECT location_id FROM inventory WHERE id = ?");
+        $stmt->execute([$invId]);
+        $finalLocationId = (int)$stmt->fetchColumn();
+
+        $stmt = $db->prepare("SELECT location_code, type FROM locations WHERE id = ?");
+        $stmt->execute([$finalLocationId]);
+        $locInfo = $stmt->fetch(PDO::FETCH_ASSOC);
+        $finalLocationCode = $locInfo['location_code'] ?? '';
+        $finalLocationType = $locInfo['type'] ?? '';
+
+        $designatedCode = null;
+        if ($designatedLocationId) {
+            $stmt = $db->prepare("SELECT location_code FROM locations WHERE id = ?");
+            $stmt->execute([$designatedLocationId]);
+            $designatedCode = $stmt->fetchColumn();
+        }
+
+        if ($designatedLocationId && $finalLocationId !== (int)$designatedLocationId) {
+            $message = "Locația dedicată {$designatedCode} este plină. Stocul a fost adăugat în zona temporară {$finalLocationCode}.";
+        } else {
+            if ($finalLocationType === 'temporary') {
+                $message = "Stoc adăugat în zona temporară {$finalLocationCode}.";
+            } elseif ($designatedCode) {
+                $message = "Stoc adăugat în locația dedicată {$finalLocationCode}.";
+            } else {
+                $message = "Stoc adăugat în locația {$finalLocationCode}.";
+            }
+        }
     }
 
     $labelUrl = null;
@@ -219,11 +267,13 @@ try {
     echo json_encode([
         'success' => true,
         'inventory_id' => $invId,
-        'message' => $doAddStock ? 'Production receipt recorded successfully' : 'Labels printed successfully',
+        'location_id' => $doAddStock ? $finalLocationId : null,
+        'location_code' => $doAddStock ? $finalLocationCode : null,
+        'message' => $doAddStock ? $message : 'Labels printed successfully',
         'saved_photos' => $doAddStock ? $savedPhotos : [],
         'debug' => [
             'product_id' => $productId,
-            'location_id' => $locationId,
+            'location_id' => $doAddStock ? $finalLocationId : null,
             'quantity' => $quantity,
             'batch_number' => $batchNumber,
             'produced_at' => $producedAt

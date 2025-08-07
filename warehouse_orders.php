@@ -93,7 +93,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
 // Get some basic stats for the warehouse dashboard
 try {
     $pendingOrders = $orderModel->countPendingOrders();
-    $processingOrders = count($orderModel->getOrdersByStatus('processing'));
+    $processingOrders = $orderModel->countProcessingOrders();
     $todayCompleted = $orderModel->countCompletedToday();
 } catch (Exception $e) {
     error_log("Error getting warehouse stats: " . $e->getMessage());
@@ -125,47 +125,23 @@ try {
         <!-- Stats Section (matching warehouse_hub.css style) -->
         <div class="stats-section">
             <div class="stats-grid">
-                <div class="stat-card">
+                <div class="stat-card" data-status="pending">
                     <span class="material-symbols-outlined stat-icon">pending_actions</span>
                     <div class="stat-number"><?= $pendingOrders ?></div>
                     <div class="stat-label">În așteptare</div>
                 </div>
-                
-                <div class="stat-card">
+
+                <div class="stat-card" data-status="processing">
                     <span class="material-symbols-outlined stat-icon">engineering</span>
                     <div class="stat-number"><?= $processingOrders ?></div>
                     <div class="stat-label">În procesare</div>
                 </div>
-                
-                <div class="stat-card">
+
+                <div class="stat-card" data-status="completed">
                     <span class="material-symbols-outlined stat-icon">task_alt</span>
                     <div class="stat-number"><?= $todayCompleted ?></div>
                     <div class="stat-label">Finalizate azi</div>
                 </div>
-            </div>
-        </div>
-
-        <!-- Filter Section -->
-        <div class="filter-section">
-            <div class="filter-row">
-                <select id="status-filter" class="filter-select">
-                    <option value="">Toate statusurile</option>
-                    <option value="pending">În așteptare</option>
-                    <option value="processing">În procesare</option>
-                    <option value="ready">Gata pentru livrare</option>
-                </select>
-                
-                <select id="priority-filter" class="filter-select">
-                    <option value="">Toate prioritățile</option>
-                    <option value="urgent">Urgent</option>
-                    <option value="high">Ridicată</option>
-                    <option value="normal">Normală</option>
-                </select>
-                
-                <button id="refresh-btn" class="refresh-btn">
-                    <span class="material-symbols-outlined">refresh</span>
-                    Actualizează
-                </button>
             </div>
         </div>
 

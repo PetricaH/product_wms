@@ -238,8 +238,8 @@ class Inventory {
             require_once __DIR__ . '/LocationLevelSettings.php';
             $lls = new LocationLevelSettings($this->conn);
             $name = $lls->getLevelNameByNumber((int)$data['location_id'], (int)$shelfLevel);
-            $shelfLevel = $name ?: 'middle';
-        } elseif ($shelfLevel === null) {
+            $shelfLevel = $name ?: 'Nivel ' . $shelfLevel;
+        } elseif ($shelfLevel === null || $shelfLevel === '') {
             $shelfLevel = 'middle';
         }
 

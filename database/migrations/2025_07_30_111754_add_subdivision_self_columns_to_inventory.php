@@ -27,17 +27,23 @@ class AddSubdivisionShelfColumnsToInventoryMigration {
                 echo "    ✓ Column subdivision_number already exists\n";
             }
             
-            // Check if shelf_level column exists  
+            // Check if shelf_level column exists and ensure it can store custom names
             $shelfLevelCheck = $pdo->query("SHOW COLUMNS FROM inventory LIKE 'shelf_level'");
             if ($shelfLevelCheck->rowCount() == 0) {
                 $pdo->exec("
-                    ALTER TABLE inventory 
-                    ADD COLUMN shelf_level ENUM('top', 'middle', 'bottom') DEFAULT 'middle' 
+                    ALTER TABLE inventory
+                    ADD COLUMN shelf_level VARCHAR(50) DEFAULT NULL
                     AFTER subdivision_number
                 ");
                 echo "    ✓ Added shelf_level column\n";
             } else {
-                echo "    ✓ Column shelf_level already exists\n";
+                $column = $shelfLevelCheck->fetch(PDO::FETCH_ASSOC);
+                if (stripos($column['Type'], 'varchar') === false) {
+                    $pdo->exec("ALTER TABLE inventory MODIFY COLUMN shelf_level VARCHAR(50) DEFAULT NULL");
+                    echo "    ✓ Modified shelf_level column to VARCHAR(50)\n";
+                } else {
+                    echo "    ✓ Column shelf_level already exists\n";
+                }
             }
             
             // Add indexes for better performance

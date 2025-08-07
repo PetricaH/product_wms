@@ -404,6 +404,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                         <th>Categorie</th>
                                         <th>Furnizor</th>
                                         <th>U.M.</th>
+                                        <th>Locație</th>
                                         <th>Stoc</th>
                                         <th>Status</th>
                                         <th width="100">Acțiuni</th>
@@ -460,6 +461,13 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                     <?php endif; ?>
                                                 </td>
                                                 <td>
+                                                    <?php if (!empty($product['location_details'])): ?>
+                                                        <span class="location-info"><?= htmlspecialchars($product['location_details']) ?></span>
+                                                    <?php else: ?>
+                                                        <span class="text-muted">-</span>
+                                                    <?php endif; ?>
+                                                </td>
+                                                <td>
                                                     <div class="quantity-info">
                                                         <span class="quantity-value"><?= number_format($product['quantity']) ?></span>
                                                         <?php if ($product['quantity'] <= ($product['min_stock_level'] ?? 5)): ?>
@@ -508,7 +516,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                         <?php endforeach; ?>
                                     <?php else: ?>
                                         <tr>
-                                            <td colspan="9" class="text-center">
+                                            <td colspan="10" class="text-center">
                                                 <div class="empty-state">
                                                     <span class="material-symbols-outlined">inventory_2</span>
                                                     <h3>Nu există produse</h3>

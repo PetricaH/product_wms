@@ -59,9 +59,16 @@ try {
     // Verify AWB still exists in Cargus before attempting to print
     $cargusService = new CargusService($db);
     $track = $cargusService->trackAWB($awbCode);
-    $status = $track['data']['status'] ?? 'Unknown';
-    $history = $track['data']['history'] ?? [];
-    if (!$track['success'] || ($status === 'Unknown' && empty($history))) {
+    if (!$track['success']) {
+        respond([
+            'success' => false,
+            'error' => 'Unable to verify AWB in Cargus'
+        ], 502);
+    }
+    // Allow printing even if Cargus returns "Unknown" with no history.
+    // Only block printing when Cargus explicitly reports the AWB as not found.
+    $status = strtolower($track['data']['status'] ?? '');
+    if ($status === 'not found' || $status === 'awb not found') {
         respond([
             'success' => false,
             'error' => 'AWB not found in Cargus. It may have been deleted.'

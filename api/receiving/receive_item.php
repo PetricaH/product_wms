@@ -17,6 +17,7 @@ if (!defined('BASE_PATH')) {
 
 require_once BASE_PATH . '/bootstrap.php';
 require_once BASE_PATH . '/includes/qc_helpers.php';
+require_once BASE_PATH . '/models/ShelfLevelResolver.php';
 
 if (!isset($_SESSION['user_id'])) {
     http_response_code(401);
@@ -275,10 +276,16 @@ try {
                     :expiry_date, NOW()
                 )
             ");
+            $shelfLevel = ShelfLevelResolver::getCorrectShelfLevel(
+                $db,
+                $location['id'],
+                $orderItem['main_product_id'],
+                null
+            ) ?? 'middle';
             $stmt->execute([
                 ':product_id' => $orderItem['main_product_id'],
                 ':location_id' => $location['id'],
-                ':shelf_level' => 'middle',
+                ':shelf_level' => $shelfLevel,
                 ':quantity' => $receivedQuantity,
                 ':batch_number' => $batchNumber ?: null,
                 ':expiry_date' => $expiryDate ?: null

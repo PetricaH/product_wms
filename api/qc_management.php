@@ -15,6 +15,7 @@ if (!defined('BASE_PATH')) {
 }
 
 require_once BASE_PATH . '/bootstrap.php';
+require_once BASE_PATH . '/models/ShelfLevelResolver.php';
 
 // Session and authentication check
 if (!isset($_SESSION['user_id']) || !in_array($_SESSION['role'], ['admin', 'supervisor'])) {
@@ -365,10 +366,16 @@ function approveItems($db, $input) {
                         INSERT INTO inventory (product_id, location_id, shelf_level, quantity, batch_number, expiry_date, received_at)
                         VALUES (:product_id, :location_id, :shelf_level, :quantity, :batch_number, :expiry_date, NOW())
                     ");
+                    $shelfLevel = ShelfLevelResolver::getCorrectShelfLevel(
+                        $db,
+                        $targetLocationId,
+                        $productId,
+                        $item['subdivision_number'] ?? null
+                    ) ?? 'middle';
                     $stmt->execute([
                         ':product_id' => $productId,
                         ':location_id' => $targetLocationId,
-                        ':shelf_level' => 'middle',
+                        ':shelf_level' => $shelfLevel,
                         ':quantity' => $item['received_quantity'],
                         ':batch_number' => $item['batch_number'],
                         ':expiry_date' => $item['expiry_date']

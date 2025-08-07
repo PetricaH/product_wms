@@ -184,9 +184,28 @@ class Inventory {
             }
         }
 
-        // Shelf rule enforcement
-        $locationLevel = $data['shelf_level'] ?? $this->detectShelfLevel($data['location_id']);
-        if ($locationLevel && !$this->validateShelfRule($data['product_id'], $locationLevel)) {
+        // Shelf rule enforcement and level resolution
+        $subdivision = $data['subdivision_number'] ?? null;
+        $shelfLevel  = $data['shelf_level'] ?? null;
+
+        if ($shelfLevel === null && $subdivision !== null) {
+            require_once __DIR__ . '/ShelfLevelResolver.php';
+            $resolved = ShelfLevelResolver::getCorrectShelfLevel(
+                $this->conn,
+                (int)$data['location_id'],
+                (int)$data['product_id'],
+                (int)$subdivision
+            );
+            if ($resolved !== null) {
+                $shelfLevel = $resolved;
+            }
+        }
+
+        if ($shelfLevel === null) {
+            $shelfLevel = $this->detectShelfLevel($data['location_id']);
+        }
+
+        if ($shelfLevel && !$this->validateShelfRule($data['product_id'], $shelfLevel)) {
             error_log('Add stock failed: shelf rule violation');
             return false;
         }
@@ -212,7 +231,6 @@ class Inventory {
         $batchNumber = $data['batch_number'] ?? null;
         $lotNumber   = $data['lot_number']   ?? null;
         $expiryDate  = $data['expiry_date']  ?? null;
-        $shelfLevel  = $data['shelf_level']  ?? null;
         $subdivision = $data['subdivision_number'] ?? null;
 
         // Resolve numeric level using settings table when provided

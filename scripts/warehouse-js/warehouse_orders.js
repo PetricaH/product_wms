@@ -4,6 +4,7 @@
 let allOrders = [];
 let filteredOrders = [];
 let currentOrderId = null;
+let activeStatusFilter = '';
 
 // Use PHP-provided configuration
 const API_BASE = window.WMS_CONFIG?.apiBase || '/api';
@@ -22,22 +23,21 @@ document.addEventListener('DOMContentLoaded', function() {
  * Initialize event listeners
  */
 function initializeEventListeners() {
-    // Filter event listeners
-    const statusFilter = document.getElementById('status-filter');
-    const priorityFilter = document.getElementById('priority-filter');
-    const refreshBtn = document.getElementById('refresh-btn');
-
-    if (statusFilter) {
-        statusFilter.addEventListener('change', applyFilters);
-    }
-    
-    if (priorityFilter) {
-        priorityFilter.addEventListener('change', applyFilters);
-    }
-    
-    if (refreshBtn) {
-        refreshBtn.addEventListener('click', refreshOrders);
-    }
+    const statCards = document.querySelectorAll('.stat-card');
+    statCards.forEach(card => {
+        card.addEventListener('click', () => {
+            const status = card.dataset.status;
+            if (activeStatusFilter === status) {
+                activeStatusFilter = '';
+                card.classList.remove('active');
+            } else {
+                activeStatusFilter = status;
+                statCards.forEach(c => c.classList.remove('active'));
+                card.classList.add('active');
+            }
+            applyFilters();
+        });
+    });
 
     console.log('Event listeners initialized');
 }
@@ -98,18 +98,13 @@ async function loadOrders() {
  * Apply current filters to orders
  */
 function applyFilters() {
-    const statusFilter = document.getElementById('status-filter');
-    const priorityFilter = document.getElementById('priority-filter');
-    
-    const statusValue = statusFilter ? statusFilter.value : '';
-    const priorityValue = priorityFilter ? priorityFilter.value : '';
-    
     filteredOrders = allOrders.filter(order => {
-        const statusMatch = !statusValue || order.status === statusValue;
-        const priorityMatch = !priorityValue || order.priority === priorityValue;
-        return statusMatch && priorityMatch;
+        return !activeStatusFilter || order.status === activeStatusFilter;
     });
-    
+
+    // Ensure orders are sorted from oldest to newest
+    filteredOrders.sort((a, b) => new Date(a.order_date) - new Date(b.order_date));
+
     console.log(`Filtered to ${filteredOrders.length} orders`);
     displayOrders();
 }
@@ -207,17 +202,21 @@ function createOrderCard(order) {
     const priorityClass = order.priority.toLowerCase();
     
     // Determine what actions are available based on order status
-    const isProcessing = order.status.toLowerCase() === 'processing' || order.status.toLowerCase() === 'assigned';
-    
-    const actionButtons = isProcessing 
-        ? `<button class="btn btn-success" onclick="event.stopPropagation(); continuePicking('${order.order_number}')">
-               <span class="material-symbols-outlined">play_arrow</span>
-               Continuă Picking
-           </button>`
-        : `<button class="btn btn-primary" onclick="event.stopPropagation(); processOrder(${order.id})">
-               <span class="material-symbols-outlined">engineering</span>
-               Începe Procesarea
-           </button>`;
+    const statusLower = order.status.toLowerCase();
+    const isProcessing = statusLower === 'processing' || statusLower === 'assigned';
+    let actionButtons = '';
+
+    if (isProcessing) {
+        actionButtons = `<button class="btn btn-success" onclick="event.stopPropagation(); continuePicking('${order.order_number}')">
+                <span class="material-symbols-outlined">play_arrow</span>
+                Continuă Picking
+            </button>`;
+    } else if (statusLower === 'pending') {
+        actionButtons = `<button class="btn btn-primary" onclick="event.stopPropagation(); processOrder(${order.id})">
+                <span class="material-symbols-outlined">engineering</span>
+                Începe Procesarea
+            </button>`;
+    }
     
     card.innerHTML = `
         <div class="order-header">
@@ -390,13 +389,6 @@ async function processOrder(orderId) {
     }
 }
 
-/**
- * Refresh orders
- */
-function refreshOrders() {
-    console.log('🔄 Refreshing orders...');
-    loadOrders();
-}
 
 /**
  * Continue picking an order that's already assigned
@@ -532,7 +524,7 @@ function showError(title, message, apiUrl) {
             <h3>${title}</h3>
             <p><strong>Error:</strong> ${escapeHtml(message)}</p>
             <p><strong>API URL:</strong> ${escapeHtml(apiUrl)}</p>
-            <button onclick="refreshOrders()" style="
+            <button onclick="loadOrders()" style="
                 background: var(--danger-color);
                 color: white;
                 border: none;
@@ -587,7 +579,8 @@ function clearFilters() {
 }
 
 // Make functions globally available
-window.refreshOrders = refreshOrders;
+// Expose loadOrders for retry button
+window.loadOrders = loadOrders;
 window.clearFilters = clearFilters;
 window.closeOrderDetails = closeOrderDetails;
 window.processCurrentOrder = processCurrentOrder;

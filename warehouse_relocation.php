@@ -101,5 +101,4 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
 <?php require_once __DIR__ . '/includes/warehouse_footer.php'; ?>
 </body>
 </html>
-
  

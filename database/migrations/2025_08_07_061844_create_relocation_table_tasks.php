@@ -34,3 +34,4 @@ class CreateRelocationTasksTable {
         $pdo->exec("DROP TABLE IF EXISTS relocation_tasks");
     }
 }
+return new CreateRelocationTasksTable();

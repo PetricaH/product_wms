@@ -232,6 +232,15 @@ document.addEventListener('DOMContentLoaded', () => {
             // Normalize AWB field from API (tracking_number vs awb_barcode)
             if (currentOrder) {
                 currentOrder.awb_barcode = currentOrder.awb_barcode || currentOrder.tracking_number || currentOrder.awb || null;
+
+                // Verify that the AWB still exists in Cargus
+                if (currentOrder.awb_barcode) {
+                    const exists = await verifyAwbExists(currentOrder.awb_barcode);
+                    if (!exists) {
+                        showMessage('AWB nu mai există în Cargus. Poți regenera unul nou.', 'warning');
+                        currentOrder.awb_barcode = null;
+                    }
+                }
             }
 
             console.log('Current order:', currentOrder);
@@ -262,6 +271,20 @@ document.addEventListener('DOMContentLoaded', () => {
             showMessage(`Eroare la încărcarea comenzii: ${error.message}`, 'error');
         } finally {
             showLoading(false);
+        }
+    }
+
+    async function verifyAwbExists(awbCode) {
+        try {
+            const resp = await fetch(`api/awb/track_awb.php?awb=${encodeURIComponent(awbCode)}&refresh=1`, {
+                credentials: 'include',
+                headers: { 'Accept': 'application/json' }
+            });
+            const data = await resp.json();
+            return !!data.success;
+        } catch (err) {
+            console.error('AWB verification failed:', err);
+            return false;
         }
     }
 
@@ -387,7 +410,9 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             const checkData = await checkResp.json();
             if (!checkData.success) {
-                throw new Error('AWB inexistent în Cargus. Nu se poate printa.');
+                currentOrder.awb_barcode = null;
+                updateAwbButtons();
+                throw new Error('AWB inexistent în Cargus. Poți regenera AWB-ul.');
             }
 
             if (btn) {

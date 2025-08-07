@@ -82,6 +82,21 @@ try {
             $awbValid = !empty($order['awb_barcode']) && preg_match('/^\d+$/', (string)$order['awb_barcode']);
             $attempts = (int)($order['awb_generation_attempts'] ?? 0);
 
+            // If an AWB exists in DB, verify it still exists in Cargus
+            if ($awbValid) {
+                $track = $cargusService->trackAWB($order['awb_barcode']);
+                if (!$track['success']) {
+                    $orderModel->updateOrderField($orderId, [
+                        'awb_barcode' => null,
+                        'awb_created_at' => null,
+                        'cargus_order_id' => null,
+                        'updated_at' => date('Y-m-d H:i:s')
+                    ]);
+                    $order['awb_barcode'] = null;
+                    $awbValid = false;
+                }
+            }
+
             // Block if attempts exceeded and no valid AWB
             if (!$awbValid && $attempts >= 3) {
                 error_log("AWB generation blocked for order {$orderId}: attempts {$attempts}");

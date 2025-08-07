@@ -68,7 +68,6 @@ class RelocationTask {
             error_log("Error activating relocation tasks: " . $e->getMessage());
         }
     }
-
     /**
      * Fetch tasks that are ready to be processed
      */

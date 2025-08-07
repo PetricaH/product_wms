@@ -15,9 +15,18 @@ console.log('Warehouse Orders JS loaded, API_BASE:', API_BASE);
 document.addEventListener('DOMContentLoaded', function() {
     console.log('DOM loaded, initializing warehouse orders dashboard');
     initializeEventListeners();
+    setDefaultFilter();
     loadOrders();
     setInterval(loadOrders, 30000); // Auto-refresh every 30 seconds
 });
+
+function setDefaultFilter() {
+    activeStatusFilter = 'processing';
+    const processingCard = document.querySelector('.stat-card[data-status="processing"]');
+    if (processingCard) {
+        processingCard.classList.add('active');
+    }
+}
 
 /**
  * Initialize event listeners
@@ -99,6 +108,12 @@ async function loadOrders() {
  */
 function applyFilters() {
     filteredOrders = allOrders.filter(order => {
+        if (activeStatusFilter === 'processing') {
+            return order.status === 'processing' || order.status === 'assigned';
+        }
+        if (activeStatusFilter === 'completed') {
+            return order.status === 'completed' || order.status === 'ready';
+        }
         return !activeStatusFilter || order.status === activeStatusFilter;
     });
 

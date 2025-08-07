@@ -316,7 +316,7 @@ class Order
     public function countCompletedToday(): int {
         try {
             $query = "SELECT COUNT(*) FROM orders
-                    WHERE LOWER(status) = 'completed' AND DATE(updated_at) = CURDATE()";
+                    WHERE LOWER(status) IN ('completed','ready','ready_to_ship') AND DATE(updated_at) = CURDATE()";
             $stmt = $this->conn->prepare($query);
             $stmt->execute();
             return (int)$stmt->fetchColumn();

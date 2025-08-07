@@ -96,7 +96,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 try {
     $stmt = $db->prepare("
-        SELECT rt.*,
+        SELECT rt.*, 
                p.name as product_name, p.sku as product_sku,
                l1.location_code as from_location, l2.location_code as to_location
         FROM relocation_tasks rt
@@ -108,11 +108,25 @@ try {
     ");
     $stmt->execute();
     $pendingTasks = $stmt->fetchAll(PDO::FETCH_ASSOC);
-    $pendingTasksCount = count($pendingTasks);
+    $pendingCount = 0;
+    $readyCount = 0;
+    foreach ($pendingTasks as $task) {
+        if (($task['status'] ?? '') === 'pending') {
+            $pendingCount++;
+        } elseif (($task['status'] ?? '') === 'ready') {
+            $readyCount++;
+        }
+    }
+
+    $stmt = $db->prepare("SELECT COUNT(*) FROM relocation_tasks WHERE status = 'completed' AND DATE(updated_at) = CURDATE()");
+    $stmt->execute();
+    $completedToday = (int)$stmt->fetchColumn();
 } catch (Exception $e) {
     error_log("Error fetching relocation data: " . $e->getMessage());
     $pendingTasks = [];
-    $pendingTasksCount = 0;
+    $pendingCount = 0;
+    $readyCount = 0;
+    $completedToday = 0;
 }
 
 $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
@@ -124,14 +138,25 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
     <title>Relocări Depozit - WMS</title>
 </head>
 <body>
-    <div class="mobile-picker-container">
-        <div class="picker-header">
-            <div class="header-content">
-                <h1><span class="material-symbols-outlined">move_location</span>Relocări Depozit</h1>
-                <div class="order-info">
-                    <div class="top-row">
-                        <div class="order-number">În așteptare: <span><?= $pendingTasksCount ?></span></div>
-                    </div>
+    <?php require_once __DIR__ . '/includes/warehouse_navbar.php'; ?>
+
+    <div class="main-container">
+        <div class="stats-section">
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <span class="material-symbols-outlined stat-icon">pending_actions</span>
+                    <div class="stat-number"><?= $pendingCount ?></div>
+                    <div class="stat-label">În așteptare</div>
+                </div>
+                <div class="stat-card">
+                    <span class="material-symbols-outlined stat-icon">inventory_2</span>
+                    <div class="stat-number"><?= $readyCount ?></div>
+                    <div class="stat-label">Gata</div>
+                </div>
+                <div class="stat-card">
+                    <span class="material-symbols-outlined stat-icon">task_alt</span>
+                    <div class="stat-number"><?= $completedToday ?></div>
+                    <div class="stat-label">Finalizate azi</div>
                 </div>
             </div>
         </div>

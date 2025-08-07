@@ -17,9 +17,14 @@ if (!isset($config['connection_factory']) || !is_callable($config['connection_fa
 $dbFactory = $config['connection_factory'];
 $db = $dbFactory();
 
-// Include Product model
+// Include models
 require_once BASE_PATH . '/models/Product.php';
+require_once BASE_PATH . '/models/Inventory.php';
+require_once BASE_PATH . '/models/Location.php';
 $productModel = new Product($db);
+$inventoryModel = new Inventory($db);
+$locationModel = new Location($db);
+$allLocations = $locationModel->getAllLocations();
 
 // Handle CRUD operations
 $message = '';
@@ -127,6 +132,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 } else {
                     $message = 'Eroare la ștergerea produsului.';
+                    $messageType = 'error';
+                }
+            }
+            break;
+
+        case 'add_stock':
+            $stockData = [
+                'product_id' => intval($_POST['product_id'] ?? 0),
+                'location_id' => intval($_POST['location_id'] ?? 0),
+                'quantity' => intval($_POST['quantity'] ?? 0),
+                'batch_number' => trim($_POST['batch_number'] ?? ''),
+                'lot_number' => trim($_POST['lot_number'] ?? ''),
+                'expiry_date' => $_POST['expiry_date'] ?? null,
+                'received_at' => $_POST['received_at'] ?? date('Y-m-d H:i:s'),
+                'shelf_level' => $_POST['shelf_level'] ?? null,
+                'subdivision_number' => isset($_POST['subdivision_number']) ? intval($_POST['subdivision_number']) : null
+            ];
+
+            if (!empty($stockData['received_at']) && strpos($stockData['received_at'], 'T') !== false) {
+                $dateTime = DateTime::createFromFormat('Y-m-d\TH:i', $stockData['received_at']);
+                if ($dateTime) {
+                    $stockData['received_at'] = $dateTime->format('Y-m-d H:i:s');
+                }
+            }
+
+            if ($stockData['product_id'] <= 0 || $stockData['location_id'] <= 0 || $stockData['quantity'] <= 0) {
+                $message = 'Produsul, locația și cantitatea sunt obligatorii.';
+                $messageType = 'error';
+            } else {
+                if ($inventoryModel->addStock($stockData)) {
+                    $message = 'Stocul a fost adăugat cu succes.';
+                    $messageType = 'success';
+                } else {
+                    $message = 'Eroare la adăugarea stocului.';
                     $messageType = 'error';
                 }
             }
@@ -464,7 +503,9 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                     <?php if (!empty($product['location_details'])): ?>
                                                         <span class="location-info"><?= htmlspecialchars($product['location_details']) ?></span>
                                                     <?php else: ?>
-                                                        <span class="text-muted">-</span>
+                                                        <button class="btn btn-sm btn-outline-primary" onclick="addStockForProduct(<?= $product['product_id'] ?>)">
+                                                            Atribuie Locatie
+                                                        </button>
                                                     <?php endif; ?>
                                                 </td>
                                                 <td>
@@ -899,6 +940,88 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
         </div>
     </div>
 </div>
+
+    <!-- Add Stock Modal -->
+    <div class="modal" id="addStockModal">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 class="modal-title">Adaugă Stoc</h3>
+                    <button class="modal-close" onclick="closeAddStockModal()">
+                        <span class="material-symbols-outlined">close</span>
+                    </button>
+                </div>
+                <form method="POST" action="">
+                    <div class="modal-body">
+                        <input type="hidden" name="action" value="add_stock">
+
+                        <div class="form-group">
+                            <label class="form-label">Produs *</label>
+                            <div class="product-search-container">
+                                <input type="hidden" id="add-product" name="product_id">
+                                <input type="text" id="add-product-search" class="form-control product-search-input" placeholder="Caută produs..." autocomplete="off"
+                                       onkeyup="searchProducts(this.value)" onfocus="showProductResults()">
+                                <div class="product-search-results" id="add-product-results"></div>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="add-location" class="form-label">Locație *</label>
+                            <select id="add-location" name="location_id" class="form-control" required>
+                                <option value="">Selectează locația</option>
+                                <?php foreach ($allLocations as $location): ?>
+                                    <option value="<?= $location['id'] ?>">
+                                        <?= htmlspecialchars($location['location_code']) ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="shelf_level" class="form-label">Nivel raft</label>
+                            <select id="shelf_level" name="shelf_level" class="form-control" onchange="updateSubdivisionOptions()">
+                                <option value="">--</option>
+                            </select>
+                        </div>
+                        <div class="form-group" id="subdivision-container" style="display:none;">
+                            <label for="subdivision_number" class="form-label">Subdiviziune</label>
+                            <select id="subdivision_number" name="subdivision_number" class="form-control"></select>
+                        </div>
+
+                        <div class="row">
+                            <div class="form-group">
+                                <label for="add-quantity" class="form-label">Cantitate <span id="total-articles" style="font-weight:normal;color:var(--text-secondary);"></span> *</label>
+                                <input type="number" id="add-quantity" name="quantity" class="form-control" min="1" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="add-expiry" class="form-label">Data Expirării</label>
+                                <input type="date" id="add-expiry" name="expiry_date" class="form-control">
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="form-group">
+                                <label for="add-batch" class="form-label">Număr Batch</label>
+                                <input type="text" id="add-batch" name="batch_number" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label for="add-lot" class="form-label">Număr Lot</label>
+                                <input type="text" id="add-lot" name="lot_number" class="form-control">
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="add-received" class="form-label">Data Primirii</label>
+                            <input type="datetime-local" id="add-received" name="received_at" class="form-control" value="<?= date('Y-m-d\TH:i') ?>">
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" onclick="closeAddStockModal()">Anulează</button>
+                        <button type="submit" class="btn btn-primary">Adaugă Stoc</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
 
     <!-- Delete Confirmation Modal -->
     <div class="modal" id="deleteProductModal" style="display: none;">

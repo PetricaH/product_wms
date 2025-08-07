@@ -55,6 +55,10 @@ class WarehouseHub {
                         e.preventDefault();
                         this.navigateToOperation('cycle-count');
                         break;
+                    case '5':
+                        e.preventDefault();
+                        this.navigateToOperation('relocation');
+                        break;
                 }
             }
         });
@@ -147,7 +151,9 @@ class WarehouseHub {
             total_products: Math.floor(Math.random() * 5000) + 1000,
             low_stock_items: Math.floor(Math.random() * 50) + 10,
             scheduled_counts: Math.floor(Math.random() * 10) + 2,
-            variance_items: Math.floor(Math.random() * 30) + 5
+            variance_items: Math.floor(Math.random() * 30) + 5,
+            pending_relocations: Math.floor(Math.random() * 20),
+            relocations_today: Math.floor(Math.random() * 20)
         };
         
         this.updateStatistics();
@@ -167,10 +173,14 @@ class WarehouseHub {
         // Update inventory stats
         this.updateStatElement('total-products', this.stats.total_products);
         this.updateStatElement('low-stock-items', this.stats.low_stock_items);
-        
+
         // Update cycle count stats
         this.updateStatElement('scheduled-counts', this.stats.scheduled_counts);
         this.updateStatElement('variance-items', this.stats.variance_items);
+
+        // Update relocation stats
+        this.updateStatElement('pending-relocations', this.stats.pending_relocations);
+        this.updateStatElement('relocated-today', this.stats.relocations_today);
     }
 
     updateStatElement(elementId, value) {
@@ -197,9 +207,14 @@ class WarehouseHub {
         this.updateStatusIndicator('inventory-status', inventoryStatus);
         
         // Update cycle count status
-        const cycleCountStatus = this.stats.variance_items > 20 ? 'danger' : 
+        const cycleCountStatus = this.stats.variance_items > 20 ? 'danger' :
                                 this.stats.variance_items > 10 ? 'warning' : 'success';
         this.updateStatusIndicator('cycle-count-status', cycleCountStatus);
+
+        // Update relocation status
+        const relocationStatus = this.stats.pending_relocations > 15 ? 'danger' :
+                                 this.stats.pending_relocations > 5 ? 'warning' : 'success';
+        this.updateStatusIndicator('relocation-status', relocationStatus);
     }
 
     updateStatusIndicator(elementId, status) {
@@ -255,6 +270,10 @@ class WarehouseHub {
                     case 'cycle-count':
                         console.log('🔍 Navigating to cycle count interface...');
                         window.location.href = 'warehouse_cycle_count.php';
+                        break;
+                    case 'relocation':
+                        console.log('🔄 Navigating to relocation tasks...');
+                        window.location.href = 'warehouse_relocation.php';
                         break;
                     default:
                         console.warn(`⚠️ Unknown operation: ${operation}`);

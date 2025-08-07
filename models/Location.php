@@ -19,6 +19,8 @@ class Location {
     private const DEFAULT_LENGTH_MM = 1200;
     private const DEFAULT_DEPTH_MM = 800;
     private const STANDARD_LEVELS = 3;
+    public const TYPE_TEMPORARY = 'temporary';
+
 
     public function __construct($db) {
         $this->conn = $db;
@@ -322,6 +324,48 @@ class Location {
      * @param bool $enhanceOccupancy Include enhanced occupancy calculations
      * @return array|false
      */
+    /**
+     * Check if location has reached capacity
+     * @param int $locationId
+     * @return bool
+     */
+    public function isLocationFull(int $locationId): bool {
+        try {
+            $stmt = $this->conn->prepare("SELECT capacity, current_occupancy FROM {$this->table} WHERE id = :id");
+            $stmt->bindParam(':id', $locationId, PDO::PARAM_INT);
+            $stmt->execute();
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$row) {
+                return false;
+            }
+            $capacity = (int)($row['capacity'] ?? 0);
+            if ($capacity === 0) {
+                return false;
+            }
+            return (int)($row['current_occupancy'] ?? 0) >= $capacity;
+        } catch (PDOException $e) {
+            error_log("Error checking location capacity: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Find an available temporary location
+     * @return int|null
+     */
+    public function findAvailableTemporaryLocation(): ?int {
+        try {
+            $query = "SELECT id FROM {$this->table} WHERE type = 'temporary' AND status = 'active' AND (capacity = 0 OR current_occupancy < capacity) ORDER BY id LIMIT 1";
+            $stmt = $this->conn->prepare($query);
+            $stmt->execute();
+            $id = $stmt->fetchColumn();
+            return $id ? (int)$id : null;
+        } catch (PDOException $e) {
+            error_log("Error finding temporary location: " . $e->getMessage());
+            return null;
+        }
+    }
+
     public function getLocationDetails($locationId, $includeLevelSettings = false, $includeZoneContext = false, $enhanceOccupancy = false) {
         $query = "SELECT 
                 l.*,
@@ -900,7 +944,8 @@ class Location {
                     COUNT(CASE WHEN type = 'warehouse' THEN 1 END) as warehouse_count,
                     COUNT(CASE WHEN type = 'zone' THEN 1 END) as zone_count,
                     COUNT(CASE WHEN type LIKE '%qc%' OR type LIKE '%quarantine%' THEN 1 END) as qc_count,
-                    COUNT(CASE WHEN type = 'production' THEN 1 END) as production_count
+                    COUNT(CASE WHEN type = 'production' THEN 1 END) as production_count,
+                    COUNT(CASE WHEN type = 'temporary' THEN 1 END) as temporary_count
                   FROM {$this->table} 
                   WHERE status = 'active'
                     AND (location_code IS NOT NULL OR zone IS NOT NULL)
@@ -970,6 +1015,7 @@ class Location {
         if ($zone['zone_count'] > 0) $parts[] = $zone['zone_count'] . ' zone';
         if ($zone['qc_count'] > 0) $parts[] = $zone['qc_count'] . ' QC';
         if ($zone['production_count'] > 0) $parts[] = $zone['production_count'] . ' producție';
+        if ($zone['temporary_count'] > 0) $parts[] = $zone['temporary_count'] . ' temporare';
         
         return !empty($parts) ? implode(', ', $parts) : 'Mixt';
     }

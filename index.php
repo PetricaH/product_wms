@@ -36,7 +36,8 @@ require_once __DIR__ . '/models/Location.php';
 require_once __DIR__ . '/models/Inventory.php';
 require_once __DIR__ . '/models/Order.php';
 require_once __DIR__ . '/models/ReceivingSession.php';
-require_once BASE_PATH . '/models/LocationLevelSettings.php'; 
+require_once __DIR__ . '/models/RelocationTask.php';
+require_once BASE_PATH . '/models/LocationLevelSettings.php';
 
 $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
 
@@ -47,6 +48,7 @@ $location = new Location($db);
 $inventory = new Inventory($db);
 $orders = new Order($db);
 $receivingSession = new ReceivingSession($db);
+$relocationTask = new RelocationTask($db);
 
 // Get Dashboard Data
 try {
@@ -60,6 +62,7 @@ try {
     $pendingOrders = $orders->countPendingOrders();
     $completedOrdersToday = $orders->countCompletedToday();
     $pendingQualityItems = $receivingSession->countPendingQualityItems();
+    $pendingRelocations = $relocationTask->countReadyTasks();
     
     // Calculate warehouse occupation percentage
     $warehouseOccupationPercent = $totalLocations > 0 ? round(($occupiedLocations / $totalLocations) * 100, 1) : 0;
@@ -184,6 +187,7 @@ try {
     $recentOrders = $criticalStockAlerts = [];
     $todayStats = ['orders_created' => 0, 'orders_completed' => 0, 'items_moved' => 0];
     $pendingQualityItems = 0;
+    $pendingRelocations = 0;
     $pickingByOperator = $pickingByProduct = [];
     $receivingByOperator = $receivingByProduct = [];
     $todayTaskCounts = ['picking_tasks_today' => 0, 'receiving_tasks_today' => 0, 'active_picking_tasks' => 0, 'active_receiving_tasks' => 0];
@@ -303,6 +307,17 @@ try {
                             <div class="metric-values">
                                 <div class="metric-primary"><?= number_format($pendingQualityItems) ?></div>
                                 <div class="metric-label">QC în Așteptare</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Relocation Tasks -->
+                    <div class="metric-card danger">
+                        <div class="metric-header">
+                            <span class="material-symbols-outlined">swap_horiz</span>
+                            <div class="metric-values">
+                                <div class="metric-primary"><?= number_format($pendingRelocations) ?></div>
+                                <div class="metric-label">Relocări în așteptare</div>
                             </div>
                         </div>
                     </div>

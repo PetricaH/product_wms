@@ -109,14 +109,31 @@ try {
 
     // 7. Processing orders (currently being worked on)
     $processingOrdersQuery = "
-        SELECT COUNT(*) as count 
-        FROM orders 
-        WHERE status = 'processing' 
+        SELECT COUNT(*) as count
+        FROM orders
+        WHERE status = 'processing'
         AND type = 'outbound'
     ";
     $stmt = $db->prepare($processingOrdersQuery);
     $stmt->execute();
     $stats['processing_orders'] = (int)$stmt->fetchColumn();
+
+    // 8. Pending relocation tasks
+    $pendingRelocQuery = "SELECT COUNT(*) as count FROM relocation_tasks WHERE status = 'ready'";
+    $stmt = $db->prepare($pendingRelocQuery);
+    $stmt->execute();
+    $stats['pending_relocations'] = (int)$stmt->fetchColumn();
+
+    // 9. Relocations completed today
+    $relocTodayQuery = "
+        SELECT COUNT(*) as count
+        FROM relocation_tasks
+        WHERE DATE(updated_at) = CURDATE()
+        AND status = 'completed'
+    ";
+    $stmt = $db->prepare($relocTodayQuery);
+    $stmt->execute();
+    $stats['relocations_today'] = (int)$stmt->fetchColumn();
 
     // Return the statistics
     echo json_encode([

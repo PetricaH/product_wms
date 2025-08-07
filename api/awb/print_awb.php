@@ -55,7 +55,19 @@ try {
     if ($order['awb_barcode'] !== $awbCode) {
         respond(['success' => false, 'error' => 'AWB does not match order'], 400);
     }
-    
+
+    // Verify AWB still exists in Cargus before attempting to print
+    $cargusService = new CargusService($db);
+    $track = $cargusService->trackAWB($awbCode);
+    $status = $track['data']['status'] ?? 'Unknown';
+    $history = $track['data']['history'] ?? [];
+    if (!$track['success'] || ($status === 'Unknown' && empty($history))) {
+        respond([
+            'success' => false,
+            'error' => 'AWB not found in Cargus. It may have been deleted.'
+        ], 404);
+    }
+
     // Get printer details - SAME AS TEST PRINT APPROACH
     if ($printerId) {
         $stmt = $db->prepare('

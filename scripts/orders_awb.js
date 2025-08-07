@@ -472,6 +472,16 @@ function getSelectedFormat() {
 
 async function performAwbPrint(orderId, awbCode, orderNumber, printerId = null, format = 'label') {
     try {
+        // Check AWB still exists in Cargus before attempting to print
+        const verifyResp = await fetch(`api/awb/track_awb.php?awb=${encodeURIComponent(awbCode)}&refresh=1`, {
+            credentials: 'same-origin'
+        });
+        const verifyData = await verifyResp.json();
+        if (!verifyData.success) {
+            showNotification('AWB nu mai există în Cargus. Nu se poate printa.', 'error');
+            return;
+        }
+
         showNotification('Se generează AWB PDF din Cargus API...', 'info');
         
         const formData = new FormData();

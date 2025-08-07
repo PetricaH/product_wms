@@ -358,7 +358,14 @@ class SmartBillService {
         try {
             // Get or create default location for this warehouse
             $locationId = $this->getOrCreateWarehouseLocation($warehouse);
-            
+            require_once __DIR__ . '/ShelfLevelResolver.php';
+            $shelfLevel = ShelfLevelResolver::getCorrectShelfLevel(
+                $this->conn,
+                $locationId,
+                $productId,
+                null
+            ) ?? 'middle';
+
             $query = "INSERT INTO inventory (
                         product_id,
                         location_id,
@@ -366,15 +373,16 @@ class SmartBillService {
                         quantity,
                         received_at,
                         batch_number
-                    ) VALUES (?, ?, 'middle', ?, NOW(), ?)
+                    ) VALUES (?, ?, ?, ?, NOW(), ?)
                     ON DUPLICATE KEY UPDATE
                         quantity = VALUES(quantity),
                         received_at = NOW()";
-            
+
             $stmt = $this->conn->prepare($query);
             $stmt->execute([
                 $productId,
                 $locationId,
+                $shelfLevel,
                 $quantity,
                 'SB-' . date('Ymd') // SmartBill batch reference
             ]);

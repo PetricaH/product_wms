@@ -266,6 +266,18 @@ class CargusService
             // Calculate order weights and parcels
             $calculatedData = $this->calculateOrderShipping($order);
 
+            // Ensure parcel count reflects all items in the order
+            $totalItems = 0;
+            if (!empty($order['items']) && is_array($order['items'])) {
+                foreach ($order['items'] as $item) {
+                    $totalItems += (int)($item['quantity'] ?? 0);
+                }
+            }
+
+            if ($totalItems > 1 && (!isset($calculatedData['parcels_count']) || $calculatedData['parcels_count'] < $totalItems)) {
+                $calculatedData['parcels_count'] = $totalItems;
+            }
+
             // Get sender location
             $senderLocation = $this->getSenderLocation();
             if (!$senderLocation) {

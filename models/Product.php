@@ -91,12 +91,21 @@ class Product {
      * @return array Array of products
      */
     public function getProductsPaginatedWithSellers(int $pageSize, int $offset, string $search = '', string $category = '', int $sellerId = 0): array {
-        $query = "SELECT 
+        $query = "SELECT
                     p.*,
                     s.supplier_name as seller_name,
-                    s.contact_person as seller_contact
+                    s.contact_person as seller_contact,
+                    ld.location_details
                   FROM {$this->table} p
                   LEFT JOIN sellers s ON p.seller_id = s.id
+                  LEFT JOIN (
+                      SELECT i.product_id,
+                             GROUP_CONCAT(CONCAT(l.location_code, ' / ', i.shelf_level,
+                                 IF(i.subdivision_number IS NOT NULL, CONCAT(' / Subdiv ', i.subdivision_number), '')) SEPARATOR '; ') AS location_details
+                      FROM inventory i
+                      LEFT JOIN locations l ON i.location_id = l.id
+                      GROUP BY i.product_id
+                  ) ld ON p.product_id = ld.product_id
                   WHERE 1=1";
         
         $params = [];

@@ -372,10 +372,28 @@ document.addEventListener('DOMContentLoaded', () => {
         if (btn) {
             btn.disabled = true;
             btn.classList.remove('btn-pulse');
-            btn.innerHTML = '<span class="material-symbols-outlined spinning">hourglass_empty</span> Se generează PDF...';
+            btn.innerHTML = '<span class="material-symbols-outlined spinning">hourglass_empty</span> Se verifică AWB...';
         }
-    
+
         try {
+            // Verify AWB still exists in Cargus before sending to print
+            const checkResp = await fetch(`api/awb/track_awb.php?awb=${encodeURIComponent(awbCode)}&refresh=1`, {
+                credentials: 'include',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Cache-Control': 'no-cache',
+                    'Accept': 'application/json'
+                }
+            });
+            const checkData = await checkResp.json();
+            if (!checkData.success) {
+                throw new Error('AWB inexistent în Cargus. Nu se poate printa.');
+            }
+
+            if (btn) {
+                btn.innerHTML = '<span class="material-symbols-outlined spinning">hourglass_empty</span> Se generează PDF...';
+            }
+
             // MOBILE FIX: Enhanced fetch configuration for mobile browsers
             const response = await fetch('api/awb/print_awb.php', {
                 method: 'POST',

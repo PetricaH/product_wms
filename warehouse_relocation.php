@@ -101,15 +101,4 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
 <?php require_once __DIR__ . '/includes/warehouse_footer.php'; ?>
 </body>
 </html>
-
-<style>
-.tasks-table { margin-top: 1rem; }
-.tasks-table table { width: 100%; border-collapse: collapse; }
-.tasks-table th, .tasks-table td { padding: 0.75rem; border-bottom: 1px solid #ddd; text-align: left; }
-.tasks-table th { background: var(--light-gray); }
-.inline-form { display: inline; }
-.btn { padding: 0.5rem 1rem; border: none; border-radius: 4px; cursor: pointer; }
-.btn-primary { background-color: var(--primary-color); color: #fff; }
-.btn-primary:hover { opacity: 0.9; }
-</style>
-
+ 

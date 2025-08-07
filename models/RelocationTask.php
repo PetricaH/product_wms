@@ -91,6 +91,21 @@ class RelocationTask {
     }
 
     /**
+     * Count relocation tasks that are ready to process
+     */
+    public function countReadyTasks(): int {
+        try {
+            $query = "SELECT COUNT(*) FROM {$this->table} WHERE status = 'ready'";
+            $stmt = $this->conn->prepare($query);
+            $stmt->execute();
+            return (int)$stmt->fetchColumn();
+        } catch (PDOException $e) {
+            error_log("Error counting relocation tasks: " . $e->getMessage());
+            return 0;
+        }
+    }
+
+    /**
      * Update the status of a relocation task
      */
     public function updateStatus(int $taskId, string $status): bool {

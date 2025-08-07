@@ -375,6 +375,44 @@ function performBulkAction(action) {
 }
 
 /**
+ * Show category dropdown for bulk category change
+ */
+function showCategoryBulk() {
+    const select = document.getElementById('bulkCategorySelect');
+    const applyBtn = document.getElementById('applyCategoryBtn');
+    if (select.style.display === 'none') {
+        select.style.display = 'inline-block';
+        applyBtn.style.display = 'inline-block';
+    } else {
+        select.style.display = 'none';
+        applyBtn.style.display = 'none';
+    }
+}
+
+/**
+ * Apply bulk category change to selected products
+ */
+function applyBulkCategory() {
+    const selectedCheckboxes = document.querySelectorAll('.product-checkbox:checked');
+    const selectedCount = selectedCheckboxes.length;
+    if (selectedCount === 0) {
+        showNotification('Niciun produs selectat.', 'error');
+        return;
+    }
+    const categorySelect = document.getElementById('bulkCategorySelect');
+    const newCategory = categorySelect.value;
+    if (!newCategory) {
+        showNotification('Selectează o categorie.', 'error');
+        return;
+    }
+    if (confirm(`Ești sigur că vrei să schimbi categoria pentru ${selectedCount} produs${selectedCount > 1 ? 'e' : ''}?`)) {
+        document.getElementById('bulkActionInput').value = 'change_category';
+        document.getElementById('bulkCategoryInput').value = newCategory;
+        document.getElementById('bulkForm').submit();
+    }
+}
+
+/**
  * Get bulk action details for confirmation
  */
 function getBulkActionDetails(action, count) {

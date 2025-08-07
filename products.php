@@ -174,13 +174,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             case 'bulk_action':
                 $bulkAction = $_POST['bulk_action'] ?? '';
                 $selectedIds = $_POST['selected_products'] ?? [];
-                
+                $newCategory = trim($_POST['category'] ?? '');
+
                 // Debug logging
                 error_log("Bulk action: $bulkAction");
                 error_log("Selected IDs: " . implode(', ', $selectedIds));
-                
+
                 if (empty($selectedIds)) {
                     $message = 'Niciun produs selectat.';
+                    $messageType = 'error';
+                } elseif ($bulkAction === 'change_category' && empty($newCategory)) {
+                    $message = 'Selectați o categorie.';
                     $messageType = 'error';
                 } else {
                     $successCount = 0;
@@ -257,7 +261,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                         error_log("Failed to deactivate product ID: $productId");
                                     }
                                     break;
-                                    
+
+                                case 'change_category':
+                                    error_log("Attempting to change category for product ID: $productId to $newCategory");
+                                    if ($productModel->updateCategory($productId, $newCategory)) {
+                                        $successCount++;
+                                        error_log("Successfully changed category for product ID: $productId");
+                                        if (function_exists('logActivity')) {
+                                            $userId = $_SESSION['user_id'] ?? 0;
+                                            logActivity(
+                                                $userId,
+                                                'update',
+                                                'product',
+                                                $productId,
+                                                'Category changed via bulk action'
+                                            );
+                                        }
+                                    } else {
+                                        $errorCount++;
+                                        error_log("Failed to change category for product ID: $productId");
+                                    }
+                                    break;
+
                                 default:
                                     $errorCount++;
                                     error_log("Unknown bulk action: $bulkAction");
@@ -421,6 +446,19 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                 <span class="material-symbols-outlined">delete</span>
                                 Șterge
                             </button>
+                            <button type="button" class="btn btn-sm btn-info" onclick="showCategoryBulk()">
+                                <span class="material-symbols-outlined">category</span>
+                                Schimbă categorie
+                            </button>
+                            <select id="bulkCategorySelect" class="form-control" style="display:none; margin-left:10px;">
+                                <option value="">Selectează categorie</option>
+                                <?php foreach ($categories as $cat): ?>
+                                    <option value="<?= htmlspecialchars($cat) ?>"><?= htmlspecialchars($cat) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                            <button type="button" id="applyCategoryBtn" class="btn btn-sm btn-primary" style="display:none; margin-left:5px;" onclick="applyBulkCategory()">
+                                Aplică
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -431,6 +469,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                         <form id="bulkForm" method="POST" action="">
                             <input type="hidden" name="action" value="bulk_action">
                             <input type="hidden" name="bulk_action" id="bulkActionInput">
+                            <input type="hidden" name="category" id="bulkCategoryInput">
                             
                             <table class="table">
                                 <thead>
@@ -503,7 +542,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                     <?php if (!empty($product['location_details'])): ?>
                                                         <span class="location-info"><?= htmlspecialchars($product['location_details']) ?></span>
                                                     <?php else: ?>
-                                                        <button class="btn btn-sm btn-outline-primary" onclick="addStockForProduct(<?= $product['product_id'] ?>)">
+                                                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="addStockForProduct(<?= $product['product_id'] ?>)">
                                                             Atribuie Locatie
                                                         </button>
                                                     <?php endif; ?>

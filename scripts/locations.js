@@ -8,6 +8,8 @@
 let qr = null;
 let levelCounter = 0;
 let createdLevels = [];
+let levelMultiProducts = {};
+let multiProductTimeouts = {};
 
 function getNextAvailableLevelId() {
     let id = 1;
@@ -413,6 +415,14 @@ function createLevelHTML(level) {
                                 <div>
                                     <div class="policy-title">Multiple Produse</div>
                                     <div class="policy-description">Permite stocarea mai multor tipuri de produse</div>
+                                    <div class="multi-product-search" id="level_${level.id}_multi_products_container" style="display: none;" onclick="event.stopPropagation()">
+                                        <div class="product-search-container">
+                                            <input type="text" class="form-control product-search-input" placeholder="Caută produs..." autocomplete="off" onkeyup="searchMultiProduct(${level.id}, this.value)" onfocus="showMultiProductResults(${level.id})">
+                                            <div class="product-search-results" id="level_${level.id}_multi_product_results"></div>
+                                        </div>
+                                        <div class="selected-products" id="level_${level.id}_selected_products"></div>
+                                        <input type="hidden" id="level_${level.id}_multi_products" name="level_${level.id}_multi_products">
+                                    </div>
                                 </div>
                             </div>
                             <div class="policy-option" onclick="selectStoragePolicy(${level.id}, 'single_product_type', event)">
@@ -711,6 +721,8 @@ function updatePolicyOptions(levelId, policy) {
     const allowOthers = document.getElementById(`level_${levelId}_allow_others`);
     const productSection = document.getElementById(`product-section-${levelId}`);
     const categorySection = document.getElementById(`category-section-${levelId}`);
+    const multiContainer = document.getElementById(`level_${levelId}_multi_products_container`);
+    const subdivisionsEnabled = document.getElementById(`level_${levelId}_enable_subdivisions`)?.checked;
 
     if (policy === 'single_product_type') {
         dedicatedProduct.required = true;
@@ -718,6 +730,7 @@ function updatePolicyOptions(levelId, policy) {
         allowOthers.disabled = true;
         if (productSection) productSection.style.display = 'block';
         if (categorySection) categorySection.style.display = 'none';
+        if (multiContainer) multiContainer.style.display = 'none';
     } else if (policy === 'category_restricted') {
         if (dedicatedProduct) {
             dedicatedProduct.required = false;
@@ -731,14 +744,23 @@ function updatePolicyOptions(levelId, policy) {
         }
         if (productSection) productSection.style.display = 'none';
         if (categorySection) categorySection.style.display = 'block';
+        if (multiContainer) multiContainer.style.display = 'none';
     } else {
+        // multiple_products
         if (dedicatedProduct) {
             dedicatedProduct.required = false;
+            dedicatedProduct.value = '';
         }
         if (allowOthers) {
             allowOthers.disabled = false;
         }
-        if (productSection) productSection.style.display = 'block';
+        if (subdivisionsEnabled) {
+            if (productSection) productSection.style.display = 'none';
+            if (multiContainer) multiContainer.style.display = 'none';
+        } else {
+            if (productSection) productSection.style.display = 'none';
+            if (multiContainer) multiContainer.style.display = 'block';
+        }
         if (categorySection) categorySection.style.display = 'none';
     }
 }
@@ -908,6 +930,9 @@ function toggleSubdivisions(levelId) {
         // Clear all subdivisions
         clearSubdivisions(levelId);
     }
+
+    const currentPolicy = document.querySelector(`input[name="level_${levelId}_storage_policy"]:checked`)?.value || 'multiple_products';
+    updatePolicyOptions(levelId, currentPolicy);
 }
 
 /**
@@ -1235,6 +1260,101 @@ function hideLevelProductResults(levelId) {
     if (container) container.style.display = 'none';
 }
 
+// ===== Multiple Products Selection =====
+function searchMultiProduct(levelId, query) {
+    const timeoutKey = `multi_${levelId}`;
+
+    if (multiProductTimeouts[timeoutKey]) {
+        clearTimeout(multiProductTimeouts[timeoutKey]);
+    }
+
+    multiProductTimeouts[timeoutKey] = setTimeout(async () => {
+        if (query.length < 2) {
+            hideMultiProductResults(levelId);
+            return;
+        }
+
+        try {
+            if (productSearchCache[query]) {
+                displayMultiProductResults(levelId, productSearchCache[query]);
+                return;
+            }
+
+            const response = await fetch(`api/products.php?search=${encodeURIComponent(query)}&limit=10`);
+            const data = await response.json();
+            const products = Array.isArray(data) ? data : data.data;
+
+            if (response.ok && Array.isArray(products)) {
+                productSearchCache[query] = products;
+                displayMultiProductResults(levelId, products);
+            }
+        } catch (error) {
+            console.error('Product search error:', error);
+        }
+    }, 300);
+}
+
+function displayMultiProductResults(levelId, products) {
+    const container = document.getElementById(`level_${levelId}_multi_product_results`);
+    if (!container) return;
+
+    if (products.length === 0) {
+        container.innerHTML = '<div class="search-result-item no-results">Nu s-au găsit produse</div>';
+    } else {
+        container.innerHTML = products.map(p => `
+            <div class="search-result-item" onclick="addMultiProduct(${levelId}, ${p.id}, '${escapeHtml(p.name)}'); event.stopPropagation();">
+                <div class="product-name">${escapeHtml(p.name)}</div>
+                <div class="product-details">${escapeHtml(p.code)} - ${escapeHtml(p.category)}</div>
+            </div>
+        `).join('');
+    }
+
+    container.style.display = 'block';
+}
+
+function showMultiProductResults(levelId) {
+    const container = document.getElementById(`level_${levelId}_multi_product_results`);
+    const input = document.querySelector(`#level_${levelId}_multi_products_container .product-search-input`);
+    if (container && input && input.value.length >= 2) {
+        container.style.display = 'block';
+    }
+}
+
+function hideMultiProductResults(levelId) {
+    const container = document.getElementById(`level_${levelId}_multi_product_results`);
+    if (container) container.style.display = 'none';
+}
+
+function addMultiProduct(levelId, productId, productName) {
+    if (!levelMultiProducts[levelId]) levelMultiProducts[levelId] = [];
+    const exists = levelMultiProducts[levelId].some(p => p.id === productId);
+    if (exists) {
+        hideMultiProductResults(levelId);
+        return;
+    }
+    levelMultiProducts[levelId].push({ id: productId, name: productName });
+    renderSelectedProducts(levelId);
+    hideMultiProductResults(levelId);
+}
+
+function removeMultiProduct(levelId, productId) {
+    if (!levelMultiProducts[levelId]) return;
+    levelMultiProducts[levelId] = levelMultiProducts[levelId].filter(p => p.id !== productId);
+    renderSelectedProducts(levelId);
+}
+
+function renderSelectedProducts(levelId) {
+    const container = document.getElementById(`level_${levelId}_selected_products`);
+    const hidden = document.getElementById(`level_${levelId}_multi_products`);
+    if (!container || !hidden) return;
+
+    const items = levelMultiProducts[levelId] || [];
+    container.innerHTML = items.map(p => `
+        <span class="selected-product-item">${escapeHtml(p.name)} <button type="button" onclick="removeMultiProduct(${levelId}, ${p.id}); event.stopPropagation();">&times;</button></span>
+    `).join('');
+    hidden.value = JSON.stringify(items.map(p => p.id));
+}
+
 // =================== MODAL FUNCTIONS ===================
 
 /**
@@ -1272,6 +1392,7 @@ function openCreateModal() {
         levelCounter = 0;
         createdLevels = [];
         currentLevels = 0;
+        levelMultiProducts = {};
         const container = document.getElementById('levels-container');
         if (container) {
             container.innerHTML = '';
@@ -1337,6 +1458,7 @@ function openEditModal(location) {
     levelCounter = 0;
     createdLevels = [];
     currentLevels = 0;
+    levelMultiProducts = {};
     const container = document.getElementById('levels-container');
     if (container) {
         container.innerHTML = '';
@@ -1524,9 +1646,16 @@ async function populateDynamicLevels(levelSettings) {
         }
 
         if (setting.allowed_product_types && Array.isArray(setting.allowed_product_types)) {
-            const catSelect = document.getElementById(`level_${levelId}_category`);
-            if (catSelect) {
-                catSelect.value = setting.allowed_product_types[0] || '';
+            if (setting.storage_policy === 'category_restricted') {
+                const catSelect = document.getElementById(`level_${levelId}_category`);
+                if (catSelect) {
+                    catSelect.value = setting.allowed_product_types[0] || '';
+                }
+            } else if (setting.storage_policy === 'multiple_products' && !setting.subdivisions_enabled) {
+                for (const pid of setting.allowed_product_types) {
+                    const name = await fetchProductName(pid);
+                    addMultiProduct(levelId, pid, name || `Produs ${pid}`);
+                }
             }
         }
 
@@ -1599,9 +1728,15 @@ function collectLevelData() {
             allow_other_products: document.getElementById(`level_${levelId}_allow_others`)?.checked ?? true,
             allowed_product_types: (function() {
                 const policy = document.querySelector(`input[name="level_${levelId}_storage_policy"]:checked`)?.value;
+                const subdivisionsEnabled = document.getElementById(`level_${levelId}_enable_subdivisions`)?.checked;
                 if (policy === 'category_restricted') {
                     const cat = document.getElementById(`level_${levelId}_category`)?.value;
                     return cat ? [cat] : null;
+                } else if (policy === 'multiple_products' && !subdivisionsEnabled) {
+                    const val = document.getElementById(`level_${levelId}_multi_products`)?.value;
+                    if (val) {
+                        try { return JSON.parse(val); } catch (e) { return null; }
+                    }
                 }
                 return null;
             })()
@@ -2529,5 +2664,10 @@ window.selectLevelProduct = selectLevelProduct;
 window.selectStoragePolicyProgrammatic = selectStoragePolicyProgrammatic;
 window.fetchProductName = fetchProductName;
 window.setLevelDedicatedProduct = setLevelDedicatedProduct;
+window.searchMultiProduct = searchMultiProduct;
+window.showMultiProductResults = showMultiProductResults;
+window.hideMultiProductResults = hideMultiProductResults;
+window.addMultiProduct = addMultiProduct;
+window.removeMultiProduct = removeMultiProduct;
 
 console.log('✅ Enhanced Dynamic Locations JavaScript loaded successfully');

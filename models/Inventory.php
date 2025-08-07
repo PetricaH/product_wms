@@ -1,4 +1,6 @@
 <?php
+require_once __DIR__ . '/Location.php';
+require_once __DIR__ . '/RelocationTask.php';
 /**
  * Complete Enhanced Inventory Model with FIFO support
  * Updated to include missing methods called by inventory.php
@@ -189,6 +191,18 @@ class Inventory {
             return false;
         }
 
+        
+        $originalLocationId = (int)$data['location_id'];
+        $locationModel = new Location($this->conn);
+        if ($locationModel->isLocationFull($originalLocationId)) {
+            $tempLoc = $locationModel->findAvailableTemporaryLocation();
+            if ($tempLoc) {
+                $data['location_id'] = $tempLoc;
+                $relocation = new RelocationTask($this->conn);
+                $relocation->createTask($data['product_id'], $tempLoc, $originalLocationId, (int)$data['quantity']);
+            }
+        }
+
         // Default received_at if not provided
         if (empty($data['received_at'])) {
             $data['received_at'] = date('Y-m-d H:i:s');
@@ -220,6 +234,10 @@ class Inventory {
             if ($useTransaction) {
                 $this->conn->beginTransaction();
             }
+
+            $relocation = new RelocationTask($this->conn);
+
+            $relocation = new RelocationTask($this->conn);
 
             // Insert inventory record
             $query = "INSERT INTO {$this->inventoryTable}
@@ -333,6 +351,7 @@ class Inventory {
             if ($useTransaction) {
                 $this->conn->beginTransaction();
             }
+            $relocation = new RelocationTask($this->conn);
 
             // Get available stock using FIFO (oldest first)
             $query = "SELECT i.id, i.quantity, i.location_id
@@ -410,6 +429,7 @@ class Inventory {
             // Update occupancy for affected locations within the transaction
             foreach (array_unique($affectedLocations) as $locId) {
                 $this->updateLocationOccupancy($locId);
+                $relocation->activatePendingTasks($locId);
             }
 
             if ($useTransaction) {

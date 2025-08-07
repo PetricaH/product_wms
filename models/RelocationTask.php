@@ -68,4 +68,41 @@ class RelocationTask {
             error_log("Error activating relocation tasks: " . $e->getMessage());
         }
     }
+    /**
+     * Fetch tasks that are ready to be processed
+     */
+    public function getReadyTasks(): array {
+        try {
+            $query = "SELECT rt.id, rt.product_id, rt.from_location_id, rt.to_location_id, rt.quantity,
+                             p.name AS product_name, fl.name AS from_location_name, tl.name AS to_location_name
+                      FROM {$this->table} rt
+                      JOIN products p ON rt.product_id = p.id
+                      JOIN locations fl ON rt.from_location_id = fl.id
+                      JOIN locations tl ON rt.to_location_id = tl.id
+                      WHERE rt.status = 'ready'
+                      ORDER BY rt.created_at ASC";
+            $stmt = $this->conn->prepare($query);
+            $stmt->execute();
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (PDOException $e) {
+            error_log("Error fetching relocation tasks: " . $e->getMessage());
+            return [];
+        }
+    }
+
+    /**
+     * Update the status of a relocation task
+     */
+    public function updateStatus(int $taskId, string $status): bool {
+        try {
+            $query = "UPDATE {$this->table} SET status = :status, updated_at = NOW() WHERE id = :id";
+            $stmt = $this->conn->prepare($query);
+            $stmt->bindParam(':status', $status, PDO::PARAM_STR);
+            $stmt->bindParam(':id', $taskId, PDO::PARAM_INT);
+            return $stmt->execute();
+        } catch (PDOException $e) {
+            error_log("Error updating relocation task status: " . $e->getMessage());
+            return false;
+        }
+    }
 }

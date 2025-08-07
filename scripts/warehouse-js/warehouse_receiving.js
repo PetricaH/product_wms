@@ -330,7 +330,6 @@ class WarehouseReceiving {
         const qty = parseInt(document.getElementById('prod-qty').value) || 0;
         const batch = document.getElementById('prod-batch-number').value;
         const date = document.getElementById('prod-date').value;
-        const locationId = this.config.defaultLocation || 1; // Add location_id
         
         if (!this.selectedProductId || qty <= 0) {
             this.showError('Selectează produsul și cantitatea');
@@ -350,7 +349,6 @@ class WarehouseReceiving {
             formData.append('quantity', qty);
             formData.append('batch_number', batch);
             formData.append('produced_at', date);
-            formData.append('location_id', locationId);
             formData.append('printer', printerName);
             formData.append('source', 'factory');
             formData.append('action', 'print');
@@ -390,8 +388,7 @@ class WarehouseReceiving {
                 product_id: this.selectedProductId,
                 quantity: qty,
                 batch_number: batch,
-                produced_at: date,
-                location_id: locationId
+                produced_at: date
             };
             const addBtn = document.getElementById('add-stock-btn');
             if (addBtn) {
@@ -432,7 +429,7 @@ class WarehouseReceiving {
                 throw new Error(result.message || 'Eroare la adăugarea în stoc');
             }
 
-            this.showSuccess('Produs adăugat în stoc');
+            this.showSuccess(result.message || 'Produs adăugat în stoc');
             this.initProductionDefaults();
             const addBtn = document.getElementById('add-stock-btn');
             if (addBtn) {

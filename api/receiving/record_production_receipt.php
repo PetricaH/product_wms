@@ -289,7 +289,7 @@ try {
 
 /**
  * Combined Template Label Generator for Godex Printer
- * Creates a PNG with proper printer dimensions (147mm x 200mm) and 180° rotation
+ * Creates a PNG with proper printer dimensions (100mm x 150mm) and 180° rotation
  * @param PDO $db Database connection
  * @param int $productId Product ID
  * @param int $qty Quantity
@@ -300,10 +300,10 @@ function generateCombinedTemplateLabel(PDO $db, int $productId, int $qty, string
     // ───────────── USER-TWEAKABLE SETTINGS ─────────────
     // Rotate barcode 90 degrees clockwise to make it vertical
     $elementRotation    = 90; // 90 degrees clockwise
-    // Position barcode in bottom-right corner
-    $positionStyle      = 'bottom-right';
+    // Position barcode in bottom-left corner
+    $positionStyle      = 'bottom-left';
     // Static margin from edges (px)
-    $marginX            = 20;     // margin from right edge
+    $marginX            = 20;     // margin from left edge
     $marginY            = 20;     // margin from bottom edge
     // Additional X-offset for positioning
     $barcodeOffsetXPercent = 0; // No offset needed
@@ -336,10 +336,10 @@ function generateCombinedTemplateLabel(PDO $db, int $productId, int $qty, string
             return null;
         }
         
-        // Resize template to match printer dimensions 
-        // 147mm x 200mm at 203 DPI = 1174 x 1598 pixels
-        $targetWidth = 1174;  // 147mm at 203 DPI
-        $targetHeight = 1598; // 200mm at 203 DPI
+        // Resize template to match printer dimensions
+        // 100mm x 150mm at 203 DPI = 800 x 1200 pixels
+        $targetWidth = 800;  // 100mm at 203 DPI
+        $targetHeight = 1200; // 150mm at 203 DPI
         
         $originalWidth = imagesx($image);
         $originalHeight = imagesy($image);
@@ -358,15 +358,19 @@ function generateCombinedTemplateLabel(PDO $db, int $productId, int $qty, string
         
         error_log("✅ Template resized from {$originalWidth}x{$originalHeight} to {$targetWidth}x{$targetHeight}");
     } else {
-        // Fallback size for printer: 147mm x 200mm at 203 DPI = 1174 x 1598 pixels
-        $w = 1174; // 147mm width
-        $h = 1598; // 200mm height
+        // Fallback size for printer: 100mm x 150mm at 203 DPI = 800 x 1200 pixels
+        $w = 800;  // 100mm width
+        $h = 1200; // 150mm height
         $image = imagecreatetruecolor($w, $h);
         imagealphablending($image, false);
         imagesavealpha($image, true);
         $transparent = imagecolorallocatealpha($image, 0, 0, 0, 127);
         imagefill($image, 0, 0, $transparent);
-        error_log("⚠️ Using fallback canvas for printer: {$w}x{$h} (147mm x 200mm at 203 DPI)");
+        error_log("⚠️ Using fallback canvas for printer: {$w}x{$h} (100mm x 150mm at 203 DPI)");
+    }
+
+    if (function_exists('imageresolution')) {
+        imageresolution($image, 203, 203);
     }
 
     // --- Prepare for overlays ---
@@ -450,21 +454,21 @@ function generateCombinedTemplateLabel(PDO $db, int $productId, int $qty, string
         $rotatedSkuText = imagerotate($skuTextImage, -90, $transparent);
         imagedestroy($skuTextImage);
         
-        // Position rotated SKU text to the left of the barcode
+        // Position rotated SKU text to the right of the barcode
         $rotSkuW = imagesx($rotatedSkuText);
         $rotSkuH = imagesy($rotatedSkuText);
-        $skuX = $bx - $rotSkuW - 10; // 10px gap from barcode
+        $skuX = $bx + $bw + 10; // 10px gap to the right of barcode
         $skuY = $by + (int)(($bh - $rotSkuH) / 2); // Center vertically with barcode
-        
+
         // Ensure SKU text stays within bounds
-        $skuX = max(0, $skuX);
+        $skuX = max(0, min($skuX, $iw - $rotSkuW));
         $skuY = max(0, min($skuY, $ih - $rotSkuH));
-        
+
         imagecopy($image, $rotatedSkuText, $skuX, $skuY, 0, 0, $rotSkuW, $rotSkuH);
         imagedestroy($rotatedSkuText);
-        
-        // Position other text further to the left of the SKU text
-        $textStartX = $skuX - 50; // Space from SKU text
+
+        // Position other text to the right of the SKU text
+        $textStartX = $skuX + $rotSkuW + 20; // Space from SKU text
         $textStartY = $by; // Align with top of barcode
         error_log("Vertical barcode placed at: {$bx}, {$by} ({$bw}x{$bh})");
         error_log("Vertical SKU text placed at: {$skuX}, {$skuY}");
@@ -491,43 +495,43 @@ function generateCombinedTemplateLabel(PDO $db, int $productId, int $qty, string
         // Create a small image for each text line
         $textWidth = strlen($line) * imagefontwidth($fontSize);
         $textHeight = imagefontheight($fontSize);
-        
+
         $textImage = imagecreatetruecolor($textWidth + 10, $textHeight + 10);
         imagealphablending($textImage, false);
         imagesavealpha($textImage, true);
         $transparent = imagecolorallocatealpha($textImage, 0, 0, 0, 127);
         imagefill($textImage, 0, 0, $transparent);
         imagealphablending($textImage, true);
-        
+
         $textBlack = imagecolorallocate($textImage, 0, 0, 0);
         imagestring($textImage, $fontSize, 5, 5, $line, $textBlack);
-        
+
         // Rotate text 90 degrees clockwise to match barcode
         $rotatedText = imagerotate($textImage, -90, $transparent);
         imagedestroy($textImage);
-        
+
         // Position rotated text
         $rotTextW = imagesx($rotatedText);
         $rotTextH = imagesy($rotatedText);
-        
-        $tx = $currentX - $rotTextW; // Move left for each text line
+
+        $tx = $currentX; // Move right for each text line
         $ty = $textStartY; // Align with barcode
-        
+
         // Ensure text stays within bounds
-        $tx = max(0, $tx);
+        $tx = max(0, min($tx, $iw - $rotTextW));
         $ty = max(0, min($ty, $ih - $rotTextH));
-        
+
         // Draw vertical text
         imagecopy($image, $rotatedText, $tx, $ty, 0, 0, $rotTextW, $rotTextH);
         imagedestroy($rotatedText);
-        
+
         error_log("Vertical text line '{$line}' placed at: {$tx}, {$ty} ({$rotTextW}x{$rotTextH})");
-        
-        // Move to the left for next text line
-        $currentX = $tx - 10; // 10px spacing between vertical text lines
-        
+
+        // Move to the right for next text line
+        $currentX = $tx + $rotTextW + 10; // 10px spacing between vertical text lines
+
         // If we run out of horizontal space, break
-        if ($currentX < 50) break;
+        if ($currentX > $iw - 50) break;
     }
 
     // --- Finalize transparency ---
@@ -551,7 +555,28 @@ function generateCombinedTemplateLabel(PDO $db, int $productId, int $qty, string
     // --- Final dimensions check ---
     $finalWidth = imagesx($image);
     $finalHeight = imagesy($image);
-    error_log("Final label: {$finalWidth}x{$finalHeight} (147mm x 200mm at 203 DPI, rotated 180°)");
+    error_log("Final label: {$finalWidth}x{$finalHeight} (100mm x 150mm at 203 DPI, rotated 180°)");
+
+    // --- Ensure canvas matches printer size ---
+    $expectedW = 800;  // 100mm at 203 DPI
+    $expectedH = 1200; // 150mm at 203 DPI
+    if ($finalWidth !== $expectedW || $finalHeight !== $expectedH) {
+        $normalized = imagecreatetruecolor($expectedW, $expectedH);
+        imagealphablending($normalized, false);
+        imagesavealpha($normalized, true);
+        $transparent = imagecolorallocatealpha($normalized, 0, 0, 0, 127);
+        imagefill($normalized, 0, 0, $transparent);
+        imagecopyresampled($normalized, $image, 0, 0, 0, 0,
+                           $expectedW, $expectedH, $finalWidth, $finalHeight);
+        imagedestroy($image);
+        $image = $normalized;
+        if (function_exists('imageresolution')) {
+            imageresolution($image, 203, 203);
+        }
+        $finalWidth = imagesx($image);
+        $finalHeight = imagesy($image);
+        error_log("🔧 Canvas normalized to {$finalWidth}x{$finalHeight} for 100mm x 150mm label");
+    }
 
     // --- Save and return URL ---
     $dir = BASE_PATH . '/storage/label_pngs';
@@ -560,7 +585,7 @@ function generateCombinedTemplateLabel(PDO $db, int $productId, int $qty, string
     $fileName = 'combined_template_label_' . time() . '_' . $batch . '.png';
     $filePath = "{$dir}/{$fileName}";
     
-    if (!imagepng($image, $filePath)) {
+    if (!imagepng($image, $filePath, 0)) {
         error_log("Failed to save PNG: {$filePath}");
         imagedestroy($image);
         return null;

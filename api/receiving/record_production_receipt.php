@@ -234,13 +234,13 @@ try {
     }
 
     $savedPhotos = [];
-    if ($doAddStock && !empty($_FILES['photos']['name'][0])) {
+    if ($doAddStock && isset($_FILES['photos']) && !empty($_FILES['photos']['name'][0])) {
         $baseDir = BASE_PATH . '/storage/receiving/factory/';
         if (!file_exists($baseDir)) {
             mkdir($baseDir, 0755, true);
         }
         foreach ($_FILES['photos']['tmp_name'] as $idx => $tmp) {
-            if ($_FILES['photos']['error'][$idx] === UPLOAD_ERR_OK) {
+            if (isset($_FILES['photos']['error'][$idx]) && $_FILES['photos']['error'][$idx] === UPLOAD_ERR_OK) {
                 $ext = pathinfo($_FILES['photos']['name'][$idx], PATHINFO_EXTENSION);
                 $filename = 'receipt_' . $invId . '_' . time() . "_{$idx}." . $ext;
                 if (move_uploaded_file($tmp, $baseDir . $filename)) {
@@ -289,6 +289,12 @@ function printGodexLabel(PDO $db, int $productId, int $qty, string $batch, strin
     if (!$product) {
         error_log("Product not found: {$productId}");
         return false;
+    }
+
+    $sku = $product['sku'] ?? 'N/A';
+    $name = $product['name'] ?? '';
+
+    $commands = generateGodexCommands($sku, $name, $batch, $date, $qty);
 
     $printerName = $printer ?: ($config['default_printer'] ?? 'godex');
     $printServerUrl = $config['print_server_url'] ?? 'http://86.124.196.102:3000/print_server.php';

@@ -151,4 +151,7 @@ return [
         'from_name' => 'Wartung - Departament Achizitii',
         'reply_to' => 'comenzi@wartung.ro'
     ],
+
+    'label_left_offset_mm' => 4,   // 3–6 mm de obicei e suficient
+    'label_top_offset_mm'  => 0
 ];

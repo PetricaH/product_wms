@@ -315,7 +315,7 @@ function generateCombinedTemplateLabel(PDO $db, int $productId, int $qty, string
     // Text/barcode color
     $colorBlack         = [0, 0, 0];
 
-    $globalShiftX = -10;   // ~7.5 mm la 203 DPI
+    $globalShiftX = 0;   // ~7.5 mm la 203 DPI
     $globalShiftY = 0;
     // ───────────── END SETTINGS ─────────────
 
@@ -884,22 +884,84 @@ function extractProductCodeTemplate(string $productName, string $templateDir): ?
 }
 
 function sendToPrintServer(string $labelUrl, ?string $printer, array $config): void {
-    $printerName = $printer ?: ($config['default_printer'] ?? 'godex');
+    $printerName    = $printer ?: ($config['default_printer'] ?? 'godex');
     $printServerUrl = $config['print_server_url'] ?? 'http://86.124.196.102:3000/print_server.php';
-    
-    // Determine if it's a PNG or PDF file
-    $isPng = strpos($labelUrl, '.png') !== false;
-    
-    if ($isPng) {
-        $result = sendPngToServer($printServerUrl, $labelUrl, $printerName);
+
+    $path         = strtolower(parse_url($labelUrl, PHP_URL_PATH) ?? '');
+    $isPng        = substr($path, -4) === '.png';
+    $leftOffsetMm = (float)($config['label_left_offset_mm'] ?? 0);
+    $topOffsetMm  = (float)($config['label_top_offset_mm']  ?? 0);
+
+    if ($isPng && ($leftOffsetMm != 0.0 || $topOffsetMm != 0.0)) {
+        $pdfUrl = wrapPngInPdfWithOffset($labelUrl, $leftOffsetMm, $topOffsetMm);
+        if ($pdfUrl) {
+            $result = sendPdfToServer($printServerUrl, $pdfUrl, $printerName);
+        } else {
+            // fallback dacă nu a mers conversia
+            $result = sendPngToServer($printServerUrl, $labelUrl, $printerName);
+        }
     } else {
-        $result = sendPdfToServer($printServerUrl, $labelUrl, $printerName);
+        $result = $isPng ? sendPngToServer($printServerUrl, $labelUrl, $printerName)
+                         : sendPdfToServer($printServerUrl, $labelUrl, $printerName);
     }
-    
+
     if (!$result['success']) {
         error_log('Label print failed: ' . $result['error']);
     }
 }
+
+function wrapPngInPdfWithOffset(string $pngUrl, float $leftOffsetMm, float $topOffsetMm = 0.0): ?string {
+    // pagină 100x150 mm (dimensiunea etichetei)
+    $pageW = 100.0; 
+    $pageH = 150.0;
+
+    // descarcă PNG
+    $pngData = @file_get_contents($pngUrl);
+    if ($pngData === false) {
+        error_log("wrapPngInPdfWithOffset: nu pot descărca $pngUrl");
+        return null;
+    }
+
+    $tmpDir = BASE_PATH . '/storage/temp';
+    if (!is_dir($tmpDir)) mkdir($tmpDir, 0777, true);
+    $pngPath = $tmpDir . '/label_' . time() . '.png';
+    file_put_contents($pngPath, $pngData);
+
+    // output PDF
+    $pdfDir = BASE_PATH . '/storage/label_pdfs';
+    if (!is_dir($pdfDir)) mkdir($pdfDir, 0777, true);
+    $pdfPath = $pdfDir . '/label_offset_' . time() . '.pdf';
+
+    // FPDF
+    if (!class_exists('FPDF')) {
+        $autoload = BASE_PATH . '/vendor/autoload.php';
+        if (file_exists($autoload)) require_once $autoload;
+    }
+    if (!class_exists('FPDF')) {
+        // dacă ai o copie locală de FPDF, pune calea corectă aici:
+        // require_once BASE_PATH . '/lib/fpdf/fpdf.php';
+    }
+
+    $pdf = new FPDF('P', 'mm', [$pageW, $pageH]);
+    $pdf->AddPage();
+    // fundal alb: pe termică "alb" = nu tipărește
+    $pdf->SetFillColor(255,255,255);
+    $pdf->Rect(0,0,$pageW,$pageH,'F');
+
+    // offset: pozitive => mută spre stânga/sus (x/y negative)
+    $x = 0 - $leftOffsetMm;
+    $y = 0 - $topOffsetMm;
+    $pdf->Image($pngPath, $x, $y, $pageW, $pageH, 'PNG');
+
+    $pdf->Output('F', $pdfPath);
+    @unlink($pngPath);
+
+    $url = rtrim(getBaseUrl(), '/') . '/storage/label_pdfs/' . basename($pdfPath);
+    error_log("✅ PNG împachetat în PDF cu offset L={$leftOffsetMm}mm, T={$topOffsetMm}mm: $url");
+    return $url;
+}
+
+
 
 function sendPngToServer(string $url, string $pngUrl, string $printer): array {
     $requestUrl = $url . '?' . http_build_query([

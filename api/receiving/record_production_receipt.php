@@ -294,9 +294,9 @@ try {
  */
 function generateCombinedTemplateLabel(PDO $db, int $productId, int $qty, string $batch, string $date): ?string {
     // ───────────── USER-TWEAKABLE SETTINGS - UPDATED FOR EDGE POSITIONING ─────────────
-    // Rotate barcode 90 degrees clockwise to make it vertical
-    $elementRotation    = 90; // 90 degrees clockwise
-    // Position barcode in bottom-left corner
+    // QR code rendered without rotation
+    $elementRotation    = 0; // no rotation needed for QR
+    // Position QR code in bottom-left corner
     $positionStyle      = 'center';
     // REDUCED margins to move everything closer to edge
     $marginX            = 10;     // Reduced from 50 to 10 - margin from left edge
@@ -383,8 +383,8 @@ function generateCombinedTemplateLabel(PDO $db, int $productId, int $qty, string
     
     error_log("Working with image dimensions: {$iw}x{$ih} " . ($ih > $iw ? "(Portrait ✅)" : "(Landscape ⚠️)"));
 
-    // --- Generate barcode and rotate it 90 degrees clockwise ---
-    $barcodeImage = generateBarcodeImageGD($sku, $batch);
+    // --- Generate QR code (encodes only the SKU) ---
+    $barcodeImage = generateQRCodeImage($sku);
     if ($barcodeImage) {
         // Rotate barcode 90 degrees clockwise to make it vertical
         if ($elementRotation !== 0) {
@@ -612,53 +612,25 @@ function generateCombinedTemplateLabel(PDO $db, int $productId, int $qty, string
 }
 
 /**
- * Generate barcode as GD image resource (for PNG labels)
- * Note: Does not include SKU text - text is added separately to keep it horizontal
+ * Generate a QR code PNG as GD image resource
+ * The QR code encodes only the SKU value
  */
-function generateBarcodeImageGD(string $sku, string $batch): ?GdImage {
+function generateQRCodeImage(string $sku): ?GdImage {
     try {
-        // Simple barcode generation using GD
-        $width = 400;
-        $height = 80; // Reduced height since no text
-        $barcodeImage = imagecreatetruecolor($width, $height);
-        
-        // Transparent background
-        imagealphablending($barcodeImage, false);
-        imagesavealpha($barcodeImage, true);
-        $transparent = imagecolorallocatealpha($barcodeImage, 0, 0, 0, 127);
-        imagefill($barcodeImage, 0, 0, $transparent);
-        
-        // Colors
-        imagealphablending($barcodeImage, true);
-        $black = imagecolorallocate($barcodeImage, 0, 0, 0);
-        
-        // Create simple barcode pattern
-        $barWidth = 3;
-        $barSpacing = 2;
-        $currentX = 20;
-        
-        // Generate bars based on SKU characters
-        for ($i = 0; $i < strlen($sku); $i++) {
-            $char = $sku[$i];
-            $ascii = ord($char);
-            
-            // Create pattern based on character
-            for ($j = 0; $j < 6; $j++) {
-                if (($ascii + $j) % 2 == 0) {
-                    imagefilledrectangle($barcodeImage, $currentX, 10, $currentX + $barWidth, 60, $black);
-                }
-                $currentX += $barWidth + $barSpacing;
-                
-                if ($currentX > $width - 40) break; // Don't exceed image width
-            }
+        $qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=' . urlencode($sku);
+        $qrData = @file_get_contents($qrUrl);
+        if ($qrData === false) {
+            return null;
         }
-        
-        // SKU text is now added separately after barcode rotation to keep it horizontal
-        
-        return $barcodeImage;
-        
+        $image = imagecreatefromstring($qrData);
+        if (!$image) {
+            return null;
+        }
+        imagealphablending($image, true);
+        imagesavealpha($image, true);
+        return $image;
     } catch (Exception $e) {
-        error_log("GD barcode generation failed: " . $e->getMessage());
+        error_log("QR code generation failed: " . $e->getMessage());
         return null;
     }
 }

@@ -240,13 +240,13 @@ try {
     }
 
     $savedPhotos = [];
-    if ($doAddStock && isset($_FILES['photos']) && !empty($_FILES['photos']['name'][0])) {
+    if ($doAddStock && !empty($_FILES['photos']['name'][0])) {
         $baseDir = BASE_PATH . '/storage/receiving/factory/';
         if (!file_exists($baseDir)) {
             mkdir($baseDir, 0755, true);
         }
         foreach ($_FILES['photos']['tmp_name'] as $idx => $tmp) {
-            if (isset($_FILES['photos']['error'][$idx]) && $_FILES['photos']['error'][$idx] === UPLOAD_ERR_OK) {
+            if ($_FILES['photos']['error'][$idx] === UPLOAD_ERR_OK) {
                 $ext = pathinfo($_FILES['photos']['name'][$idx], PATHINFO_EXTENSION);
                 $filename = 'receipt_' . $invId . '_' . time() . "_{$idx}." . $ext;
                 if (move_uploaded_file($tmp, $baseDir . $filename)) {
@@ -288,37 +288,38 @@ try {
 }
 
 /**
- * Combined Template Label Generator for Godex Printer
+ * Combined Template Label Generator for Godex Printer - EDGE POSITIONED
  * Creates a PNG with proper printer dimensions (100mm x 150mm) and 180° rotation
- * @param PDO $db Database connection
- * @param int $productId Product ID
- * @param int $qty Quantity
- * @param string $batch Batch number
- * @param string $date Production date
+ * Elements positioned closer to the edge of the canvas
  */
 function generateCombinedTemplateLabel(PDO $db, int $productId, int $qty, string $batch, string $date): ?string {
-    // ───────────── USER-TWEAKABLE SETTINGS ─────────────
+    // ───────────── USER-TWEAKABLE SETTINGS - UPDATED FOR EDGE POSITIONING ─────────────
     // Rotate barcode 90 degrees clockwise to make it vertical
     $elementRotation    = 90; // 90 degrees clockwise
     // Position barcode in bottom-left corner
-    $positionStyle      = 'bottom-left';
-    // Static margin from edges (px)
-    $marginX            = 20;     // margin from left edge
-    $marginY            = 20;     // margin from bottom edge
+    $positionStyle      = 'center';
+    // REDUCED margins to move everything closer to edge
+    $marginX            = 10;     // Reduced from 50 to 10 - margin from left edge
+    $marginY            = 10;     // Reduced from 20 to 10 - margin from bottom edge
     // Additional X-offset for positioning
     $barcodeOffsetXPercent = 0; // No offset needed
 
-    // Spacing between barcode and text block
-    $marginBelowBarcode = 10;     // px
+    // REDUCED spacing between elements to pack them tighter
+    $marginBelowBarcode = 5;      // Reduced from 10 to 5 - spacing between barcode and text block
+    $elementSpacing     = 8;      // Space between barcode, SKU text, and other text (reduced from 20 to 8)
+    $textLineSpacing    = 8;      // Reduced from 10 to 8 - spacing between vertical text lines
     // Line spacing for text
     $lineHeight         = 25;     // px
     // Built-in font size for imagestring (1-5)
     $fontSize           = 5;
     // Text/barcode color
     $colorBlack         = [0, 0, 0];
+
+    $globalShiftX = -10;   // ~7.5 mm la 203 DPI
+    $globalShiftY = 0;
     // ───────────── END SETTINGS ─────────────
 
-    // --- Load template or fallback transparent canvas ---
+    // --- Load template or fallback transparent X ---
     $productModel = new Product($db);
     $product      = $productModel->findById($productId);
     if (!$product) {
@@ -398,20 +399,18 @@ function generateCombinedTemplateLabel(PDO $db, int $productId, int $qty, string
         $bw = imagesx($barcodeImage);
         $bh = imagesy($barcodeImage);
 
-        // Compute barcode position - bottom-right corner
+        // Compute barcode position - bottom-left corner with REDUCED margins
         switch ($positionStyle) {
             case 'bottom-right':
                 $bx = $iw - $bw - $marginX; // Right edge - barcode width - margin
                 $by = $ih - $bh - $marginY; // Bottom edge - barcode height - margin
                 break;
             case 'bottom-left':
-                $bx = $marginX; // Left edge + margin
-                $by = $ih - $bh - $marginY; // Bottom edge - barcode height - margin
+                $bx = $marginX; // Left edge + margin (now only 10px)
+                $by = $ih - $bh - $marginY; // Bottom edge - barcode height - margin (now only 10px)
                 break;
             case 'top-right':
-                // base position at right
                 $bx = $iw - $bw - $marginX;
-                // push further right by percentage of width
                 $bx -= (int)($iw * $barcodeOffsetXPercent);
                 $by = $marginY;
                 break;
@@ -431,7 +430,7 @@ function generateCombinedTemplateLabel(PDO $db, int $productId, int $qty, string
         imagecopy($image, $barcodeImage, $bx, $by, 0, 0, $bw, $bh);
         imagedestroy($barcodeImage);
         
-        // Add vertical SKU text next to the vertical barcode
+        // Add vertical SKU text next to the vertical barcode with REDUCED spacing
         $skuColor = imagecolorallocate($image, 0, 0, 0);
         $skuFont = 3;
         $skuText = $sku;
@@ -454,10 +453,10 @@ function generateCombinedTemplateLabel(PDO $db, int $productId, int $qty, string
         $rotatedSkuText = imagerotate($skuTextImage, -90, $transparent);
         imagedestroy($skuTextImage);
         
-        // Position rotated SKU text to the right of the barcode
+        // Position rotated SKU text to the right of the barcode with REDUCED gap
         $rotSkuW = imagesx($rotatedSkuText);
         $rotSkuH = imagesy($rotatedSkuText);
-        $skuX = $bx + $bw + 10; // 10px gap to the right of barcode
+        $skuX = $bx + $bw + $elementSpacing; // Reduced gap (now 8px instead of 10px)
         $skuY = $by + (int)(($bh - $rotSkuH) / 2); // Center vertically with barcode
 
         // Ensure SKU text stays within bounds
@@ -467,15 +466,17 @@ function generateCombinedTemplateLabel(PDO $db, int $productId, int $qty, string
         imagecopy($image, $rotatedSkuText, $skuX, $skuY, 0, 0, $rotSkuW, $rotSkuH);
         imagedestroy($rotatedSkuText);
 
-        // Position other text to the right of the SKU text
-        $textStartX = $skuX + $rotSkuW + 20; // Space from SKU text
+        // Position other text to the right of the SKU text with REDUCED spacing
+        $textStartX = $skuX + $rotSkuW + $elementSpacing; // Reduced space from SKU text (now 8px instead of 20px)
         $textStartY = $by; // Align with top of barcode
-        error_log("Vertical barcode placed at: {$bx}, {$by} ({$bw}x{$bh})");
-        error_log("Vertical SKU text placed at: {$skuX}, {$skuY}");
+        error_log("EDGE-POSITIONED: Vertical barcode placed at: {$bx}, {$by} ({$bw}x{$bh})");
+        error_log("EDGE-POSITIONED: Vertical SKU text placed at: {$skuX}, {$skuY}");
+        error_log("EDGE-POSITIONED: Text starting at: {$textStartX}, {$textStartY}");
     } else {
-        $textStartX = $iw - 100; // Right side
+        // If no barcode, position text closer to left edge
+        $textStartX = $marginX + 50; // Start close to left edge
         $textStartY = $ih - 200; // Near bottom
-        error_log("No barcode generated, text starting at: {$textStartX}, {$textStartY}");
+        error_log("EDGE-POSITIONED: No barcode, text starting at: {$textStartX}, {$textStartY}");
     }
 
     // --- Prepare text lines ---
@@ -489,7 +490,7 @@ function generateCombinedTemplateLabel(PDO $db, int $productId, int $qty, string
     [$r, $g, $b] = $colorBlack;
     $color = imagecolorallocate($image, $r, $g, $b);
 
-    // --- Create and position vertical text lines to match the barcode orientation ---
+    // --- Create and position vertical text lines with REDUCED spacing ---
     $currentX = $textStartX;
     foreach ($lines as $line) {
         // Create a small image for each text line
@@ -525,13 +526,13 @@ function generateCombinedTemplateLabel(PDO $db, int $productId, int $qty, string
         imagecopy($image, $rotatedText, $tx, $ty, 0, 0, $rotTextW, $rotTextH);
         imagedestroy($rotatedText);
 
-        error_log("Vertical text line '{$line}' placed at: {$tx}, {$ty} ({$rotTextW}x{$rotTextH})");
+        error_log("EDGE-POSITIONED: Vertical text line '{$line}' placed at: {$tx}, {$ty} ({$rotTextW}x{$rotTextH})");
 
-        // Move to the right for next text line
-        $currentX = $tx + $rotTextW + 10; // 10px spacing between vertical text lines
+        // Move to the right for next text line with REDUCED spacing
+        $currentX = $tx + $rotTextW + $textLineSpacing; // Reduced spacing between vertical text lines (now 8px instead of 10px)
 
         // If we run out of horizontal space, break
-        if ($currentX > $iw - 50) break;
+        if ($currentX > $iw - 30) break; // Reduced margin check (was 50px, now 30px)
     }
 
     // --- Finalize transparency ---
@@ -547,7 +548,7 @@ function generateCombinedTemplateLabel(PDO $db, int $productId, int $qty, string
         $image = $rotated180;
         imagealphablending($image, false);
         imagesavealpha($image, true);
-        error_log("✅ Label rotated 180 degrees successfully");
+        error_log("✅ Label rotated 180 degrees successfully - EDGE POSITIONED");
     } else {
         error_log("❌ Failed to rotate label 180 degrees");
     }
@@ -555,7 +556,7 @@ function generateCombinedTemplateLabel(PDO $db, int $productId, int $qty, string
     // --- Final dimensions check ---
     $finalWidth = imagesx($image);
     $finalHeight = imagesy($image);
-    error_log("Final label: {$finalWidth}x{$finalHeight} (100mm x 150mm at 203 DPI, rotated 180°)");
+    error_log("Final label: {$finalWidth}x{$finalHeight} (100mm x 150mm at 203 DPI, rotated 180°) - EDGE POSITIONED");
 
     // --- Ensure canvas matches printer size ---
     $expectedW = 800;  // 100mm at 203 DPI
@@ -575,14 +576,27 @@ function generateCombinedTemplateLabel(PDO $db, int $productId, int $qty, string
         }
         $finalWidth = imagesx($image);
         $finalHeight = imagesy($image);
-        error_log("🔧 Canvas normalized to {$finalWidth}x{$finalHeight} for 100mm x 150mm label");
+        error_log("🔧 Canvas normalized to {$finalWidth}x{$finalHeight} for 100mm x 150mm label - EDGE POSITIONED");
     }
+
+    if ($globalShiftX !== 0 || $globalShiftY !== 0) {
+    $shifted = imagecreatetruecolor($expectedW, $expectedH);
+    imagealphablending($shifted, false);
+    imagesavealpha($shifted, true);
+    $transparent = imagecolorallocatealpha($shifted, 0, 0, 0, 127);
+    imagefill($shifted, 0, 0, $transparent);
+    // Atenție: dest_x/dest_y pot fi negative – asta „taie” dacă depășește muchia
+    imagecopy($shifted, $image, (int)$globalShiftX, (int)$globalShiftY, 0, 0, $expectedW, $expectedH);
+    imagedestroy($image);
+    $image = $shifted;
+    error_log("↔️ Applied global shift: X={$globalShiftX}px, Y={$globalShiftY}px");
+}
 
     // --- Save and return URL ---
     $dir = BASE_PATH . '/storage/label_pngs';
     if (!file_exists($dir)) mkdir($dir, 0777, true);
     
-    $fileName = 'combined_template_label_' . time() . '_' . $batch . '.png';
+    $fileName = 'combined_template_label_edge_' . time() . '_' . $batch . '.png';
     $filePath = "{$dir}/{$fileName}";
     
     if (!imagepng($image, $filePath, 0)) {
@@ -592,7 +606,7 @@ function generateCombinedTemplateLabel(PDO $db, int $productId, int $qty, string
     }
     
     imagedestroy($image);
-    error_log("✅ Label saved: {$filePath}");
+    error_log("✅ EDGE-POSITIONED Label saved: {$filePath}");
 
     return rtrim(getBaseUrl(), '/') . '/storage/label_pngs/' . $fileName;
 }
@@ -897,13 +911,7 @@ function extractProductCodeTemplate(string $productName, string $templateDir): ?
     return null;
 }
 
-function sendToPrintServer(string $labelUrl, ?string $printer, array $config): void {    }
-
-    $sku = $product['sku'] ?? 'N/A';
-    $name = $product['name'] ?? '';
-
-    $commands = generateGodexCommands($sku, $name, $batch, $date, $qty);
-
+function sendToPrintServer(string $labelUrl, ?string $printer, array $config): void {
     $printerName = $printer ?: ($config['default_printer'] ?? 'godex');
     $printServerUrl = $config['print_server_url'] ?? 'http://86.124.196.102:3000/print_server.php';
     

@@ -88,9 +88,27 @@ try {
     }
 
     $locationId = null;
+    $designatedLocationId = null;
+    $finalLocationId = null;
+    $finalLocationCode = null;
+    $finalLocationType = null;
+    $message = '';
     if ($doAddStock) {
-        // Handle location_id conversion (string location_code to integer id)
-        if ($locationInput) {
+        // Try to find designated location for this product
+        $stmt = $db->prepare("SELECT location_id FROM location_subdivisions WHERE dedicated_product_id = ? LIMIT 1");
+        $stmt->execute([$productId]);
+        $designatedLocationId = $stmt->fetchColumn();
+        if (!$designatedLocationId) {
+            $stmt = $db->prepare("SELECT location_id FROM location_level_settings WHERE dedicated_product_id = ? LIMIT 1");
+            $stmt->execute([$productId]);
+            $designatedLocationId = $stmt->fetchColumn();
+        }
+
+        if ($designatedLocationId) {
+            $locationId = (int)$designatedLocationId;
+            error_log("Production Receipt Debug - Using designated location_id: $locationId");
+        } elseif ($locationInput) {
+            // Handle location_id conversion (string location_code to integer id)
             if (is_numeric($locationInput)) {
                 $stmt = $db->prepare("SELECT id FROM locations WHERE id = ? AND status = 'active'");
                 $stmt->execute([(int)$locationInput]);
@@ -112,7 +130,7 @@ try {
             }
         }
 
-        // If no location provided or found, find a default production location
+        // If no location determined yet, use default production location
         if (!$locationId) {
             $stmt = $db->prepare("SELECT id FROM locations WHERE type = 'production' AND status = 'active' LIMIT 1");
             $stmt->execute();
@@ -174,6 +192,36 @@ try {
             error_log("Production Receipt Debug - Created inventory record without batch: $invId");
         }
         if (!$invId) { throw new Exception('Failed to add inventory - database insert failed'); }
+
+        // Fetch final location details for user feedback
+        $stmt = $db->prepare("SELECT location_id FROM inventory WHERE id = ?");
+        $stmt->execute([$invId]);
+        $finalLocationId = (int)$stmt->fetchColumn();
+
+        $stmt = $db->prepare("SELECT location_code, type FROM locations WHERE id = ?");
+        $stmt->execute([$finalLocationId]);
+        $locInfo = $stmt->fetch(PDO::FETCH_ASSOC);
+        $finalLocationCode = $locInfo['location_code'] ?? '';
+        $finalLocationType = $locInfo['type'] ?? '';
+
+        $designatedCode = null;
+        if ($designatedLocationId) {
+            $stmt = $db->prepare("SELECT location_code FROM locations WHERE id = ?");
+            $stmt->execute([$designatedLocationId]);
+            $designatedCode = $stmt->fetchColumn();
+        }
+
+        if ($designatedLocationId && $finalLocationId !== (int)$designatedLocationId) {
+            $message = "Locația dedicată {$designatedCode} este plină. Stocul a fost adăugat în zona temporară {$finalLocationCode}.";
+        } else {
+            if ($finalLocationType === 'temporary') {
+                $message = "Stoc adăugat în zona temporară {$finalLocationCode}.";
+            } elseif ($designatedCode) {
+                $message = "Stoc adăugat în locația dedicată {$finalLocationCode}.";
+            } else {
+                $message = "Stoc adăugat în locația {$finalLocationCode}.";
+            }
+        }
     }
 
     $labelUrl = null;
@@ -219,11 +267,13 @@ try {
     echo json_encode([
         'success' => true,
         'inventory_id' => $invId,
-        'message' => $doAddStock ? 'Production receipt recorded successfully' : 'Labels printed successfully',
+        'location_id' => $doAddStock ? $finalLocationId : null,
+        'location_code' => $doAddStock ? $finalLocationCode : null,
+        'message' => $doAddStock ? $message : 'Labels printed successfully',
         'saved_photos' => $doAddStock ? $savedPhotos : [],
         'debug' => [
             'product_id' => $productId,
-            'location_id' => $locationId,
+            'location_id' => $doAddStock ? $finalLocationId : null,
             'quantity' => $quantity,
             'batch_number' => $batchNumber,
             'produced_at' => $producedAt
@@ -238,289 +288,123 @@ try {
 }
 
 /**
- * Combined Template Label Generator for Godex Printer
- * Creates a PNG with proper printer dimensions (147mm x 200mm) and 180° rotation
- * @param PDO $db Database connection
- * @param int $productId Product ID
- * @param int $qty Quantity
- * @param string $batch Batch number
- * @param string $date Production date
+ * Non-destructive barcode overlay:
+ * - Uses the template PNG as the base canvas (no re-draw, no resample)
+ * - Draws ONLY the barcode on top
+ * - Preserves template DPI/alpha/bit depth as-is
+ * - No canvas rotation, no binarization, no palette reduction
  */
 function generateCombinedTemplateLabel(PDO $db, int $productId, int $qty, string $batch, string $date): ?string {
-    // ───────────── USER-TWEAKABLE SETTINGS ─────────────
-    // Rotate barcode 90 degrees clockwise to make it vertical
-    $elementRotation    = 90; // 90 degrees clockwise
-    // Position barcode in bottom-right corner
-    $positionStyle      = 'bottom-right';
-    // Static margin from edges (px)
-    $marginX            = 20;     // margin from right edge
-    $marginY            = 20;     // margin from bottom edge
-    // Additional X-offset for positioning
-    $barcodeOffsetXPercent = 0; // No offset needed
+    // ───── CONFIG (only affects BARCODE) ─────
+    $rotateBarcodeDeg = 90;   // 0 for horizontal; 90 for vertical (clockwise)
+    $place = 'bottom-left';   // 'bottom-left' | 'bottom-right' | 'top-left' | 'top-right' | 'custom'
+    $marginX = 30;            // px from left/right
+    $marginY = 30;            // px from top/bottom
 
-    // Spacing between barcode and text block
-    $marginBelowBarcode = 10;     // px
-    // Line spacing for text
-    $lineHeight         = 25;     // px
-    // Built-in font size for imagestring (1-5)
-    $fontSize           = 5;
-    // Text/barcode color
-    $colorBlack         = [0, 0, 0];
-    // ───────────── END SETTINGS ─────────────
+    // Save folder for the final composited PNG
+    $outDir = BASE_PATH . '/storage/label_pngs';
 
-    // --- Load template or fallback transparent canvas ---
+    // ───── Get product + template path ─────
     $productModel = new Product($db);
-    $product      = $productModel->findById($productId);
-    if (!$product) {
-        error_log("Product not found: {$productId}");
-        return null;
-    }
-    
-    $sku          = $product['sku'] ?? 'N/A';
+    $product = $productModel->findById($productId);
+    if (!$product) { error_log("Product not found: {$productId}"); return null; }
+
+    $sku = $product['sku'] ?? 'N/A';
     $templatePath = findProductTemplate($sku, $product['name'] ?? '');
-    
-    if ($templatePath && file_exists($templatePath)) {
-        $image = imagecreatefrompng($templatePath);
-        if (!$image) {
-            error_log("Failed loading template: {$templatePath}");
-            return null;
-        }
-        
-        // Resize template to match printer dimensions 
-        // 147mm x 200mm at 203 DPI = 1174 x 1598 pixels
-        $targetWidth = 1174;  // 147mm at 203 DPI
-        $targetHeight = 1598; // 200mm at 203 DPI
-        
-        $originalWidth = imagesx($image);
-        $originalHeight = imagesy($image);
-        
-        // Create new image with target dimensions
-        $resizedImage = imagecreatetruecolor($targetWidth, $targetHeight);
-        imagealphablending($resizedImage, false);
-        imagesavealpha($resizedImage, true);
-        
-        // Scale template to fit new dimensions
-        imagecopyresampled($resizedImage, $image, 0, 0, 0, 0, 
-                          $targetWidth, $targetHeight, $originalWidth, $originalHeight);
-        
-        imagedestroy($image);
-        $image = $resizedImage;
-        
-        error_log("✅ Template resized from {$originalWidth}x{$originalHeight} to {$targetWidth}x{$targetHeight}");
-    } else {
-        // Fallback size for printer: 147mm x 200mm at 203 DPI = 1174 x 1598 pixels
-        $w = 1174; // 147mm width
-        $h = 1598; // 200mm height
-        $image = imagecreatetruecolor($w, $h);
-        imagealphablending($image, false);
-        imagesavealpha($image, true);
-        $transparent = imagecolorallocatealpha($image, 0, 0, 0, 127);
-        imagefill($image, 0, 0, $transparent);
-        error_log("⚠️ Using fallback canvas for printer: {$w}x{$h} (147mm x 200mm at 203 DPI)");
-    }
-
-    // --- Prepare for overlays ---
-    imagealphablending($image, false);
-    imagesavealpha($image, true);
-    imagealphablending($image, true);
-    $iw = imagesx($image);
-    $ih = imagesy($image);
-    
-    error_log("Working with image dimensions: {$iw}x{$ih} " . ($ih > $iw ? "(Portrait ✅)" : "(Landscape ⚠️)"));
-
-    // --- Generate barcode and rotate it 90 degrees clockwise ---
-    $barcodeImage = generateBarcodeImageGD($sku, $batch);
-    if ($barcodeImage) {
-        // Rotate barcode 90 degrees clockwise to make it vertical
-        if ($elementRotation !== 0) {
-            $trans = imagecolorallocatealpha($barcodeImage, 0, 0, 0, 127);
-            $rotImg = imagerotate($barcodeImage, -$elementRotation, $trans); // Negative for clockwise
-            if ($rotImg) {
-                imagedestroy($barcodeImage);
-                $barcodeImage = $rotImg;
-            }
-        }
-        
-        $bw = imagesx($barcodeImage);
-        $bh = imagesy($barcodeImage);
-
-        // Compute barcode position - bottom-right corner
-        switch ($positionStyle) {
-            case 'bottom-right':
-                $bx = $iw - $bw - $marginX; // Right edge - barcode width - margin
-                $by = $ih - $bh - $marginY; // Bottom edge - barcode height - margin
-                break;
-            case 'bottom-left':
-                $bx = $marginX; // Left edge + margin
-                $by = $ih - $bh - $marginY; // Bottom edge - barcode height - margin
-                break;
-            case 'top-right':
-                // base position at right
-                $bx = $iw - $bw - $marginX;
-                // push further right by percentage of width
-                $bx -= (int)($iw * $barcodeOffsetXPercent);
-                $by = $marginY;
-                break;
-            case 'center':
-                $bx = (int)(($iw - $bw) / 2);
-                $by = (int)(($ih - $bh) / 2);
-                break;
-            default: // custom: marginX from left, marginY from top
-                $bx = $marginX;
-                $by = $marginY;
-        }
-        
-        // Ensure barcode stays within bounds
-        $bx = max(0, min($bx, $iw - $bw));
-        $by = max(0, min($by, $ih - $bh));
-        
-        imagecopy($image, $barcodeImage, $bx, $by, 0, 0, $bw, $bh);
-        imagedestroy($barcodeImage);
-        
-        // Add vertical SKU text next to the vertical barcode
-        $skuColor = imagecolorallocate($image, 0, 0, 0);
-        $skuFont = 3;
-        $skuText = $sku;
-        
-        // Create a small image for the SKU text and rotate it
-        $skuTextWidth = strlen($skuText) * imagefontwidth($skuFont);
-        $skuTextHeight = imagefontheight($skuFont);
-        
-        $skuTextImage = imagecreatetruecolor($skuTextWidth + 10, $skuTextHeight + 10);
-        imagealphablending($skuTextImage, false);
-        imagesavealpha($skuTextImage, true);
-        $transparent = imagecolorallocatealpha($skuTextImage, 0, 0, 0, 127);
-        imagefill($skuTextImage, 0, 0, $transparent);
-        imagealphablending($skuTextImage, true);
-        
-        $skuBlack = imagecolorallocate($skuTextImage, 0, 0, 0);
-        imagestring($skuTextImage, $skuFont, 5, 5, $skuText, $skuBlack);
-        
-        // Rotate SKU text 90 degrees clockwise
-        $rotatedSkuText = imagerotate($skuTextImage, -90, $transparent);
-        imagedestroy($skuTextImage);
-        
-        // Position rotated SKU text to the left of the barcode
-        $rotSkuW = imagesx($rotatedSkuText);
-        $rotSkuH = imagesy($rotatedSkuText);
-        $skuX = $bx - $rotSkuW - 10; // 10px gap from barcode
-        $skuY = $by + (int)(($bh - $rotSkuH) / 2); // Center vertically with barcode
-        
-        // Ensure SKU text stays within bounds
-        $skuX = max(0, $skuX);
-        $skuY = max(0, min($skuY, $ih - $rotSkuH));
-        
-        imagecopy($image, $rotatedSkuText, $skuX, $skuY, 0, 0, $rotSkuW, $rotSkuH);
-        imagedestroy($rotatedSkuText);
-        
-        // Position other text further to the left of the SKU text
-        $textStartX = $skuX - 50; // Space from SKU text
-        $textStartY = $by; // Align with top of barcode
-        error_log("Vertical barcode placed at: {$bx}, {$by} ({$bw}x{$bh})");
-        error_log("Vertical SKU text placed at: {$skuX}, {$skuY}");
-    } else {
-        $textStartX = $iw - 100; // Right side
-        $textStartY = $ih - 200; // Near bottom
-        error_log("No barcode generated, text starting at: {$textStartX}, {$textStartY}");
-    }
-
-    // --- Prepare text lines ---
-    $lines = [];
-    if ($batch) {
-        $lines[] = "LOT: {$batch}";
-    }
-    $lines[] = "CANTITATE: {$qty} buc";
-    $lines[] = "DATA: " . date('d.m.Y H:i', strtotime($date));
-    
-    [$r, $g, $b] = $colorBlack;
-    $color = imagecolorallocate($image, $r, $g, $b);
-
-    // --- Create and position vertical text lines to match the barcode orientation ---
-    $currentX = $textStartX;
-    foreach ($lines as $line) {
-        // Create a small image for each text line
-        $textWidth = strlen($line) * imagefontwidth($fontSize);
-        $textHeight = imagefontheight($fontSize);
-        
-        $textImage = imagecreatetruecolor($textWidth + 10, $textHeight + 10);
-        imagealphablending($textImage, false);
-        imagesavealpha($textImage, true);
-        $transparent = imagecolorallocatealpha($textImage, 0, 0, 0, 127);
-        imagefill($textImage, 0, 0, $transparent);
-        imagealphablending($textImage, true);
-        
-        $textBlack = imagecolorallocate($textImage, 0, 0, 0);
-        imagestring($textImage, $fontSize, 5, 5, $line, $textBlack);
-        
-        // Rotate text 90 degrees clockwise to match barcode
-        $rotatedText = imagerotate($textImage, -90, $transparent);
-        imagedestroy($textImage);
-        
-        // Position rotated text
-        $rotTextW = imagesx($rotatedText);
-        $rotTextH = imagesy($rotatedText);
-        
-        $tx = $currentX - $rotTextW; // Move left for each text line
-        $ty = $textStartY; // Align with barcode
-        
-        // Ensure text stays within bounds
-        $tx = max(0, $tx);
-        $ty = max(0, min($ty, $ih - $rotTextH));
-        
-        // Draw vertical text
-        imagecopy($image, $rotatedText, $tx, $ty, 0, 0, $rotTextW, $rotTextH);
-        imagedestroy($rotatedText);
-        
-        error_log("Vertical text line '{$line}' placed at: {$tx}, {$ty} ({$rotTextW}x{$rotTextH})");
-        
-        // Move to the left for next text line
-        $currentX = $tx - 10; // 10px spacing between vertical text lines
-        
-        // If we run out of horizontal space, break
-        if ($currentX < 50) break;
-    }
-
-    // --- Finalize transparency ---
-    imagesavealpha($image, true);
-
-    // --- Rotate entire label 180 degrees for printer orientation ---
-    error_log("Rotating label 180 degrees for printer...");
-    $transparent180 = imagecolorallocatealpha($image, 0, 0, 0, 127);
-    $rotated180 = imagerotate($image, 180, $transparent180);
-    
-    if ($rotated180) {
-        imagedestroy($image);
-        $image = $rotated180;
-        imagealphablending($image, false);
-        imagesavealpha($image, true);
-        error_log("✅ Label rotated 180 degrees successfully");
-    } else {
-        error_log("❌ Failed to rotate label 180 degrees");
-    }
-
-    // --- Final dimensions check ---
-    $finalWidth = imagesx($image);
-    $finalHeight = imagesy($image);
-    error_log("Final label: {$finalWidth}x{$finalHeight} (147mm x 200mm at 203 DPI, rotated 180°)");
-
-    // --- Save and return URL ---
-    $dir = BASE_PATH . '/storage/label_pngs';
-    if (!file_exists($dir)) mkdir($dir, 0777, true);
-    
-    $fileName = 'combined_template_label_' . time() . '_' . $batch . '.png';
-    $filePath = "{$dir}/{$fileName}";
-    
-    if (!imagepng($image, $filePath)) {
-        error_log("Failed to save PNG: {$filePath}");
-        imagedestroy($image);
+    if (!$templatePath || !file_exists($templatePath)) {
+        error_log("Template not found for SKU {$sku}");
         return null;
     }
-    
-    imagedestroy($image);
-    error_log("✅ Label saved: {$filePath}");
 
+    // ───── Load template AS THE BASE CANVAS (no resample) ─────
+    $base = imagecreatefrompng($templatePath);
+    if (!$base) { error_log("Failed to open template PNG: {$templatePath}"); return null; }
+
+    // Make sure we keep existing alpha and blend barcode on top
+    imagealphablending($base, true);
+    imagesavealpha($base, true);
+
+    $W = imagesx($base);
+    $H = imagesy($base);
+
+    // ───── Generate BARCODE image (keep your current function) ─────
+    $barcodeImg = generateBarcodeImageGD($sku, $batch);
+    if (!$barcodeImg) {
+        imagedestroy($base);
+        error_log("Failed to create barcode image");
+        return null;
+    }
+
+    // Rotate BARCODE only (if needed)
+    if ($rotateBarcodeDeg % 360 !== 0) {
+        $trans = imagecolorallocatealpha($barcodeImg, 0, 0, 0, 127);
+        $rot = imagerotate($barcodeImg, -$rotateBarcodeDeg, $trans); // negative = clockwise
+        if ($rot) { imagedestroy($barcodeImg); $barcodeImg = $rot; }
+    }
+
+    // Compute placement (no resampling, just copy onto base)
+    $bw = imagesx($barcodeImg);
+    $bh = imagesy($barcodeImg);
+
+    switch ($place) {
+        case 'bottom-right':
+            $bx = $W - $bw - $marginX;
+            $by = $H - $bh - $marginY;
+            break;
+        case 'top-left':
+            $bx = $marginX;
+            $by = $marginY;
+            break;
+        case 'top-right':
+            $bx = $W - $bw - $marginX;
+            $by = $marginY;
+            break;
+        case 'custom': // set your exact coords here
+            $bx = $marginX;
+            $by = $H - $bh - $marginY;
+            break;
+        case 'bottom-left':
+        default:
+            $bx = $marginX;
+            $by = $H - $bh - $marginY;
+            break;
+    }
+
+    // Clamp inside bounds
+    $bx = max(0, min($bx, $W - $bw));
+    $by = max(0, min($by, $H - $bh));
+
+    // ───── Composite: paste ONLY the barcode over template ─────
+    // (base stays intact everywhere else)
+    imagecopy($base, $barcodeImg, $bx, $by, 0, 0, $bw, $bh);
+    imagedestroy($barcodeImg);
+
+    // Keep original DPI if present; if you want to force 203, you can:
+    if (function_exists('imageresolution')) {
+        // Comment this out if you want to preserve whatever DPI the template already has
+        imageresolution($base, 203, 203);
+    }
+
+    // ───── Save WITHOUT changing palette or doing grayscale ─────
+    if (!file_exists($outDir)) mkdir($outDir, 0777, true);
+    $fileName = 'combined_template_label_' . time() . '_' . preg_replace('/[^a-zA-Z0-9_\-]/','', $batch) . '.png';
+    $filePath = $outDir . '/' . $fileName;
+
+    // imagepng is lossless; compression level doesn't affect sharpness. Use 3–6 to balance speed/size.
+    $ok = imagepng($base, $filePath, 3);
+    imagedestroy($base);
+
+    if (!$ok) {
+        error_log("Failed to save composited PNG: {$filePath}");
+        return null;
+    }
+
+    error_log("✅ Non-destructive overlay saved: {$filePath}");
     return rtrim(getBaseUrl(), '/') . '/storage/label_pngs/' . $fileName;
 }
+
+
+
 
 /**
  * Generate barcode as GD image resource (for PNG labels)
@@ -587,7 +471,7 @@ function generateSKUBarcode(string $sku, string $batch): ?string {
         $barcodeFilePath = $tempDir . '/' . $barcodeFileName;
         
         // Generate barcode with ONLY SKU (Code 128 format)
-        $barcodeUrl = 'https://barcode.tec-it.com/barcode.ashx?data=' . urlencode($sku) . '&code=Code128&multiplebarcodes=false&translate-esc=false&unit=Fit&dpi=96&imagetype=Png&rotation=0&color=%23000000&bgcolor=%23ffffff&qunit=Mm&quiet=0';
+        $barcodeUrl = 'https://barcode.tec-it.com/barcode.ashx?data=' . urlencode($sku) . '&code=Code128&multiplebarcodes=false&translate-esc=false&unit=Fit&dpi=203&imagetype=Png&rotation=0&color=%23000000&bgcolor=%23ffffff&qunit=Mm&quiet=0';
         
         $context = stream_context_create([
             'http' => [
@@ -902,7 +786,7 @@ function sendPdfToServer(string $url, string $pdfUrl, string $printer): array {
 function getBaseUrl(): string {
     $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
     $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
-    $path = rtrim(dirname($_SERVER['SCRIPT_NAME']), '/');
-    return $scheme . '://' . $host . $path;
+    // Return root URL instead of API path
+    return $scheme . '://' . $host;
 }
 ?>

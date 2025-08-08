@@ -342,19 +342,27 @@ class ExcelSmartBillSyncService {
         try {
             // Get or create location for warehouse
             $locationId = $this->getOrCreateWarehouseLocation($warehouse);
-            
+
+            require_once __DIR__ . '/ShelfLevelResolver.php';
+            $shelfLevel = ShelfLevelResolver::getCorrectShelfLevel(
+                $this->db,
+                $locationId,
+                $productId,
+                null
+            ) ?? 'middle';
+
             $query = "INSERT INTO inventory (
-                        product_id, location_id, quantity, 
+                        product_id, location_id, quantity,
                         received_at, batch_number, shelf_level
-                      ) VALUES (?, ?, ?, NOW(), ?, 'middle')
+                      ) VALUES (?, ?, ?, NOW(), ?, ?)
                       ON DUPLICATE KEY UPDATE
                         quantity = VALUES(quantity),
                         received_at = VALUES(received_at)";
-            
+
             $batchNumber = 'SB-' . date('YmdHi') . '-' . $productId;
-            
+
             $stmt = $this->db->prepare($query);
-            return $stmt->execute([$productId, $locationId, $quantity, $batchNumber]);
+            return $stmt->execute([$productId, $locationId, $quantity, $batchNumber, $shelfLevel]);
             
         } catch (Exception $e) {
             error_log("Error creating inventory record: " . $e->getMessage());

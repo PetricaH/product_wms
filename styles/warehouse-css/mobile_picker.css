@@ -57,6 +57,14 @@ body {
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
+.header-content {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .header-content h1 {
   display: flex;
   align-items: center;
@@ -67,6 +75,10 @@ body {
   margin: 0;
 }
 
+.header-content button {
+  flex-shrink: 0;
+}
+
 /* Order Info */
 .order-info {
   text-align: center;
@@ -74,20 +86,63 @@ body {
   background: rgba(255, 255, 255, 0.1);
   border-radius: 6px;
   color: var(--white);
-  margin-top: 0.5rem;
   border: 1px solid rgba(255, 255, 255, 0.2);
+  flex: 1;
+  margin: 0 1rem;
+}
+
+.order-info .top-row {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
 }
 
 .order-number {
   font-size: 1.1rem;
   font-weight: 600;
-  margin-bottom: 0.25rem;
+}
+
+.order-awb {
+  font-size: 0.9rem;
+  color: var(--success-color);
+}
+
+.order-info.awb-present {
+  border-color: var(--success-color);
 }
 
 .customer-name {
   font-size: 0.9rem;
   opacity: 0.9;
   color: var(--light-gray);
+}
+
+.order-actions-btns {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  justify-content: space-between;
+  flex: 1;
+  gap: var(--spacing-sm);
+  margin-top: 5px;
+}
+
+.btn-pulse {
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(25, 135, 84, 0.7);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(25, 135, 84, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(25, 135, 84, 0);
+  }
 }
 
 /* ===== PROGRESS SECTION ===== */
@@ -515,11 +570,6 @@ body {
   font-size: 0.75rem;
 }
 
-#print-invoice-btn {
-    width: 100%;
-    margin-top: .5rem;
-}
-
 /* ===== FORM CONTROLS ===== */
 .form-control {
   width: 100%;
@@ -597,7 +647,7 @@ body {
 }
 
 .message {
-  background-color: var(--dark-gray);
+  background-color: rgba(26, 26, 29, 0.95);
   color: var(--white);
   padding: 1rem 1.5rem;
   border-radius: 6px;

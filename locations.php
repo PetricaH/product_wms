@@ -1004,6 +1004,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                             <option value="Shelf">Rafturi</option>
                                             <option value="Zone">Zone</option>
                                             <option value="Warehouse">Depozit</option>
+                                            <option value="temporary">Temporary</option>
                                         </select>
                                         <input type="text" class="filter-input" id="searchFilter" placeholder="Caută cod locație...">
                                     </div>
@@ -1079,6 +1080,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                 <option value="Rack">Rack</option>
                                 <option value="Shelf" selected>Shelf</option>
                                 <option value="Bin">Bin</option>
+                                <option value="temporary">Temporary</option>
                             </select>
                         </div>
                         <div class="form-group">

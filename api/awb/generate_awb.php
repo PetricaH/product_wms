@@ -67,8 +67,35 @@ try {
                 respond(['success' => false, 'error' => 'Order not found'], 404);
             }
 
+            // Ensure order is picked before generating AWB
+            if (($order['status'] ?? '') !== 'picked') {
+                respond([
+                    'success' => false,
+                    'error' => 'AWB can only be generated for orders with status picked',
+                    'data' => [
+                        'order_id' => $orderId,
+                        'order_status' => $order['status'] ?? null
+                    ]
+                ], 400);
+            }
+
             $awbValid = !empty($order['awb_barcode']) && preg_match('/^\d+$/', (string)$order['awb_barcode']);
             $attempts = (int)($order['awb_generation_attempts'] ?? 0);
+
+            // If an AWB exists in DB, verify it still exists in Cargus
+            if ($awbValid) {
+                $track = $cargusService->trackAWB($order['awb_barcode']);
+                if (!$track['success']) {
+                    $orderModel->updateOrderField($orderId, [
+                        'awb_barcode' => null,
+                        'awb_created_at' => null,
+                        'cargus_order_id' => null,
+                        'updated_at' => date('Y-m-d H:i:s')
+                    ]);
+                    $order['awb_barcode'] = null;
+                    $awbValid = false;
+                }
+            }
 
             // Block if attempts exceeded and no valid AWB
             if (!$awbValid && $attempts >= 3) {
@@ -216,7 +243,21 @@ try {
             if (!$order) {
                 respond(['success' => false, 'error' => 'Order not found'], 404);
             }
-            
+
+            // Ensure order is picked before allowing AWB generation
+            if (($order['status'] ?? '') !== 'picked') {
+                respond([
+                    'success' => true,
+                    'data' => [
+                        'can_generate' => false,
+                        'requirements' => ['Order status must be picked'],
+                        'weight_info' => ['weight' => 0, 'source' => 'status'],
+                        'address_parsed' => null,
+                        'order_data' => $order
+                    ]
+                ]);
+            }
+
             if (!empty($order['awb_barcode']) && preg_match('/^\d+$/', (string)$order['awb_barcode'])) {
                 respond([
                     'success' => true,

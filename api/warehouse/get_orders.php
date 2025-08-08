@@ -78,7 +78,7 @@ try {
     $dbFactory = $config['connection_factory'];
     $db = $dbFactory();
 
-    // Query for warehouse orders (Pending + Processing only)
+    // Query for warehouse orders (including today's completed)
     $query = "
         SELECT
             o.id,
@@ -87,6 +87,7 @@ try {
             o.customer_email,
             o.shipping_address,
             o.order_date,
+            o.updated_at,
             o.status,
             o.priority,
             o.type,
@@ -103,14 +104,11 @@ try {
                 WHERE oi.order_id = o.id
             ), 0) AS remaining_items
         FROM orders o
-        WHERE o.status IN ('Pending', 'Processing', 'assigned', 'pending', 'processing')
+        WHERE (
+            o.status IN ('Pending', 'Processing', 'assigned', 'pending', 'processing', 'ready_to_ship')
+            OR (LOWER(o.status) = 'completed' AND DATE(o.updated_at) = CURDATE())
+        )
         ORDER BY
-            CASE LOWER(o.priority)
-                WHEN 'urgent' THEN 1
-                WHEN 'high'   THEN 2
-                WHEN 'normal' THEN 3
-                ELSE 4
-            END,
             o.order_date ASC
     ";
 
@@ -120,13 +118,15 @@ try {
 
     // Format the data for frontend
     $formattedOrders = array_map(function($order) {
+        $rawStatus = strtolower($order['status']);
+        $status = $rawStatus === 'ready_to_ship' ? 'ready' : $rawStatus;
         return [
             'id' => (int)$order['id'],
             'order_number' => $order['order_number'],
             'customer_name' => $order['customer_name'] ?: 'Client necunoscut',
             'total_value' => number_format((float)$order['total_value'], 2, '.', ''),
             'order_date' => $order['order_date'],
-            'status' => strtolower($order['status']) === 'pending' ? 'pending' : 'assigned',
+            'status' => $status,
             'priority' => strtolower($order['priority'] ?: 'normal'),
             'source' => 'manual',
             'notes' => $order['notes'],

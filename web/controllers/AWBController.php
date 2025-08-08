@@ -58,10 +58,25 @@ class AWBController {
             if (!$order) {
                 throw new Exception('Order not found', 404);
             }
-            
-            // Check if AWB already exists
+
+            // Ensure order is in picked status
+            if (($order['status'] ?? '') !== 'picked') {
+                throw new Exception('AWB can only be generated for orders with status picked', 400);
+            }
+
+            // Check if AWB already exists and still valid in Cargus
             if (!empty($order['awb_barcode'])) {
-                throw new Exception('AWB already exists: ' . $order['awb_barcode'], 400);
+                $track = $this->cargusService->trackAWB($order['awb_barcode']);
+                if ($track['success']) {
+                    throw new Exception('AWB already exists: ' . $order['awb_barcode'], 400);
+                }
+                // AWB missing from Cargus - clear local reference to allow regeneration
+                $this->orderModel->updateAWBInfo($orderId, [
+                    'awb_barcode' => null,
+                    'awb_created_at' => null,
+                    'cargus_order_id' => null,
+                    'updated_by' => $_SESSION['user_id']
+                ]);
             }
             
             // Validate required AWB data

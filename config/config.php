@@ -124,6 +124,8 @@ return [
     'print_server_url' => getenv('PRINT_SERVER_URL') ?: 'http://86.124.196.102:3000/print_server.php',
     'default_printer'  => getenv('DEFAULT_PRINTER') ?: 'godex',
 
+    'label_rotation' => 90,
+
     // Cargus API credentials (set via environment variables or directly here)
     
     'cargus' => [
@@ -149,4 +151,7 @@ return [
         'from_name' => 'Wartung - Departament Achizitii',
         'reply_to' => 'comenzi@wartung.ro'
     ],
+
+    'label_left_offset_mm' => 4,   // 3–6 mm de obicei e suficient
+    'label_top_offset_mm'  => 0
 ];

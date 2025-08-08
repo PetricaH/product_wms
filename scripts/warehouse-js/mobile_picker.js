@@ -13,6 +13,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // SILENT TIMING INTEGRATION - Initialize TimingManager
     const timingManager = new TimingManager('picking');
     let currentTaskId = null; // Track current timing task silently
+
+    let availablePrinters = [];
     
     // Global State
     let currentOrder = null;
@@ -32,8 +34,8 @@ document.addEventListener('DOMContentLoaded', () => {
         printInvoiceBtn: document.getElementById('print-invoice-btn'),
         generateAwbBtn: document.getElementById('generate-awb-btn'),
         printAwbBtn: document.getElementById('print-awb-btn'),
-        awbInfo: document.getElementById('awb-info'),
-        awbCode: document.getElementById('awb-code'),
+        orderAwb: document.getElementById('order-awb'),
+        awbCode: document.getElementById('order-awb-code'),
         
         // Progress
         progressSection: document.getElementById('progress-section'),
@@ -107,6 +109,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function init() {
         setupEventListeners();
         updateAwbButtons();
+        loadAvailablePrinters();
 
         // Auto-load order if provided in URL
         if (window.PICKER_CONFIG?.hasOrderFromUrl && window.PICKER_CONFIG?.orderFromUrl) {
@@ -133,8 +136,9 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         elements.printAwbBtn?.addEventListener('click', () => {
-            if (currentOrder?.awb_barcode) {
-                printAWBDirect(currentOrder.id, currentOrder.awb_barcode, currentOrder.order_number);
+            const awbCode = currentOrder?.awb_barcode || currentOrder?.tracking_number;
+            if (awbCode) {
+                printAWBDirect(currentOrder.id, awbCode, currentOrder.order_number);
             }
         });
         
@@ -165,6 +169,29 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Quantity input validation
         elements.pickedQuantityInput?.addEventListener('input', validateQuantityInput);
+    }
+
+    // Add this function to load available printers
+    async function loadAvailablePrinters() {
+        try {
+            const response = await fetch('api/printer_management.php?path=printers', {
+                credentials: 'same-origin'
+            });
+            if (response.ok) {
+                const data = await response.json();
+                availablePrinters = data.filter(p => 
+                    p.is_active && 
+                    (p.printer_type === 'awb' || p.printer_type === 'label' || p.printer_type === 'universal')
+                );
+                // Also set window.availablePrinters for compatibility
+                window.availablePrinters = availablePrinters;
+                console.log('Loaded printers:', availablePrinters);
+            }
+        } catch (error) {
+            console.error('Failed to load printers:', error);
+            availablePrinters = [];
+            window.availablePrinters = [];
+        }
     }
 
     async function handleLoadOrder() {
@@ -202,6 +229,20 @@ document.addEventListener('DOMContentLoaded', () => {
             currentOrder = data.data || data.order;
             orderItems = currentOrder.items || data.items || [];
 
+            // Normalize AWB field from API (tracking_number vs awb_barcode)
+            if (currentOrder) {
+                currentOrder.awb_barcode = currentOrder.awb_barcode || currentOrder.tracking_number || currentOrder.awb || null;
+
+                // Verify that the AWB still exists in Cargus
+                if (currentOrder.awb_barcode) {
+                    const exists = await verifyAwbExists(currentOrder.awb_barcode);
+                    if (!exists) {
+                        showMessage('AWB nu mai există în Cargus. Poți regenera unul nou.', 'warning');
+                        currentOrder.awb_barcode = null;
+                    }
+                }
+            }
+
             console.log('Current order:', currentOrder);
             console.log('Order items:', orderItems);
 
@@ -233,44 +274,209 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    async function verifyAwbExists(awbCode) {
+        try {
+            const resp = await fetch(`api/awb/track_awb.php?awb=${encodeURIComponent(awbCode)}&refresh=1`, {
+                credentials: 'include',
+                headers: { 'Accept': 'application/json' }
+            });
+            const data = await resp.json();
+            return !!data.success;
+        } catch (err) {
+            console.error('AWB verification failed:', err);
+            return false;
+        }
+    }
+
     function updateAwbButtons() {
         if (!elements.generateAwbBtn || !elements.printAwbBtn) return;
 
-        if (currentOrder?.awb_barcode) {
+        const awbCode = currentOrder?.awb_barcode || currentOrder?.tracking_number || currentOrder?.awb;
+
+        if (awbCode) {
+            // Ensure AWB code is stored consistently
+            currentOrder.awb_barcode = awbCode;
+
             elements.generateAwbBtn.classList.add('hidden');
             elements.printAwbBtn.classList.remove('hidden');
             elements.printAwbBtn.disabled = false;
+            elements.printAwbBtn.classList.add('btn-pulse');
 
-            if (elements.awbInfo && elements.awbCode) {
-                elements.awbCode.textContent = currentOrder.awb_barcode;
-                elements.awbInfo.classList.remove('hidden');
+            if (elements.orderAwb && elements.awbCode) {
+                elements.awbCode.textContent = awbCode;
+                elements.orderAwb.classList.remove('hidden');
+            }
+            if (elements.orderInfo) {
+                elements.orderInfo.classList.add('awb-present');
             }
         } else {
             elements.printAwbBtn.classList.add('hidden');
+            elements.printAwbBtn.classList.remove('btn-pulse');
             elements.generateAwbBtn.classList.remove('hidden');
             elements.generateAwbBtn.setAttribute('data-order-id', currentOrder?.id || '');
 
-            if (elements.awbInfo) {
-                elements.awbInfo.classList.add('hidden');
+            if (elements.orderAwb) {
+                elements.orderAwb.classList.add('hidden');
+            }
+            if (elements.orderInfo) {
+                elements.orderInfo.classList.remove('awb-present');
             }
         }
     }
 
-    function printAWBDirect(orderId, awbCode, orderNumber) {
-        const printer = (window.availablePrinters || []).find(p =>
-            p.name && p.name.toLowerCase().includes('godex') && p.name.includes('500')
-        );
-
-        if (!printer) {
-            showMessage('Imprimanta GODEX 500 nu este disponibilă.', 'error');
+    async function printInvoice() {
+        if (!currentOrder) {
+            showMessage('Nicio comandă activă pentru printarea facturii.', 'error');
             return;
+        }
+    
+        console.log(`🖨️ Starting invoice print for order: ${currentOrder.id}`);
+    
+        showLoading(true);
+        
+        try {
+            for (let i = 0; i < 2; i++) {
+                // MOBILE FIX: Enhanced fetch configuration for mobile browsers
+                const response = await fetch('api/invoices/print_invoice_network.php', {
+                    method: 'POST',
+                    credentials: 'include', // CRITICAL: Include session cookies
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'Cache-Control': 'no-cache',
+                        'Accept': 'application/json'
+                    },
+                    body: new URLSearchParams({
+                        order_id: currentOrder.id,
+                        printer_id: 2 // SIMPLE: Use printer ID 2 for invoices
+                    })
+                });
+
+                if (!response.ok) {
+                    if (response.status === 403) {
+                        throw new Error('Sesiune expirată. Te rugăm să reîncarci pagina și să te autentifici din nou.');
+                    }
+                    throw new Error(`Eroare server: HTTP ${response.status}`);
+                }
+
+                const data = await response.json();
+                console.log('📄 Invoice response data:', data);
+
+                if (data.status !== 'success') {
+                    throw new Error(data.message || 'Eroare la printarea facturii');
+                }
+            }
+
+            showMessage('Factura a fost trimisă la imprimantă.', 'success');
+        } catch (error) {
+            console.error('❌ Invoice print failed:', error);
+            showMessage(`Eroare la printarea facturii: ${error.message}`, 'error');
+            
+            // If session error, suggest page reload
+            if (error.message.includes('sesiune') || error.message.includes('403')) {
+                setTimeout(() => {
+                    if (confirm('Sesiune expirată. Dorești să reîncarci pagina?')) {
+                        window.location.reload();
+                    }
+                }, 2000);
+            }
+        } finally {
+            showLoading(false);
+        }
+    }
+
+    async function printAWBDirect(orderId, awbCode, orderNumber, format = 'label') {
+        console.log(`🖨️ Starting AWB print: Order=${orderId}, AWB=${awbCode}`);
+    
+        const btn = elements.printAwbBtn;
+        const originalHtml = btn ? btn.innerHTML : '';
+        
+        // Show loading state
+        if (btn) {
+            btn.disabled = true;
+            btn.classList.remove('btn-pulse');
+            btn.innerHTML = '<span class="material-symbols-outlined spinning">hourglass_empty</span> Se verifică AWB...';
         }
 
         try {
-            performAwbPrint(orderId, awbCode, orderNumber, printer.id);
-        } catch (err) {
-            console.error('AWB print failed:', err);
-            showMessage('Eroare la trimiterea AWB către imprimantă.', 'error');
+            // Verify AWB still exists in Cargus before sending to print
+            const checkResp = await fetch(`api/awb/track_awb.php?awb=${encodeURIComponent(awbCode)}&refresh=1`, {
+                credentials: 'include',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Cache-Control': 'no-cache',
+                    'Accept': 'application/json'
+                }
+            });
+            const checkData = await checkResp.json();
+            if (!checkData.success) {
+                currentOrder.awb_barcode = null;
+                updateAwbButtons();
+                throw new Error('AWB inexistent în Cargus. Poți regenera AWB-ul.');
+            }
+
+            if (btn) {
+                btn.innerHTML = '<span class="material-symbols-outlined spinning">hourglass_empty</span> Se generează PDF...';
+            }
+
+            // MOBILE FIX: Enhanced fetch configuration for mobile browsers
+            const response = await fetch('api/awb/print_awb.php', {
+                method: 'POST',
+                credentials: 'include', // CRITICAL: Include session cookies
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Cache-Control': 'no-cache',
+                    'Accept': 'application/json'
+                },
+                body: new URLSearchParams({
+                    order_id: orderId,
+                    awb_code: awbCode,
+                    printer_id: 4, // SIMPLE: Use printer ID 4 (GODEX G500)
+                    format: format
+                })
+            });
+    
+            console.log(`📡 Response status: ${response.status} ${response.statusText}`);
+    
+            if (!response.ok) {
+                if (response.status === 403) {
+                    throw new Error('Sesiune expirată. Te rugăm să reîncarci pagina și să te autentifici din nou.');
+                }
+                throw new Error(`Eroare server: HTTP ${response.status}`);
+            }
+    
+            const data = await response.json();
+            console.log('📄 Response data:', data);
+            
+            if (data.success) {
+                showMessage('AWB trimis la GODEX G500!', 'success');
+                console.log('✅ Print job ID:', data.job_id);
+            } else {
+                throw new Error(data.error || 'Eroare necunoscută la printare');
+            }
+    
+        } catch (error) {
+            console.error('❌ AWB print failed:', error);
+            showMessage(`Eroare la printarea AWB: ${error.message}`, 'error');
+            
+            // Re-add pulse effect on error
+            if (btn) btn.classList.add('btn-pulse');
+            
+            // If session error, suggest page reload
+            if (error.message.includes('sesiune') || error.message.includes('403')) {
+                setTimeout(() => {
+                    if (confirm('Sesiune expirată. Dorești să reîncarci pagina?')) {
+                        window.location.reload();
+                    }
+                }, 2000);
+            }
+        } finally {
+            // Restore button state
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = originalHtml;
+            }
         }
     }
 
@@ -278,6 +484,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (currentOrder && e.detail.orderId === currentOrder.id) {
             currentOrder.awb_barcode = e.detail.awbCode;
             updateAwbButtons();
+            showMessage('AWB generat. Printează AWB.', 'info');
         }
     });
 
@@ -734,31 +941,6 @@ document.addEventListener('DOMContentLoaded', () => {
         elements.completionSection?.classList.remove('hidden');
     }
 
-    async function printInvoice() {
-        if (!currentOrder) return;
-        try {
-            showLoading(true);
-            const formData = new FormData();
-            formData.append('order_id', currentOrder.id);
-            const response = await fetch(`${API_BASE}/invoices/print_invoice.php`, {
-                method: 'POST',
-                body: formData
-            });
-            const text = await response.text();
-            const data = JSON.parse(text);
-            if (data.status === 'success') {
-                showMessage('Factura a fost trimisă la imprimantă.', 'success');
-            } else {
-                throw new Error(data.message || 'Eroare la imprimare');
-            }
-        } catch (err) {
-            console.error('Print invoice error:', err);
-            showMessage(`Eroare la imprimare: ${err.message}`, 'error');
-        } finally {
-            showLoading(false);
-        }
-    }
-
     // Utility Functions
     function showLoading(show = true) {
         if (elements.loadingOverlay) {
@@ -779,11 +961,11 @@ document.addEventListener('DOMContentLoaded', () => {
         
         elements.messageContainer.appendChild(messageEl);
         
-        // Auto-remove after 4 seconds
+        // Auto-remove after 1.5 seconds for snappier feedback
         setTimeout(() => {
             messageEl.style.animation = 'slideUp 0.3s ease reverse';
-            setTimeout(() => messageEl.remove(), 300);
-        }, 4000);
+            setTimeout(() => messageEl.remove(), 200);
+        }, 1000);
         
         console.log(`${type.toUpperCase()}: ${message}`);
     }

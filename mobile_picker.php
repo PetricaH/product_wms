@@ -21,20 +21,26 @@ $hasOrderFromUrl = !empty($orderNumber);
                 Mobile Picker
             </h1>
             <div id="order-info" class="order-info <?= !$hasOrderFromUrl ? 'hidden' : '' ?>">
-                <div class="order-number">#<span id="current-order-number"><?= $orderNumber ?></span></div>
+                <div class="top-row">
+                    <div class="order-number">#<span id="current-order-number"><?= $orderNumber ?></span></div>
+                    <div class="order-awb hidden" id="order-awb">AWB: <span id="order-awb-code"></span></div>
+                </div>
                 <div class="customer-name" id="customer-name">Loading...</div>
             </div>
-            <button id="print-invoice-btn" class="btn btn-secondary btn-sm <?= !$hasOrderFromUrl ? 'hidden' : '' ?>" title="Printează Factura">
-                <span class="material-symbols-outlined">print</span>
-            </button>
-            <button id="generate-awb-btn" class="btn btn-primary btn-sm generate-awb-btn hidden" title="Generează AWB">
-                <span class="material-symbols-outlined">local_shipping</span>
-                Generează AWB
-            </button>
-            <button id="print-awb-btn" class="btn btn-success btn-sm hidden" title="Printează AWB">
-                <span class="material-symbols-outlined">print</span>
-                Printează AWB
-            </button>
+            <div class="order-actions-btns">
+                <button id="print-invoice-btn" class="btn btn-primary <?= !$hasOrderFromUrl ? 'hidden' : '' ?>" title="Printează Factura">
+                    <span class="material-symbols-outlined">print</span>
+                    Printează Factura
+                </button>
+                <button id="generate-awb-btn" class="btn btn-primary generate-awb-btn hidden" title="Generează AWB">
+                    <span class="material-symbols-outlined">local_shipping</span>
+                    Generează AWB
+                </button>
+                <button id="print-awb-btn" class="btn btn-success hidden" title="Printează AWB">
+                    <span class="material-symbols-outlined">print</span>
+                    Printează AWB
+                </button>
+            </div>
         </div>
     </div>
 
@@ -76,11 +82,6 @@ $hasOrderFromUrl = !empty($orderNumber);
             <div id="items-container" class="items-container">
                 <!-- Items will be loaded here -->
             </div>
-        </div>
-
-        <div id="awb-info" class="awb-status hidden">
-            <span class="material-symbols-outlined">local_shipping</span>
-            AWB: <span id="awb-code"></span>
         </div>
 
         <!-- Picking Workflow Sections -->
@@ -249,7 +250,7 @@ $hasOrderFromUrl = !empty($orderNumber);
         };
         window.IS_PICKING_INTERFACE = true;
     </script>
-    <script src="scripts/orders_awb.js"></script>
+    <!-- <script src="scripts/orders_awb.js?v=31231.1"></script> -->
     <?php require_once __DIR__ . '/includes/warehouse_footer.php'; ?>
 </body>
 </html>

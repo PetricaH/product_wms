@@ -91,12 +91,21 @@ class Product {
      * @return array Array of products
      */
     public function getProductsPaginatedWithSellers(int $pageSize, int $offset, string $search = '', string $category = '', int $sellerId = 0): array {
-        $query = "SELECT 
+        $query = "SELECT
                     p.*,
                     s.supplier_name as seller_name,
-                    s.contact_person as seller_contact
+                    s.contact_person as seller_contact,
+                    ld.location_details
                   FROM {$this->table} p
                   LEFT JOIN sellers s ON p.seller_id = s.id
+                  LEFT JOIN (
+                      SELECT i.product_id,
+                             GROUP_CONCAT(CONCAT(l.location_code, ' / ', i.shelf_level,
+                                 IF(i.subdivision_number IS NOT NULL, CONCAT(' / Subdiv ', i.subdivision_number), '')) SEPARATOR '; ') AS location_details
+                      FROM inventory i
+                      LEFT JOIN locations l ON i.location_id = l.id
+                      GROUP BY i.product_id
+                  ) ld ON p.product_id = ld.product_id
                   WHERE 1=1";
         
         $params = [];
@@ -980,6 +989,44 @@ class Product {
         } catch (PDOException $e) {
             error_log("Error getting paginated products: " . $e->getMessage());
             return [];
+        }
+    }
+
+    /**
+     * Update product category
+     * @param int $productId Product ID
+     * @param string $category New category
+     * @return bool Success status
+     */
+    public function updateCategory(int $productId, string $category): bool {
+        $query = "UPDATE {$this->table} SET category = :category, updated_at = NOW() WHERE product_id = :id";
+
+        try {
+            $old = $this->findById($productId);
+            $stmt = $this->conn->prepare($query);
+            $stmt->bindValue(':id', $productId, PDO::PARAM_INT);
+            $stmt->bindValue(':category', $category);
+            $result = $stmt->execute();
+
+            if ($result) {
+                $userId = $_SESSION['user_id'] ?? 0;
+                if (function_exists('logActivity')) {
+                    logActivity(
+                        $userId,
+                        'update',
+                        'product',
+                        $productId,
+                        'Category updated',
+                        ['category' => $old['category'] ?? null],
+                        ['category' => $category]
+                    );
+                }
+            }
+
+            return $result;
+        } catch (PDOException $e) {
+            error_log("Error updating product category: " . $e->getMessage());
+            return false;
         }
     }
 

@@ -363,7 +363,9 @@ function testPrint(PDO $db) {
     $testPdfUrl = "https://www.orimi.com/pdf-test.pdf"; // Sample PDF for testing
     
     $printServerUrl = "http://{$printer['ip_address']}:{$printer['port']}/print_server.php";
-    $result = sendToPrintServer($printServerUrl, $testPdfUrl);
+    
+    // FIXED: Pass the correct printer network identifier
+    $result = sendToPrintServerWithPrinter($printServerUrl, $testPdfUrl, $printer['network_identifier']);
     
     if ($result['success']) {
         // Update last_used timestamp
@@ -376,8 +378,42 @@ function testPrint(PDO $db) {
     }
 }
 
-function sendToPrintServer(string $printServerUrl, string $pdfUrl): array {
-    $url = $printServerUrl . '?url=' . urlencode($pdfUrl);
+function sendToPrintServerWithPrinter(string $printServerUrl, string $pdfUrl, string $printerName): array {
+    // FIXED: Include the printer parameter in the URL
+    $url = $printServerUrl . '?' . http_build_query([
+        'url' => $pdfUrl,
+        'printer' => $printerName  // This was missing!
+    ]);
+    
+    $context = stream_context_create([
+        'http' => [
+            'method' => 'GET',
+            'timeout' => 10,
+            'ignore_errors' => true
+        ]
+    ]);
+    
+    $response = @file_get_contents($url, false, $context);
+    
+    if ($response === false) {
+        return ['success' => false, 'error' => 'Failed to connect to print server'];
+    }
+    
+    if (strpos($response, 'Trimis la imprimantă') !== false || 
+        strpos($response, 'sent to printer') !== false) {
+        return ['success' => true];
+    }
+    
+    return ['success' => false, 'error' => 'Print server returned: ' . $response];
+}
+
+function sendToPrintServer(string $printServerUrl, string $pdfUrl, string $printerName = null): array {
+    $params = ['url' => $pdfUrl];
+    if ($printerName) {
+        $params['printer'] = $printerName;
+    }
+    
+    $url = $printServerUrl . '?' . http_build_query($params);
     
     $context = stream_context_create([
         'http' => [

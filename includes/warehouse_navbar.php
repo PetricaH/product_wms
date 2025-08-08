@@ -13,7 +13,8 @@ $pageTitles = [
     'warehouse_hub' => 'Hub Operații',
     'warehouse_picking' => 'Picking',
     'warehouse_receiving' => 'Recepție',
-    'warehouse_inventory' => 'Căutare Stoc'
+    'warehouse_inventory' => 'Căutare Stoc',
+    'warehouse_relocation' => 'Relocare Stoc'
 ];
 
 $pageTitle = $pageTitles[$currentPage] ?? 'WMS Warehouse';
@@ -45,6 +46,7 @@ $pageTitle = $pageTitles[$currentPage] ?? 'WMS Warehouse';
             <li class="nav-item"><a href="warehouse_orders.php" class="nav-link">Pregătire Marfă</a></li>
             <li class="nav-item"><a href="warehouse_receiving.php" class="nav-link">Recepție Marfă</a></li>
             <li class="nav-item"><a href="warehouse_inventory.php" class="nav-link">Stoc</a></li>
+            <li class="nav-item"><a href="warehouse_relocation.php" class="nav-link">Relocare Stoc</a></li>
             <li class="nav-item"><a href="warehouse_hub.php" class="nav-link">Hub</a></li>
             <li class="nav-item"><a href="biometric-setup.php" class="nav-link">Setare Amprentă</a></li>
         </ul>

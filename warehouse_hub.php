@@ -63,6 +63,23 @@ if (!isset($_SESSION['user_id'])) {
                 </div>
             </div>
 
+            <!-- Relocation -->
+            <div class="operation-card relocation-card" data-operation="relocation">
+                <div class="status-indicator" id="relocation-status"></div>
+                <span class="material-symbols-outlined operation-icon">swap_horiz</span>
+                <h2 class="operation-title">Relocare Stoc</h2>
+                <div class="operation-stats">
+                    <div class="stat-item">
+                        <span class="stat-number" id="pending-relocations">-</span>
+                        <span class="stat-label">În așteptare</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-number" id="relocated-today">-</span>
+                        <span class="stat-label">Astăzi</span>
+                    </div>
+                </div>
+            </div>
+            
             <!-- Inventory -->
             <div class="operation-card inventory-card" data-operation="inventory">
                 <div class="status-indicator" id="inventory-status"></div>
@@ -96,6 +113,7 @@ if (!isset($_SESSION['user_id'])) {
                     </div>
                 </div>
             </div>
+
         </div>
     </div>
 

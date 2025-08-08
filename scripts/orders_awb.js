@@ -24,7 +24,9 @@ let availablePrinters = [];
 
 async function loadAvailablePrinters() {
     try {
-        const response = await fetch('api/printer_management.php?path=printers');
+        const response = await fetch('api/printer_management.php?path=printers', {
+            credentials: 'same-origin'
+        });
         if (response.ok) {
             const data = await response.json();
             availablePrinters = data.filter(p => 
@@ -470,6 +472,16 @@ function getSelectedFormat() {
 
 async function performAwbPrint(orderId, awbCode, orderNumber, printerId = null, format = 'label') {
     try {
+        // Check AWB still exists in Cargus before attempting to print
+        const verifyResp = await fetch(`api/awb/track_awb.php?awb=${encodeURIComponent(awbCode)}&refresh=1`, {
+            credentials: 'same-origin'
+        });
+        const verifyData = await verifyResp.json();
+        if (!verifyData.success) {
+            showNotification('AWB nu mai există în Cargus. Nu se poate printa.', 'error');
+            return;
+        }
+
         showNotification('Se generează AWB PDF din Cargus API...', 'info');
         
         const formData = new FormData();
@@ -483,7 +495,8 @@ async function performAwbPrint(orderId, awbCode, orderNumber, printerId = null, 
         
         const response = await fetch('api/awb/print_awb.php', {
             method: 'POST',
-            body: formData
+            body: formData,
+            credentials: 'same-origin'
         });
         
         if (!response.ok) {
@@ -806,6 +819,11 @@ function getCsrfToken() {
         return metaToken.getAttribute('content');
     }
     
+    // Try window.WMS_CONFIG (set by warehouse_header.php)
+    if (window.WMS_CONFIG && window.WMS_CONFIG.csrfToken) {
+        return window.WMS_CONFIG.csrfToken;
+    }
+    
     // Try hidden form input
     const formToken = document.querySelector('input[name="csrf_token"]');
     if (formToken) {
@@ -817,6 +835,7 @@ function getCsrfToken() {
         return window.csrfToken;
     }
     
+    console.warn('CSRF token not found. AWB generation may fail.');
     return null;
 }
 

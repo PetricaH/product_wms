@@ -70,6 +70,7 @@ body {
     border: 1px solid rgba(255, 255, 255, 0.1);
     position: relative;
     transition: all 0.3s ease;
+    cursor: pointer;
 }
 
 .stat-card::before {
@@ -85,6 +86,12 @@ body {
 .stat-card:hover {
     transform: translateY(-5px);
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+}
+
+.stat-card.active {
+    background-color: var(--black);
+    border-color: var(--white);
+    box-shadow: 0 0 10px rgba(255, 255, 255, 0.3);
 }
 
 .stat-icon {
@@ -110,55 +117,7 @@ body {
     font-weight: 500;
 }
 
-/* ===== FILTER SECTION ===== */
-.filter-section {
-    background-color: var(--dark-gray);
-    padding: 1.5rem;
-    border-radius: 6px;
-    margin-bottom: 1rem;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.filter-row {
-    display: flex;
-    gap: 1rem;
-    align-items: center;
-    flex-wrap: wrap;
-}
-
-.filter-select {
-    background-color: var(--darker-gray);
-    color: var(--white);
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    padding: 0.75rem 1rem;
-    border-radius: 4px;
-    font-size: 0.9rem;
-    min-width: 150px;
-}
-
-.filter-select:focus {
-    outline: none;
-    border-color: var(--white);
-}
-
-.refresh-btn {
-    background-color: var(--white);
-    color: var(--black);
-    border: none;
-    padding: 0.75rem 1.5rem;
-    border-radius: 4px;
-    font-size: 0.9rem;
-    font-weight: 500;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    transition: all 0.3s ease;
-}
-
-.refresh-btn:hover {
-    background-color: var(--light-gray);
-}
+/* Filter section removed: filtering handled via stat cards */
 
 /* ===== ORDERS SECTION ===== */
 .orders-section {

@@ -245,6 +245,15 @@ class CargusService
      */
     public function generateAWB($order) {
         try {
+            // Ensure order is eligible for AWB generation
+            if (($order['status'] ?? '') !== 'picked') {
+                return [
+                    'success' => false,
+                    'error' => 'Order status must be picked',
+                    'code' => 400
+                ];
+            }
+
             // Authenticate first
             if (!$this->authenticate()) {
                 return [
@@ -256,6 +265,18 @@ class CargusService
 
             // Calculate order weights and parcels
             $calculatedData = $this->calculateOrderShipping($order);
+
+            // Ensure parcel count reflects all items in the order
+            $totalItems = 0;
+            if (!empty($order['items']) && is_array($order['items'])) {
+                foreach ($order['items'] as $item) {
+                    $totalItems += (int)($item['quantity'] ?? 0);
+                }
+            }
+
+            if ($totalItems > 1 && (!isset($calculatedData['parcels_count']) || $calculatedData['parcels_count'] < $totalItems)) {
+                $calculatedData['parcels_count'] = $totalItems;
+            }
 
             // Get sender location
             $senderLocation = $this->getSenderLocation();
@@ -758,14 +779,14 @@ class CargusService
         return [
             'cargus_location_id' => $envLocationId,
             'company_name' => $_ENV['CARGUS_SENDER_NAME'] ?? getenv('CARGUS_SENDER_NAME') ?? 'Company SRL',
-            'county_id' => 1, // Bucuresti
-            'locality_id' => 150, // Bucuresti
+            'county_id' => 39,
+            'locality_id' => 184,
             'street_id' => 0,
-            'building_number' => $_ENV['CARGUS_SENDER_BUILDING'] ?? getenv('CARGUS_SENDER_BUILDING') ?? '10',
-            'address_text' => $_ENV['CARGUS_SENDER_ADDRESS'] ?? getenv('CARGUS_SENDER_ADDRESS') ?? 'Default Address',
-            'contact_person' => $_ENV['CARGUS_SENDER_CONTACT'] ?? getenv('CARGUS_SENDER_CONTACT') ?? 'Contact Person',
-            'phone' => $_ENV['CARGUS_SENDER_PHONE'] ?? getenv('CARGUS_SENDER_PHONE') ?? '0700000000',
-            'email' => $_ENV['CARGUS_SENDER_EMAIL'] ?? getenv('CARGUS_SENDER_EMAIL') ?? 'contact@company.com'
+            'building_number' => $_ENV['CARGUS_SENDER_BUILDING'] ?? getenv('CARGUS_SENDER_BUILDING') ?? '15',
+            'address_text' => $_ENV['CARGUS_SENDER_ADDRESS'] ?? getenv('CARGUS_SENDER_ADDRESS') ?? 'Strada Sulina Nr 15',
+            'contact_person' => $_ENV['CARGUS_SENDER_CONTACT'] ?? getenv('CARGUS_SENDER_CONTACT') ?? 'Răzvan',
+            'phone' => $_ENV['CARGUS_SENDER_PHONE'] ?? getenv('CARGUS_SENDER_PHONE') ?? '0774663896',
+            'email' => $_ENV['CARGUS_SENDER_EMAIL'] ?? getenv('CARGUS_SENDER_EMAIL') ?? 'info@wartung.ro'
         ];
     }
     
@@ -859,8 +880,9 @@ class CargusService
         'ShippingRepayment' => 0,
         'SaturdayDelivery' => boolval($order['saturday_delivery'] ?? false),
         'MorningDelivery' => boolval($order['morning_delivery'] ?? false),
-        'Observations' => $order['observations'] ?: 'Comandă generată automat',
-        'PackageContent' => $calculatedData['package_content'] ?: 'Diverse produse',
+        'Observations' => 'RETUR FACTURA SEMNATA FATA+VERSO',
+        // 'ReturnDocumentOrPackage' => true,
+        // 'PackageContent' => $calculatedData['package_content'] ?: 'Diverse produse',
         'CustomString' => '',
         'SenderReference1' => $order['order_number'] ?? '',
         'RecipientReference1' => $order['recipient_reference1'] ?? '',

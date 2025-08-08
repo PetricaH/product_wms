@@ -1,4 +1,6 @@
 <?php
+require_once __DIR__ . '/Location.php';
+require_once __DIR__ . '/RelocationTask.php';
 /**
  * Complete Enhanced Inventory Model with FIFO support
  * Updated to include missing methods called by inventory.php
@@ -182,11 +184,42 @@ class Inventory {
             }
         }
 
-        // Shelf rule enforcement
-        $locationLevel = $data['shelf_level'] ?? $this->detectShelfLevel($data['location_id']);
-        if ($locationLevel && !$this->validateShelfRule($data['product_id'], $locationLevel)) {
+        // Shelf rule enforcement and level resolution
+        $subdivision = $data['subdivision_number'] ?? null;
+        $shelfLevel  = $data['shelf_level'] ?? null;
+
+        if ($shelfLevel === null && $subdivision !== null) {
+            require_once __DIR__ . '/ShelfLevelResolver.php';
+            $resolved = ShelfLevelResolver::getCorrectShelfLevel(
+                $this->conn,
+                (int)$data['location_id'],
+                (int)$data['product_id'],
+                (int)$subdivision
+            );
+            if ($resolved !== null) {
+                $shelfLevel = $resolved;
+            }
+        }
+
+        if ($shelfLevel === null) {
+            $shelfLevel = $this->detectShelfLevel($data['location_id']);
+        }
+
+        if ($shelfLevel && !$this->validateShelfRule($data['product_id'], $shelfLevel)) {
             error_log('Add stock failed: shelf rule violation');
             return false;
+        }
+
+        
+        $originalLocationId = (int)$data['location_id'];
+        $locationModel = new Location($this->conn);
+        if ($locationModel->isLocationFull($originalLocationId)) {
+            $tempLoc = $locationModel->findAvailableTemporaryLocation();
+            if ($tempLoc) {
+                $data['location_id'] = $tempLoc;
+                $relocation = new RelocationTask($this->conn);
+                $relocation->createTask($data['product_id'], $tempLoc, $originalLocationId, (int)$data['quantity']);
+            }
         }
 
         // Default received_at if not provided
@@ -198,7 +231,6 @@ class Inventory {
         $batchNumber = $data['batch_number'] ?? null;
         $lotNumber   = $data['lot_number']   ?? null;
         $expiryDate  = $data['expiry_date']  ?? null;
-        $shelfLevel  = $data['shelf_level']  ?? null;
         $subdivision = $data['subdivision_number'] ?? null;
 
         // Resolve numeric level using settings table when provided
@@ -206,8 +238,8 @@ class Inventory {
             require_once __DIR__ . '/LocationLevelSettings.php';
             $lls = new LocationLevelSettings($this->conn);
             $name = $lls->getLevelNameByNumber((int)$data['location_id'], (int)$shelfLevel);
-            $shelfLevel = $name ?: 'middle';
-        } elseif ($shelfLevel === null) {
+            $shelfLevel = $name ?: 'Nivel ' . $shelfLevel;
+        } elseif ($shelfLevel === null || $shelfLevel === '') {
             $shelfLevel = 'middle';
         }
 
@@ -220,6 +252,10 @@ class Inventory {
             if ($useTransaction) {
                 $this->conn->beginTransaction();
             }
+
+            $relocation = new RelocationTask($this->conn);
+
+            $relocation = new RelocationTask($this->conn);
 
             // Insert inventory record
             $query = "INSERT INTO {$this->inventoryTable}
@@ -333,6 +369,7 @@ class Inventory {
             if ($useTransaction) {
                 $this->conn->beginTransaction();
             }
+            $relocation = new RelocationTask($this->conn);
 
             // Get available stock using FIFO (oldest first)
             $query = "SELECT i.id, i.quantity, i.location_id
@@ -410,6 +447,7 @@ class Inventory {
             // Update occupancy for affected locations within the transaction
             foreach (array_unique($affectedLocations) as $locId) {
                 $this->updateLocationOccupancy($locId);
+                $relocation->activatePendingTasks($locId);
             }
 
             if ($useTransaction) {

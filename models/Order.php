@@ -70,8 +70,8 @@ class Order
      * @return array
      */
     public function getOrdersByStatus($status) {
-        $query = "SELECT * FROM {$this->table} WHERE status = :status ORDER BY order_date DESC";
-        
+        $query = "SELECT * FROM {$this->table} WHERE LOWER(status) = LOWER(:status) ORDER BY order_date ASC";
+
         try {
             $stmt = $this->conn->prepare($query);
             $stmt->bindValue(':status', $status);
@@ -281,13 +281,30 @@ class Order
      */
     public function countPendingOrders(): int {
         try {
-            $query = "SELECT COUNT(*) FROM orders WHERE status = 'pending'";
+            $query = "SELECT COUNT(*) FROM orders WHERE LOWER(status) = 'pending'";
             $stmt = $this->conn->prepare($query);
             $stmt->execute();
             return (int)$stmt->fetchColumn();
-            
+
         } catch (PDOException $e) {
             error_log("Error counting pending orders: " . $e->getMessage());
+            return 0;
+        }
+    }
+
+    /**
+     * Count processing orders (processing or assigned)
+     * @return int Number of processing orders
+     */
+    public function countProcessingOrders(): int {
+        try {
+            $query = "SELECT COUNT(*) FROM orders WHERE LOWER(status) IN ('processing','assigned')";
+            $stmt = $this->conn->prepare($query);
+            $stmt->execute();
+            return (int)$stmt->fetchColumn();
+
+        } catch (PDOException $e) {
+            error_log("Error counting processing orders: " . $e->getMessage());
             return 0;
         }
     }
@@ -298,12 +315,12 @@ class Order
      */
     public function countCompletedToday(): int {
         try {
-            $query = "SELECT COUNT(*) FROM orders 
-                    WHERE status = 'completed' AND DATE(updated_at) = CURDATE()";
+            $query = "SELECT COUNT(*) FROM orders
+                    WHERE LOWER(status) IN ('completed','ready','ready_to_ship') AND DATE(updated_at) = CURDATE()";
             $stmt = $this->conn->prepare($query);
             $stmt->execute();
             return (int)$stmt->fetchColumn();
-            
+
         } catch (PDOException $e) {
             error_log("Error counting completed orders today: " . $e->getMessage());
             return 0;
@@ -653,7 +670,12 @@ class Order
         }
         
         $errors = [];
-        
+
+        // Status validation
+        if (($order['status'] ?? '') !== 'picked') {
+            $errors[] = 'Order status must be picked';
+        }
+
         // AWB already exists check
         if (!empty($order['awb_barcode'])) {
             $errors[] = 'AWB already generated: ' . $order['awb_barcode'];

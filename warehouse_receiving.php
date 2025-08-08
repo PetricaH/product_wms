@@ -216,10 +216,14 @@ $currentPage = 'warehouse_receiving';
                         <div class="form-group">
                             <label class="form-label">Fotografii (opțional)</label>
                             <input type="file" id="prod-photos" class="form-input" accept="image/*" capture="environment" multiple>
-                        </div>                      
+                        </div>
                         <button type="button" class="btn btn-primary" id="print-labels-btn">
                             <span class="material-symbols-outlined">print</span>
                             Printează Etichete
+                        </button>
+                        <button type="button" class="btn btn-success" id="add-stock-btn" style="display:none;" disabled>
+                            <span class="material-symbols-outlined">inventory_2</span>
+                            Adaugă în Stoc
                         </button>
                     </div>
                 </div>

@@ -17,9 +17,14 @@ if (!isset($config['connection_factory']) || !is_callable($config['connection_fa
 $dbFactory = $config['connection_factory'];
 $db = $dbFactory();
 
-// Include Product model
+// Include models
 require_once BASE_PATH . '/models/Product.php';
+require_once BASE_PATH . '/models/Inventory.php';
+require_once BASE_PATH . '/models/Location.php';
 $productModel = new Product($db);
+$inventoryModel = new Inventory($db);
+$locationModel = new Location($db);
+$allLocations = $locationModel->getAllLocations();
 
 // Handle CRUD operations
 $message = '';
@@ -132,16 +137,54 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             break;
 
+        case 'add_stock':
+            $stockData = [
+                'product_id' => intval($_POST['product_id'] ?? 0),
+                'location_id' => intval($_POST['location_id'] ?? 0),
+                'quantity' => intval($_POST['quantity'] ?? 0),
+                'batch_number' => trim($_POST['batch_number'] ?? ''),
+                'lot_number' => trim($_POST['lot_number'] ?? ''),
+                'expiry_date' => $_POST['expiry_date'] ?? null,
+                'received_at' => $_POST['received_at'] ?? date('Y-m-d H:i:s'),
+                'shelf_level' => $_POST['shelf_level'] ?? null,
+                'subdivision_number' => isset($_POST['subdivision_number']) ? intval($_POST['subdivision_number']) : null
+            ];
+
+            if (!empty($stockData['received_at']) && strpos($stockData['received_at'], 'T') !== false) {
+                $dateTime = DateTime::createFromFormat('Y-m-d\TH:i', $stockData['received_at']);
+                if ($dateTime) {
+                    $stockData['received_at'] = $dateTime->format('Y-m-d H:i:s');
+                }
+            }
+
+            if ($stockData['product_id'] <= 0 || $stockData['location_id'] <= 0 || $stockData['quantity'] <= 0) {
+                $message = 'Produsul, locația și cantitatea sunt obligatorii.';
+                $messageType = 'error';
+            } else {
+                if ($inventoryModel->addStock($stockData)) {
+                    $message = 'Stocul a fost adăugat cu succes.';
+                    $messageType = 'success';
+                } else {
+                    $message = 'Eroare la adăugarea stocului.';
+                    $messageType = 'error';
+                }
+            }
+            break;
+
             case 'bulk_action':
                 $bulkAction = $_POST['bulk_action'] ?? '';
                 $selectedIds = $_POST['selected_products'] ?? [];
-                
+                $newCategory = trim($_POST['category'] ?? '');
+
                 // Debug logging
                 error_log("Bulk action: $bulkAction");
                 error_log("Selected IDs: " . implode(', ', $selectedIds));
-                
+
                 if (empty($selectedIds)) {
                     $message = 'Niciun produs selectat.';
+                    $messageType = 'error';
+                } elseif ($bulkAction === 'change_category' && empty($newCategory)) {
+                    $message = 'Selectați o categorie.';
                     $messageType = 'error';
                 } else {
                     $successCount = 0;
@@ -218,7 +261,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                         error_log("Failed to deactivate product ID: $productId");
                                     }
                                     break;
-                                    
+
+                                case 'change_category':
+                                    error_log("Attempting to change category for product ID: $productId to $newCategory");
+                                    if ($productModel->updateCategory($productId, $newCategory)) {
+                                        $successCount++;
+                                        error_log("Successfully changed category for product ID: $productId");
+                                        if (function_exists('logActivity')) {
+                                            $userId = $_SESSION['user_id'] ?? 0;
+                                            logActivity(
+                                                $userId,
+                                                'update',
+                                                'product',
+                                                $productId,
+                                                'Category changed via bulk action'
+                                            );
+                                        }
+                                    } else {
+                                        $errorCount++;
+                                        error_log("Failed to change category for product ID: $productId");
+                                    }
+                                    break;
+
                                 default:
                                     $errorCount++;
                                     error_log("Unknown bulk action: $bulkAction");
@@ -382,6 +446,19 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                 <span class="material-symbols-outlined">delete</span>
                                 Șterge
                             </button>
+                            <button type="button" class="btn btn-sm btn-info" onclick="showCategoryBulk()">
+                                <span class="material-symbols-outlined">category</span>
+                                Schimbă categorie
+                            </button>
+                            <select id="bulkCategorySelect" class="form-control" style="display:none; margin-left:10px;">
+                                <option value="">Selectează categorie</option>
+                                <?php foreach ($categories as $cat): ?>
+                                    <option value="<?= htmlspecialchars($cat) ?>"><?= htmlspecialchars($cat) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                            <button type="button" id="applyCategoryBtn" class="btn btn-sm btn-primary" style="display:none; margin-left:5px;" onclick="applyBulkCategory()">
+                                Aplică
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -392,6 +469,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                         <form id="bulkForm" method="POST" action="">
                             <input type="hidden" name="action" value="bulk_action">
                             <input type="hidden" name="bulk_action" id="bulkActionInput">
+                            <input type="hidden" name="category" id="bulkCategoryInput">
                             
                             <table class="table">
                                 <thead>
@@ -404,6 +482,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                         <th>Categorie</th>
                                         <th>Furnizor</th>
                                         <th>U.M.</th>
+                                        <th>Locație</th>
                                         <th>Stoc</th>
                                         <th>Status</th>
                                         <th width="100">Acțiuni</th>
@@ -460,6 +539,15 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                     <?php endif; ?>
                                                 </td>
                                                 <td>
+                                                    <?php if (!empty($product['location_details'])): ?>
+                                                        <span class="location-info"><?= htmlspecialchars($product['location_details']) ?></span>
+                                                    <?php else: ?>
+                                                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="addStockForProduct(<?= $product['product_id'] ?>)">
+                                                            Atribuie Locatie
+                                                        </button>
+                                                    <?php endif; ?>
+                                                </td>
+                                                <td>
                                                     <div class="quantity-info">
                                                         <span class="quantity-value"><?= number_format($product['quantity']) ?></span>
                                                         <?php if ($product['quantity'] <= ($product['min_stock_level'] ?? 5)): ?>
@@ -508,7 +596,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                         <?php endforeach; ?>
                                     <?php else: ?>
                                         <tr>
-                                            <td colspan="9" class="text-center">
+                                            <td colspan="10" class="text-center">
                                                 <div class="empty-state">
                                                     <span class="material-symbols-outlined">inventory_2</span>
                                                     <h3>Nu există produse</h3>
@@ -891,6 +979,88 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
         </div>
     </div>
 </div>
+
+    <!-- Add Stock Modal -->
+    <div class="modal" id="addStockModal">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 class="modal-title">Adaugă Stoc</h3>
+                    <button class="modal-close" onclick="closeAddStockModal()">
+                        <span class="material-symbols-outlined">close</span>
+                    </button>
+                </div>
+                <form method="POST" action="">
+                    <div class="modal-body">
+                        <input type="hidden" name="action" value="add_stock">
+
+                        <div class="form-group">
+                            <label class="form-label">Produs *</label>
+                            <div class="product-search-container">
+                                <input type="hidden" id="add-product" name="product_id">
+                                <input type="text" id="add-product-search" class="form-control product-search-input" placeholder="Caută produs..." autocomplete="off"
+                                       onkeyup="searchProducts(this.value)" onfocus="showProductResults()">
+                                <div class="product-search-results" id="add-product-results"></div>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="add-location" class="form-label">Locație *</label>
+                            <select id="add-location" name="location_id" class="form-control" required>
+                                <option value="">Selectează locația</option>
+                                <?php foreach ($allLocations as $location): ?>
+                                    <option value="<?= $location['id'] ?>">
+                                        <?= htmlspecialchars($location['location_code']) ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="shelf_level" class="form-label">Nivel raft</label>
+                            <select id="shelf_level" name="shelf_level" class="form-control" onchange="updateSubdivisionOptions()">
+                                <option value="">--</option>
+                            </select>
+                        </div>
+                        <div class="form-group" id="subdivision-container" style="display:none;">
+                            <label for="subdivision_number" class="form-label">Subdiviziune</label>
+                            <select id="subdivision_number" name="subdivision_number" class="form-control"></select>
+                        </div>
+
+                        <div class="row">
+                            <div class="form-group">
+                                <label for="add-quantity" class="form-label">Cantitate <span id="total-articles" style="font-weight:normal;color:var(--text-secondary);"></span> *</label>
+                                <input type="number" id="add-quantity" name="quantity" class="form-control" min="1" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="add-expiry" class="form-label">Data Expirării</label>
+                                <input type="date" id="add-expiry" name="expiry_date" class="form-control">
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="form-group">
+                                <label for="add-batch" class="form-label">Număr Batch</label>
+                                <input type="text" id="add-batch" name="batch_number" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label for="add-lot" class="form-label">Număr Lot</label>
+                                <input type="text" id="add-lot" name="lot_number" class="form-control">
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="add-received" class="form-label">Data Primirii</label>
+                            <input type="datetime-local" id="add-received" name="received_at" class="form-control" value="<?= date('Y-m-d\TH:i') ?>">
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" onclick="closeAddStockModal()">Anulează</button>
+                        <button type="submit" class="btn btn-primary">Adaugă Stoc</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
 
     <!-- Delete Confirmation Modal -->
     <div class="modal" id="deleteProductModal" style="display: none;">

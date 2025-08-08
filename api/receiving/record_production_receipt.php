@@ -224,18 +224,12 @@ try {
         }
     }
 
-    $labelUrl = null;
     if ($doPrint) {
-        // Generate label with proper printer dimensions and rotation
-        $labelUrl = generateCombinedTemplateLabel($db, $productId, $quantity, $batchNumber, $producedAt);
-        if ($labelUrl) {
-            $headers = @get_headers($labelUrl);
-            if ($headers && strpos($headers[0], '200') !== false) {
-                sendToPrintServer($labelUrl, $printer, $config);
-                error_log("Production Receipt Debug - PNG label generated: $labelUrl");
-            } else {
-                error_log("Label not available yet: $labelUrl");
-            }
+        $printed = printGodexLabel($db, $productId, $quantity, $batchNumber, $producedAt, $printer, $config);
+        if ($printed) {
+            error_log("Production Receipt Debug - Label sent to Godex printer");
+        } else {
+            error_log("Label print failed for Godex printer");
         }
     }
 
@@ -286,461 +280,67 @@ try {
     http_response_code(500);
     echo json_encode(['success' => false, 'message' => $e->getMessage()]);
 }
-
 /**
- * Non-destructive barcode overlay:
- * - Uses the template PNG as the base canvas (no re-draw, no resample)
- * - Draws ONLY the barcode on top
- * - Preserves template DPI/alpha/bit depth as-is
- * - No canvas rotation, no binarization, no palette reduction
+ * Print label using Godex G500 commands without rasterizing barcode.
  */
-function generateCombinedTemplateLabel(PDO $db, int $productId, int $qty, string $batch, string $date): ?string {
-    // ───── CONFIG (only affects BARCODE) ─────
-    $rotateBarcodeDeg = 90;   // 0 for horizontal; 90 for vertical (clockwise)
-    $place = 'bottom-left';   // 'bottom-left' | 'bottom-right' | 'top-left' | 'top-right' | 'custom'
-    $marginX = 30;            // px from left/right
-    $marginY = 30;            // px from top/bottom
-
-    // Save folder for the final composited PNG
-    $outDir = BASE_PATH . '/storage/label_pngs';
-
-    // ───── Get product + template path ─────
+function printGodexLabel(PDO $db, int $productId, int $qty, string $batch, string $date, ?string $printer, array $config): bool {
     $productModel = new Product($db);
     $product = $productModel->findById($productId);
-    if (!$product) { error_log("Product not found: {$productId}"); return null; }
+    if (!$product) {
+        error_log("Product not found: {$productId}");
+        return false;
 
-    $sku = $product['sku'] ?? 'N/A';
-    $templatePath = findProductTemplate($sku, $product['name'] ?? '');
-    if (!$templatePath || !file_exists($templatePath)) {
-        error_log("Template not found for SKU {$sku}");
-        return null;
-    }
-
-    // ───── Load template AS THE BASE CANVAS (no resample) ─────
-    $base = imagecreatefrompng($templatePath);
-    if (!$base) { error_log("Failed to open template PNG: {$templatePath}"); return null; }
-
-    // Make sure we keep existing alpha and blend barcode on top
-    imagealphablending($base, true);
-    imagesavealpha($base, true);
-
-    $W = imagesx($base);
-    $H = imagesy($base);
-
-    // ───── Generate BARCODE image (keep your current function) ─────
-    $barcodeImg = generateBarcodeImageGD($sku, $batch);
-    if (!$barcodeImg) {
-        imagedestroy($base);
-        error_log("Failed to create barcode image");
-        return null;
-    }
-
-    // Rotate BARCODE only (if needed)
-    if ($rotateBarcodeDeg % 360 !== 0) {
-        $trans = imagecolorallocatealpha($barcodeImg, 0, 0, 0, 127);
-        $rot = imagerotate($barcodeImg, -$rotateBarcodeDeg, $trans); // negative = clockwise
-        if ($rot) { imagedestroy($barcodeImg); $barcodeImg = $rot; }
-    }
-
-    // Compute placement (no resampling, just copy onto base)
-    $bw = imagesx($barcodeImg);
-    $bh = imagesy($barcodeImg);
-
-    switch ($place) {
-        case 'bottom-right':
-            $bx = $W - $bw - $marginX;
-            $by = $H - $bh - $marginY;
-            break;
-        case 'top-left':
-            $bx = $marginX;
-            $by = $marginY;
-            break;
-        case 'top-right':
-            $bx = $W - $bw - $marginX;
-            $by = $marginY;
-            break;
-        case 'custom': // set your exact coords here
-            $bx = $marginX;
-            $by = $H - $bh - $marginY;
-            break;
-        case 'bottom-left':
-        default:
-            $bx = $marginX;
-            $by = $H - $bh - $marginY;
-            break;
-    }
-
-    // Clamp inside bounds
-    $bx = max(0, min($bx, $W - $bw));
-    $by = max(0, min($by, $H - $bh));
-
-    // ───── Composite: paste ONLY the barcode over template ─────
-    // (base stays intact everywhere else)
-    imagecopy($base, $barcodeImg, $bx, $by, 0, 0, $bw, $bh);
-    imagedestroy($barcodeImg);
-
-    // Keep original DPI if present; if you want to force 203, you can:
-    if (function_exists('imageresolution')) {
-        // Comment this out if you want to preserve whatever DPI the template already has
-        imageresolution($base, 203, 203);
-    }
-
-    // ───── Save WITHOUT changing palette or doing grayscale ─────
-    if (!file_exists($outDir)) mkdir($outDir, 0777, true);
-    $fileName = 'combined_template_label_' . time() . '_' . preg_replace('/[^a-zA-Z0-9_\-]/','', $batch) . '.png';
-    $filePath = $outDir . '/' . $fileName;
-
-    // imagepng is lossless; compression level doesn't affect sharpness. Use 3–6 to balance speed/size.
-    $ok = imagepng($base, $filePath, 3);
-    imagedestroy($base);
-
-    if (!$ok) {
-        error_log("Failed to save composited PNG: {$filePath}");
-        return null;
-    }
-
-    error_log("✅ Non-destructive overlay saved: {$filePath}");
-    return rtrim(getBaseUrl(), '/') . '/storage/label_pngs/' . $fileName;
-}
-
-
-
-
-/**
- * Generate barcode as GD image resource (for PNG labels)
- * Note: Does not include SKU text - text is added separately to keep it horizontal
- */
-function generateBarcodeImageGD(string $sku, string $batch): ?GdImage {
-    try {
-        // Simple barcode generation using GD
-        $width = 400;
-        $height = 80; // Reduced height since no text
-        $barcodeImage = imagecreatetruecolor($width, $height);
-        
-        // Transparent background
-        imagealphablending($barcodeImage, false);
-        imagesavealpha($barcodeImage, true);
-        $transparent = imagecolorallocatealpha($barcodeImage, 0, 0, 0, 127);
-        imagefill($barcodeImage, 0, 0, $transparent);
-        
-        // Colors
-        imagealphablending($barcodeImage, true);
-        $black = imagecolorallocate($barcodeImage, 0, 0, 0);
-        
-        // Create simple barcode pattern
-        $barWidth = 3;
-        $barSpacing = 2;
-        $currentX = 20;
-        
-        // Generate bars based on SKU characters
-        for ($i = 0; $i < strlen($sku); $i++) {
-            $char = $sku[$i];
-            $ascii = ord($char);
-            
-            // Create pattern based on character
-            for ($j = 0; $j < 6; $j++) {
-                if (($ascii + $j) % 2 == 0) {
-                    imagefilledrectangle($barcodeImage, $currentX, 10, $currentX + $barWidth, 60, $black);
-                }
-                $currentX += $barWidth + $barSpacing;
-                
-                if ($currentX > $width - 40) break; // Don't exceed image width
-            }
-        }
-        
-        // SKU text is now added separately after barcode rotation to keep it horizontal
-        
-        return $barcodeImage;
-        
-    } catch (Exception $e) {
-        error_log("GD barcode generation failed: " . $e->getMessage());
-        return null;
-    }
-}
-
-// ===== KEEPING ALL YOUR EXISTING FUNCTIONS BELOW =====
-
-function generateSKUBarcode(string $sku, string $batch): ?string {
-    try {
-        $tempDir = BASE_PATH . '/storage/temp';
-        if (!file_exists($tempDir)) {
-            mkdir($tempDir, 0777, true);
-        }
-        
-        $barcodeFileName = 'sku_barcode_' . $batch . '_' . time() . '.png';
-        $barcodeFilePath = $tempDir . '/' . $barcodeFileName;
-        
-        // Generate barcode with ONLY SKU (Code 128 format)
-        $barcodeUrl = 'https://barcode.tec-it.com/barcode.ashx?data=' . urlencode($sku) . '&code=Code128&multiplebarcodes=false&translate-esc=false&unit=Fit&dpi=203&imagetype=Png&rotation=0&color=%23000000&bgcolor=%23ffffff&qunit=Mm&quiet=0';
-        
-        $context = stream_context_create([
-            'http' => [
-                'timeout' => 10,
-                'user_agent' => 'Mozilla/5.0 (compatible; WMS-Template-Labels)'
-            ]
-        ]);
-        
-        $barcodeData = @file_get_contents($barcodeUrl, false, $context);
-        
-        if ($barcodeData !== false) {
-            file_put_contents($barcodeFilePath, $barcodeData);
-            return $barcodeFilePath;
-        }
-        
-        // Fallback to manually generated barcode
-        return createSKUBarcodeFallback($sku, $barcodeFilePath);
-        
-    } catch (Exception $e) {
-        error_log("SKU barcode generation failed: " . $e->getMessage());
-        return null;
-    }
-}
-
-function createSKUBarcodeFallback(string $sku, string $filePath): ?string {
-    try {
-        $width = 200;  // Standard barcode width
-        $height = 50;  // Standard barcode height
-        
-        $image = imagecreate($width, $height);
-        if (!$image) return null;
-        
-        $white = imagecolorallocate($image, 255, 255, 255);
-        $black = imagecolorallocate($image, 0, 0, 0);
-        
-        imagefill($image, 0, 0, $white);
-        
-        // Create Code 39-style barcode pattern for SKU
-        $barWidth = 2;
-        $barSpacing = 1;
-        $currentX = 10;
-        
-        // Start pattern
-        for ($i = 0; $i < 3; $i++) {
-            imagefilledrectangle($image, $currentX, 5, $currentX + $barWidth, 30, $black);
-            $currentX += $barWidth + $barSpacing;
-        }
-        
-        // SKU data bars - simplified encoding
-        for ($i = 0; $i < strlen($sku); $i++) {
-            $char = $sku[$i];
-            $ascii = ord($char);
-            
-            // Create pattern based on character
-            for ($j = 0; $j < 4; $j++) {
-                if (($ascii + $j) % 2 == 0) {
-                    imagefilledrectangle($image, $currentX, 5, $currentX + $barWidth, 30, $black);
-                }
-                $currentX += $barWidth + $barSpacing;
-            }
-            $currentX += $barSpacing; // Extra space between characters
-        }
-        
-        // End pattern
-        for ($i = 0; $i < 3; $i++) {
-            imagefilledrectangle($image, $currentX, 5, $currentX + $barWidth, 30, $black);
-            $currentX += $barWidth + $barSpacing;
-        }
-        
-        // Add SKU text below barcode
-        $font = 3;
-        $textX = (int)(($width - strlen($sku) * imagefontwidth($font)) / 2);
-        imagestring($image, $font, $textX, 35, $sku, $black);
-        
-        imagepng($image, $filePath);
-        imagedestroy($image);
-        
-        return $filePath;
-        
-    } catch (Exception $e) {
-        error_log("SKU barcode fallback failed: " . $e->getMessage());
-        return null;
-    }
-}
-
-/**
- * Rotate an image file by specified degrees
- */
-function rotateImageFile(string $imagePath, int $degrees): ?string {
-    try {
-        // Create image from file
-        $image = imagecreatefrompng($imagePath);
-        if (!$image) {
-            error_log("Failed to load image for rotation: $imagePath");
-            return null;
-        }
-        
-        // Rotate the image
-        $rotatedImage = imagerotate($image, -$degrees, 0); // Negative for clockwise rotation
-        if (!$rotatedImage) {
-            error_log("Failed to rotate image");
-            imagedestroy($image);
-            return null;
-        }
-        
-        // Create rotated file path
-        $rotatedPath = str_replace('.png', '_rotated.png', $imagePath);
-        
-        // Save rotated image
-        if (!imagepng($rotatedImage, $rotatedPath)) {
-            error_log("Failed to save rotated image");
-            imagedestroy($image);
-            imagedestroy($rotatedImage);
-            return null;
-        }
-        
-        // Clean up
-        imagedestroy($image);
-        imagedestroy($rotatedImage);
-        
-        return $rotatedPath;
-        
-    } catch (Exception $e) {
-        error_log("Image rotation failed: " . $e->getMessage());
-        return null;
-    }
-}
-
-/**
- * Find the appropriate PNG template for a product based on SKU number only
- * Simple matching: extract number from SKU and find template containing that number
- */
-function findProductTemplate(string $sku, string $productName): ?string {
-    $templateDir = BASE_PATH . '/storage/templates/product_labels/';
-    
-    // Extract number from SKU (e.g., "APF906.10" → "906", "806.25" → "806")
-    if (preg_match('/(\d+)/', $sku, $matches)) {
-        $productCode = $matches[1];
-        error_log("Extracted product code '$productCode' from SKU '$sku'");
-        
-        // Look for any PNG file containing this number
-        $availableTemplates = glob($templateDir . '*.png');
-        
-        foreach ($availableTemplates as $templatePath) {
-            $templateName = basename($templatePath, '.png');
-            
-            // Check if template name contains the product code
-            if (strpos($templateName, $productCode) !== false) {
-                error_log("✅ FOUND template: $templatePath for product code $productCode");
-                return $templatePath;
-            }
-        }
-        
-        error_log("❌ No template found containing product code '$productCode'");
-    } else {
-        error_log("❌ No number found in SKU '$sku'");
-    }
-    
-    // Fallback: Generic template
-    $templatePath = $templateDir . 'generic_template.png';
-    if (file_exists($templatePath)) {
-        error_log("Using generic template: $templatePath");
-        return $templatePath;
-    }
-    
-    error_log("No template found for SKU '$sku'");
-    return null; // No template found
-}
-
-/**
- * Extract product code template from product name
- * Examples:
- * - "AP.-800 CURATATOR UNIVERSAL LILLIOS 25 LITR" -> "LILLIOS-800.png"
- * - "CLEAN-PRO DETERGENT 500 ML" -> "CLEAN-PRO-500.png" 
- * - "CURATATOR UNIVERSAL 250L" -> "CURATATOR-250.png"
- */
-function extractProductCodeTemplate(string $productName, string $templateDir): ?string {
-    error_log("Searching template for product: $productName");
-    
-    // Method 1: Look for LILLIOS specifically (your example)
-    if (stripos($productName, 'LILLIOS') !== false) {
-        if (preg_match('/(\d+)/', $productName, $matches)) {
-            $number = $matches[1];
-            $templatePath = $templateDir . 'LILLIOS-' . $number . '.png';
-            error_log("Trying LILLIOS pattern: $templatePath");
-            return $templatePath;
-        }
-    }
-    
-    // Method 2: Extract brand name and number from product name
-    // Looks for: BRAND + number pattern
-    if (preg_match('/\b([A-Z][A-Z\-]*[A-Z])\b.*?(\d+)/i', $productName, $matches)) {
-        $brand = strtoupper($matches[1]);
-        $number = $matches[2];
-        $templatePath = $templateDir . $brand . '-' . $number . '.png';
-        error_log("Trying brand-number pattern: $templatePath");
-        return $templatePath;
-    }
-    
-    // Method 3: Look for common product patterns with numbers
-    // Pattern: "WORD-NUMBER" or "WORD NUMBER"
-    if (preg_match('/\b([A-Z]+(?:\-[A-Z]+)?)\s*[\-\s]*(\d+)/i', $productName, $matches)) {
-        $brand = strtoupper($matches[1]);
-        $number = $matches[2];
-        $templatePath = $templateDir . $brand . '-' . $number . '.png';
-        error_log("Trying word-number pattern: $templatePath");
-        return $templatePath;
-    }
-    
-    // Method 4: Extract from specific brand keywords (customize for your brands)
-    $brandPatterns = [
-        '/\bLILLIOS\b/i' => 'LILLIOS',
-        '/\bCURATATOR\b/i' => 'CURATATOR', 
-        '/\bCLEAN[\-\s]?PRO\b/i' => 'CLEAN-PRO',
-        '/\bDETERGENT\b/i' => 'DETERGENT',
-        '/\bUNIVERSAL\b/i' => 'UNIVERSAL'
-    ];
-    
-    foreach ($brandPatterns as $pattern => $brand) {
-        if (preg_match($pattern, $productName)) {
-            // Find any number in the product name
-            if (preg_match('/(\d+)/', $productName, $matches)) {
-                $number = $matches[1];
-                $templatePath = $templateDir . $brand . '-' . $number . '.png';
-                error_log("Trying brand pattern ($brand): $templatePath");
-                return $templatePath;
-            }
-        }
-    }
-    
-    error_log("No template pattern matched for: $productName");
-    return null;
-}
-
-function sendToPrintServer(string $labelUrl, ?string $printer, array $config): void {
     $printerName = $printer ?: ($config['default_printer'] ?? 'godex');
     $printServerUrl = $config['print_server_url'] ?? 'http://86.124.196.102:3000/print_server.php';
-    
-    // Determine if it's a PNG or PDF file
-    $isPng = strpos($labelUrl, '.png') !== false;
-    
-    if ($isPng) {
-        $result = sendPngToServer($printServerUrl, $labelUrl, $printerName);
-    } else {
-        $result = sendPdfToServer($printServerUrl, $labelUrl, $printerName);
-    }
-    
+    $result = sendRawToServer($printServerUrl, $commands, $printerName);
+
     if (!$result['success']) {
         error_log('Label print failed: ' . $result['error']);
     }
+    return $result['success'];
 }
 
-function sendPngToServer(string $url, string $pngUrl, string $printer): array {
-    $requestUrl = $url . '?' . http_build_query([
-        'url' => $pngUrl,
-        'printer' => $printer,
-        'format' => 'png' // Tell print server it's a PNG file
+/**
+ * Build TSPL commands for Godex G500.
+ */
+function generateGodexCommands(string $sku, string $name, string $batch, string $date, int $qty): string {
+    $safeName = substr(preg_replace('/[^A-Za-z0-9\s]/', '', $name), 0, 30);
+    return implode("\n", [
+        'SIZE 100 mm,150 mm',
+        'GAP 3 mm,0 mm',
+        'DIRECTION 1',
+        'CLS',
+        "TEXT 20,20,\"0\",0,1,1,\"{$safeName}\"",
+        "TEXT 20,50,\"0\",0,1,1,\"SKU: {$sku}\"",
+        "TEXT 20,80,\"0\",0,1,1,\"Batch: {$batch}\"",
+        "TEXT 20,110,\"0\",0,1,1,\"{$date}\"",
+        "BARCODE 20,150,\"128\",100,1,0,2,2,\"{$sku}\"",
+        "PRINT {$qty},1"
+    ]) . "\n";
+}
+
+/**
+ * Send raw printer commands to print server.
+ */
+function sendRawToServer(string $url, string $commands, string $printer): array {
+    $postData = http_build_query([
+        'commands' => $commands,
+        'printer'  => $printer,
+        'format'   => 'raw'
     ]);
 
     $context = stream_context_create([
         'http' => [
-            'method' => 'GET',
+            'method'  => 'POST',
+            'header'  => "Content-Type: application/x-www-form-urlencoded\r\n",
+            'content' => $postData,
             'timeout' => 15,
             'ignore_errors' => true,
             'user_agent' => 'WMS-PrintClient/1.0'
         ]
     ]);
 
-    $response = @file_get_contents($requestUrl, false, $context);
+    $response = @file_get_contents($url, false, $context);
     if ($response === false) {
         return ['success' => false, 'error' => 'Failed to connect to print server'];
     }
@@ -752,41 +352,5 @@ function sendPngToServer(string $url, string $pngUrl, string $printer): array {
     }
 
     return ['success' => false, 'error' => 'Print server response: ' . $response];
-}
-
-function sendPdfToServer(string $url, string $pdfUrl, string $printer): array {
-    $requestUrl = $url . '?' . http_build_query([
-        'url' => $pdfUrl,
-        'printer' => $printer
-    ]);
-
-    $context = stream_context_create([
-        'http' => [
-            'method' => 'GET',
-            'timeout' => 15,
-            'ignore_errors' => true,
-            'user_agent' => 'WMS-PrintClient/1.0'
-        ]
-    ]);
-
-    $response = @file_get_contents($requestUrl, false, $context);
-    if ($response === false) {
-        return ['success' => false, 'error' => 'Failed to connect to print server'];
-    }
-
-    foreach (['Trimis la imprimantă', 'sent to printer', 'Print successful'] as $indicator) {
-        if (stripos($response, $indicator) !== false) {
-            return ['success' => true];
-        }
-    }
-
-    return ['success' => false, 'error' => 'Print server response: ' . $response];
-}
-
-function getBaseUrl(): string {
-    $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-    $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
-    // Return root URL instead of API path
-    return $scheme . '://' . $host;
 }
 ?>

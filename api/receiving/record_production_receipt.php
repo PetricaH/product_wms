@@ -289,12 +289,6 @@ function printGodexLabel(PDO $db, int $productId, int $qty, string $batch, strin
     if (!$product) {
         error_log("Product not found: {$productId}");
         return false;
-    }
-
-    $sku = $product['sku'] ?? 'N/A';
-    $name = $product['name'] ?? '';
-
-    $commands = generateGodexCommands($sku, $name, $batch, $date, $qty);
 
     $printerName = $printer ?: ($config['default_printer'] ?? 'godex');
     $printServerUrl = $config['print_server_url'] ?? 'http://86.124.196.102:3000/print_server.php';

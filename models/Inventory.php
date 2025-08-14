@@ -12,9 +12,30 @@ class Inventory {
     private $inventoryTable = "inventory";
     private $productsTable = "products";
     private $locationsTable = "locations";
+    private ?InventoryTransactionService $transactionService = null;
 
     public function __construct($db) {
         $this->conn = $db;
+    }
+
+    // init transaction servie
+    private function getTransactionService(): InventoryTransactionService {
+        if ($this->transactionService === null) {
+            if (file_exists(BASE_PATH . '/services/InventoryTransactionService.php')) {
+                require_once BASE_PATH . '/services/InventoryTransactionService.php';
+                $this->transactionService = new InventoryTransactionService($this->conn);
+            }
+        }
+        return $this->transactionService;
+    }
+
+    private function hasTransactionLogging(): bool {
+        try {
+            return $this->getTransactionService() && 
+                   $this->getTransactionService()->isTransactionSystemAvailable();
+        } catch (Exception $e) {
+            return false;
+        }
     }
 
     /**
@@ -176,6 +197,8 @@ class Inventory {
      */
     public function addStock(array $data, bool $useTransaction = true): int|false {
         // Check required fields
+        $startTime = microtime(true);
+
         $requiredFields = ['product_id', 'location_id', 'quantity'];
         foreach ($requiredFields as $field) {
             if (empty($data[$field]) && $data[$field] !== 0) {
@@ -304,6 +327,32 @@ class Inventory {
                 $data
             );
 
+            if ($this->hasTransactionLogging()) {
+            try {
+                $duration = round((microtime(true) - $startTime), 2);
+                $this->getTransactionService()->logReceive(
+                    $data['product_id'],
+                    $data['location_id'],
+                    $data['quantity'],
+                    [
+                        'batch_number' => $data['batch_number'] ?? null,
+                        'lot_number' => $data['lot_number'] ?? null,
+                        'expiry_date' => $data['expiry_date'] ?? null,
+                        'shelf_level' => $shelfLevel ?? null,
+                        'subdivision_number' => $data['subdivision_number'] ?? null,
+                        'duration_seconds' => $duration,
+                        'reference_type' => $data['reference_type'] ?? 'manual',
+                        'reference_id' => $data['reference_id'] ?? null,
+                        'reason' => $data['reason'] ?? 'Stock added to inventory',
+                        'notes' => $data['notes'] ?? null
+                    ]
+                );
+            } catch (Exception $e) {
+                error_log("Transaction logging failed: " . $e->getMessage());
+                // Don't fail the operation if logging fails
+            }
+        }
+
             return (int) $inventoryId;
 
         } catch (PDOException $e) {
@@ -350,7 +399,7 @@ class Inventory {
             default => true,
         };
     }
-
+    
     /**
      * Remove stock from inventory using FIFO method
      * @param int $productId Product ID
@@ -358,11 +407,20 @@ class Inventory {
      * @param int|null $locationId Optional specific location
      * @param bool $useTransaction Whether to wrap the operation in a transaction
      * @return bool Success status
-     */
+    */
     public function removeStock(int $productId, int $quantity, ?int $locationId = null, bool $useTransaction = true): bool {
+        $startTime = microtime(true);
+        
         if ($quantity <= 0) {
             error_log("Remove stock failed: Invalid quantity");
             return false;
+        }
+        
+        $quantityBefore = 0;
+        if ($locationId && $this->hasTransactionLogging()) {
+            $stmt = $this->conn->prepare("SELECT COALESCE(SUM(quantity), 0) FROM inventory WHERE product_id = ? AND location_id = ?");
+            $stmt->execute([$productId, $locationId]);
+            $quantityBefore = (int)$stmt->fetchColumn();
         }
 
         try {
@@ -464,6 +522,25 @@ class Inventory {
                 ['quantity' => $totalAvailable],
                 ['quantity' => $totalAvailable - $quantity]
             );
+
+            if ($this->hasTransactionLogging()) {
+                try {
+                    $duration = round((microtime(true) - $startTime), 2);
+                    $this->getTransactionService()->logTransaction([
+                        'transaction_type' => 'pick',
+                        'product_id' => $productId,
+                        'location_id' => $locationId,
+                        'quantity_change' => -$quantity,
+                        'quantity_before' => $quantityBefore,
+                        'quantity_after' => max(0, $quantityBefore - $quantity),
+                        'duration_seconds' => $duration,
+                        'reference_type' => 'system_auto',
+                        'reason' => 'Stock removed from inventory.'
+                    ]);
+                } catch (Exception $e) {
+                    error_log("Transaction logging failed: " . $e->getMessage());
+                }
+            }
 
             return true;
 
@@ -751,6 +828,9 @@ class Inventory {
      * @return bool Success status
      */
     public function moveStock(int $productId, int $fromLocationId, int $toLocationId, int $quantity, ?int $inventoryId = null): bool {
+
+        $startTime = microtime(true);
+
         if ($quantity <= 0) {
             error_log("Move stock failed: Invalid quantity");
             return false;
@@ -813,6 +893,30 @@ class Inventory {
             }
 
             $this->conn->commit();
+
+            if ($this->hasTransactionLogging()) {
+                try {
+                    $duration = round((microtime(true) - $startTime), 2);
+                    $sessionId = uniqid('move_');
+                    
+                    $this->getTransactionService()->logMove(
+                        $productId,
+                        $fromLocationId,
+                        $toLocationId,
+                        $quantity,
+                        [
+                            'duration_seconds' => $duration,
+                            'reference_type' => 'system_auto',
+                            'reason' => 'Stock movement between locations',
+                            'session_id' => $sessionId,
+                            'inventory_record_id' => $inventoryId
+                        ]
+                    );
+                } catch (Exception $e) {
+                    error_log("Transaction logging failed: " . $e->getMessage());
+                    // Don't fail the operation if logging fails
+                }
+            }
             return true;
 
         } catch (Exception $e) {
@@ -860,6 +964,72 @@ class Inventory {
             error_log("Error counting locations with stock: " . $e->getMessage());
             return 0;
         }
+    }
+
+    /**
+     *Get enhanced location activity (for the API)
+     */
+    public function getLocationActivity(int $locationId): array {
+        if ($this->hasTransactionLogging()) {
+            return $this->getTransactionService()->getLocationActivity($locationId);
+        }
+        
+        // Fallback to inventory table
+        try {
+            $stmt = $this->conn->prepare("
+                SELECT 
+                    MAX(updated_at) as last_activity,
+                    COUNT(*) as record_count,
+                    SUM(quantity) as total_items
+                FROM inventory 
+                WHERE location_id = :id
+            ");
+            $stmt->execute([':id' => $locationId]);
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            // Count recent changes
+            $stmt = $this->conn->prepare("
+                SELECT COUNT(*) 
+                FROM inventory 
+                WHERE location_id = :id 
+                AND (updated_at >= (NOW() - INTERVAL 1 DAY) OR received_at >= (NOW() - INTERVAL 1 DAY))
+            ");
+            $stmt->execute([':id' => $locationId]);
+            $recentChanges = (int)$stmt->fetchColumn();
+            
+            return [
+                'last_movement' => $result['last_activity'] ?? null,
+                'last_movement_type' => 'inventory_update',
+                'recent_changes' => $recentChanges,
+                'activity_score' => min(100, $recentChanges * 15),
+                'transaction_breakdown' => []
+            ];
+            
+        } catch (Exception $e) {
+            error_log("Error fetching location activity fallback: " . $e->getMessage());
+            return [
+                'last_movement' => null,
+                'recent_changes' => 0,
+                'activity_score' => 0,
+                'transaction_breakdown' => []
+            ];
+        }
+    }
+
+    /**
+     * Get warehouse activity dashboard data
+     */
+    public function getWarehouseActivitySummary(): array {
+        if ($this->hasTransactionLogging()) {
+            return $this->getTransactionService()->getWarehouseActivitySummary();
+        }
+        
+        // Fallback data
+        return [
+            'today_activity' => [],
+            'busiest_locations' => [],
+            'performance_metrics' => []
+        ];
     }
 
     /**

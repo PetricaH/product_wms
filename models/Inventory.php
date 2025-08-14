@@ -1107,7 +1107,113 @@ public function getCriticalStockAlerts(int $limit = 10): array {
         error_log("Error getting items moved today: " . $e->getMessage());
         return 0;
     }
-}
+
+    /**
+     * Fetch inventory transactions with filters and pagination
+     */
+    public function getStockMovements(array $filters = [], int $page = 1, int $pageSize = 25,
+                                      string $sort = 'created_at', string $direction = 'DESC'): array {
+        $offset = ($page - 1) * $pageSize;
+
+        $allowedSort = ['created_at', 'transaction_type', 'quantity_change', 'product_name'];
+        if (!in_array($sort, $allowedSort)) {
+            $sort = 'created_at';
+        }
+        $direction = strtoupper($direction) === 'ASC' ? 'ASC' : 'DESC';
+
+        $where = [];
+        $params = [];
+
+        $dateFrom = $filters['date_from'] ?? date('Y-m-d', strtotime('-30 days'));
+        $dateTo   = $filters['date_to'] ?? date('Y-m-d');
+        $where[] = 't.created_at BETWEEN :date_from AND :date_to';
+        $params[':date_from'] = $dateFrom . ' 00:00:00';
+        $params[':date_to']   = $dateTo . ' 23:59:59';
+
+        if (!empty($filters['transaction_type']) && $filters['transaction_type'] !== 'all') {
+            $where[] = 't.transaction_type = :type';
+            $params[':type'] = $filters['transaction_type'];
+        }
+
+        if (!empty($filters['product_search'])) {
+            $where[] = '(p.name LIKE :product OR p.sku LIKE :product)';
+            $params[':product'] = '%' . $filters['product_search'] . '%';
+        }
+
+        if (!empty($filters['location_id'])) {
+            $where[] = '(t.location_id = :loc OR t.source_location_id = :loc)';
+            $params[':loc'] = $filters['location_id'];
+        }
+
+        if (!empty($filters['user_id'])) {
+            $where[] = 't.user_id = :user_id';
+            $params[':user_id'] = $filters['user_id'];
+        }
+
+        $whereSql = $where ? 'WHERE ' . implode(' AND ', $where) : '';
+
+        $baseQuery = "FROM inventory_transactions t
+                       LEFT JOIN products p ON t.product_id = p.product_id
+                       LEFT JOIN locations l ON t.location_id = l.id
+                       LEFT JOIN locations sl ON t.source_location_id = sl.id
+                       LEFT JOIN users u ON t.user_id = u.id
+                       $whereSql";
+
+        $countStmt = $this->conn->prepare("SELECT COUNT(*) " . $baseQuery);
+        $countStmt->execute($params);
+        $total = (int)$countStmt->fetchColumn();
+
+        $sql = "SELECT t.*, p.name AS product_name, p.sku,
+                       l.location_code, sl.location_code AS source_location_code,
+                       u.full_name, u.username
+                " . $baseQuery . "
+                ORDER BY $sort $direction
+                LIMIT :limit OFFSET :offset";
+
+        $stmt = $this->conn->prepare($sql);
+        foreach ($params as $key => $value) {
+            $stmt->bindValue($key, $value);
+        }
+        $stmt->bindValue(':limit', $pageSize, PDO::PARAM_INT);
+        $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+        $stmt->execute();
+
+        return [
+            'data' => $stmt->fetchAll(PDO::FETCH_ASSOC),
+            'total' => $total
+        ];
+    }
+
+    /**
+     * Get summary metrics for today's movements
+     */
+    public function getTodayMovementSummary(): array {
+        try {
+            $stmt = $this->conn->prepare("SELECT
+                        COUNT(*) AS movements,
+                        COUNT(DISTINCT product_id) AS products,
+                        COUNT(DISTINCT COALESCE(location_id, source_location_id)) AS locations,
+                        AVG(duration_seconds) AS avg_duration
+                    FROM inventory_transactions
+                    WHERE DATE(created_at) = CURDATE()");
+            $stmt->execute();
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+            return [
+                'movements' => (int)($row['movements'] ?? 0),
+                'products' => (int)($row['products'] ?? 0),
+                'locations' => (int)($row['locations'] ?? 0),
+                'avg_duration' => $row['avg_duration'] ? (float)$row['avg_duration'] : 0.0
+            ];
+        } catch (PDOException $e) {
+            error_log('Error fetching movement summary: ' . $e->getMessage());
+            return [
+                'movements' => 0,
+                'products' => 0,
+                'locations' => 0,
+                'avg_duration' => 0.0
+            ];
+        }
+    }
 
     /**
      * Trigger automatic purchase order if stock below minimum

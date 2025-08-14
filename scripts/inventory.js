@@ -248,3 +248,62 @@ window.searchProducts = searchProducts;
 window.showProductResults = showProductResults;
 window.addStockForProduct = addStockForProduct;
 window.updateSubdivisionOptions = updateSubdivisionOptions;
+
+function setDateRange(period) {
+    const from = document.getElementById('date_from');
+    const to = document.getElementById('date_to');
+    if (!from || !to) return;
+    const now = new Date();
+    let start = new Date();
+    if (period === 'today') {
+        // start of today
+    } else if (period === 'week') {
+        start.setDate(now.getDate() - 7);
+    } else if (period === 'month') {
+        start.setDate(now.getDate() - 30);
+    }
+    from.value = start.toISOString().slice(0,10);
+    to.value = now.toISOString().slice(0,10);
+}
+
+function openTransactionModal(data) {
+    const modal = document.getElementById('transactionDetailsModal');
+    const content = document.getElementById('transaction-details-content');
+    if (!modal || !content) return;
+    content.innerHTML = `
+        <p><strong>Tip:</strong> ${data.transaction_type}</p>
+        <p><strong>Produs:</strong> ${escapeHtml(data.product_name || '')} (${escapeHtml(data.sku || '')})</p>
+        <p><strong>Cantitate:</strong> ${data.quantity_change} (${data.quantity_before} → ${data.quantity_after})</p>
+        <p><strong>Locație:</strong> ${escapeHtml(data.source_location_code || '-') } → ${escapeHtml(data.location_code || '-')}</p>
+        <p><strong>Operator:</strong> ${escapeHtml(data.full_name || data.username || '')}</p>
+        <p><strong>Motiv:</strong> ${escapeHtml(data.reason || '')}</p>
+        <p><strong>Notă:</strong> ${escapeHtml(data.notes || '')}</p>
+        <p><strong>Data:</strong> ${data.created_at}</p>
+        <p><strong>Sesiune:</strong> ${escapeHtml(data.session_id || '')}</p>
+    `;
+    modal.classList.add('show');
+}
+
+function closeTransactionModal() {
+    const modal = document.getElementById('transactionDetailsModal');
+    if (modal) modal.classList.remove('show');
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    if (document.getElementById('stock-movements-table')) {
+        document.querySelectorAll('.view-transaction').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const data = JSON.parse(btn.dataset.details);
+                openTransactionModal(data);
+            });
+        });
+        setInterval(() => {
+            const form = document.getElementById('movements-filter-form');
+            if (form) form.submit();
+        }, 30000);
+    }
+});
+
+window.setDateRange = setDateRange;
+window.closeTransactionModal = closeTransactionModal;
+

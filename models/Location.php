@@ -547,7 +547,7 @@ class Location {
      * @param int $levelNumber
      * @return array
      */
-    private function getLevelOccupancyData(int $locationId, int $levelNumber): array {
+    public function getLevelOccupancyData(int $locationId, int $levelNumber): array {
         $levelName = $this->levelSettings->getLevelNameByNumber($locationId, $levelNumber) ?? ('Level ' . $levelNumber);
         
         $query = "SELECT 
@@ -584,6 +584,45 @@ class Location {
             error_log("Error getting level occupancy data: " . $e->getMessage());
             return ['items' => 0, 'capacity' => 0, 'occupancy_percent' => 0];
         }
+    }
+
+    /**
+     * Get dynamic occupancy data for all levels of a location
+     * @param int $locationId
+     * @return array Occupancy data keyed by level_number
+     */
+    private function getDynamicLevelOccupancy(int $locationId): array {
+        $levelSettings = $this->levelSettings->getLevelSettings($locationId);
+        $occupancy = [];
+
+        foreach ($levelSettings as $level) {
+            $levelNumber = $level['level_number'];
+            $levelName = $level['level_name'] ?: "Nivel {$levelNumber}";
+
+            $query = "SELECT COALESCE(SUM(i.quantity), 0) as items
+                      FROM inventory i
+                      WHERE i.location_id = :location_id
+                      AND i.shelf_level = :level_name";
+
+            $stmt = $this->conn->prepare($query);
+            $stmt->execute([
+                ':location_id' => $locationId,
+                ':level_name' => $levelName
+            ]);
+
+            $items = (int)$stmt->fetchColumn();
+            $capacity = (int)($level['items_capacity'] ?: 0);
+            $percentage = $capacity > 0 ? round(($items / $capacity) * 100, 1) : 0;
+
+            $occupancy[$levelNumber] = [
+                'items' => $items,
+                'capacity' => $capacity,
+                'percentage' => $percentage,
+                'level_name' => $levelName
+            ];
+        }
+
+        return $occupancy;
     }
 
     // ===== LOCATION CREATION METHODS =====
@@ -884,19 +923,16 @@ class Location {
      * @return array Array of locations in the specified zone
      */
     public function getLocationsByZone($zone) {
-        $query = "SELECT 
+        $query = "SELECT
                     l.*,
                     COALESCE(SUM(i.quantity), 0) as total_items,
-                    COALESCE(SUM(CASE WHEN i.shelf_level = 'bottom' THEN i.quantity ELSE 0 END), 0) as bottom_items,
-                    COALESCE(SUM(CASE WHEN i.shelf_level = 'middle' THEN i.quantity ELSE 0 END), 0) as middle_items,
-                    COALESCE(SUM(CASE WHEN i.shelf_level = 'top' THEN i.quantity ELSE 0 END), 0) as top_items,
                     COUNT(DISTINCT i.product_id) as unique_products
                   FROM {$this->table} l
                   LEFT JOIN inventory i ON l.id = i.location_id
-                  WHERE l.zone = :zone 
+                  WHERE l.zone = :zone
                     AND l.status = 'active'
                     AND l.type = 'Shelf'
-                  GROUP BY l.id 
+                  GROUP BY l.id
                   ORDER BY l.location_code";
         
         try {
@@ -1110,7 +1146,7 @@ class Location {
      * @return array
      */
     public function getWarehouseVisualizationData($zoneFilter = '', $typeFilter = '', $search = '', $enhanced = false) {
-        $query = "SELECT 
+        $query = "SELECT
                     l.id,
                     l.location_code,
                     l.zone,
@@ -1120,9 +1156,6 @@ class Location {
                     l.status,
                     l.notes,
                     COALESCE(SUM(i.quantity), 0) as total_items,
-                    COALESCE(SUM(CASE WHEN i.shelf_level = 'bottom' THEN i.quantity ELSE 0 END), 0) as bottom_items,
-                    COALESCE(SUM(CASE WHEN i.shelf_level = 'middle' THEN i.quantity ELSE 0 END), 0) as middle_items,
-                    COALESCE(SUM(CASE WHEN i.shelf_level = 'top' THEN i.quantity ELSE 0 END), 0) as top_items,
                     COUNT(DISTINCT i.product_id) as unique_products
                   FROM {$this->table} l
                   LEFT JOIN inventory i ON l.id = i.location_id
@@ -1155,49 +1188,17 @@ class Location {
             $stmt->execute();
             $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-            // Process the results to add occupancy data
             foreach ($results as &$location) {
-                if ($enhanced) {
-                    // Extract zone from location_code if zone is generic
-                    if (!empty($location['location_code']) && strpos($location['location_code'], '-') !== false) {
-                        $extractedZone = explode('-', $location['location_code'])[0];
-                        if ($location['zone'] === 'Marfa' || empty($location['zone'])) {
-                            $location['zone'] = strtoupper($extractedZone);
-                        }
+                if ($enhanced && !empty($location['location_code']) && strpos($location['location_code'], '-') !== false) {
+                    $extractedZone = explode('-', $location['location_code'])[0];
+                    if ($location['zone'] === 'Marfa' || empty($location['zone'])) {
+                        $location['zone'] = strtoupper($extractedZone);
                     }
-                    
-                    // Add level capacity information
-                    $levels = (int)($location['levels'] ?? self::STANDARD_LEVELS);
-                    $levelCapacity = $this->getLevelCapacity($location);
-                    $location['level_capacity'] = $levelCapacity;
-                    $location['capacity'] = $levelCapacity * $levels;
-                    
-                    // Add items per level for enhanced visualization
-                    $location['items'] = [
-                        'total' => (int)($location['total_items'] ?? 0),
-                        'bottom' => (int)($location['bottom_items'] ?? 0),
-                        'middle' => (int)($location['middle_items'] ?? 0),
-                        'top' => (int)($location['top_items'] ?? 0)
-                    ];
                 }
 
-                // Always add basic occupancy calculations
-                $totalCapacity = (int)$location['capacity'];
-                $levels = (int)($location['levels'] ?? self::STANDARD_LEVELS);
-                $levelCapacity = $levels > 0 ? $totalCapacity / $levels : 0;
-                
-                $location['occupancy'] = [
-                    'total' => $totalCapacity > 0 ? round(($location['total_items'] / $totalCapacity) * 100, 1) : 0,
-                    'bottom' => $levelCapacity > 0 ? round(($location['bottom_items'] / $levelCapacity) * 100, 1) : 0,
-                    'middle' => $levelCapacity > 0 ? round(($location['middle_items'] / $levelCapacity) * 100, 1) : 0,
-                    'top' => $levelCapacity > 0 ? round(($location['top_items'] / $levelCapacity) * 100, 1) : 0
-                ];
-
-                if ($enhanced) {
-                    $location = $this->enhanceLocationOccupancy($location);
-                }
+                $location = $this->enhanceLocationOccupancy($location);
             }
-            
+
             return $results;
 
         } catch (PDOException $e) {
@@ -1363,8 +1364,7 @@ class Location {
      * @return bool
      */
     public function updateShelfLevel($locationId, $level, $productId, $quantity) {
-        $validLevels = ['bottom', 'middle', 'top'];
-        if (!in_array($level, $validLevels)) {
+        if (empty($level)) {
             return false;
         }
         
@@ -1562,32 +1562,33 @@ class Location {
      * @return array Enhanced location data
      */
     private function enhanceLocationOccupancy($location) {
-        $totalCapacity = (int)($location['capacity'] ?? 0);
-        $levels = (int)($location['levels'] ?? self::STANDARD_LEVELS);
-        $levelCapacity = $levels > 0 ? $totalCapacity / $levels : 0;
-        
-        // Enhanced occupancy with better calculations
+        $locationId = (int)$location['id'];
+        $levelOccupancy = $this->getDynamicLevelOccupancy($locationId);
+
+        $totalItems = array_sum(array_column($levelOccupancy, 'items'));
+        $totalCapacity = array_sum(array_column($levelOccupancy, 'capacity'));
+        $totalPercentage = $totalCapacity > 0 ? round(($totalItems / $totalCapacity) * 100, 1) : 0;
+
         $location['occupancy'] = [
-            'total' => $totalCapacity > 0 ? round(($location['total_items'] / $totalCapacity) * 100, 1) : 0,
-            'bottom' => $levelCapacity > 0 ? round(($location['bottom_items'] / $levelCapacity) * 100, 1) : 0,
-            'middle' => $levelCapacity > 0 ? round(($location['middle_items'] / $levelCapacity) * 100, 1) : 0,
-            'top' => $levelCapacity > 0 ? round(($location['top_items'] / $levelCapacity) * 100, 1) : 0
+            'total' => $totalPercentage,
+            'levels' => $levelOccupancy
         ];
-        
-        // Add occupancy status
-        $totalOccupancy = $location['occupancy']['total'];
-        if ($totalOccupancy === 0) {
+
+        $location['total_items'] = $totalItems;
+        $location['capacity'] = $totalCapacity;
+
+        if ($totalPercentage === 0) {
             $location['occupancy_status'] = 'empty';
-        } elseif ($totalOccupancy <= 50) {
+        } elseif ($totalPercentage <= 50) {
             $location['occupancy_status'] = 'low';
-        } elseif ($totalOccupancy <= 79) {
+        } elseif ($totalPercentage <= 79) {
             $location['occupancy_status'] = 'medium';
-        } elseif ($totalOccupancy <= 94) {
+        } elseif ($totalPercentage <= 94) {
             $location['occupancy_status'] = 'high';
         } else {
             $location['occupancy_status'] = 'full';
         }
-        
+
         return $location;
     }
 

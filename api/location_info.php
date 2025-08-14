@@ -69,17 +69,17 @@ if ($ids) {
 
 $levels = [];
 foreach ($details['level_settings'] as $level) {
-    $occ = $level['current_occupancy'] ?? ['items'=>0,'capacity'=>0,'occupancy_percent'=>0];
+    $levelOccupancy = $locModel->getLevelOccupancyData($locationId, $level['level_number']);
     $pid = !empty($level['dedicated_product_id']) ? (int)$level['dedicated_product_id'] : null;
-    
+
     $levels[] = [
         'number' => (int)$level['level_number'],
         'name' => $level['level_name'] ?: ('Nivel ' . $level['level_number']),
         'subdivision_count' => (int)($level['subdivision_count'] ?? 0),
         'subdivisions_enabled' => !empty($level['subdivisions_enabled']),
-        'capacity' => $occ['capacity'] ?: null,
-        'current_stock' => (int)$occ['items'],
-        'occupancy_percentage' => $occ['capacity'] ? $occ['occupancy_percent'] : null,
+        'capacity' => $levelOccupancy['capacity'] ?: null,
+        'current_stock' => (int)$levelOccupancy['items'],
+        'occupancy_percentage' => $levelOccupancy['capacity'] ? $levelOccupancy['occupancy_percent'] : null,
         'product_name' => $pid && isset($productMap[$pid]) ? $productMap[$pid] : null,
         'dedicated_product_id' => $pid
     ];

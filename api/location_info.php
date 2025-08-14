@@ -144,38 +144,16 @@ foreach ($levels as $lvl) {
     }
 }
 
-// ===== ACTIVITY INFORMATION =====
-$activity = [
-    'last_movement' => null,
-    'recent_changes' => 0,
-    'predicted_refill' => null
-];
-try {
-    $stmt = $db->prepare("SELECT created_at, ABS(quantity_change) as qty FROM inventory_transactions WHERE location_id = :id ORDER BY created_at DESC LIMIT 1");
-    $stmt->bindValue(':id', $locationId, PDO::PARAM_INT);
-    $stmt->execute();
-    if ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-        $activity['last_movement'] = $row['created_at'];
-    }
-
-    $stmt = $db->prepare("SELECT COUNT(*) FROM inventory_transactions WHERE location_id = :id AND created_at >= (NOW() - INTERVAL 1 DAY)");
-    $stmt->bindValue(':id', $locationId, PDO::PARAM_INT);
-    $stmt->execute();
-    $activity['recent_changes'] = (int)$stmt->fetchColumn();
-} catch (Exception $e) {
-    // Inventory transactions table might not exist - ignore
-}
-
 // ===== ALERTS =====
 $alerts = [];
 if ($utilPercent >= 95) {
-    $alerts[] = ['type' => 'critical', 'message' => 'Approaching capacity limit'];
+    $alerts[] = ['type' => 'critical', 'message' => 'Aproape de capacitate maximă'];
 } elseif ($utilPercent >= 90) {
-    $alerts[] = ['type' => 'warning', 'message' => 'Approaching capacity limit'];
+    $alerts[] = ['type' => 'warning', 'message' => 'Aproape de capacitate maximă'];
 }
 foreach ($products as $prod) {
     if ($prod['min_stock_level'] !== null && $prod['quantity'] <= $prod['min_stock_level']) {
-        $alerts[] = ['type' => 'warning', 'message' => 'Low stock for ' . $prod['name']];
+        $alerts[] = ['type' => 'warning', 'message' => 'Stoc redus pentru ' . $prod['name']];
     }
 }
 
@@ -195,7 +173,6 @@ echo json_encode([
     'capacity_details' => $capacityDetails,
     'products' => $products,
     'dedicated_product' => $dedicatedProduct,
-    'activity' => $activity,
     'alerts' => $alerts,
     'environmental' => $environmental
 ]);

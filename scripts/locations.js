@@ -2175,7 +2175,7 @@ class EnhancedWarehouseVisualization {
             z-index: 1000;
             min-width: 280px;
             box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
-            pointer-events: none;
+            pointer-events: auto;
             opacity: 0;
             transform: translateY(10px);
             transition: all 0.2s ease;
@@ -2217,9 +2217,17 @@ class EnhancedWarehouseVisualization {
         });
 
         document.addEventListener('mouseout', (e) => {
-            if (e.target.closest('.shelf-item') || e.target.closest('#enhancedTooltip')) {
-                clearTimeout(this.hideTooltipTimeout);
-                this.hideTooltipTimeout = setTimeout(() => this.hideTooltip(), 200);
+            const toElement = e.relatedTarget;
+            if (e.target.closest('.shelf-item')) {
+                if (!toElement || (!toElement.closest('.shelf-item') && !toElement.closest('#enhancedTooltip'))) {
+                    clearTimeout(this.hideTooltipTimeout);
+                    this.hideTooltipTimeout = setTimeout(() => this.hideTooltip(), 200);
+                }
+            } else if (e.target.closest('#enhancedTooltip')) {
+                if (!toElement || !toElement.closest('#enhancedTooltip')) {
+                    clearTimeout(this.hideTooltipTimeout);
+                    this.hideTooltipTimeout = setTimeout(() => this.hideTooltip(), 200);
+                }
             }
         });
 
@@ -2503,7 +2511,11 @@ class EnhancedWarehouseVisualization {
             const percent = Math.round(cap.utilization_percentage || 0);
             const statusClass = this.getCapacityStatus(percent);
             const productsHtml = (data.products || [])
-                .map(p => `<li>${p.name} (${p.quantity})</li>`)
+                .map(p => `<li>${p.name} (${p.quantity} buc)</li>`)
+                .join('');
+            const levelsHtml = (data.levels || [])
+                .map(l => `<div class="level-row"><span>${l.name}:</span><span>${Math.round(l.occupancy_percentage || 0)}% (${l.current_stock || 0}${l.capacity ? '/' + l.capacity : ''} articole)</span></div>`)
+
                 .join('');
             const alertsHtml = (data.alerts || [])
                 .map(a => `<div class="alert ${a.type}">${a.message}</div>`)
@@ -2516,17 +2528,17 @@ class EnhancedWarehouseVisualization {
                 </div>
                 <div class="capacity-section">
                     <div class="capacity-bar"><div class="fill ${statusClass}" style="width:${percent}%"></div></div>
-                    <div class="capacity-text">${cap.current_stock || 0}/${cap.total_capacity || 0} items</div>
-                    <div class="capacity-available">Available: ${cap.available_space || 0}</div>
+                    <div class="capacity-text">${cap.current_stock || 0}/${cap.total_capacity || 0} articole</div>
+                    <div class="capacity-available">Disponibil: ${cap.available_space || 0}</div>
                 </div>
-                ${productsHtml ? `<div class="products-section"><div class="section-title">Top products</div><ul class="product-list">${productsHtml}</ul></div>` : ''}
+                ${levelsHtml ? `<div class="levels-section"><div class="section-title">Ocupare pe nivel</div>${levelsHtml}</div>` : ''}
+                ${productsHtml ? `<div class="products-section"><div class="section-title">Top produse</div><ul class="product-list">${productsHtml}</ul></div>` : ''}
                 ${alertsHtml ? `<div class="alerts">${alertsHtml}</div>` : ''}
-                <div class="activity-section">Last activity: ${this.formatRelativeTime(data.activity?.last_movement)}</div>
                 <div class="quick-actions">
-                    <button data-action="move">Move Items</button>
-                    <button data-action="inventory">Check Inventory</button>
-                    <button data-action="add">Add Stock</button>
-                    <button data-action="details">View Details</button>
+                    <button data-action="move">Mută stoc</button>
+                    <button data-action="inventory">Verifică inventar</button>
+                    <button data-action="add">Adaugă stoc</button>
+                    <button data-action="details">Vezi detalii</button>
                 </div>
             `;
 
@@ -2537,7 +2549,7 @@ class EnhancedWarehouseVisualization {
         if (cached) {
             render(cached);
         } else {
-            this.tooltip.innerHTML = '<div class="tooltip-loading">Loading...</div>';
+            this.tooltip.innerHTML = '<div class="tooltip-loading">Încărcare...</div>';
             fetch(`api/location_info.php?id=${shelf.id}`)
                 .then(r => r.json())
                 .then(data => {
@@ -2545,7 +2557,8 @@ class EnhancedWarehouseVisualization {
                     render(data);
                 })
                 .catch(() => {
-                    this.tooltip.innerHTML = '<div class="tooltip-error">Error loading data</div>';
+                    this.tooltip.innerHTML = '<div class="tooltip-error">Eroare la încărcare</div>';
+
                 });
         }
 
@@ -2591,25 +2604,6 @@ class EnhancedWarehouseVisualization {
         if (percent >= 95) return 'critical';
         if (percent >= 90) return 'warning';
         return 'normal';
-    }
-
-    /**
-     * Format timestamp into relative time string
-     * @param {string|null} ts
-     * @returns {string}
-     */
-    formatRelativeTime(ts) {
-        if (!ts) return 'N/A';
-        const date = new Date(ts);
-        const diffMs = Date.now() - date.getTime();
-        const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-        if (diffHours < 1) {
-            const mins = Math.floor(diffMs / (1000 * 60));
-            return mins + 'm ago';
-        }
-        if (diffHours < 24) return diffHours + 'h ago';
-        const days = Math.floor(diffHours / 24);
-        return days + 'd ago';
     }
 
     updateTooltipPosition(event) {

@@ -938,10 +938,72 @@
     z-index: 1000;
     min-width: 280px;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
-    pointer-events: none;
+    pointer-events: auto;
     opacity: 0;
     transform: translateY(10px);
     transition: all 0.2s ease;
+}
+
+.enhanced-tooltip .tooltip-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+    font-weight: 600;
+}
+
+.enhanced-tooltip .status-indicator.normal { color: var(--success-color); }
+.enhanced-tooltip .status-indicator.warning { color: var(--warning-color); }
+.enhanced-tooltip .status-indicator.critical { color: var(--danger-color); }
+
+.enhanced-tooltip .capacity-section { margin-bottom: 0.5rem; }
+.enhanced-tooltip .capacity-bar {
+    height: 8px;
+    background: var(--border-color-strong);
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 0.25rem;
+}
+.enhanced-tooltip .capacity-bar .fill {
+    height: 100%;
+    background: var(--success-color);
+}
+.enhanced-tooltip .capacity-bar .fill.warning { background: var(--warning-color); }
+.enhanced-tooltip .capacity-bar .fill.critical { background: var(--danger-color); }
+
+.enhanced-tooltip .levels-section { margin-bottom: 0.5rem; }
+.enhanced-tooltip .level-row { display: flex; justify-content: space-between; font-size: 0.75rem; margin-bottom: 0.25rem; }
+
+.enhanced-tooltip .section-title {
+    font-weight: 600;
+    margin: 0.5rem 0 0.25rem;
+}
+.enhanced-tooltip .product-list { list-style: none; margin: 0; padding: 0; }
+.enhanced-tooltip .product-list li { font-size: 0.75rem; margin-bottom: 0.25rem; }
+
+.enhanced-tooltip .alerts { margin-top: 0.5rem; }
+.enhanced-tooltip .alert { font-size: 0.75rem; }
+.enhanced-tooltip .alert.warning { color: var(--warning-color); }
+.enhanced-tooltip .alert.critical { color: var(--danger-color); }
+
+.enhanced-tooltip .quick-actions {
+    display: flex;
+    gap: 0.25rem;
+    margin-top: 0.5rem;
+}
+.enhanced-tooltip .quick-actions button {
+    flex: 1;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+    border: 1px solid var(--border-color-strong);
+    border-radius: 4px;
+    background: var(--surface-background);
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: var(--transition);
+}
+.enhanced-tooltip .quick-actions button:hover {
+    background: var(--button-hover);
 }
 
 /* ===== LEGEND ===== */

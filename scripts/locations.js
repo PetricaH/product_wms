@@ -2091,6 +2091,8 @@ class EnhancedWarehouseVisualization {
         this.zones = this.extractZones();
         this.tooltip = null;
         this.isLoading = false;
+        this.tooltipCache = {};
+        this.hideTooltipTimeout = null;
         
         this.init();
     }
@@ -2209,12 +2211,15 @@ class EnhancedWarehouseVisualization {
                 if (shelf) {
                     this.showEnhancedTooltip(e, shelf);
                 }
+            } else if (e.target.closest('#enhancedTooltip')) {
+                clearTimeout(this.hideTooltipTimeout);
             }
         });
 
         document.addEventListener('mouseout', (e) => {
-            if (e.target.closest('.shelf-item')) {
-                this.hideTooltip();
+            if (e.target.closest('.shelf-item') || e.target.closest('#enhancedTooltip')) {
+                clearTimeout(this.hideTooltipTimeout);
+                this.hideTooltipTimeout = setTimeout(() => this.hideTooltip(), 200);
             }
         });
 
@@ -2493,31 +2498,118 @@ class EnhancedWarehouseVisualization {
     showEnhancedTooltip(event, shelf) {
         if (!this.tooltip) return;
 
-        const levels = shelf.occupancy?.levels || {};
+        const render = (data) => {
+            const cap = data.capacity_details || {};
+            const percent = Math.round(cap.utilization_percentage || 0);
+            const statusClass = this.getCapacityStatus(percent);
+            const productsHtml = (data.products || [])
+                .map(p => `<li>${p.name} (${p.quantity})</li>`)
+                .join('');
+            const alertsHtml = (data.alerts || [])
+                .map(a => `<div class="alert ${a.type}">${a.message}</div>`)
+                .join('');
 
-        let levelDetails = '';
-        Object.entries(levels).forEach(([levelNum, levelData]) => {
-            levelDetails += `
-            <div style="display: flex; justify-content: space-between; margin-bottom: 0.25rem; font-size: 0.75rem;">
-                <span>${levelData.level_name}:</span>
-                <span>${Math.round(levelData.percentage || 0)}% (${levelData.items || 0} items)</span>
-            </div>`;
-        });
+            this.tooltip.innerHTML = `
+                <div class="tooltip-header">
+                    <strong>${shelf.location_code}</strong>
+                    <span class="status-indicator ${statusClass}">${percent}%</span>
+                </div>
+                <div class="capacity-section">
+                    <div class="capacity-bar"><div class="fill ${statusClass}" style="width:${percent}%"></div></div>
+                    <div class="capacity-text">${cap.current_stock || 0}/${cap.total_capacity || 0} items</div>
+                    <div class="capacity-available">Available: ${cap.available_space || 0}</div>
+                </div>
+                ${productsHtml ? `<div class="products-section"><div class="section-title">Top products</div><ul class="product-list">${productsHtml}</ul></div>` : ''}
+                ${alertsHtml ? `<div class="alerts">${alertsHtml}</div>` : ''}
+                <div class="activity-section">Last activity: ${this.formatRelativeTime(data.activity?.last_movement)}</div>
+                <div class="quick-actions">
+                    <button data-action="move">Move Items</button>
+                    <button data-action="inventory">Check Inventory</button>
+                    <button data-action="add">Add Stock</button>
+                    <button data-action="details">View Details</button>
+                </div>
+            `;
 
-        this.tooltip.innerHTML = `
-            <div style="font-weight: 600; margin-bottom: 0.5rem;">
-                Raft ${shelf.location_code}
-            </div>
-            ${levelDetails}
-            <div style="padding-top: 0.5rem; border-top: 1px solid var(--border-color);">
-                📦 Total: ${shelf.total_items || 0} items<br>
-                🏷️ Products: ${shelf.unique_products || 0}
-            </div>
-        `;
+            this.attachQuickActions(shelf.id);
+        };
+
+        const cached = this.tooltipCache[shelf.id];
+        if (cached) {
+            render(cached);
+        } else {
+            this.tooltip.innerHTML = '<div class="tooltip-loading">Loading...</div>';
+            fetch(`api/location_info.php?id=${shelf.id}`)
+                .then(r => r.json())
+                .then(data => {
+                    this.tooltipCache[shelf.id] = data;
+                    render(data);
+                })
+                .catch(() => {
+                    this.tooltip.innerHTML = '<div class="tooltip-error">Error loading data</div>';
+                });
+        }
 
         this.tooltip.style.opacity = '1';
         this.tooltip.style.transform = 'translateY(0)';
         this.updateTooltipPosition(event);
+    }
+
+    /**
+     * Attach quick action handlers for tooltip buttons
+     * @param {number} locationId
+     */
+    attachQuickActions(locationId) {
+        const actions = this.tooltip.querySelectorAll('.quick-actions [data-action]');
+        actions.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const action = btn.dataset.action;
+                switch (action) {
+                    case 'move':
+                        window.location.href = `warehouse_relocation.php?from=${locationId}`;
+                        break;
+                    case 'inventory':
+                        window.location.href = `warehouse_inventory.php?location=${locationId}`;
+                        break;
+                    case 'add':
+                        window.location.href = `warehouse_receiving.php?location=${locationId}`;
+                        break;
+                    case 'details':
+                        window.location.href = `locations.php?id=${locationId}`;
+                        break;
+                }
+            });
+        });
+    }
+
+    /**
+     * Determine CSS class for capacity status
+     * @param {number} percent
+     * @returns {string}
+     */
+    getCapacityStatus(percent) {
+        if (percent >= 95) return 'critical';
+        if (percent >= 90) return 'warning';
+        return 'normal';
+    }
+
+    /**
+     * Format timestamp into relative time string
+     * @param {string|null} ts
+     * @returns {string}
+     */
+    formatRelativeTime(ts) {
+        if (!ts) return 'N/A';
+        const date = new Date(ts);
+        const diffMs = Date.now() - date.getTime();
+        const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+        if (diffHours < 1) {
+            const mins = Math.floor(diffMs / (1000 * 60));
+            return mins + 'm ago';
+        }
+        if (diffHours < 24) return diffHours + 'h ago';
+        const days = Math.floor(diffHours / 24);
+        return days + 'd ago';
     }
 
     updateTooltipPosition(event) {
@@ -2544,6 +2636,7 @@ class EnhancedWarehouseVisualization {
             this.tooltip.style.opacity = '0';
             this.tooltip.style.transform = 'translateY(10px)';
         }
+        clearTimeout(this.hideTooltipTimeout);
     }
 
     getEmptyZonesState() {

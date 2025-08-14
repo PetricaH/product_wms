@@ -44,6 +44,7 @@ if ($locationId <= 0) {
 }
 
 require_once BASE_PATH . '/models/Location.php';
+$inventoryIncluded = @include_once BASE_PATH . '/models/Inventory.php';
 $locModel = new Location($db);
 $details = $locModel->getLocationDetails($locationId, true);
 
@@ -85,5 +86,117 @@ foreach ($details['level_settings'] as $level) {
     ];
 }
 
-echo json_encode(['levels' => $levels]);
+// ===== CAPACITY DETAILS =====
+$occupancy = $locModel->getLocationOccupancy($locationId);
+$totalCapacity = (int)($occupancy['capacity'] ?? 0);
+$currentStock = (int)($occupancy['current_items'] ?? 0);
+$availableSpace = $totalCapacity > $currentStock ? $totalCapacity - $currentStock : 0;
+$utilPercent = $totalCapacity > 0 ? round(($currentStock / $totalCapacity) * 100, 1) : 0;
+
+if ($utilPercent >= 90) {
+    $efficiency = $utilPercent >= 95 ? 'Excellent' : 'Good';
+} elseif ($utilPercent >= 70) {
+    $efficiency = 'Fair';
+} else {
+    $efficiency = 'Poor';
+}
+
+$capacityDetails = [
+    'total_capacity' => $totalCapacity,
+    'current_stock' => $currentStock,
+    'available_space' => $availableSpace,
+    'utilization_percentage' => $utilPercent,
+    'efficiency_rating' => $efficiency
+];
+
+// ===== PRODUCT INFORMATION =====
+$products = [];
+if ($inventoryIncluded) {
+    try {
+        $invModel = new Inventory($db);
+        $records = $invModel->getLocationInventory($locationId);
+        usort($records, function($a, $b) {
+            return ($b['quantity'] ?? 0) <=> ($a['quantity'] ?? 0);
+        });
+        foreach (array_slice($records, 0, 5) as $rec) {
+            $products[] = [
+                'id' => (int)$rec['product_id'],
+                'name' => $rec['product_name'] ?? '',
+                'quantity' => (int)$rec['quantity'],
+                'last_moved' => $rec['updated_at'] ?? $rec['received_at'] ?? null,
+                'min_stock_level' => $rec['min_stock_level'] ?? null
+            ];
+        }
+    } catch (Exception $e) {
+        // Ignore inventory errors
+    }
+}
+
+// Determine dedicated product if present in any level
+$dedicatedProduct = null;
+foreach ($levels as $lvl) {
+    if (!empty($lvl['dedicated_product_id'])) {
+        $dedicatedProduct = [
+            'id' => $lvl['dedicated_product_id'],
+            'name' => $lvl['product_name']
+        ];
+        break;
+    }
+}
+
+// ===== ACTIVITY INFORMATION =====
+$activity = [
+    'last_movement' => null,
+    'recent_changes' => 0,
+    'predicted_refill' => null
+];
+try {
+    $stmt = $db->prepare("SELECT created_at, ABS(quantity_change) as qty FROM inventory_transactions WHERE location_id = :id ORDER BY created_at DESC LIMIT 1");
+    $stmt->bindValue(':id', $locationId, PDO::PARAM_INT);
+    $stmt->execute();
+    if ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+        $activity['last_movement'] = $row['created_at'];
+    }
+
+    $stmt = $db->prepare("SELECT COUNT(*) FROM inventory_transactions WHERE location_id = :id AND created_at >= (NOW() - INTERVAL 1 DAY)");
+    $stmt->bindValue(':id', $locationId, PDO::PARAM_INT);
+    $stmt->execute();
+    $activity['recent_changes'] = (int)$stmt->fetchColumn();
+} catch (Exception $e) {
+    // Inventory transactions table might not exist - ignore
+}
+
+// ===== ALERTS =====
+$alerts = [];
+if ($utilPercent >= 95) {
+    $alerts[] = ['type' => 'critical', 'message' => 'Approaching capacity limit'];
+} elseif ($utilPercent >= 90) {
+    $alerts[] = ['type' => 'warning', 'message' => 'Approaching capacity limit'];
+}
+foreach ($products as $prod) {
+    if ($prod['min_stock_level'] !== null && $prod['quantity'] <= $prod['min_stock_level']) {
+        $alerts[] = ['type' => 'warning', 'message' => 'Low stock for ' . $prod['name']];
+    }
+}
+
+// ===== ENVIRONMENTAL DATA =====
+$environmental = null;
+try {
+    $stmt = $db->prepare("SELECT temperature, humidity FROM location_environment WHERE location_id = :id ORDER BY recorded_at DESC LIMIT 1");
+    $stmt->bindValue(':id', $locationId, PDO::PARAM_INT);
+    $stmt->execute();
+    $environmental = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+} catch (Exception $e) {
+    // Table might not exist
+}
+
+echo json_encode([
+    'levels' => $levels,
+    'capacity_details' => $capacityDetails,
+    'products' => $products,
+    'dedicated_product' => $dedicatedProduct,
+    'activity' => $activity,
+    'alerts' => $alerts,
+    'environmental' => $environmental
+]);
 ?>

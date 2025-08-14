@@ -2372,36 +2372,7 @@ class EnhancedWarehouseVisualization {
 
     createShelfElement(shelf) {
         const occupancyTotal = shelf.occupancy?.total || 0;
-        const levels = parseInt(shelf.levels || 3);
-
-        // Build occupancy array top-down. If we only have the classic
-        // top/middle/bottom values use them, otherwise distribute total
-        // occupancy evenly across all configured levels.
-        let levelOccupancies = [];
-        if (levels === 3) {
-            levelOccupancies = [
-                shelf.occupancy?.top || 0,
-                shelf.occupancy?.middle || 0,
-                shelf.occupancy?.bottom || 0
-            ];
-        } else {
-            const each = levels > 0 ? occupancyTotal / levels : 0;
-            for (let i = 0; i < levels; i++) {
-                levelOccupancies.push(each);
-            }
-        }
-
-        // Generate level bars from top (index 0) to bottom (last index)
-        const levelsHTML = `
-            <div class="shelf-levels">
-                ${levelOccupancies.map((occ, idx) => {
-                    const levelName = levels - idx;
-                    return `<div class="shelf-level" data-level="${levelName}" title="Nivel ${levelName}: ${Math.round(occ)}%">
-                                <div class="level-fill ${this.getOccupancyClass(occ)}" style="width: ${occ}%"></div>
-                            </div>`;
-                }).join('')}
-            </div>
-        `;
+        const levelsHTML = this.renderDynamicShelfLevels(shelf);
 
         return `
             <div class="shelf-item ${this.getOccupancyClass(occupancyTotal)}" data-shelf-id="${shelf.id}">
@@ -2410,6 +2381,26 @@ class EnhancedWarehouseVisualization {
                 <div class="shelf-occupancy">${Math.round(occupancyTotal)}%</div>
             </div>
         `;
+    }
+
+    async getDynamicLevelData(shelfId) {
+        const response = await fetch(`/api/location_info.php?id=${shelfId}`);
+        const data = await response.json();
+        return data.levels || [];
+    }
+
+    renderDynamicShelfLevels(shelf) {
+        const levels = shelf.occupancy?.levels || {};
+        const levelBars = Object.entries(levels)
+            .sort(([a], [b]) => parseInt(b) - parseInt(a))
+            .map(([levelNum, levelData]) => {
+                const percentage = levelData.percentage || 0;
+                return `<div class="shelf-level" data-level="${levelNum}" title="${levelData.level_name}: ${Math.round(percentage)}%">
+                            <div class="level-fill ${this.getOccupancyClass(percentage)}" style="width: ${percentage}%"></div>
+                        </div>`;
+            }).join('');
+
+        return `<div class="shelf-levels">${levelBars}</div>`;
     }
 
     getOccupancyClass(percentage) {
@@ -2455,19 +2446,22 @@ class EnhancedWarehouseVisualization {
         
         tbody.innerHTML = filteredLocations.map(location => {
             const occupancyClass = this.getOccupancyClass(location.occupancy?.total || 0);
-            // FIXED: Case insensitive type check
             const isShelf = location.type.toLowerCase() === 'shelf';
-            
+            const levelsData = location.occupancy?.levels || {};
+            const bottom = levelsData['1']?.percentage || 0;
+            const middle = levelsData['2']?.percentage || 0;
+            const top = levelsData['3']?.percentage || 0;
+
             return `
                     <tr>
                         <td><strong>${location.location_code}</strong></td>
                         <td>Zona ${location.zone}</td>
                         <td>${location.type}</td>
                         <td><span class="occupancy-badge ${occupancyClass}">${Math.round(location.occupancy?.total || 0)}%</span></td>
-                        <td>${isShelf ? Math.round(location.occupancy?.bottom || 0) + '%' : '-'}</td>
-                        <td>${isShelf ? Math.round(location.occupancy?.middle || 0) + '%' : '-'}</td>
-                       <td>${isShelf ? Math.round(location.occupancy?.top || 0) + '%' : '-'}</td>
-                        <td>${location.items?.total || location.total_items || 0}</td>
+                        <td>${isShelf ? Math.round(bottom) + '%' : '-'}</td>
+                        <td>${isShelf ? Math.round(middle) + '%' : '-'}</td>
+                        <td>${isShelf ? Math.round(top) + '%' : '-'}</td>
+                        <td>${location.total_items || 0}</td>
                         <td>${location.unique_products || 0}</td>
                         <td>
                             <button class="btn btn-sm btn-outline" onclick="openEditModalById(${location.id})" title="Editează">
@@ -2499,37 +2493,25 @@ class EnhancedWarehouseVisualization {
     showEnhancedTooltip(event, shelf) {
         if (!this.tooltip) return;
 
-        const occupancy = shelf.occupancy || {};
-        const items = shelf.items || {
-            total: shelf.total_items || 0,
-            bottom: shelf.bottom_items || 0,
-            middle: shelf.middle_items || 0,
-            top: shelf.top_items || 0
-        };
+        const levels = shelf.occupancy?.levels || {};
+
+        let levelDetails = '';
+        Object.entries(levels).forEach(([levelNum, levelData]) => {
+            levelDetails += `
+            <div style="display: flex; justify-content: space-between; margin-bottom: 0.25rem; font-size: 0.75rem;">
+                <span>${levelData.level_name}:</span>
+                <span>${Math.round(levelData.percentage || 0)}% (${levelData.items || 0} items)</span>
+            </div>`;
+        });
 
         this.tooltip.innerHTML = `
-            <div style="font-weight: 600; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
-                <span class="material-symbols-outlined" style="font-size: 1rem;">info</span>
+            <div style="font-weight: 600; margin-bottom: 0.5rem;">
                 Raft ${shelf.location_code}
             </div>
-            <div style="margin-bottom: 0.75rem;">
-                <div style="display: flex; justify-content: space-between; margin-bottom: 0.25rem; font-size: 0.75rem;">
-                    <span>🔼 Sus:</span>
-                    <span>${Math.round(occupancy.top || 0)}% (${items.top || 0} articole)</span>
-                </div>
-                <div style="display: flex; justify-content: space-between; margin-bottom: 0.25rem; font-size: 0.75rem;">
-                    <span>➖ Mijloc:</span>
-                    <span>${Math.round(occupancy.middle || 0)}% (${items.middle || 0} articole)</span>
-                </div>
-                <div style="display: flex; justify-content: space-between; margin-bottom: 0.25rem; font-size: 0.75rem;">
-                    <span>🔽 Jos:</span>
-                    <span>${Math.round(occupancy.bottom || 0)}% (${items.bottom || 0} articole)</span>
-                </div>
-            </div>
-            <div style="padding-top: 0.5rem; border-top: 1px solid var(--border-color); font-size: 0.7rem; color: var(--text-secondary);">
-                📦 Total: ${items.total || 0} articole din ${shelf.capacity || 0}<br>
-                🏷️ Produse unice: ${shelf.unique_products || 0}<br>
-                📍 Zonă: ${shelf.zone}
+            ${levelDetails}
+            <div style="padding-top: 0.5rem; border-top: 1px solid var(--border-color);">
+                📦 Total: ${shelf.total_items || 0} items<br>
+                🏷️ Products: ${shelf.unique_products || 0}
             </div>
         `;
 

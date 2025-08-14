@@ -309,21 +309,21 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                     </div>
                 <?php endif; ?>
                 <?php if ($view === 'movements'): ?>
-                    <div class="row summary-cards">
+                    <div class="summary-cards">
                         <?php $m = $movementSummary ?? ['movements'=>0,'products'=>0,'locations'=>0,'avg_duration'=>0]; ?>
-                        <div class="col card-metric">
+                        <div class="card-metric">
                             <div class="metric-label">Mișcări Astăzi</div>
                             <div class="metric-value"><?= number_format($m['movements']) ?></div>
                         </div>
-                        <div class="col card-metric">
+                        <div class="card-metric">
                             <div class="metric-label">Produse Afectate</div>
                             <div class="metric-value"><?= number_format($m['products']) ?></div>
                         </div>
-                        <div class="col card-metric">
+                        <div class="card-metric">
                             <div class="metric-label">Locații Active</div>
                             <div class="metric-value"><?= number_format($m['locations']) ?></div>
                         </div>
-                        <div class="col card-metric">
+                        <div class="card-metric">
                             <div class="metric-label">Timp Mediu Procesare</div>
                             <div class="metric-value"><?= $m['avg_duration'] ? gmdate('H:i:s', (int)$m['avg_duration']) : '-' ?></div>
                         </div>
@@ -348,85 +348,86 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                         </a>
                     </div>
 
-                    <div class="card">
-                        <div class="card-body">
-                            <form method="GET" id="movements-filter-form" class="filter-form">
-                                <input type="hidden" name="view" value="movements">
-                                <div class="form-row">
-                                    <div class="form-group">
-                                        <label class="form-label">De la</label>
-                                        <input type="date" name="date_from" id="date_from" class="form-control" value="<?= htmlspecialchars($dateFrom) ?>">
-                                    </div>
-                                    <div class="form-group">
-                                        <label class="form-label">Până la</label>
-                                        <input type="date" name="date_to" id="date_to" class="form-control" value="<?= htmlspecialchars($dateTo) ?>">
-                                    </div>
-                                    <div class="form-group">
-                                        <label class="form-label">Tip Mișcare</label>
-                                        <select name="transaction_type" class="form-control">
-                                            <option value="all">Toate tipurile</option>
-                                            <?php foreach ($transactionTypes as $key => $t): ?>
-                                                <option value="<?= $key ?>" <?= $typeFilter === $key ? 'selected' : '' ?>><?= $t['label'] ?></option>
-                                            <?php endforeach; ?>
-                                        </select>
-                                    </div>
-                                    <div class="form-group">
-                                        <label class="form-label">Produs</label>
-                                        <input type="text" name="product_search" class="form-control" placeholder="Căutare produs..." value="<?= htmlspecialchars($productSearch) ?>">
-                                    </div>
-                                    <div class="form-group">
-                                        <label class="form-label">Locație</label>
-                                        <select name="movement_location" class="form-control">
-                                            <option value="">Toate locațiile</option>
-                                            <?php foreach ($allLocations as $location): ?>
-                                                <option value="<?= $location['id'] ?>" <?= $movementLocation == $location['id'] ? 'selected' : '' ?>><?= htmlspecialchars($location['location_code']) ?></option>
-                                            <?php endforeach; ?>
-                                        </select>
-                                    </div>
-                                    <div class="form-group">
-                                        <label class="form-label">Operator</label>
-                                        <select name="user_id" class="form-control">
-                                            <option value="">Toți operatorii</option>
-                                            <?php foreach ($allUsers as $user): ?>
-                                                <option value="<?= $user['id'] ?>" <?= $userFilter == $user['id'] ? 'selected' : '' ?>><?= htmlspecialchars($user['username']) ?></option>
-                                            <?php endforeach; ?>
-                                        </select>
-                                    </div>
-                                    <div class="form-group quick-filters">
-                                        <label class="form-label">Perioadă rapidă</label>
-                                        <div class="btn-group">
-                                            <button type="button" class="btn btn-secondary" onclick="setDateRange('today')">Astăzi</button>
-                                            <button type="button" class="btn btn-secondary" onclick="setDateRange('week')">Săptămâna aceasta</button>
-                                            <button type="button" class="btn btn-secondary" onclick="setDateRange('month')">Luna aceasta</button>
+                    <div class="movements-layout">
+                        <div class="card filter-card">
+                            <div class="card-body">
+                                <form method="GET" id="movements-filter-form" class="filter-form">
+                                    <input type="hidden" name="view" value="movements">
+                                    <div class="form-row">
+                                        <div class="form-group">
+                                            <label class="form-label">De la</label>
+                                            <input type="date" name="date_from" id="date_from" class="form-control" value="<?= htmlspecialchars($dateFrom) ?>">
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="form-label">Până la</label>
+                                            <input type="date" name="date_to" id="date_to" class="form-control" value="<?= htmlspecialchars($dateTo) ?>">
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="form-label">Tip Mișcare</label>
+                                            <select name="transaction_type" class="form-control">
+                                                <option value="all">Toate tipurile</option>
+                                                <?php foreach ($transactionTypes as $key => $t): ?>
+                                                    <option value="<?= $key ?>" <?= $typeFilter === $key ? 'selected' : '' ?>><?= $t['label'] ?></option>
+                                                <?php endforeach; ?>
+                                            </select>
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="form-label">Produs</label>
+                                            <input type="text" name="product_search" class="form-control" placeholder="Căutare produs..." value="<?= htmlspecialchars($productSearch) ?>">
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="form-label">Locație</label>
+                                            <select name="movement_location" class="form-control">
+                                                <option value="">Toate locațiile</option>
+                                                <?php foreach ($allLocations as $location): ?>
+                                                    <option value="<?= $location['id'] ?>" <?= $movementLocation == $location['id'] ? 'selected' : '' ?>><?= htmlspecialchars($location['location_code']) ?></option>
+                                                <?php endforeach; ?>
+                                            </select>
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="form-label">Operator</label>
+                                            <select name="user_id" class="form-control">
+                                                <option value="">Toți operatorii</option>
+                                                <?php foreach ($allUsers as $user): ?>
+                                                    <option value="<?= $user['id'] ?>" <?= $userFilter == $user['id'] ? 'selected' : '' ?>><?= htmlspecialchars($user['username']) ?></option>
+                                                <?php endforeach; ?>
+                                            </select>
+                                        </div>
+                                        <div class="form-group quick-filters">
+                                            <label class="form-label">Perioadă rapidă</label>
+                                            <div class="btn-group">
+                                                <button type="button" class="btn btn-secondary" onclick="setDateRange('today')">Astăzi</button>
+                                                <button type="button" class="btn btn-secondary" onclick="setDateRange('week')">Săptămâna aceasta</button>
+                                                <button type="button" class="btn btn-secondary" onclick="setDateRange('month')">Luna aceasta</button>
+                                            </div>
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="form-label">Înregistrări</label>
+                                            <select name="page_size" class="form-control">
+                                                <?php foreach ([25,50,100] as $ps): ?>
+                                                    <option value="<?= $ps ?>" <?= $pageSize == $ps ? 'selected' : '' ?>><?= $ps ?></option>
+                                                <?php endforeach; ?>
+                                            </select>
                                         </div>
                                     </div>
-                                    <div class="form-group">
-                                        <label class="form-label">Înregistrări</label>
-                                        <select name="page_size" class="form-control">
-                                            <?php foreach ([25,50,100] as $ps): ?>
-                                                <option value="<?= $ps ?>" <?= $pageSize == $ps ? 'selected' : '' ?>><?= $ps ?></option>
-                                            <?php endforeach; ?>
-                                        </select>
-                                    </div>
-                                </div>
-                                <button type="submit" class="btn btn-secondary">
-                                    <span class="material-symbols-outlined">filter_alt</span>
-                                    Filtrează
-                                </button>
-                                <a href="?view=movements" class="btn btn-secondary">
-                                    <span class="material-symbols-outlined">refresh</span>
-                                    Reset
-                                </a>
-                                <a href="<?= $exportLink ?>&export=1" class="btn btn-secondary">Exportă în CSV</a>
-                            </form>
+                                    <button type="submit" class="btn btn-secondary">
+                                        <span class="material-symbols-outlined">filter_alt</span>
+                                        Filtrează
+                                    </button>
+                                    <a href="?view=movements" class="btn btn-secondary">
+                                        <span class="material-symbols-outlined">refresh</span>
+                                        Reset
+                                    </a>
+                                    <a href="<?= $exportLink ?>&export=1" class="btn btn-secondary">Exportă în CSV</a>
+                                </form>
+                            </div>
                         </div>
-                    </div>
 
-                    <div class="card">
-                        <div class="card-body">
-                            <?php if (!empty($movements)): ?>
-                                <div class="table-container">
-                                    <table class="table" id="stock-movements-table">
+                        <div class="card table-card">
+                            <div class="card-body">
+                                <?php if (!empty($movements)): ?>
+                                    <div class="table-container">
+                                        <table class="table" id="stock-movements-table">
                                         <thead>
                                             <tr>
                                                 <th><a href="<?= $sortLink('created_at') ?>">Data/Ora</a></th>
@@ -445,7 +446,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                             <?php foreach ($movements as $mv): ?>
                                                 <tr>
                                                     <td><?= date('d.m.Y H:i', strtotime($mv['created_at'])) ?></td>
-                                                    <td><span class="badge bg-<?= $transactionTypes[$mv['transaction_type']]['color'] ?? 'secondary' ?>"><?= $transactionTypes[$mv['transaction_type']]['label'] ?? $mv['transaction_type'] ?></span></td>
+                                                    <td><span class="badge status-badge bg-<?= $transactionTypes[$mv['transaction_type']]['color'] ?? 'secondary' ?>"><?= $transactionTypes[$mv['transaction_type']]['label'] ?? $mv['transaction_type'] ?></span></td>
                                                     <td><?= htmlspecialchars($mv['product_name']) ?> <small class="text-muted"><?= htmlspecialchars($mv['sku']) ?></small></td>
                                                     <td>
                                                         <?php if ($mv['transaction_type'] === 'move'): ?>
@@ -459,7 +460,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                     <td><?= htmlspecialchars($mv['full_name'] ?: $mv['username'] ?: '-') ?></td>
                                                     <td><?= htmlspecialchars($mv['reason'] ?? '-') ?></td>
                                                     <td><?= $mv['duration_seconds'] ? gmdate('H:i:s', $mv['duration_seconds']) : '-' ?></td>
-                                                    <td><button class="btn btn-sm btn-outline-secondary view-transaction" data-details='<?= htmlspecialchars(json_encode($mv), ENT_QUOTES) ?>'>Detalii</button></td>
+                                                    <td><button class="btn btn-outline-secondary view-transaction" data-details='<?= htmlspecialchars(json_encode($mv), ENT_QUOTES) ?>'>Detalii</button></td>
                                                 </tr>
                                             <?php endforeach; ?>
                                         </tbody>
@@ -487,11 +488,12 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                         </div>
                                     </div>
                                 <?php endif; ?>
-                            <?php else: ?>
-                                <p>Nu există mișcări de stoc</p>
-                            <?php endif; ?>
+                                <?php else: ?>
+                                    <p>Nu există mișcări de stoc</p>
+                                <?php endif; ?>
+                            </div>
+                        </div>
                     </div>
-                </div>
                 <?php else: ?>
                 <!-- View Controls -->
                 <div class="card">

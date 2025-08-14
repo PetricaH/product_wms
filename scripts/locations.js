@@ -2515,6 +2515,7 @@ class EnhancedWarehouseVisualization {
                 .join('');
             const levelsHtml = (data.levels || [])
                 .map(l => `<div class="level-row"><span>${l.name}:</span><span>${Math.round(l.occupancy_percentage || 0)}% (${l.current_stock || 0}${l.capacity ? '/' + l.capacity : ''} articole)</span></div>`)
+
                 .join('');
             const alertsHtml = (data.alerts || [])
                 .map(a => `<div class="alert ${a.type}">${a.message}</div>`)
@@ -2557,6 +2558,7 @@ class EnhancedWarehouseVisualization {
                 })
                 .catch(() => {
                     this.tooltip.innerHTML = '<div class="tooltip-error">Eroare la încărcare</div>';
+
                 });
         }
 

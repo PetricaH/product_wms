@@ -34,10 +34,25 @@ require_once BASE_PATH . '/models/Inventory.php';
 require_once BASE_PATH . '/models/Product.php';
 require_once BASE_PATH . '/models/Location.php';
 require_once BASE_PATH . '/models/LocationLevelSettings.php';
+require_once BASE_PATH . '/models/User.php';
 
 $inventoryModel = new Inventory($db);
 $productModel = new Product($db);
 $locationModel = new Location($db);
+$userModel = new Users($db);
+
+$transactionTypes = [
+    'receive' => ['label' => 'Primire', 'color' => 'success', 'icon' => '📦'],
+    'move' => ['label' => 'Mutare', 'color' => 'info', 'icon' => '🔄'],
+    'pick' => ['label' => 'Ridicare', 'color' => 'warning', 'icon' => '📤'],
+    'adjust' => ['label' => 'Ajustare', 'color' => 'secondary', 'icon' => '⚖️'],
+    'qc_hold' => ['label' => 'Control Calitate', 'color' => 'danger', 'icon' => '🛑'],
+    'qc_release' => ['label' => 'Eliberare CC', 'color' => 'success', 'icon' => '✅'],
+    'expire' => ['label' => 'Expirare', 'color' => 'dark', 'icon' => '⏰'],
+    'damage' => ['label' => 'Deteriorare', 'color' => 'danger', 'icon' => '💥'],
+    'return' => ['label' => 'Retur', 'color' => 'info', 'icon' => '↩️'],
+    'correction' => ['label' => 'Corecție', 'color' => 'warning', 'icon' => '🔧']
+];
 
 // Handle operations
 $message = '';
@@ -153,6 +168,79 @@ switch ($view) {
         $totalCount = count($allInventory);
         $inventory = array_slice($allInventory, $offset, $pageSize);
         break;
+    case 'movements':
+        $pageSize = isset($_GET['page_size']) && in_array((int)$_GET['page_size'], [25,50,100])
+            ? (int)$_GET['page_size'] : 25;
+        $offset = ($page - 1) * $pageSize;
+        $dateFrom = $_GET['date_from'] ?? date('Y-m-d', strtotime('-30 days'));
+        $dateTo = $_GET['date_to'] ?? date('Y-m-d');
+        $typeFilter = $_GET['transaction_type'] ?? 'all';
+        $productSearch = $_GET['product_search'] ?? '';
+        $movementLocation = $_GET['movement_location'] ?? '';
+        $userFilter = $_GET['user_id'] ?? '';
+        $sort = $_GET['sort'] ?? 'created_at';
+        $direction = $_GET['direction'] ?? 'DESC';
+        $filters = [
+            'date_from' => $dateFrom,
+            'date_to' => $dateTo,
+            'transaction_type' => $typeFilter,
+            'product_search' => $productSearch,
+            'location_id' => $movementLocation,
+            'user_id' => $userFilter
+        ];
+        $movementData = $inventoryModel->getStockMovements($filters, $page, $pageSize, $sort, $direction);
+        $movements = $movementData['data'];
+        $totalCount = $movementData['total'];
+        $movementSummary = $inventoryModel->getTodayMovementSummary();
+        $allUsers = $userModel->getAllUsers();
+        $baseParams = [
+            'view' => 'movements',
+            'date_from' => $dateFrom,
+            'date_to' => $dateTo,
+            'transaction_type' => $typeFilter,
+            'product_search' => $productSearch,
+            'movement_location' => $movementLocation,
+            'user_id' => $userFilter,
+            'page_size' => $pageSize,
+            'sort' => $sort,
+            'direction' => $direction
+        ];
+        $sortLink = function($column) use ($baseParams, $sort, $direction) {
+            $params = $baseParams;
+            $params['sort'] = $column;
+            $params['direction'] = ($sort === $column && strtoupper($direction) === 'ASC') ? 'DESC' : 'ASC';
+            $params['page'] = 1;
+            return '?' . http_build_query($params);
+        };
+        $movementPageLink = function($p) use ($baseParams) {
+            $params = $baseParams;
+            $params['page'] = $p;
+            return '?' . http_build_query($params);
+        };
+        $exportLink = '?' . http_build_query($baseParams);
+        if (isset($_GET['export'])) {
+            header('Content-Type: text/csv');
+            header('Content-Disposition: attachment; filename="movements.csv"');
+            $out = fopen('php://output', 'w');
+            fputcsv($out, ['Data/Ora','Tip','Produs','SKU','Locație','Cantitate','Înainte','După','Operator','Motiv']);
+            foreach ($movements as $mv) {
+                fputcsv($out, [
+                    $mv['created_at'],
+                    $mv['transaction_type'],
+                    $mv['product_name'],
+                    $mv['sku'],
+                    $mv['transaction_type']==='move' ? ($mv['source_location_code'] . '->' . $mv['location_code']) : $mv['location_code'],
+                    $mv['quantity_change'],
+                    $mv['quantity_before'],
+                    $mv['quantity_after'],
+                    $mv['full_name'] ?: $mv['username'],
+                    $mv['reason']
+                ]);
+            }
+            fclose($out);
+            exit;
+        }
+        break;
     default:
         $allInventory = $inventoryModel->getInventoryWithFilters($productFilter, $locationFilter, $lowStockOnly);
         $totalCount = count($allInventory);
@@ -220,7 +308,191 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                         <strong>Atenție:</strong> Există <?= count($expiringProducts) ?> produse care expiră în 30 de zile.
                     </div>
                 <?php endif; ?>
+                <?php if ($view === 'movements'): ?>
+                    <div class="row summary-cards">
+                        <?php $m = $movementSummary ?? ['movements'=>0,'products'=>0,'locations'=>0,'avg_duration'=>0]; ?>
+                        <div class="col card-metric">
+                            <div class="metric-label">Mișcări Astăzi</div>
+                            <div class="metric-value"><?= number_format($m['movements']) ?></div>
+                        </div>
+                        <div class="col card-metric">
+                            <div class="metric-label">Produse Afectate</div>
+                            <div class="metric-value"><?= number_format($m['products']) ?></div>
+                        </div>
+                        <div class="col card-metric">
+                            <div class="metric-label">Locații Active</div>
+                            <div class="metric-value"><?= number_format($m['locations']) ?></div>
+                        </div>
+                        <div class="col card-metric">
+                            <div class="metric-label">Timp Mediu Procesare</div>
+                            <div class="metric-value"><?= $m['avg_duration'] ? gmdate('H:i:s', (int)$m['avg_duration']) : '-' ?></div>
+                        </div>
+                    </div>
 
+                    <div class="view-toggle">
+                        <a href="?view=detailed" class="toggle-link <?= $view === 'detailed' ? 'active' : '' ?>">
+                            <span class="material-symbols-outlined">table_view</span>
+                            Detaliat
+                        </a>
+                        <a href="?view=summary" class="toggle-link <?= $view === 'summary' ? 'active' : '' ?>">
+                            <span class="material-symbols-outlined">dashboard</span>
+                            Sumar
+                        </a>
+                        <a href="?view=low-stock" class="toggle-link <?= $view === 'low-stock' ? 'active' : '' ?>">
+                            <span class="material-symbols-outlined">warning</span>
+                            Stoc Scăzut
+                        </a>
+                        <a href="?view=movements" class="toggle-link <?= $view === 'movements' ? 'active' : '' ?>">
+                            <span class="material-symbols-outlined">swap_horiz</span>
+                            Mișcări Stocuri
+                        </a>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-body">
+                            <form method="GET" id="movements-filter-form" class="filter-form">
+                                <input type="hidden" name="view" value="movements">
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label class="form-label">De la</label>
+                                        <input type="date" name="date_from" id="date_from" class="form-control" value="<?= htmlspecialchars($dateFrom) ?>">
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label">Până la</label>
+                                        <input type="date" name="date_to" id="date_to" class="form-control" value="<?= htmlspecialchars($dateTo) ?>">
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label">Tip Mișcare</label>
+                                        <select name="transaction_type" class="form-control">
+                                            <option value="all">Toate tipurile</option>
+                                            <?php foreach ($transactionTypes as $key => $t): ?>
+                                                <option value="<?= $key ?>" <?= $typeFilter === $key ? 'selected' : '' ?>><?= $t['label'] ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label">Produs</label>
+                                        <input type="text" name="product_search" class="form-control" placeholder="Căutare produs..." value="<?= htmlspecialchars($productSearch) ?>">
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label">Locație</label>
+                                        <select name="movement_location" class="form-control">
+                                            <option value="">Toate locațiile</option>
+                                            <?php foreach ($allLocations as $location): ?>
+                                                <option value="<?= $location['id'] ?>" <?= $movementLocation == $location['id'] ? 'selected' : '' ?>><?= htmlspecialchars($location['location_code']) ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label">Operator</label>
+                                        <select name="user_id" class="form-control">
+                                            <option value="">Toți operatorii</option>
+                                            <?php foreach ($allUsers as $user): ?>
+                                                <option value="<?= $user['id'] ?>" <?= $userFilter == $user['id'] ? 'selected' : '' ?>><?= htmlspecialchars($user['username']) ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+                                    <div class="form-group quick-filters">
+                                        <label class="form-label">Perioadă rapidă</label>
+                                        <div class="btn-group">
+                                            <button type="button" class="btn btn-secondary" onclick="setDateRange('today')">Astăzi</button>
+                                            <button type="button" class="btn btn-secondary" onclick="setDateRange('week')">Săptămâna aceasta</button>
+                                            <button type="button" class="btn btn-secondary" onclick="setDateRange('month')">Luna aceasta</button>
+                                        </div>
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label">Înregistrări</label>
+                                        <select name="page_size" class="form-control">
+                                            <?php foreach ([25,50,100] as $ps): ?>
+                                                <option value="<?= $ps ?>" <?= $pageSize == $ps ? 'selected' : '' ?>><?= $ps ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+                                </div>
+                                <button type="submit" class="btn btn-secondary">
+                                    <span class="material-symbols-outlined">filter_alt</span>
+                                    Filtrează
+                                </button>
+                                <a href="?view=movements" class="btn btn-secondary">
+                                    <span class="material-symbols-outlined">refresh</span>
+                                    Reset
+                                </a>
+                                <a href="<?= $exportLink ?>&export=1" class="btn btn-secondary">Exportă în CSV</a>
+                            </form>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-body">
+                            <?php if (!empty($movements)): ?>
+                                <div class="table-container">
+                                    <table class="table" id="stock-movements-table">
+                                        <thead>
+                                            <tr>
+                                                <th><a href="<?= $sortLink('created_at') ?>">Data/Ora</a></th>
+                                                <th>Tip Mișcare</th>
+                                                <th>Produs</th>
+                                                <th>Locație</th>
+                                                <th>Cantitate</th>
+                                                <th>Stoc Înainte/După</th>
+                                                <th>Operator</th>
+                                                <th>Motiv</th>
+                                                <th>Durată</th>
+                                                <th>Acțiuni</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <?php foreach ($movements as $mv): ?>
+                                                <tr>
+                                                    <td><?= date('d.m.Y H:i', strtotime($mv['created_at'])) ?></td>
+                                                    <td><span class="badge bg-<?= $transactionTypes[$mv['transaction_type']]['color'] ?? 'secondary' ?>"><?= $transactionTypes[$mv['transaction_type']]['label'] ?? $mv['transaction_type'] ?></span></td>
+                                                    <td><?= htmlspecialchars($mv['product_name']) ?> <small class="text-muted"><?= htmlspecialchars($mv['sku']) ?></small></td>
+                                                    <td>
+                                                        <?php if ($mv['transaction_type'] === 'move'): ?>
+                                                            <?= htmlspecialchars($mv['source_location_code']) ?> → <?= htmlspecialchars($mv['location_code']) ?>
+                                                        <?php else: ?>
+                                                            <?= htmlspecialchars($mv['location_code'] ?: '-') ?>
+                                                        <?php endif; ?>
+                                                    </td>
+                                                    <td><span class="<?= $mv['quantity_change'] >= 0 ? 'text-success' : 'text-danger' ?>"><?= ($mv['quantity_change'] >= 0 ? '+' : '') . $mv['quantity_change'] ?></span></td>
+                                                    <td><?= $mv['quantity_before'] ?> → <?= $mv['quantity_after'] ?></td>
+                                                    <td><?= htmlspecialchars($mv['full_name'] ?: $mv['username'] ?: '-') ?></td>
+                                                    <td><?= htmlspecialchars($mv['reason'] ?? '-') ?></td>
+                                                    <td><?= $mv['duration_seconds'] ? gmdate('H:i:s', $mv['duration_seconds']) : '-' ?></td>
+                                                    <td><button class="btn btn-sm btn-outline-secondary view-transaction" data-details='<?= htmlspecialchars(json_encode($mv), ENT_QUOTES) ?>'>Detalii</button></td>
+                                                </tr>
+                                            <?php endforeach; ?>
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <?php if ($totalPages > 1): ?>
+                                    <div class="pagination-container">
+                                        <div class="pagination-info">
+                                            Afișare <?= ($offset + 1) ?>-<?= min($offset + $pageSize, $totalCount) ?> din <?= number_format($totalCount) ?> elemente
+                                        </div>
+                                        <div class="pagination-controls">
+                                            <?php if ($page > 1): ?>
+                                                <a href="<?= $movementPageLink($page-1) ?>" class="pagination-btn">
+                                                    <span class="material-symbols-outlined">chevron_left</span>
+                                                    Anterior
+                                                </a>
+                                            <?php endif; ?>
+                                            <span class="pagination-current">Pagina <?= $page ?> din <?= $totalPages ?></span>
+                                            <?php if ($page < $totalPages): ?>
+                                                <a href="<?= $movementPageLink($page+1) ?>" class="pagination-btn">
+                                                    Următor
+                                                    <span class="material-symbols-outlined">chevron_right</span>
+                                                </a>
+                                            <?php endif; ?>
+                                        </div>
+                                    </div>
+                                <?php endif; ?>
+                            <?php else: ?>
+                                <p>Nu există mișcări de stoc</p>
+                            <?php endif; ?>
+                    </div>
+                </div>
+                <?php else: ?>
                 <!-- View Controls -->
                 <div class="card">
                     <div class="card-header">
@@ -238,10 +510,15 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                     <span class="material-symbols-outlined">dashboard</span>
                                     Sumar
                                 </a>
-                                <a href="?view=low-stock" 
+                                <a href="?view=low-stock"
                                    class="toggle-link <?= $view === 'low-stock' ? 'active' : '' ?>">
                                     <span class="material-symbols-outlined">warning</span>
                                     Stoc Scăzut
+                                </a>
+                                <a href="?view=movements"
+                                   class="toggle-link <?= $view === 'movements' ? 'active' : '' ?>">
+                                    <span class="material-symbols-outlined">swap_horiz</span>
+                                    Mișcări Stocuri
                                 </a>
                             </div>
                         </div>
@@ -516,6 +793,25 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                             </div>
                         <?php endif; ?>
                     </div>
+                </div>
+                <?php endif; ?>
+            </div>
+        </div>
+    </div>
+
+    <!-- Transaction Details Modal -->
+    <div class="modal" id="transactionDetailsModal">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 class="modal-title">Detalii tranzacție</h3>
+                    <button class="modal-close" onclick="closeTransactionModal()">
+                        <span class="material-symbols-outlined">close</span>
+                    </button>
+                </div>
+                <div class="modal-body" id="transaction-details-content"></div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="closeTransactionModal()">Închide</button>
                 </div>
             </div>
         </div>

@@ -415,7 +415,7 @@ class Inventory {
             error_log("Remove stock failed: Invalid quantity");
             return false;
         }
-        
+
         $quantityBefore = 0;
         if ($locationId && $this->hasTransactionLogging()) {
             $stmt = $this->conn->prepare("SELECT COALESCE(SUM(quantity), 0) FROM inventory WHERE product_id = ? AND location_id = ?");
@@ -1107,6 +1107,7 @@ public function getCriticalStockAlerts(int $limit = 10): array {
         error_log("Error getting items moved today: " . $e->getMessage());
         return 0;
     }
+}
 
     /**
      * Fetch inventory transactions with filters and pagination
@@ -1164,11 +1165,11 @@ public function getCriticalStockAlerts(int $limit = 10): array {
         $total = (int)$countStmt->fetchColumn();
 
         $sql = "SELECT t.*, p.name AS product_name, p.sku,
-                       l.location_code, sl.location_code AS source_location_code,
-                       u.full_name, u.username
-                " . $baseQuery . "
-                ORDER BY $sort $direction
-                LIMIT :limit OFFSET :offset";
+               l.location_code, sl.location_code AS source_location_code,
+               u.username AS full_name, u.username
+        " . $baseQuery . "
+        ORDER BY $sort $direction
+        LIMIT :limit OFFSET :offset";
 
         $stmt = $this->conn->prepare($sql);
         foreach ($params as $key => $value) {

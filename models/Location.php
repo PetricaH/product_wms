@@ -1035,6 +1035,10 @@ class Location {
             return $this->extractZonesFallback();
         }
     }
+
+    private function extractZonesFallback() {
+        error_log("Just a test.");
+    }
    
     /**
      * Build a readable summary of location types in a zone

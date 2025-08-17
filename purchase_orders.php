@@ -657,35 +657,22 @@ require_once __DIR__ . '/includes/header.php';
                     </tbody>
                 </table>
             </div>
-
-            <!-- Receiving Details Modal -->
-            <div id="receiving-details-modal" class="modal" style="display: none;">
-                <div class="modal-content">
-                    <div class="modal-header">
-                        <h3 id="modal-title">Detalii Primire Comandă</h3>
-                        <button type="button" class="close-btn" onclick="purchaseOrdersManager.closeReceivingModal()">
-                            <span class="material-symbols-outlined">close</span>
-                        </button>
-                    </div>
-                    <div class="modal-body" id="modal-body">
-                        <!-- Content loaded via JavaScript -->
-                    </div>
-                </div>
-            </div>
         </div>
     </div>
 
     <!-- Receiving Details Modal -->
     <div id="receiving-details-modal" class="modal" style="display: none;">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3 id="modal-title">Detalii Primire Comandă</h3>
-                <button type="button" class="close-btn" onclick="closeReceivingModal()">
-                    <span class="material-symbols-outlined">close</span>
-                </button>
-            </div>
-            <div class="modal-body" id="modal-body">
-                <!-- Content loaded via JavaScript -->
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 id="modal-title">Detalii Primire Comandă</h3>
+                    <button type="button" class="close-btn" onclick="closeReceivingModal()">
+                        <span class="material-symbols-outlined">close</span>
+                    </button>
+                </div>
+                <div class="modal-body" id="modal-body">
+                    <!-- Content loaded via JavaScript -->
+                </div>
             </div>
         </div>
     </div>

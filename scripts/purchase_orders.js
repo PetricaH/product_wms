@@ -1037,15 +1037,17 @@ class PurchaseOrdersReceivingManager {
         modal.className = 'modal';
         modal.style.display = 'none';
         modal.innerHTML = `
-            <div class="modal-content modal-lg">
-                <div class="modal-header">
-                    <h3 id="modal-title">Detalii Primire Comandă</h3>
-                    <button type="button" class="close-btn" onclick="closeReceivingModal()" style="background: none; border: none; font-size: 24px; cursor: pointer;">
-                        <span class="material-symbols-outlined">close</span>
-                    </button>
-                </div>
-                <div class="modal-body" id="modal-body">
-                    <!-- Content loaded via JavaScript -->
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3 id="modal-title">Detalii Primire Comandă</h3>
+                        <button type="button" class="close-btn" onclick="closeReceivingModal()" style="background: none; border: none; font-size: 24px; cursor: pointer;">
+                            <span class="material-symbols-outlined">close</span>
+                        </button>
+                    </div>
+                    <div class="modal-body" id="modal-body">
+                        <!-- Content loaded via JavaScript -->
+                    </div>
                 </div>
             </div>
         `;
@@ -1168,7 +1170,7 @@ class PurchaseOrdersReceivingManager {
 
     renderReceivingDetails(data) {
         return `
-            <div class="receiving-details-content">
+            <div class="receiving-details-grid">
                 <div class="receiving-section">
                     <h4><span class="material-symbols-outlined">inventory</span>Sesiuni de Primire</h4>
                     ${this.renderReceivingSessions(data.receiving_sessions)}
@@ -1183,9 +1185,9 @@ class PurchaseOrdersReceivingManager {
                         ${this.renderDiscrepancies(data.discrepancies)}
                     </div>
                 ` : ''}
-                <div class="summary-stats">
-                    ${this.renderSummaryStats(data.summary_stats)}
-                </div>
+            </div>
+            <div class="summary-stats">
+                ${this.renderSummaryStats(data.summary_stats)}
             </div>
         `;
     }

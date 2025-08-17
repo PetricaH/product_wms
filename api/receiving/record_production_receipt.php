@@ -298,9 +298,9 @@ function generateCombinedTemplateLabel(PDO $db, int $productId, int $qty, string
     $qrY = 150;           // mm from top edge
     
     // Text positioning
-    $textStartX = 55;    // mm - start text after QR code
-    $textStartY = 20;    // mm from top
-    $lineHeight = 8;     // mm between text lines
+    $textStartX = 5;    // mm - start text after QR code
+    $textStartY = 5;    // mm from top
+    $lineHeight = 1;     // mm between text lines
     
     // ───────────── GET PRODUCT DATA ─────────────
     $productModel = new Product($db);
@@ -399,7 +399,7 @@ function convertImageTemplateToPDF(string $templatePath, string $sku, string $pr
     }
     
     // Add text content
-    addTextContentToPDF($pdf, $sku, $productName, $qty, $batch, $date, $qrX + $qrSize + 5, $qrY);
+    addTextContentToPDF($pdf, $sku, $productName, $qty, $batch, $date, $qrX, $qrY + $qrSize + 1);
     
     // Save PDF
     return saveFinalPDF($pdf, $batch);
@@ -412,6 +412,11 @@ function createFallbackPDFLabel(string $sku, string $productName, int $qty, stri
     $labelWidth = 100;   // mm
     $labelHeight = 150;  // mm
     
+    // Use the same coordinates as main settings
+    $qrX = 98;           // mm from left edge  
+    $qrY = 150;          // mm from top edge
+    $qrSize = 20;        // mm - QR code size
+    
     $pdf = new FPDF('P', 'mm', [$labelWidth, $labelHeight]);
     $pdf->AddPage();
     
@@ -419,15 +424,15 @@ function createFallbackPDFLabel(string $sku, string $productName, int $qty, stri
     $pdf->SetFillColor(255, 255, 255);
     $pdf->Rect(0, 0, $labelWidth, $labelHeight, 'F');
     
-    // Add QR code
+    // Add QR code - USE CONSISTENT COORDINATES
     $qrImagePath = generateTempQRImage($sku);
     if ($qrImagePath && file_exists($qrImagePath)) {
-        $pdf->Image($qrImagePath, 15, 15, 25, 25, 'PNG');
+        $pdf->Image($qrImagePath, $qrX, $qrY, $qrSize, $qrSize, 'PNG');  // Changed from (15, 15, 25, 25)
         @unlink($qrImagePath);
     }
     
-    // Add text content
-    addTextContentToPDF($pdf, $sku, $productName, $qty, $batch, $date, 50, 20);
+    // Add text content - ADJUST TEXT POSITION TOO
+    addTextContentToPDF($pdf, $sku, $productName, $qty, $batch, $date, 5, 5);  // Changed from (50, 20)
     
     return saveFinalPDF($pdf, $batch);
 }
@@ -439,31 +444,31 @@ function addTextContentToPDF($pdf, string $sku, string $productName, int $qty, s
     $pdf->SetTextColor(0, 0, 0);
     $currentY = $textY;
     
-    // SKU
-    $pdf->SetFont('Arial', 'B', 12);
-    $pdf->SetXY($textX, $currentY);
-    $pdf->Cell(0, 6, "SKU: " . $sku, 0, 1, 'L');
-    $currentY += 8;
+    // // SKU
+    // $pdf->SetFont('Arial', 'B', 12);
+    // $pdf->SetXY($textX, $currentY);
+    // $pdf->Cell(0, 6, "SKU: " . $sku, 0, 1, 'L');
+    // $currentY += 8;
     
-    // Product name
-    $pdf->SetFont('Arial', '', 9);
-    $pdf->SetXY($textX, $currentY);
-    $pdf->Cell(0, 5, substr($productName, 0, 30), 0, 1, 'L');
-    $currentY += 10;
+    // // Product name
+    // $pdf->SetFont('Arial', '', 9);
+    // $pdf->SetXY($textX, $currentY);
+    // $pdf->Cell(0, 5, substr($productName, 0, 30), 0, 1, 'L');
+    // $currentY += 10;
     
     // Batch
     if ($batch) {
         $pdf->SetFont('Arial', 'B', 8);
         $pdf->SetXY($textX, $currentY);
         $pdf->Cell(0, 5, "LOT: " . $batch, 0, 1, 'L');
-        $currentY += 6;
+        $currentY += 4;
     }
     
     // Quantity
     $pdf->SetFont('Arial', '', 8);
     $pdf->SetXY($textX, $currentY);
     $pdf->Cell(0, 5, "QTY: " . $qty . " buc", 0, 1, 'L');
-    $currentY += 6;
+    $currentY += 4;
     
     // Date
     $pdf->SetXY($textX, $currentY);

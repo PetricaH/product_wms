@@ -16,18 +16,32 @@ $method = $_SERVER['REQUEST_METHOD'];
 
 try {
     if ($method === 'GET') {
-        $search = trim($_GET['search'] ?? '');
-        $limit  = min(100, max(1, intval($_GET['limit'] ?? 20))); // cap results
-        $offset = max(0, intval($_GET['offset'] ?? 0));
+        $search   = trim($_GET['search'] ?? '');
+        $category = trim($_GET['category'] ?? '');
+        $seller   = trim($_GET['seller'] ?? '');
+        $limit    = min(100, max(1, intval($_GET['limit'] ?? 20))); // cap results
+        $offset   = max(0, intval($_GET['offset'] ?? 0));
 
-        $where  = '';
-        $params = [];
+        $conditions = [];
+        $params     = [];
+
         if ($search !== '') {
-            $where = "WHERE p.name LIKE :search OR p.sku LIKE :search";
-            $params[':search'] = '%' . $search . '%';
+            $conditions[]        = '(p.name LIKE :search OR p.sku LIKE :search)';
+            $params[':search']   = '%' . $search . '%';
+        }
+        if ($category !== '') {
+            $conditions[]        = 'p.category = :category';
+            $params[':category'] = $category;
+        }
+        if ($seller === 'assigned') {
+            $conditions[] = 'p.seller_id IS NOT NULL';
+        } elseif ($seller === 'unassigned') {
+            $conditions[] = 'p.seller_id IS NULL';
         }
 
-        $query = "SELECT p.product_id, p.sku, p.name, p.quantity,
+        $where = $conditions ? 'WHERE ' . implode(' AND ', $conditions) : '';
+
+        $query = "SELECT p.product_id, p.sku, p.name, p.category, p.quantity,
                          p.min_stock_level, p.min_order_quantity,
                          p.auto_order_enabled, p.last_auto_order_date,
                          s.supplier_name
@@ -59,6 +73,7 @@ try {
                 'product_id' => (int)$r['product_id'],
                 'sku' => $r['sku'],
                 'product_name' => $r['name'],
+                'category' => $r['category'],
                 'current_stock' => (int)$r['quantity'],
                 'min_stock_level' => (int)$r['min_stock_level'],
                 'min_order_quantity' => (int)($r['min_order_quantity'] ?? 1),

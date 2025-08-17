@@ -39,6 +39,8 @@ const ProductUnitsApp = {
         pendingList: [],
         pendingSearch: '',
         stockSearch: '',
+        stockCategory: '',
+        stockSeller: '',
         barrelDimensions: [],
         filteredData: [],
         isLoading: false,
@@ -104,6 +106,8 @@ const ProductUnitsApp = {
             addStockSetting: document.getElementById('addStockSetting'),
             stockSettingsBody: document.getElementById('stockSettingsBody'),
             stockSearchInput: document.getElementById('stockSearch'),
+            stockCategoryFilter: document.getElementById('stockCategoryFilter'),
+            stockSellerFilter: document.getElementById('stockSellerFilter'),
             stockPagination: document.getElementById('stockPagination'),
             stockSettingsModal: document.getElementById('stockSettingsModal'),
             stockSettingsForm: document.getElementById('stockSettingsForm'),
@@ -285,6 +289,22 @@ const ProductUnitsApp = {
                 this.state.stockPagination.offset = 0;
                 this.loadStockSettings();
             }, this.config.debounceDelay));
+        }
+
+        if (this.elements.stockCategoryFilter) {
+            this.elements.stockCategoryFilter.addEventListener('change', () => {
+                this.state.stockCategory = this.elements.stockCategoryFilter.value;
+                this.state.stockPagination.offset = 0;
+                this.loadStockSettings();
+            });
+        }
+
+        if (this.elements.stockSellerFilter) {
+            this.elements.stockSellerFilter.addEventListener('change', () => {
+                this.state.stockSeller = this.elements.stockSellerFilter.value;
+                this.state.stockPagination.offset = 0;
+                this.loadStockSettings();
+            });
         }
 
         if (this.elements.pendingSearchInput) {
@@ -487,7 +507,8 @@ const ProductUnitsApp = {
             const url = `${this.config.apiEndpoints.products}?limit=1000`;
             const response = await this.apiCall('GET', url);
             this.state.products = response.data || response;
-            
+            this.populateStockCategoryFilter();
+
             console.log(`Loaded ${this.state.products.length} products`);
         } catch (error) {
             console.error('Error loading products:', error);
@@ -514,6 +535,19 @@ const ProductUnitsApp = {
             const opt = document.createElement('option');
             opt.value = dim.id;
             opt.textContent = dim.label;
+            select.appendChild(opt);
+        });
+    },
+
+    populateStockCategoryFilter() {
+        if (!this.elements.stockCategoryFilter) return;
+        const select = this.elements.stockCategoryFilter;
+        const categories = [...new Set(this.state.products.map(p => p.category).filter(Boolean))].sort();
+        select.innerHTML = '<option value="">Toate categoriile</option>';
+        categories.forEach(cat => {
+            const opt = document.createElement('option');
+            opt.value = cat;
+            opt.textContent = cat;
             select.appendChild(opt);
         });
     },
@@ -1739,6 +1773,12 @@ showNotification(message, type = 'info') {
                 limit: this.state.stockPagination.limit,
                 offset: this.state.stockPagination.offset
             });
+            if (this.state.stockCategory) {
+                params.append('category', this.state.stockCategory);
+            }
+            if (this.state.stockSeller) {
+                params.append('seller', this.state.stockSeller);
+            }
             const url = `${this.config.apiEndpoints.stockSettings}?${params.toString()}`;
             const response = await this.apiCall('GET', url);
             this.state.stockSettings = response.data || [];

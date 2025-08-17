@@ -434,6 +434,14 @@ $currentPage = 'product-units';
 
                         <div class="stock-search-bar">
                             <input type="text" id="stockSearch" class="stock-search-input" placeholder="Caută produs...">
+                            <select id="stockCategoryFilter" class="stock-filter-select">
+                                <option value="">Toate categoriile</option>
+                            </select>
+                            <select id="stockSellerFilter" class="stock-filter-select">
+                                <option value="">Toți furnizorii</option>
+                                <option value="assigned">Cu furnizor</option>
+                                <option value="unassigned">Fără furnizor</option>
+                            </select>
                         </div>
                         <div class="table-container">
                             <table class="data-table">

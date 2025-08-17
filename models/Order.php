@@ -334,16 +334,16 @@ class Order
      */
     public function getRecentOrders(int $limit = 10): array {
         try {
-            $query = "SELECT id, customer_name, status, total_amount, created_at
-                    FROM orders 
-                    ORDER BY created_at DESC 
+            $query = "SELECT id, order_number, customer_name, status, total_value, order_date
+                    FROM {$this->table}
+                    ORDER BY order_date DESC
                     LIMIT :limit";
-            
+
             $stmt = $this->conn->prepare($query);
             $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
             $stmt->execute();
             return $stmt->fetchAll(PDO::FETCH_ASSOC);
-            
+
         } catch (PDOException $e) {
             error_log("Error getting recent orders: " . $e->getMessage());
             return [];

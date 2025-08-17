@@ -1066,13 +1066,14 @@ public function getCriticalStockAlerts(int $limit = 10): array {
     try {
         $query = "SELECT p.product_id, p.sku, p.name, p.min_stock_level,
                          COALESCE(i.total_qty, 0) as quantity
-                  FROM products p 
+                  FROM products p
                   LEFT JOIN (
-                      SELECT product_id, SUM(quantity) as total_qty 
-                      FROM inventory 
+                      SELECT product_id, SUM(quantity) as total_qty
+                      FROM inventory
                       GROUP BY product_id
                   ) i ON p.product_id = i.product_id
                   WHERE COALESCE(i.total_qty, 0) <= p.min_stock_level
+                    AND LOWER(p.category) = 'marfa'
                   ORDER BY (COALESCE(i.total_qty, 0) / GREATEST(p.min_stock_level, 1)) ASC
                   LIMIT :limit";
         

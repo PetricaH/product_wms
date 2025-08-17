@@ -293,9 +293,9 @@ try {
  */
 function generateCombinedTemplateLabel(PDO $db, int $productId, int $qty, string $batch, string $date): ?string {
     // ───────────── SETTINGS ─────────────
-    $qrSize = 30;        // mm - QR code size
-    $qrX = 15;           // mm from left edge  
-    $qrY = 15;           // mm from top edge
+    $qrSize = 20;        // mm - QR code size
+    $qrX = 98;           // mm from left edge  
+    $qrY = 150;           // mm from top edge
     
     // Text positioning
     $textStartX = 55;    // mm - start text after QR code

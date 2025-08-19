@@ -94,6 +94,15 @@ body {
   border: 1px solid rgba(220, 53, 69, 0.3);
 }
 
+.alert-floating {
+  position: fixed;
+  top: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  margin: 0;
+}
+
 /* ===== STEP SECTIONS ===== */
 .step-section {
   display: none;

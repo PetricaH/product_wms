@@ -982,26 +982,23 @@ class WarehouseReceiving {
     showMessage(message, type) {
         // Create alert element
         const alertEl = document.createElement('div');
-        alertEl.className = `alert alert-${type === 'success' ? 'success' : 'danger'}`;
+        alertEl.className = `alert alert-${type === 'success' ? 'success' : 'danger'} alert-floating`;
         alertEl.innerHTML = `
             <span class="material-symbols-outlined">
                 ${type === 'success' ? 'check_circle' : 'error'}
             </span>
             ${this.escapeHtml(message)}
         `;
-        
-        // Insert at top of main content
-        const mainContent = document.querySelector('.receiving-container');
-        if (mainContent) {
-            mainContent.insertBefore(alertEl, mainContent.firstChild);
-            
-            // Auto-hide after 5 seconds
-            setTimeout(() => {
-                if (alertEl.parentNode) {
-                    alertEl.parentNode.removeChild(alertEl);
-                }
-            }, 5000);
-        }
+
+        // Display at top of screen
+        document.body.appendChild(alertEl);
+
+        // Auto-hide after 3 seconds
+        setTimeout(() => {
+            if (alertEl.parentNode) {
+                alertEl.parentNode.removeChild(alertEl);
+            }
+        }, 3000);
     }
 
     getStatusText(status) {
@@ -1089,6 +1086,16 @@ class WarehouseReceiving {
 // Initialize when DOM is loaded
 document.addEventListener('DOMContentLoaded', function() {
     window.receivingSystem = new WarehouseReceiving();
+
+    // Auto-hide any pre-rendered alerts
+    const existingAlert = document.querySelector('.alert-floating');
+    if (existingAlert) {
+        setTimeout(() => {
+            if (existingAlert.parentNode) {
+                existingAlert.parentNode.removeChild(existingAlert);
+            }
+        }, 3000);
+    }
 });
 
 // Global functions for onclick handlers

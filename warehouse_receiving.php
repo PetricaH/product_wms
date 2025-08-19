@@ -151,7 +151,7 @@ $currentPage = 'warehouse_receiving';
 
                 <!-- Alert Messages -->
                 <?php if (!empty($message)): ?>
-                    <div class="alert alert-<?= $messageType === 'success' ? 'success' : 'danger' ?>" role="alert">
+                    <div class="alert alert-<?= $messageType === 'success' ? 'success' : 'danger' ?> alert-floating" role="alert">
                         <span class="material-symbols-outlined">
                             <?= $messageType === 'success' ? 'check_circle' : 'error' ?>
                         </span>

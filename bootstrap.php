@@ -106,12 +106,34 @@ try {
     error_log('Activity log init failed: ' . $e->getMessage());
 }
 
-function logActivity($userId, $action, $resourceType, $resourceId, $description, $oldValues = null, $newValues = null) {
+function logActivity(
+    $userId,
+    $action,
+    $entityType,
+    $entityId,
+    $description,
+    $oldValues = null,
+    $newValues = null,
+    $resourceType = null,
+    $resourceId = null
+) {
     $logger = $GLOBALS['activityLog'] ?? null;
     if ($logger instanceof ActivityLog) {
         $ip = $_SERVER['REMOTE_ADDR'] ?? null;
         $agent = $_SERVER['HTTP_USER_AGENT'] ?? null;
-        return $logger->log($userId, $action, $resourceType, $resourceId, $description, $oldValues, $newValues, $ip, $agent);
+        return $logger->log(
+            $userId,
+            $action,
+            $entityType,
+            $entityId,
+            $description,
+            $oldValues,
+            $newValues,
+            $resourceType,
+            $resourceId,
+            $ip,
+            $agent
+        );
     }
     return false;
 }

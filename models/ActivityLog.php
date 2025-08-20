@@ -13,22 +13,26 @@ class ActivityLog {
     public function log(
         int $userId,
         string $action,
-        string $resourceType,
-        int|string $resourceId,
+        string $entityType,
+        int|string $entityId,
         string $description,
         $oldValues = null,
         $newValues = null,
+        ?string $resourceType = null,
+        int|string|null $resourceId = null,
         ?string $ipAddress = null,
         ?string $userAgent = null
     ): bool {
         $query = "INSERT INTO {$this->table}
-                  (user_id, action, resource_type, resource_id, description, old_values, new_values, ip_address, user_agent, created_at)
-                  VALUES (:user_id, :action, :resource_type, :resource_id, :description, :old_values, :new_values, :ip_address, :user_agent, NOW())";
+                  (user_id, action, entity_type, entity_id, resource_type, resource_id, description, old_values, new_values, ip_address, user_agent, created_at)
+                  VALUES (:user_id, :action, :entity_type, :entity_id, :resource_type, :resource_id, :description, :old_values, :new_values, :ip_address, :user_agent, NOW())";
 
         try {
             $stmt = $this->conn->prepare($query);
             $stmt->bindValue(':user_id', $userId, PDO::PARAM_INT);
             $stmt->bindValue(':action', $action);
+            $stmt->bindValue(':entity_type', $entityType);
+            $stmt->bindValue(':entity_id', $entityId);
             $stmt->bindValue(':resource_type', $resourceType);
             $stmt->bindValue(':resource_id', $resourceId);
             $stmt->bindValue(':description', $description);

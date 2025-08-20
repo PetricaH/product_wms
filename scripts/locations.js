@@ -2093,6 +2093,9 @@ class EnhancedWarehouseVisualization {
         this.isLoading = false;
         this.tooltipCache = {};
         this.hideTooltipTimeout = null;
+        this.isScrolling = false;
+        this.scrollTimeout = null;
+        this.lastMouseEvent = null;
         
         this.init();
     }
@@ -2217,6 +2220,7 @@ class EnhancedWarehouseVisualization {
         });
 
         document.addEventListener('mouseout', (e) => {
+            if (this.isScrolling) return;
             const toElement = e.relatedTarget;
             if (e.target.closest('.shelf-item')) {
                 if (!toElement || (!toElement.closest('.shelf-item') && !toElement.closest('#enhancedTooltip'))) {
@@ -2232,10 +2236,23 @@ class EnhancedWarehouseVisualization {
         });
 
         document.addEventListener('mousemove', (e) => {
+            this.lastMouseEvent = e;
             if (this.tooltip && this.tooltip.style.opacity === '1') {
                 this.updateTooltipPosition(e);
             }
         });
+
+        window.addEventListener('scroll', () => {
+            if (this.tooltip && this.tooltip.style.opacity === '1' && this.lastMouseEvent) {
+                this.updateTooltipPosition(this.lastMouseEvent);
+            }
+            this.isScrolling = true;
+            clearTimeout(this.hideTooltipTimeout);
+            clearTimeout(this.scrollTimeout);
+            this.scrollTimeout = setTimeout(() => {
+                this.isScrolling = false;
+            }, 100);
+        }, true);
 
         // Table filters
         const zoneFilter = document.getElementById('zoneFilter');
@@ -2505,6 +2522,7 @@ class EnhancedWarehouseVisualization {
 
     showEnhancedTooltip(event, shelf) {
         if (!this.tooltip) return;
+        this.lastMouseEvent = event;
 
         const render = (data) => {
             const cap = data.capacity_details || {};

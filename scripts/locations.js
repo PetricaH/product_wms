@@ -2095,7 +2095,7 @@ class EnhancedWarehouseVisualization {
         this.hideTooltipTimeout = null;
         this.isScrolling = false;
         this.scrollTimeout = null;
-        this.lastMouseEvent = null;
+        this.currentShelfElement = null;
         
         this.init();
     }
@@ -2212,7 +2212,7 @@ class EnhancedWarehouseVisualization {
                 const shelfId = parseInt(shelfElement.dataset.shelfId);
                 const shelf = this.locations.find(s => s.id === shelfId);
                 if (shelf) {
-                    this.showEnhancedTooltip(e, shelf);
+                    this.showEnhancedTooltip(shelfElement, shelf);
                 }
             } else if (e.target.closest('#enhancedTooltip')) {
                 clearTimeout(this.hideTooltipTimeout);
@@ -2235,16 +2235,9 @@ class EnhancedWarehouseVisualization {
             }
         });
 
-        document.addEventListener('mousemove', (e) => {
-            this.lastMouseEvent = e;
-            if (this.tooltip && this.tooltip.style.opacity === '1') {
-                this.updateTooltipPosition(e);
-            }
-        });
-
         window.addEventListener('scroll', () => {
-            if (this.tooltip && this.tooltip.style.opacity === '1' && this.lastMouseEvent) {
-                this.updateTooltipPosition(this.lastMouseEvent);
+            if (this.tooltip && this.tooltip.style.opacity === '1') {
+                this.updateTooltipPosition();
             }
             this.isScrolling = true;
             clearTimeout(this.hideTooltipTimeout);
@@ -2253,6 +2246,14 @@ class EnhancedWarehouseVisualization {
                 this.isScrolling = false;
             }, 100);
         }, true);
+
+        window.addEventListener('wheel', () => {
+            this.isScrolling = true;
+            clearTimeout(this.scrollTimeout);
+            this.scrollTimeout = setTimeout(() => {
+                this.isScrolling = false;
+            }, 100);
+        }, { passive: true });
 
         // Table filters
         const zoneFilter = document.getElementById('zoneFilter');
@@ -2520,9 +2521,9 @@ class EnhancedWarehouseVisualization {
         }
     }
 
-    showEnhancedTooltip(event, shelf) {
+    showEnhancedTooltip(shelfElement, shelf) {
         if (!this.tooltip) return;
-        this.lastMouseEvent = event;
+        this.currentShelfElement = shelfElement;
 
         const render = (data) => {
             const cap = data.capacity_details || {};
@@ -2582,7 +2583,7 @@ class EnhancedWarehouseVisualization {
 
         this.tooltip.style.opacity = '1';
         this.tooltip.style.transform = 'translateY(0)';
-        this.updateTooltipPosition(event);
+        this.updateTooltipPosition();
     }
 
     /**
@@ -2624,19 +2625,24 @@ class EnhancedWarehouseVisualization {
         return 'normal';
     }
 
-    updateTooltipPosition(event) {
-        if (!this.tooltip) return;
+    updateTooltipPosition() {
+        if (!this.tooltip || !this.currentShelfElement) return;
 
-        const rect = this.tooltip.getBoundingClientRect();
-        let x = event.clientX + 15;
-        let y = event.clientY - rect.height - 15;
+        const shelfRect = this.currentShelfElement.getBoundingClientRect();
+        const tooltipRect = this.tooltip.getBoundingClientRect();
+
+        let x = shelfRect.right + 10;
+        let y = shelfRect.top + (shelfRect.height - tooltipRect.height) / 2;
 
         // Keep tooltip within viewport
-        if (x + rect.width > window.innerWidth) {
-            x = event.clientX - rect.width - 15;
+        if (x + tooltipRect.width > window.innerWidth) {
+            x = shelfRect.left - tooltipRect.width - 10;
         }
-        if (y < 0) {
-            y = event.clientY + 15;
+        if (y < 10) {
+            y = 10;
+        }
+        if (y + tooltipRect.height > window.innerHeight) {
+            y = window.innerHeight - tooltipRect.height - 10;
         }
 
         this.tooltip.style.left = x + 'px';
@@ -2648,6 +2654,7 @@ class EnhancedWarehouseVisualization {
             this.tooltip.style.opacity = '0';
             this.tooltip.style.transform = 'translateY(10px)';
         }
+        this.currentShelfElement = null;
         clearTimeout(this.hideTooltipTimeout);
     }
 

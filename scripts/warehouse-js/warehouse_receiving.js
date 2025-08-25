@@ -336,10 +336,33 @@ class WarehouseReceiving {
             return;
         }
         
-        if (!confirm('Confirmi printarea etichetelor?')) return;
-        
+
         try {
             const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content') || this.config.csrfToken;
+
+            // Generate label preview first
+            const previewData = new FormData();
+            previewData.append('product_id', this.selectedProductId);
+            previewData.append('quantity', qty);
+            previewData.append('batch_number', batch);
+            previewData.append('produced_at', date);
+            previewData.append('source', 'factory');
+            previewData.append('action', 'preview');
+
+            const previewResp = await fetch(`${this.config.apiBase}/receiving/record_production_receipt.php`, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'X-CSRF-Token': csrfToken },
+                body: previewData
+            });
+
+            const previewResult = await previewResp.json();
+            if (!previewResp.ok || !previewResult.success || !previewResult.label_url) {
+                throw new Error(previewResult.message || 'Eroare la generarea etichetei');
+            }
+
+            window.open(previewResult.label_url, '_blank');
+            if (!confirm('Trimitem eticheta la imprimantă?')) return;
 
             const printerName = await chooseLabelPrinter();
             if (!printerName) return;
@@ -369,14 +392,11 @@ class WarehouseReceiving {
                 const response = await fetch(`${this.config.apiBase}/receiving/record_production_receipt.php`, {
                     method: 'POST',
                     credentials: 'same-origin',
-                    headers: {
-                        'X-CSRF-Token': csrfToken
-                    },
+                    headers: { 'X-CSRF-Token': csrfToken },
                     body: formData
                 });
 
                 const result = await response.json();
-
                 console.log('API Response:', result); // Debug logging
 
                 if (!response.ok || !result.success) {
@@ -386,18 +406,12 @@ class WarehouseReceiving {
 
             this.showSuccess('Etichetele au fost trimise la imprimantă');
             this.labelsPrinted = true;
-            this.lastPrintData = {
-                product_id: this.selectedProductId,
-                quantity: qty,
-                batch_number: batch,
-                produced_at: date
-            };
+            this.lastPrintData = { product_id: this.selectedProductId, quantity: qty, batch_number: batch, produced_at: date };
             const addBtn = document.getElementById('add-stock-btn');
             if (addBtn) {
                 addBtn.style.display = 'inline-block';
                 addBtn.disabled = false;
             }
-
         } catch (err) {
             console.error('Print error:', err);
             this.showError('Eroare: ' + err.message);

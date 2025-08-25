@@ -324,10 +324,10 @@ try {
     }
 
     $labelUrl = null;
-    if ($doPrint) {
+    if ($doPrint || $action === 'preview') {
         // Generate PDF label with 180° rotation
         $labelUrl = generateCombinedTemplateLabel($db, $productId, $quantity, $batchNumber, $producedAt, true);
-        if ($labelUrl) {
+        if ($labelUrl && $doPrint) {
             $headers = @get_headers($labelUrl);
             if ($headers && strpos($headers[0], '200') !== false) {
                 sendToPrintServer($labelUrl, $printer, $config);
@@ -368,7 +368,8 @@ try {
         'inventory_id' => $invId,
         'location_id' => $doAddStock ? $finalLocationId : null,
         'location_code' => $doAddStock ? $finalLocationCode : null,
-        'message' => $doAddStock ? $message : 'Labels printed successfully',
+        'message' => $doAddStock ? $message : ($action === 'preview' ? 'Label preview generated' : 'Labels printed successfully'),
+        'label_url' => $labelUrl,
         'saved_photos' => $doAddStock ? $savedPhotos : [],
         'debug' => [
             'product_id' => $productId,

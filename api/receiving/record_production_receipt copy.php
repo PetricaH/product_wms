@@ -1,53 +1,7 @@
 <?php
 /**
- * Add rotated QR code and text content at specific positions (for 180° rotated labels)
- */
-function addRotatedQRAndTextToPDF($pdf, string $sku, string $productName, int $qty, string $batch, string $date, float $labelWidth, float $labelHeight, float $qrSize): void {
-    $pdf->SetTextColor(0, 0, 0);
-    
-    // Position QR code where the red diamonds are (upper edge after rotation)
-    $qrX = 5;    // Far left edge  
-    $qrY = 5;    // Far top edge
-    
-    // Position text where the red lines are (lower edge after rotation)
-    $textX = 5;  // Far left edge
-    $textY = $labelHeight - 40; // Near bottom edge (adjust based on label height)
-    
-    // Add QR code first
-    $qrImagePath = generateTempQRImage($sku);
-    if ($qrImagePath && file_exists($qrImagePath)) {
-        $pdf->Image($qrImagePath, $qrX, $qrY, $qrSize, $qrSize, 'PNG');
-        @unlink($qrImagePath);
-        error_log("QR code positioned at edge location: ({$qrX}, {$qrY})");
-    }
-    
-    // Add text content at bottom edge location
-    $currentY = $textY;
-    
-    // Batch
-    if ($batch) {
-        $pdf->SetFont('Arial', 'B', 8);
-        $pdf->SetXY($textX, $currentY);
-        $pdf->Cell(0, 5, "LOT: " . $batch, 0, 1, 'L');
-        $currentY += 6;
-    }
-    
-    // Quantity  
-    $pdf->SetFont('Arial', '', 8);
-    $pdf->SetXY($textX, $currentY);
-    $pdf->Cell(0, 5, "QTY: " . $qty . " buc", 0, 1, 'L');
-    $currentY += 6;
-    
-    // Date
-    $pdf->SetXY($textX, $currentY);
-    $pdf->Cell(0, 5, "DATA: " . date('d.m.Y', strtotime($date)), 0, 1, 'L');
-    
-    error_log("Text positioned at edge location: ({$textX}, {$textY})");
-}
-
-/**
  * API: Record Production Receipt and Print Labels
- * UPDATED: Uses PDF templates with QR code overlay - WITH 180° ROTATION
+ * UPDATED: Uses PDF templates with QR code overlay - no rotation
  */
 
 // Enable error logging for debugging
@@ -83,58 +37,6 @@ $db = $config['connection_factory']();
 
 require_once BASE_PATH . '/models/Inventory.php';
 require_once BASE_PATH . '/models/Product.php';
-
-// ───────────── LOAD FPDF LIBRARY FIRST ─────────────
-if (!class_exists('FPDF')) {
-    $autoload = BASE_PATH . '/vendor/autoload.php';
-    if (file_exists($autoload)) require_once $autoload;
-}
-if (!class_exists('FPDF')) {
-    $fpdfPath = BASE_PATH . '/lib/fpdf.php';
-    if (file_exists($fpdfPath)) require_once $fpdfPath;
-}
-
-if (!class_exists('FPDF')) {
-    error_log("FATAL: FPDF library not found in vendor/autoload.php or lib/fpdf.php");
-    http_response_code(500);
-    echo json_encode(['success' => false, 'message' => 'PDF library not available']);
-    exit;
-}
-
-/**
- * PDF_Rotate Class - Extends FPDF with rotation capabilities
- */
-class PDF_Rotate extends FPDF {
-    var $angle = 0;
-
-    function Rotate($angle, $x = -1, $y = -1) {
-        if ($x == -1) $x = $this->x;
-        if ($y == -1) $y = $this->y;
-        
-        if ($this->angle != 0) {
-            $this->_out('Q');
-        }
-        
-        $this->angle = $angle;
-        
-        if ($angle != 0) {
-            $angle *= M_PI / 180;
-            $c = cos($angle);
-            $s = sin($angle);
-            $cx = $x * $this->k;
-            $cy = ($this->h - $y) * $this->k;
-            $this->_out(sprintf('q %.5F %.5F %.5F %.5F %.2F %.2F cm 1 0 0 1 %.2F %.2F cm', $c, $s, -$s, $c, $cx, $cy, -$cx, -$cy));
-        }
-    }
-
-    function _endpage() {
-        if ($this->angle != 0) {
-            $this->angle = 0;
-            $this->_out('Q');
-        }
-        parent::_endpage();
-    }
-}
 
 $contentType = $_SERVER['CONTENT_TYPE'] ?? '';
 if (strpos($contentType, 'application/json') !== false) {
@@ -325,13 +227,13 @@ try {
 
     $labelUrl = null;
     if ($doPrint) {
-        // Generate PDF label with 180° rotation
-        $labelUrl = generateCombinedTemplateLabel($db, $productId, $quantity, $batchNumber, $producedAt, true);
+        // Generate PDF label by combining QR code with existing template
+        $labelUrl = generateCombinedTemplateLabel($db, $productId, $quantity, $batchNumber, $producedAt);
         if ($labelUrl) {
             $headers = @get_headers($labelUrl);
             if ($headers && strpos($headers[0], '200') !== false) {
                 sendToPrintServer($labelUrl, $printer, $config);
-                error_log("Production Receipt Debug - PDF label generated with rotation: $labelUrl");
+                error_log("Production Receipt Debug - PDF label generated: $labelUrl");
             } else {
                 error_log("Label not available yet: $labelUrl");
             }
@@ -387,18 +289,18 @@ try {
 }
 
 /**
- * PDF Template Label Generator - WITH ROTATION SUPPORT
- * Finds PDF template and adds QR code + text overlay with optional 180° rotation
+ * PDF Template Label Generator - NO ROTATION
+ * Finds PDF template and adds QR code + text overlay
  */
-function generateCombinedTemplateLabel(PDO $db, int $productId, int $qty, string $batch, string $date, bool $rotate180 = false): ?string {
+function generateCombinedTemplateLabel(PDO $db, int $productId, int $qty, string $batch, string $date): ?string {
     // ───────────── SETTINGS ─────────────
     $qrSize = 20;        // mm - QR code size
-    $qrX = 10;           // mm from left edge  
-    $qrY = 10;          // mm from top edge
+    $qrX = 98;           // mm from left edge  
+    $qrY = 150;           // mm from top edge
     
     // Text positioning
-    $textStartX = 5;     // mm - start text after QR code
-    $textStartY = 5;     // mm from top
+    $textStartX = 5;    // mm - start text after QR code
+    $textStartY = 5;    // mm from top
     $lineHeight = 1;     // mm between text lines
     
     // ───────────── GET PRODUCT DATA ─────────────
@@ -415,6 +317,21 @@ function generateCombinedTemplateLabel(PDO $db, int $productId, int $qty, string
     // ───────────── FIND TEMPLATE ─────────────
     $templatePath = findProductTemplate($sku, $productName);
     
+    // ───────────── LOAD FPDF ─────────────
+    if (!class_exists('FPDF')) {
+        $autoload = BASE_PATH . '/vendor/autoload.php';
+        if (file_exists($autoload)) require_once $autoload;
+    }
+    if (!class_exists('FPDF')) {
+        $fpdfPath = BASE_PATH . '/lib/fpdf.php';
+        if (file_exists($fpdfPath)) require_once $fpdfPath;
+    }
+    
+    if (!class_exists('FPDF')) {
+        error_log("FPDF library not found");
+        return null;
+    }
+    
     // ───────────── CREATE PDF FROM TEMPLATE ─────────────
     if ($templatePath && file_exists($templatePath)) {
         $ext = strtolower(pathinfo($templatePath, PATHINFO_EXTENSION));
@@ -422,39 +339,39 @@ function generateCombinedTemplateLabel(PDO $db, int $productId, int $qty, string
         if ($ext === 'pdf') {
             // Load existing PDF template and add QR code
             error_log("Using PDF template: $templatePath");
-            return addQRCodeToPDFTemplate($templatePath, $sku, $productName, $qty, $batch, $date, $qrX, $qrY, $qrSize, $rotate180);
+            return addQRCodeToPDFTemplate($templatePath, $sku, $productName, $qty, $batch, $date, $qrX, $qrY, $qrSize);
             
         } else {
             // Convert PNG/JPG template to PDF with QR code
             error_log("Converting image template to PDF: $templatePath");
-            return convertImageTemplateToPDF($templatePath, $sku, $productName, $qty, $batch, $date, $qrX, $qrY, $qrSize, $rotate180);
+            return convertImageTemplateToPDF($templatePath, $sku, $productName, $qty, $batch, $date, $qrX, $qrY, $qrSize);
         }
     } else {
         // Create fallback PDF label
         error_log("No template found, creating fallback PDF label");
-        return createFallbackPDFLabel($sku, $productName, $qty, $batch, $date, $rotate180);
+        return createFallbackPDFLabel($sku, $productName, $qty, $batch, $date);
     }
 }
 
 /**
  * Add QR code to existing PDF template (requires FPDI library)
  */
-function addQRCodeToPDFTemplate(string $templatePath, string $sku, string $productName, int $qty, string $batch, string $date, float $qrX, float $qrY, float $qrSize, bool $rotate180 = false): ?string {
+function addQRCodeToPDFTemplate(string $templatePath, string $sku, string $productName, int $qty, string $batch, string $date, float $qrX, float $qrY, float $qrSize): ?string {
     // Note: This requires FPDI library to import existing PDFs
     // For now, create a new PDF based on template size
     error_log("PDF template merging requires FPDI library - creating new PDF instead");
-    return createFallbackPDFLabel($sku, $productName, $qty, $batch, $date, $rotate180);
+    return createFallbackPDFLabel($sku, $productName, $qty, $batch, $date);
 }
 
 /**
- * Convert image template (PNG/JPG) to PDF with QR code overlay - WITH ROTATION SUPPORT
+ * Convert image template (PNG/JPG) to PDF with QR code overlay
  */
-function convertImageTemplateToPDF(string $templatePath, string $sku, string $productName, int $qty, string $batch, string $date, float $qrX, float $qrY, float $qrSize, bool $rotate180 = false): ?string {
+function convertImageTemplateToPDF(string $templatePath, string $sku, string $productName, int $qty, string $batch, string $date, float $qrX, float $qrY, float $qrSize): ?string {
     // Get image dimensions to determine PDF size
     $imageInfo = getimagesize($templatePath);
     if (!$imageInfo) {
         error_log("Cannot get image size for template: $templatePath");
-        return createFallbackPDFLabel($sku, $productName, $qty, $batch, $date, $rotate180);
+        return createFallbackPDFLabel($sku, $productName, $qty, $batch, $date);
     }
     
     $imageWidth = $imageInfo[0];   // pixels
@@ -469,50 +386,30 @@ function convertImageTemplateToPDF(string $templatePath, string $sku, string $pr
     error_log("Template size: {$imageWidth}x{$imageHeight}px = {$labelWidth}x{$labelHeight}mm");
     
     // Create PDF with template as background
-    $pdf = new PDF_Rotate('P', 'mm', [$labelWidth, $labelHeight]);
+    $pdf = new FPDF('P', 'mm', [$labelWidth, $labelHeight]);
     $pdf->AddPage();
-    
-    if ($rotate180) {
-        // Calculate center point for rotation
-        $centerX = $labelWidth / 2;
-        $centerY = $labelHeight / 2;
-        
-        // Apply 180-degree rotation around center
-        $pdf->Rotate(180, $centerX, $centerY);
-        error_log("Applied 180° rotation around center ({$centerX}, {$centerY})");
-    }
     
     // Add template image as background
     $pdf->Image($templatePath, 0, 0, $labelWidth, $labelHeight);
     
-    // Add QR code and text content together for proper positioning
-    if ($rotate180) {
-        addRotatedQRAndTextToPDF($pdf, $sku, $productName, $qty, $batch, $date, $labelWidth, $labelHeight, $qrSize);
-    } else {
-        // Add QR code
-        $qrImagePath = generateTempQRImage($sku);
-        if ($qrImagePath && file_exists($qrImagePath)) {
-            $pdf->Image($qrImagePath, $qrX, $qrY, $qrSize, $qrSize, 'PNG');
-            @unlink($qrImagePath);
-        }
-        
-        // Add text content
-        addTextContentToPDF($pdf, $sku, $productName, $qty, $batch, $date, $qrX, $qrY + $qrSize + 1);
+    // Add QR code
+    $qrImagePath = generateTempQRImage($sku);
+    if ($qrImagePath && file_exists($qrImagePath)) {
+        $pdf->Image($qrImagePath, $qrX, $qrY, $qrSize, $qrSize, 'PNG');
+        @unlink($qrImagePath);
     }
     
-    // Reset rotation if applied
-    if ($rotate180) {
-        $pdf->Rotate(0);
-    }
+    // Add text content
+    addTextContentToPDF($pdf, $sku, $productName, $qty, $batch, $date, $qrX, $qrY + $qrSize + 1);
     
     // Save PDF
     return saveFinalPDF($pdf, $batch);
 }
 
 /**
- * Create fallback PDF label when no template found - WITH ROTATION SUPPORT
+ * Create fallback PDF label when no template found
  */
-function createFallbackPDFLabel(string $sku, string $productName, int $qty, string $batch, string $date, bool $rotate180 = false): ?string {
+function createFallbackPDFLabel(string $sku, string $productName, int $qty, string $batch, string $date): ?string {
     $labelWidth = 100;   // mm
     $labelHeight = 150;  // mm
     
@@ -521,52 +418,44 @@ function createFallbackPDFLabel(string $sku, string $productName, int $qty, stri
     $qrY = 150;          // mm from top edge
     $qrSize = 20;        // mm - QR code size
     
-    $pdf = new PDF_Rotate('P', 'mm', [$labelWidth, $labelHeight]);
+    $pdf = new FPDF('P', 'mm', [$labelWidth, $labelHeight]);
     $pdf->AddPage();
-    
-    if ($rotate180) {
-        // Calculate center point for rotation
-        $centerX = $labelWidth / 2;
-        $centerY = $labelHeight / 2;
-        
-        // Apply 180-degree rotation around center
-        $pdf->Rotate(180, $centerX, $centerY);
-        error_log("Applied 180° rotation to fallback label around center ({$centerX}, {$centerY})");
-    }
     
     // White background
     $pdf->SetFillColor(255, 255, 255);
     $pdf->Rect(0, 0, $labelWidth, $labelHeight, 'F');
     
-    // Add QR code and text content together for proper positioning
-    if ($rotate180) {
-        addRotatedQRAndTextToPDF($pdf, $sku, $productName, $qty, $batch, $date, $labelWidth, $labelHeight, $qrSize);
-    } else {
-        // Add QR code
-        $qrImagePath = generateTempQRImage($sku);
-        if ($qrImagePath && file_exists($qrImagePath)) {
-            $pdf->Image($qrImagePath, $qrX, $qrY, $qrSize, $qrSize, 'PNG');
-            @unlink($qrImagePath);
-        }
-        
-        // Add text content
-        addTextContentToPDF($pdf, $sku, $productName, $qty, $batch, $date, 5, 5);
+    // Add QR code - USE CONSISTENT COORDINATES
+    $qrImagePath = generateTempQRImage($sku);
+    if ($qrImagePath && file_exists($qrImagePath)) {
+        $pdf->Image($qrImagePath, $qrX, $qrY, $qrSize, $qrSize, 'PNG');  // Changed from (15, 15, 25, 25)
+        @unlink($qrImagePath);
     }
     
-    // Reset rotation if applied
-    if ($rotate180) {
-        $pdf->Rotate(0);
-    }
+    // Add text content - ADJUST TEXT POSITION TOO
+    addTextContentToPDF($pdf, $sku, $productName, $qty, $batch, $date, 5, 5);  // Changed from (50, 20)
     
     return saveFinalPDF($pdf, $batch);
 }
 
 /**
- * Add text content to PDF (original function for non-rotated labels)
+ * Add text content to PDF
  */
 function addTextContentToPDF($pdf, string $sku, string $productName, int $qty, string $batch, string $date, float $textX, float $textY): void {
     $pdf->SetTextColor(0, 0, 0);
     $currentY = $textY;
+    
+    // // SKU
+    // $pdf->SetFont('Arial', 'B', 12);
+    // $pdf->SetXY($textX, $currentY);
+    // $pdf->Cell(0, 6, "SKU: " . $sku, 0, 1, 'L');
+    // $currentY += 8;
+    
+    // // Product name
+    // $pdf->SetFont('Arial', '', 9);
+    // $pdf->SetXY($textX, $currentY);
+    // $pdf->Cell(0, 5, substr($productName, 0, 30), 0, 1, 'L');
+    // $currentY += 10;
     
     // Batch
     if ($batch) {
@@ -581,37 +470,6 @@ function addTextContentToPDF($pdf, string $sku, string $productName, int $qty, s
     $pdf->SetXY($textX, $currentY);
     $pdf->Cell(0, 5, "QTY: " . $qty . " buc", 0, 1, 'L');
     $currentY += 4;
-    
-    // Date
-    $pdf->SetXY($textX, $currentY);
-    $pdf->Cell(0, 5, "DATA: " . date('d.m.Y', strtotime($date)), 0, 1, 'L');
-}
-
-/**
- * Add rotated text content to PDF (for 180° rotated labels)
- */
-function addRotatedTextContentToPDF($pdf, string $sku, string $productName, int $qty, string $batch, string $date, float $labelWidth, float $labelHeight): void {
-    $pdf->SetTextColor(0, 0, 0);
-    
-    // Calculate rotated text positions (flip coordinates)
-    $textX = $labelWidth - 5 - 50;  // Adjust for text width
-    $textY = $labelHeight - 5 - 30; // Adjust for text height
-    
-    $currentY = $textY;
-    
-    // Batch
-    if ($batch) {
-        $pdf->SetFont('Arial', 'B', 8);
-        $pdf->SetXY($textX, $currentY);
-        $pdf->Cell(0, 5, "LOT: " . $batch, 0, 1, 'L');
-        $currentY -= 4;  // Move up instead of down for rotation
-    }
-    
-    // Quantity
-    $pdf->SetFont('Arial', '', 8);
-    $pdf->SetXY($textX, $currentY);
-    $pdf->Cell(0, 5, "QTY: " . $qty . " buc", 0, 1, 'L');
-    $currentY -= 4;
     
     // Date
     $pdf->SetXY($textX, $currentY);
@@ -659,7 +517,7 @@ function saveFinalPDF($pdf, string $batch): ?string {
 }
 
 /**
- * Find the appropriate template for a product
+ * Find the appropriate template for a product (SAME AS BEFORE)
  */
 function findProductTemplate(string $sku, string $productName): ?string {
     $templateDir = BASE_PATH . '/storage/templates/product_labels/';
@@ -706,7 +564,7 @@ function findProductTemplate(string $sku, string $productName): ?string {
 }
 
 /**
- * Extract product code template from product name
+ * Extract product code template from product name (SAME AS BEFORE)
  */
 function extractProductCodeTemplate(string $productName, string $templateDir): ?string {
     error_log("Searching template for product: $productName");

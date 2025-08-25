@@ -258,7 +258,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 foreach ($items as $item) {
                     $purchasableProductId = intval($item['purchasable_product_id'] ?? 0);
                     $internalProductId = intval($item['internal_product_id'] ?? 0);
-                    
+
+                    if ($internalProductId <= 0) {
+                        throw new Exception('Trebuie selectat un produs intern pentru fiecare produs.');
+                    }
+
                     // If no product ID provided, try to find or create the product
                     if ($purchasableProductId <= 0) {
                         $productName = trim($item['product_name'] ?? '');
@@ -281,7 +285,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     'unit_measure' => 'buc', // Default unit
                                     'last_purchase_price' => floatval($item['unit_price'] ?? 0),
                                     'currency' => 'RON',
-                                    'internal_product_id' => $internalProductId > 0 ? $internalProductId : null,
+                                    'internal_product_id' => $internalProductId,
                                     'preferred_seller_id' => $sellerId,
                                     'notes' => trim($item['description'] ?? ''),
                                     'status' => 'active'
@@ -299,9 +303,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             throw new Exception('Numele produsului este obligatoriu.');
                         }
                     } else {
-                        if ($internalProductId > 0) {
-                            $purchasableProductModel->updateProduct($purchasableProductId, ['internal_product_id' => $internalProductId]);
-                        }
+                        $purchasableProductModel->updateProduct($purchasableProductId, ['internal_product_id' => $internalProductId]);
                     }
 
                     $quantity = floatval($item['quantity']);
@@ -769,8 +771,8 @@ require_once __DIR__ . '/includes/header.php';
                                     </div>
                                     <div class="row">
                                         <div class="form-group">
-                                            <label>Produs Intern (opțional)</label>
-                                            <select class="form-control internal-product-select" name="items[0][internal_product_id]">
+                                            <label>Produs Intern *</label>
+                                            <select class="form-control internal-product-select" name="items[0][internal_product_id]" required>
                                                 <option value="">-- Produs intern --</option>
                                                 <?php foreach ($allProducts as $prod): ?>
                                                     <option value="<?= $prod['product_id'] ?>">

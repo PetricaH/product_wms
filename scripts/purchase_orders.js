@@ -224,8 +224,8 @@ function createProductItem(index) {
             </div>
             <div class="row">
                 <div class="form-group">
-                    <label>Produs Intern (opțional)</label>
-                    <select class="form-control internal-product-select" name="items[${index}][internal_product_id]">
+                    <label>Produs Intern *</label>
+                    <select class="form-control internal-product-select" name="items[${index}][internal_product_id]" required>
                         ${generateInternalProductOptions()}
                     </select>
                 </div>

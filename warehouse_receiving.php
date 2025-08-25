@@ -221,6 +221,10 @@ $currentPage = 'warehouse_receiving';
                             <span class="material-symbols-outlined">print</span>
                             Printează Etichete
                         </button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" id="preview-label-btn" style="margin-left:5px;">
+                            <span class="material-symbols-outlined">visibility</span>
+                            Preview
+                        </button>
                         <button type="button" class="btn btn-success" id="add-stock-btn" style="display:none;" disabled>
                             <span class="material-symbols-outlined">inventory_2</span>
                             Adaugă în Stoc

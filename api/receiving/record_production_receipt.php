@@ -155,6 +155,7 @@ $photoDescription = trim($input['photo_description'] ?? '');
 $action = $input['action'] ?? 'print_and_add';
 $doPrint = in_array($action, ['print', 'print_and_add']);
 $doAddStock = in_array($action, ['add_stock', 'print_and_add']);
+$doPreview = ($action === 'preview');
 
 error_log("Production Receipt Debug - Input: " . json_encode($input));
 
@@ -324,10 +325,10 @@ try {
     }
 
     $labelUrl = null;
-    if ($doPrint) {
+    if ($doPrint || $doPreview) {
         // Generate PDF label with 180° rotation
         $labelUrl = generateCombinedTemplateLabel($db, $productId, $quantity, $batchNumber, $producedAt, true);
-        if ($labelUrl) {
+        if ($labelUrl && $doPrint) {
             $headers = @get_headers($labelUrl);
             if ($headers && strpos($headers[0], '200') !== false) {
                 sendToPrintServer($labelUrl, $printer, $config);
@@ -368,7 +369,8 @@ try {
         'inventory_id' => $invId,
         'location_id' => $doAddStock ? $finalLocationId : null,
         'location_code' => $doAddStock ? $finalLocationCode : null,
-        'message' => $doAddStock ? $message : 'Labels printed successfully',
+        'message' => $doAddStock ? $message : ($doPreview ? 'Label preview generated' : 'Labels printed successfully'),
+        'label_url' => $labelUrl,
         'saved_photos' => $doAddStock ? $savedPhotos : [],
         'debug' => [
             'product_id' => $productId,

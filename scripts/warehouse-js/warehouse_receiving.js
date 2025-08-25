@@ -155,6 +155,11 @@ class WarehouseReceiving {
             printBtn.addEventListener('click', () => this.printProductionLabels());
         }
 
+        const previewBtn = document.getElementById('preview-label-btn');
+        if (previewBtn) {
+            previewBtn.addEventListener('click', () => this.previewProductionLabel());
+        }
+
         const addStockBtn = document.getElementById('add-stock-btn');
         if (addStockBtn) {
             addStockBtn.addEventListener('click', () => this.addProductionStock());
@@ -400,6 +405,53 @@ class WarehouseReceiving {
 
         } catch (err) {
             console.error('Print error:', err);
+            this.showError('Eroare: ' + err.message);
+        }
+    }
+
+    async previewProductionLabel() {
+        if (!this.productionMode) return;
+
+        const qty = parseInt(document.getElementById('prod-qty').value) || 0;
+        const batch = document.getElementById('prod-batch-number').value;
+        const date = document.getElementById('prod-date').value;
+
+        if (!this.selectedProductId || qty <= 0) {
+            this.showError('Selectează produsul și cantitatea');
+            return;
+        }
+
+        try {
+            const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content') || this.config.csrfToken;
+
+            const formData = new FormData();
+            formData.append('product_id', this.selectedProductId);
+            formData.append('quantity', qty);
+            formData.append('batch_number', batch);
+            formData.append('produced_at', date);
+            formData.append('source', 'factory');
+            formData.append('action', 'preview');
+
+            const response = await fetch(`${this.config.apiBase}/receiving/record_production_receipt.php`, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    'X-CSRF-Token': csrfToken
+                },
+                body: formData
+            });
+
+            const result = await response.json();
+
+            if (!response.ok || !result.success) {
+                throw new Error(result.message || 'Eroare la generarea etichetei');
+            }
+
+            if (result.label_url) {
+                window.open(result.label_url, '_blank');
+            }
+        } catch (err) {
+            console.error('Preview error:', err);
             this.showError('Eroare: ' + err.message);
         }
     }

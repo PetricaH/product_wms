@@ -98,6 +98,4 @@ $currentPage = 'mobile_returns';
         </div>
     </div>
 
-    <script src="scripts/mobile_returns.js"></script>
-</body>
-</html>
+    <?php require_once __DIR__ . '/includes/warehouse_footer.php'; ?>

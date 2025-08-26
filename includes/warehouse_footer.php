@@ -45,7 +45,6 @@ $warehousePageJS = [
     'warehouse_receiving' => 'warehouse_receiving.js',  // Will use silent timing
     'warehouse_inventory' => 'warehouse_inventory.js',
     'warehouse_relocation' => 'warehouse_relocation.js',
-    'returns_dashboard' => 'returns_dashboard.js'
 ];
 
 // Check if a specific script is defined for the current warehouse page

@@ -66,28 +66,63 @@ function getJsonInput() {
 }
 
 function lookupOrder(PDO $db, string $orderNumber) {
-    $stmt = $db->prepare("SELECT id, order_number, customer_name FROM orders WHERE order_number = :num");
+    $stmt = $db->prepare("SELECT id, order_number, customer_name, status, shipped_date, order_date
+                          FROM orders WHERE order_number = :num");
     $stmt->execute([':num' => $orderNumber]);
     $order = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$order) {
         throw new Exception('Order not found', 404);
     }
 
-    $itemsStmt = $db->prepare("SELECT oi.id AS order_item_id, p.product_id, p.sku, p.name, oi.quantity
+    // Ensure order was shipped and within return window (30 days)
+    if ($order['status'] !== 'shipped') {
+        throw new Exception('Order not shipped', 409);
+    }
+    $shipDate = $order['shipped_date'] ?: $order['order_date'];
+    if (!$shipDate || strtotime($shipDate) < strtotime('-30 days')) {
+        throw new Exception('Return period expired', 409);
+    }
+
+    // Check for existing return sessions
+    $existingStmt = $db->prepare("SELECT id, status FROM returns WHERE order_id = :oid AND status IN ('in_progress','pending')");
+    $existingStmt->execute([':oid' => $order['id']]);
+    if ($existingStmt->fetch(PDO::FETCH_ASSOC)) {
+        throw new Exception('Return already in progress for this order', 409);
+    }
+
+    // Fetch items along with quantities already returned in completed returns
+    $itemsStmt = $db->prepare("SELECT oi.id AS order_item_id, p.product_id, p.sku, p.name, oi.quantity,
+                                      COALESCE(SUM(CASE WHEN r.status = 'completed' THEN ri.quantity_returned ELSE 0 END), 0) AS returned_qty
                                FROM order_items oi
                                JOIN products p ON oi.product_id = p.product_id
-                               WHERE oi.order_id = :oid");
+                               LEFT JOIN return_items ri ON ri.order_item_id = oi.id
+                               LEFT JOIN returns r ON ri.return_id = r.id
+                               WHERE oi.order_id = :oid
+                               GROUP BY oi.id, p.product_id, p.sku, p.name, oi.quantity");
     $itemsStmt->execute([':oid' => $order['id']]);
     $rows = $itemsStmt->fetchAll(PDO::FETCH_ASSOC);
-    $items = array_map(function($r) {
+
+    $allReturned = true;
+    $items = array_map(function($r) use (&$allReturned) {
+        $ordered = (int)$r['quantity'];
+        $returned = (int)$r['returned_qty'];
+        if ($returned < $ordered) {
+            $allReturned = false;
+        }
         return [
             'order_item_id' => (int)$r['order_item_id'],
             'product_id' => (int)$r['product_id'],
             'sku' => $r['sku'],
             'product_name' => $r['name'],
-            'ordered_quantity' => (int)$r['quantity']
+            'ordered_quantity' => $ordered,
+            'returned_quantity' => $returned,
+            'expected_quantity' => max($ordered - $returned, 0)
         ];
     }, $rows);
+
+    if ($allReturned) {
+        throw new Exception('Order already fully returned', 409);
+    }
 
     echo json_encode([
         'success' => true,
@@ -108,19 +143,86 @@ function startReturn(PDO $db) {
         throw new Exception('order_number and processed_by required', 400);
     }
 
-    $stmt = $db->prepare("SELECT id FROM orders WHERE order_number = :num");
-    $stmt->execute([':num' => $orderNumber]);
-    $orderId = $stmt->fetchColumn();
-    if (!$orderId) {
-        throw new Exception('Order not found', 404);
+    try {
+        $db->beginTransaction();
+
+        $stmt = $db->prepare("SELECT id, status, shipped_date, order_date FROM orders WHERE order_number = :num FOR UPDATE");
+        $stmt->execute([':num' => $orderNumber]);
+        $order = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$order) {
+            throw new Exception('Order not found', 404);
+        }
+
+        if ($order['status'] !== 'shipped') {
+            throw new Exception('Order not shipped', 409);
+        }
+        $shipDate = $order['shipped_date'] ?: $order['order_date'];
+        if (!$shipDate || strtotime($shipDate) < strtotime('-30 days')) {
+            throw new Exception('Return period expired', 409);
+        }
+
+        $existingStmt = $db->prepare("SELECT id FROM returns WHERE order_id = :oid AND status IN ('in_progress','pending') FOR UPDATE");
+        $existingStmt->execute([':oid' => $order['id']]);
+        if ($existingStmt->fetch(PDO::FETCH_ASSOC)) {
+            throw new Exception('Return already in progress for this order', 409);
+        }
+
+        // Fetch items and returned quantities to ensure order isn't fully returned
+        $itemsStmt = $db->prepare("SELECT oi.id AS order_item_id, p.product_id, p.sku, p.name, oi.quantity,
+                                          COALESCE(SUM(CASE WHEN r.status = 'completed' THEN ri.quantity_returned ELSE 0 END), 0) AS returned_qty
+                                   FROM order_items oi
+                                   JOIN products p ON oi.product_id = p.product_id
+                                   LEFT JOIN return_items ri ON ri.order_item_id = oi.id
+                                   LEFT JOIN returns r ON ri.return_id = r.id
+                                   WHERE oi.order_id = :oid
+                                   GROUP BY oi.id, p.product_id, p.sku, p.name, oi.quantity");
+        $itemsStmt->execute([':oid' => $order['id']]);
+        $rows = $itemsStmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $allReturned = true;
+        $items = array_map(function($r) use (&$allReturned) {
+            $ordered = (int)$r['quantity'];
+            $returned = (int)$r['returned_qty'];
+            if ($returned < $ordered) {
+                $allReturned = false;
+            }
+            return [
+                'order_item_id' => (int)$r['order_item_id'],
+                'product_id' => (int)$r['product_id'],
+                'sku' => $r['sku'],
+                'product_name' => $r['name'],
+                'ordered_quantity' => $ordered,
+                'returned_quantity' => $returned,
+                'expected_quantity' => max($ordered - $returned, 0)
+            ];
+        }, $rows);
+
+        if ($allReturned) {
+            throw new Exception('Order already fully returned', 409);
+        }
+
+        $insert = $db->prepare("INSERT INTO returns (order_id, processed_by, status) VALUES (:oid, :pid, 'in_progress')");
+        $insert->execute([':oid' => $order['id'], ':pid' => $processedBy]);
+        $returnId = (int)$db->lastInsertId();
+
+        $db->commit();
+
+        http_response_code(201);
+        echo json_encode([
+            'success' => true,
+            'return_id' => $returnId,
+            'order' => [
+                'id' => (int)$order['id'],
+                'order_number' => $orderNumber
+            ],
+            'items' => $items
+        ]);
+    } catch (Exception $e) {
+        if ($db->inTransaction()) {
+            $db->rollBack();
+        }
+        throw $e;
     }
-
-    $insert = $db->prepare("INSERT INTO returns (order_id, processed_by) VALUES (:oid, :pid)");
-    $insert->execute([':oid' => $orderId, ':pid' => $processedBy]);
-    $returnId = (int)$db->lastInsertId();
-
-    http_response_code(201);
-    echo json_encode(['success' => true, 'return_id' => $returnId]);
 }
 
 function verifyItem(PDO $db, int $returnId) {
@@ -144,8 +246,8 @@ function verifyItem(PDO $db, int $returnId) {
     if (!$ret) {
         throw new Exception('Return not found', 404);
     }
-    if ($ret['status'] !== 'pending') {
-        throw new Exception('Return is not pending', 409);
+    if (!in_array($ret['status'], ['in_progress','pending'])) {
+        throw new Exception('Return is not in progress', 409);
     }
 
     $pstmt = $db->prepare("SELECT product_id FROM products WHERE product_id = :pid");

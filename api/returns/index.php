@@ -236,7 +236,7 @@ function verifyItem(PDO $db, int $returnId) {
     if ($productId <= 0 || $qty <= 0) {
         throw new Exception('product_id and quantity are required', 400);
     }
-    if (!in_array($condition, ['good','damaged','defective'])) {
+    if (!in_array($condition, ['good','damaged','defective','opened'])) {
         throw new Exception('Invalid item_condition', 400);
     }
 
@@ -256,14 +256,35 @@ function verifyItem(PDO $db, int $returnId) {
         throw new Exception('Product not found', 404);
     }
 
-    $oStmt = $db->prepare("SELECT id FROM order_items WHERE order_id = :oid AND product_id = :pid");
+    // Match product to order item
+    $oStmt = $db->prepare("SELECT id, quantity FROM order_items WHERE order_id = :oid AND product_id = :pid");
     $oStmt->execute([':oid' => $ret['order_id'], ':pid' => $productId]);
-    $orderItemId = $oStmt->fetchColumn();
-    if (!$orderItemId) {
-        $orderItemId = null;
+    $orderItem = $oStmt->fetch(PDO::FETCH_ASSOC);
+    $orderItemId = $orderItem['id'] ?? null;
+
+    if ($orderItemId) {
+        // Determine how many of this item were already returned
+        $qtyStmt = $db->prepare("SELECT 
+                COALESCE(SUM(CASE WHEN r.status = 'completed' THEN ri.quantity_returned ELSE 0 END),0) AS returned_completed,
+                COALESCE(SUM(CASE WHEN r.id = :rid THEN ri.quantity_returned ELSE 0 END),0) AS returned_current
+            FROM return_items ri
+            JOIN returns r ON r.id = ri.return_id
+            WHERE ri.order_item_id = :oiid");
+        $qtyStmt->execute([':oiid' => $orderItemId, ':rid' => $returnId]);
+        $qtyRow = $qtyStmt->fetch(PDO::FETCH_ASSOC);
+        $orderedQty = (int)$orderItem['quantity'];
+        $returnedCompleted = (int)$qtyRow['returned_completed'];
+        $returnedCurrent = (int)$qtyRow['returned_current'];
+        $remaining = $orderedQty - $returnedCompleted - $returnedCurrent;
+        if ($qty > $remaining) {
+            throw new Exception('Returned quantity exceeds remaining quantity: ' . $remaining, 409);
+        }
+    } else {
+        // Item not part of original order
         $isExtra = 1;
     }
 
+    // Record the returned item
     $insert = $db->prepare("INSERT INTO return_items (return_id, order_item_id, product_id, quantity_returned, item_condition, is_extra, notes)
                              VALUES (:rid, :oiid, :pid, :qty, :cond, :extra, :notes)");
     $insert->bindValue(':rid', $returnId, PDO::PARAM_INT);
@@ -280,8 +301,32 @@ function verifyItem(PDO $db, int $returnId) {
     $insert->execute();
     $itemId = (int)$db->lastInsertId();
 
+    // Calculate progress (excluding extras)
+    $progressStmt = $db->prepare("SELECT 
+            SUM(oi.quantity) AS ordered_total,
+            COALESCE(SUM(CASE WHEN r.status = 'completed' THEN ri.quantity_returned ELSE 0 END),0) AS returned_completed,
+            COALESCE(SUM(CASE WHEN r.id = :rid AND ri.is_extra = 0 THEN ri.quantity_returned ELSE 0 END),0) AS returned_current
+        FROM order_items oi
+        LEFT JOIN return_items ri ON ri.order_item_id = oi.id
+        LEFT JOIN returns r ON r.id = ri.return_id
+        WHERE oi.order_id = :oid");
+    $progressStmt->execute([':oid' => $ret['order_id'], ':rid' => $returnId]);
+    $prog = $progressStmt->fetch(PDO::FETCH_ASSOC);
+    $orderedTotal = (int)$prog['ordered_total'];
+    $returnedCompleted = (int)$prog['returned_completed'];
+    $returnedCurrent = (int)$prog['returned_current'];
+    $expectedTotal = max($orderedTotal - $returnedCompleted, 0);
+    $progress = [
+        'verified' => min($returnedCurrent, $expectedTotal),
+        'expected' => $expectedTotal
+    ];
+
     http_response_code(201);
-    echo json_encode(['success' => true, 'item_id' => $itemId, 'is_extra' => (bool)$isExtra]);
+    $response = ['success' => true, 'item_id' => $itemId, 'is_extra' => (bool)$isExtra, 'progress' => $progress];
+    if ($isExtra) {
+        $response['message'] = 'Item not in original order; recorded as extra';
+    }
+    echo json_encode($response);
 }
 
 function addDiscrepancy(PDO $db, int $returnId) {
@@ -296,7 +341,7 @@ function addDiscrepancy(PDO $db, int $returnId) {
     if ($productId <= 0 || !in_array($type, ['missing','extra','damaged'])) {
         throw new Exception('Invalid input', 400);
     }
-    if (!in_array($condition, ['good','damaged','defective'])) {
+    if (!in_array($condition, ['good','damaged','defective','opened'])) {
         throw new Exception('Invalid item_condition', 400);
     }
 

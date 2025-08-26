@@ -17,7 +17,7 @@ class CreateReturnsTablesMigration {
                 order_id INT NOT NULL,
                 processed_by INT NOT NULL,
                 verified_by INT NULL,
-                status ENUM('pending','verified','completed','rejected') DEFAULT 'pending',
+                status ENUM('in_progress','pending','verified','completed','rejected') DEFAULT 'in_progress',
                 notes TEXT,
                 verified_at TIMESTAMP NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

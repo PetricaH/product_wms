@@ -81,13 +81,13 @@ try {
         respond(['success' => false, 'error' => 'Print server is not active'], 503);
     }
 
-    // Generate QR image with larger size
+    // Generate QR image (high quality)
     $qrPath = generateTempQRImage($code);
     if (!$qrPath) {
         respond(['success' => false, 'error' => 'Failed to generate QR code'], 500);
     }
 
-    // Create PDF label with better dimensions and layout
+    // Create PDF label using the WHOLE paper size so QR/text can be large
     $storageDir = BASE_PATH . '/storage/location_qr_pdfs';
     if (!is_dir($storageDir)) {
         @mkdir($storageDir, 0755, true);
@@ -95,31 +95,80 @@ try {
     $fileName = 'location_' . preg_replace('/[^A-Za-z0-9_-]/', '_', $code) . '_' . time() . '.pdf';
     $filePath = $storageDir . '/' . $fileName;
 
-    // Larger label dimensions for better space utilization (62mm x 40mm)
-    $labelWidth = 62;
-    $labelHeight = 40;
-    $pdf = new FPDF('L', 'mm', [$labelWidth, $labelHeight]);
-    $pdf->SetMargins(2, 2, 2);
+    // ==== PHYSICAL PAPER SIZE (portrait feed) ====
+    // Your sheet is 10.3 cm x 14.5 cm -> 103 x 145 mm (portrait)
+    $outerW = 103.0; // width in mm
+    $outerH = 145.0; // height in mm
+
+    $pdf = new FPDF('P', 'mm', [$outerW, $outerH]);
+    $pdf->SetMargins(0, 0, 0);
     $pdf->SetAutoPageBreak(false);
     $pdf->AddPage();
 
-    // Calculate QR placement to keep it centered and within bounds
-    $qrSize = min(30, $labelWidth, $labelHeight - 5); // reserve space for text
-    $qrX = ($labelWidth - $qrSize) / 2;
-    $qrY = ($labelHeight - 5 - $qrSize) / 2; // center vertically above text area
+    // ---- Adjustable layout knobs ----
+    $margin   = 8.0;   // outer margin (all sides)
+    $textBand = 18.0;  // height reserved at the bottom for the location text
+    $gap      = 2.0;   // gap between QR and text band
+
+    // Work area above the text band
+    $workTop    = $margin;
+    $workLeft   = $margin;
+    $workWidth  = $outerW - 2 * $margin;
+    $workHeight = $outerH - 2 * $margin - $textBand;
+
+    // Biggest square QR that fits
+    $qrSize = min($workWidth, $workHeight - $gap);
+
+    // Center the QR horizontally at the top of the work area
+    $qrX = $workLeft + ($workWidth - $qrSize) / 2.0;
+    $qrY = $workTop;
+
+    // Add QR
     $pdf->Image($qrPath, $qrX, $qrY, $qrSize, $qrSize, 'PNG');
     @unlink($qrPath);
 
-    // Larger, bold font for location code
-    $pdf->SetFont('Arial', 'B', 12);
-    $labelText = iconv('UTF-8', 'ISO-8859-1//TRANSLIT', $name);
+    // ==== Bottom text band ====
+    $labelText = iconv('UTF-8', 'ISO-8859-1//TRANSLIT', $code);
+    $bandX = $margin;
+    $bandY = $outerH - $margin - $textBand;
+    $bandW = $outerW - 2 * $margin;
 
-    // Position text at bottom, centered horizontally
-    $pdf->SetXY(0, $labelHeight - 5);
-    $pdf->Cell($labelWidth, 5, $labelText, 0, 1, 'C');
-    
+    // Find the largest font size that fits the band width/height
+    $minFont = 8;
+    $maxFont = max($minFont, (int)floor($textBand * 1.6)); // heuristic cap
+    $bestSize = $minFont;
+
+    for ($fs = $minFont; $fs <= $maxFont; $fs++) {
+        $pdf->SetFont('Arial', 'B', $fs);
+        $tw = $pdf->GetStringWidth($labelText);
+        if ($tw > $bandW) { // too wide—use previous size
+            $bestSize = max($minFont, $fs - 1);
+            break;
+        }
+        $bestSize = $fs;
+    }
+    $pdf->SetFont('Arial', 'B', $bestSize);
+
+    // If still too long, trim to first segment (optional safety)
+    $tw = $pdf->GetStringWidth($labelText);
+    if ($tw > $bandW) {
+        $parts = preg_split('/[-_\s]/', $labelText, 2);
+        if (count($parts) > 1 && strlen($parts[0]) > 2) {
+            $labelText = $parts[0];
+        }
+    }
+
+    // Print centered in the band
+    $pdf->SetXY($bandX, $bandY);
+    $pdf->Cell($bandW, $textBand, $labelText, 0, 1, 'C');
+
+    // Optional debug border for the text band:
+    // $pdf->SetDrawColor(220,220,220);
+    // $pdf->Rect($bandX, $bandY, $bandW, $textBand, 'D');
+
     $pdf->Output('F', $filePath);
 
+    // Build URL and send to print server
     $pdfUrl = getSimpleBaseUrl() . '/storage/location_qr_pdfs/' . $fileName;
 
     $printServerUrl = "http://{$printer['ip_address']}:{$printer['port']}/print_server.php";
@@ -136,8 +185,8 @@ try {
 }
 
 function generateTempQRImage(string $data): ?string {
-    // Generate larger QR code (500x500 for better quality)
-    $qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=' . urlencode($data);
+    // Generate larger QR code (high quality)
+    $qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=800x800&data=' . urlencode($data);
     $qrData = @file_get_contents($qrUrl);
     if ($qrData === false) return null;
     $tempDir = sys_get_temp_dir();
@@ -150,6 +199,7 @@ function sendToPrintServerSimple(string $printServerUrl, string $pdfUrl, string 
     $url = $printServerUrl . '?' . http_build_query([
         'url' => $pdfUrl,
         'printer' => $printerName
+        // Tip (print server side): ensure SumatraPDF uses -print-settings "portrait,center,noscale"
     ]);
     $context = stream_context_create([
         'http' => [

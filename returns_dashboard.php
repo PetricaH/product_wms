@@ -140,7 +140,25 @@ $currentPage = 'returns_dashboard';
             </div>
         </div>
     </div> <!-- app -->
-
+    <!-- WMS Configuration Script - ADD THIS -->
+    <script>
+        window.WMS_CONFIG = {
+            // FIXED: Properly construct API base URL like warehouse_header.php does
+            apiBase: '<?= htmlspecialchars(rtrim(defined('BASE_URL') ? BASE_URL : '', '/')) ?>/api',
+            baseUrl: '<?= htmlspecialchars(rtrim(defined('BASE_URL') ? BASE_URL : '', '/')) ?>',
+            csrfToken: '<?= htmlspecialchars($_SESSION['csrf_token'] ?? '') ?>',
+            currentUser: <?= json_encode([
+                'id' => $_SESSION['user_id'] ?? null,
+                'username' => $_SESSION['username'] ?? 'Unknown',
+                'role' => $_SESSION['role'] ?? 'unknown'
+            ]) ?>
+        };
+        
+        // Debug logging
+        console.log('🔧 WMS_CONFIG loaded:', window.WMS_CONFIG);
+        console.log('🔗 API Base URL should be:', window.WMS_CONFIG.apiBase);
+        console.log('🔗 Full API URL example:', window.WMS_CONFIG.apiBase + '/returns/admin.php');
+    </script>
     <?php require_once __DIR__ . '/includes/footer.php'; ?>
 </body>
 </html>

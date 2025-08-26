@@ -52,7 +52,7 @@ $pageSpecificJS = [
     'product-units' => 'product-units.js',
     'printer-management' => 'printer-management.js',
     'qc_management' => 'qc-management.js',
-    'returns_dashboard' => 'warehouse-js/returns_dashboard.js',
+    'returns_dashboard' => 'returns_dashboard.js',
     'index' => 'index.js',
     'warehouse_settings' => 'warehouse_settings.js'
 ];

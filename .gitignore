@@ -20,3 +20,4 @@ database/backups/*.sql
 vendor/
 \.phpunit.result.cache
 storage/invoice_pdfs/
+storage

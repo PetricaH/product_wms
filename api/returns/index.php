@@ -65,6 +65,49 @@ function getJsonInput() {
     return $input;
 }
 
+/**
+ * Record a discrepancy, optionally aggregating with an existing record.
+ */
+function recordDiscrepancy(PDO $db, int $returnId, ?int $orderItemId, int $productId, string $type,
+    int $expected, int $actual, string $condition = 'good', string $notes = '',
+    string $resolution = 'pending', bool $allowUpdate = true) {
+
+    if (!in_array($resolution, ['pending','resolved','written_off'])) {
+        $resolution = 'pending';
+    }
+
+    $check = $db->prepare("SELECT id FROM return_discrepancies WHERE return_id = :rid AND product_id = :pid AND discrepancy_type = :dtype");
+    $check->execute([':rid' => $returnId, ':pid' => $productId, ':dtype' => $type]);
+    $existing = $check->fetch(PDO::FETCH_ASSOC);
+
+    if ($existing) {
+        if ($allowUpdate) {
+            $upd = $db->prepare("UPDATE return_discrepancies SET expected_quantity = expected_quantity + :exp, actual_quantity = actual_quantity + :act, item_condition = :cond, updated_at = NOW() WHERE id = :id");
+            $upd->execute([':exp' => $expected, ':act' => $actual, ':cond' => $condition, ':id' => $existing['id']]);
+            return (int)$existing['id'];
+        }
+        throw new Exception('Discrepancy already exists', 409);
+    }
+
+    $insert = $db->prepare("INSERT INTO return_discrepancies (return_id, order_item_id, product_id, discrepancy_type, expected_quantity, actual_quantity, item_condition, notes, resolution_status)
+                             VALUES (:rid, :oiid, :pid, :dtype, :exp, :act, :cond, :notes, :res)");
+    $insert->bindValue(':rid', $returnId, PDO::PARAM_INT);
+    if ($orderItemId !== null) {
+        $insert->bindValue(':oiid', $orderItemId, PDO::PARAM_INT);
+    } else {
+        $insert->bindValue(':oiid', null, PDO::PARAM_NULL);
+    }
+    $insert->bindValue(':pid', $productId, PDO::PARAM_INT);
+    $insert->bindValue(':dtype', $type, PDO::PARAM_STR);
+    $insert->bindValue(':exp', $expected, PDO::PARAM_INT);
+    $insert->bindValue(':act', $actual, PDO::PARAM_INT);
+    $insert->bindValue(':cond', $condition, PDO::PARAM_STR);
+    $insert->bindValue(':notes', $notes, PDO::PARAM_STR);
+    $insert->bindValue(':res', $resolution, PDO::PARAM_STR);
+    $insert->execute();
+    return (int)$db->lastInsertId();
+}
+
 function lookupOrder(PDO $db, string $orderNumber) {
     $stmt = $db->prepare("SELECT id, order_number, customer_name, status, shipped_date, order_date
                           FROM orders WHERE order_number = :num");
@@ -264,7 +307,7 @@ function verifyItem(PDO $db, int $returnId) {
 
     if ($orderItemId) {
         // Determine how many of this item were already returned
-        $qtyStmt = $db->prepare("SELECT 
+        $qtyStmt = $db->prepare("SELECT
                 COALESCE(SUM(CASE WHEN r.status = 'completed' THEN ri.quantity_returned ELSE 0 END),0) AS returned_completed,
                 COALESCE(SUM(CASE WHEN r.id = :rid THEN ri.quantity_returned ELSE 0 END),0) AS returned_current
             FROM return_items ri
@@ -277,7 +320,9 @@ function verifyItem(PDO $db, int $returnId) {
         $returnedCurrent = (int)$qtyRow['returned_current'];
         $remaining = $orderedQty - $returnedCompleted - $returnedCurrent;
         if ($qty > $remaining) {
-            throw new Exception('Returned quantity exceeds remaining quantity: ' . $remaining, 409);
+            // quantity over
+            $expected = max($remaining, 0);
+            recordDiscrepancy($db, $returnId, $orderItemId, $productId, 'quantity_over', $expected, $qty, $condition, $notes);
         }
     } else {
         // Item not part of original order
@@ -300,6 +345,13 @@ function verifyItem(PDO $db, int $returnId) {
     $insert->bindValue(':notes', $notes, PDO::PARAM_STR);
     $insert->execute();
     $itemId = (int)$db->lastInsertId();
+
+    if ($isExtra) {
+        recordDiscrepancy($db, $returnId, null, $productId, 'extra_item', 0, $qty, $condition, $notes);
+    }
+    if ($condition !== 'good') {
+        recordDiscrepancy($db, $returnId, $orderItemId, $productId, 'condition_issue', $qty, $qty, $condition, $notes);
+    }
 
     // Calculate progress (excluding extras)
     $progressStmt = $db->prepare("SELECT 
@@ -337,12 +389,17 @@ function addDiscrepancy(PDO $db, int $returnId) {
     $actual = isset($input['actual_quantity']) ? (int)$input['actual_quantity'] : 0;
     $condition = $input['item_condition'] ?? 'good';
     $notes = $input['notes'] ?? '';
+    $resolution = $input['resolution_status'] ?? 'pending';
 
-    if ($productId <= 0 || !in_array($type, ['missing','extra','damaged'])) {
+    $validTypes = ['missing_item','quantity_short','quantity_over','condition_issue','extra_item'];
+    if ($productId <= 0 || !in_array($type, $validTypes)) {
         throw new Exception('Invalid input', 400);
     }
     if (!in_array($condition, ['good','damaged','defective','opened'])) {
         throw new Exception('Invalid item_condition', 400);
+    }
+    if (!in_array($resolution, ['pending','resolved','written_off'])) {
+        $resolution = 'pending';
     }
 
     $stmt = $db->prepare("SELECT order_id FROM returns WHERE id = :id");
@@ -365,22 +422,7 @@ function addDiscrepancy(PDO $db, int $returnId) {
         $orderItemId = null;
     }
 
-    $insert = $db->prepare("INSERT INTO return_discrepancies (return_id, order_item_id, product_id, discrepancy_type, expected_quantity, actual_quantity, item_condition, notes)
-                             VALUES (:rid, :oiid, :pid, :dtype, :exp, :act, :cond, :notes)");
-    $insert->bindValue(':rid', $returnId, PDO::PARAM_INT);
-    if ($orderItemId !== null) {
-        $insert->bindValue(':oiid', $orderItemId, PDO::PARAM_INT);
-    } else {
-        $insert->bindValue(':oiid', null, PDO::PARAM_NULL);
-    }
-    $insert->bindValue(':pid', $productId, PDO::PARAM_INT);
-    $insert->bindValue(':dtype', $type, PDO::PARAM_STR);
-    $insert->bindValue(':exp', $expected, PDO::PARAM_INT);
-    $insert->bindValue(':act', $actual, PDO::PARAM_INT);
-    $insert->bindValue(':cond', $condition, PDO::PARAM_STR);
-    $insert->bindValue(':notes', $notes, PDO::PARAM_STR);
-    $insert->execute();
-    $discId = (int)$db->lastInsertId();
+    $discId = recordDiscrepancy($db, $returnId, $orderItemId ? (int)$orderItemId : null, $productId, $type, $expected, $actual, $condition, $notes, $resolution, false);
 
     http_response_code(201);
     echo json_encode(['success' => true, 'discrepancy_id' => $discId]);
@@ -409,6 +451,27 @@ function completeReturn(PDO $db, int $returnId) {
         while ($row = $itemsStmt->fetch(PDO::FETCH_ASSOC)) {
             $upd = $db->prepare("UPDATE products SET quantity = quantity + :qty WHERE product_id = :pid");
             $upd->execute([':qty' => $row['quantity_returned'], ':pid' => $row['product_id']]);
+        }
+
+        // Detect missing or short quantities
+        $checkStmt = $db->prepare("SELECT oi.id AS order_item_id, oi.product_id, oi.quantity,
+                COALESCE(SUM(CASE WHEN r.status = 'completed' THEN ri.quantity_returned ELSE 0 END),0) AS returned_completed,
+                COALESCE(SUM(CASE WHEN r.id = :rid THEN ri.quantity_returned ELSE 0 END),0) AS returned_current
+            FROM order_items oi
+            LEFT JOIN return_items ri ON ri.order_item_id = oi.id
+            LEFT JOIN returns r ON r.id = ri.return_id
+            WHERE oi.order_id = :oid
+            GROUP BY oi.id, oi.product_id, oi.quantity");
+        $checkStmt->execute([':oid' => $ret['order_id'], ':rid' => $returnId]);
+        while ($row = $checkStmt->fetch(PDO::FETCH_ASSOC)) {
+            $ordered = (int)$row['quantity'];
+            $returnedCompleted = (int)$row['returned_completed'];
+            $returnedCurrent = (int)$row['returned_current'];
+            $expected = max($ordered - $returnedCompleted, 0);
+            if ($returnedCurrent < $expected) {
+                $dtype = $returnedCurrent === 0 ? 'missing_item' : 'quantity_short';
+                recordDiscrepancy($db, $returnId, (int)$row['order_item_id'], (int)$row['product_id'], $dtype, $expected, $returnedCurrent);
+            }
         }
 
         $update = $db->prepare("UPDATE returns SET status = 'completed', verified_by = :vby, verified_at = NOW(), notes = :notes WHERE id = :id");
@@ -460,7 +523,7 @@ function summaryReturn(PDO $db, int $returnId) {
         ];
     }, $itemRows);
 
-    $discStmt = $db->prepare("SELECT rd.id, rd.product_id, p.sku, p.name, rd.discrepancy_type, rd.expected_quantity, rd.actual_quantity, rd.item_condition, rd.notes
+    $discStmt = $db->prepare("SELECT rd.id, rd.product_id, p.sku, p.name, rd.discrepancy_type, rd.expected_quantity, rd.actual_quantity, rd.item_condition, rd.notes, rd.resolution_status
                                FROM return_discrepancies rd
                                JOIN products p ON rd.product_id = p.product_id
                                WHERE rd.return_id = :rid");
@@ -476,7 +539,8 @@ function summaryReturn(PDO $db, int $returnId) {
             'expected_quantity' => (int)$r['expected_quantity'],
             'actual_quantity' => (int)$r['actual_quantity'],
             'item_condition' => $r['item_condition'],
-            'notes' => $r['notes']
+            'notes' => $r['notes'],
+            'resolution_status' => $r['resolution_status']
         ];
     }, $discRows);
 

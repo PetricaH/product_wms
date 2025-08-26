@@ -1970,13 +1970,37 @@ function downloadLocationQr() {
     }
 }
 
-function printLocationQr(labelText) {
+function printLocationQr(labelText, buttonElement) {
     const codeInput = document.getElementById('location_code');
     const code = codeInput ? codeInput.value.trim() : '';
-    const name = labelText || code;
+    
+    // Ensure we have a proper location name - avoid any potential WMS_API_KEY issues
+    let locationName = '';
+    if (labelText && labelText.trim() && !labelText.includes('WMS_API_KEY')) {
+        locationName = labelText.trim();
+    } else if (code) {
+        locationName = code; // Use location code as fallback
+    }
+    
     if (!code) {
         alert('Cod locație invalid');
         return;
+    }
+
+    // Debug logging
+    console.log('Print QR Debug:', {
+        code: code,
+        locationName: locationName,
+        labelText: labelText,
+        codeInput: codeInput ? codeInput.value : 'null'
+    });
+
+    // Show loading state using the passed button element
+    const targetButton = buttonElement || document.getElementById('printQrBtn');
+    const originalText = targetButton?.textContent;
+    if (targetButton) {
+        targetButton.textContent = 'Se printează...';
+        targetButton.disabled = true;
     }
 
     fetch('api/locations/print_qr.php', {
@@ -1988,14 +2012,15 @@ function printLocationQr(labelText) {
         credentials: 'include',
         body: new URLSearchParams({
             location_code: code,
-            location_name: name,
+            location_name: locationName,
             printer_id: 4 // GODEX G500
         })
     })
     .then(resp => resp.json())
     .then(data => {
+        console.log('Print response:', data);
         if (data.success) {
-            alert('QR trimis la imprimantă');
+            alert('QR trimis la imprimantă cu succes!');
         } else {
             alert(data.error || 'Eroare la printarea QR-ului');
         }
@@ -2003,6 +2028,13 @@ function printLocationQr(labelText) {
     .catch(err => {
         console.error('QR print failed', err);
         alert('Eroare la printarea QR-ului');
+    })
+    .finally(() => {
+        // Restore button state
+        if (targetButton && originalText) {
+            targetButton.textContent = originalText;
+            targetButton.disabled = false;
+        }
     });
 }
 

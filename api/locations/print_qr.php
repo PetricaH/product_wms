@@ -30,12 +30,21 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     respond(['success' => false, 'error' => 'Method not allowed'], 405);
 }
 
+// Get and validate parameters
 $code = trim($_POST['location_code'] ?? '');
-$name = trim($_POST['location_name'] ?? $code);
+$name = trim($_POST['location_name'] ?? '');
 $printerId = intval($_POST['printer_id'] ?? 0);
+
+// Debug logging to identify the WMS_API_KEY issue
+error_log("Print QR Debug - Code: " . $code . ", Name: " . $name . ", POST data: " . print_r($_POST, true));
 
 if ($code === '') {
     respond(['success' => false, 'error' => 'Missing location code'], 400);
+}
+
+// If name is empty or contains WMS_API_KEY, use the code as fallback
+if ($name === '' || strpos($name, 'WMS_API_KEY') !== false) {
+    $name = $code;
 }
 
 try {
@@ -72,13 +81,13 @@ try {
         respond(['success' => false, 'error' => 'Print server is not active'], 503);
     }
 
-    // Generate QR image
+    // Generate QR image with larger size
     $qrPath = generateTempQRImage($code);
     if (!$qrPath) {
         respond(['success' => false, 'error' => 'Failed to generate QR code'], 500);
     }
 
-    // Create PDF label
+    // Create PDF label with better dimensions and layout
     $storageDir = BASE_PATH . '/storage/location_qr_pdfs';
     if (!is_dir($storageDir)) {
         @mkdir($storageDir, 0755, true);
@@ -86,16 +95,24 @@ try {
     $fileName = 'location_' . preg_replace('/[^A-Za-z0-9_-]/', '_', $code) . '_' . time() . '.pdf';
     $filePath = $storageDir . '/' . $fileName;
 
-    $pdf = new FPDF('P', 'mm', [40, 30]);
-    $pdf->SetMargins(0, 0, 0);
+    // Larger label dimensions for better space utilization (62mm x 40mm)
+    $pdf = new FPDF('P', 'mm', [62, 40]);
+    $pdf->SetMargins(2, 2, 2);
     $pdf->SetAutoPageBreak(false);
     $pdf->AddPage();
-    $pdf->Image($qrPath, 10, 2, 20, 20, 'PNG');
+    
+    // Much larger QR code (30x30mm) positioned to use more space
+    $pdf->Image($qrPath, 16, 3, 30, 30, 'PNG');
     @unlink($qrPath);
-    $pdf->SetFont('Arial', 'B', 9);
+    
+    // Larger, bold font for location code
+    $pdf->SetFont('Arial', 'B', 12);
     $labelText = iconv('UTF-8', 'ISO-8859-1//TRANSLIT', $name);
-    $pdf->SetXY(0, 24);
-    $pdf->Cell(40, 6, $labelText, 0, 0, 'C');
+    
+    // Position text at bottom with more space
+    $pdf->SetXY(0, 34);
+    $pdf->Cell(62, 5, $labelText, 0, 0, 'C');
+    
     $pdf->Output('F', $filePath);
 
     $pdfUrl = getSimpleBaseUrl() . '/storage/location_qr_pdfs/' . $fileName;
@@ -114,7 +131,8 @@ try {
 }
 
 function generateTempQRImage(string $data): ?string {
-    $qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' . urlencode($data);
+    // Generate larger QR code (500x500 for better quality)
+    $qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=' . urlencode($data);
     $qrData = @file_get_contents($qrUrl);
     if ($qrData === false) return null;
     $tempDir = sys_get_temp_dir();
@@ -152,3 +170,4 @@ function getSimpleBaseUrl(): string {
     $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
     return $scheme . '://' . $host;
 }
+?>

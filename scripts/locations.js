@@ -1970,10 +1970,10 @@ function downloadLocationQr() {
     }
 }
 
-function printLocationQr() {
+function printLocationQr(labelText) {
     const codeInput = document.getElementById('location_code');
     const code = codeInput ? codeInput.value.trim() : '';
-
+    const name = labelText || code;
     if (!code) {
         alert('Cod locație invalid');
         return;
@@ -1988,7 +1988,7 @@ function printLocationQr() {
         credentials: 'include',
         body: new URLSearchParams({
             location_code: code,
-            location_name: code,
+            location_name: name,
             printer_id: 4 // GODEX G500
         })
     })

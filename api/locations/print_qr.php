@@ -87,12 +87,15 @@ try {
     $filePath = $storageDir . '/' . $fileName;
 
     $pdf = new FPDF('P', 'mm', [40, 30]);
+    $pdf->SetMargins(0, 0, 0);
+    $pdf->SetAutoPageBreak(false);
     $pdf->AddPage();
-    $pdf->Image($qrPath, 5, 5, 20, 20, 'PNG');
+    $pdf->Image($qrPath, 10, 2, 20, 20, 'PNG');
     @unlink($qrPath);
-    $pdf->SetFont('Arial', 'B', 10);
-    $pdf->SetXY(0, 26);
-    $pdf->Cell(40, 4, $name, 0, 1, 'C');
+    $pdf->SetFont('Arial', 'B', 9);
+    $labelText = iconv('UTF-8', 'ISO-8859-1//TRANSLIT', $name);
+    $pdf->SetXY(0, 24);
+    $pdf->Cell(40, 6, $labelText, 0, 0, 'C');
     $pdf->Output('F', $filePath);
 
     $pdfUrl = getSimpleBaseUrl() . '/storage/location_qr_pdfs/' . $fileName;

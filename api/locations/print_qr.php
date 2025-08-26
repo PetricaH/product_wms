@@ -96,22 +96,27 @@ try {
     $filePath = $storageDir . '/' . $fileName;
 
     // Larger label dimensions for better space utilization (62mm x 40mm)
-    $pdf = new FPDF('P', 'mm', [62, 40]);
+    $labelWidth = 62;
+    $labelHeight = 40;
+    $pdf = new FPDF('L', 'mm', [$labelWidth, $labelHeight]);
     $pdf->SetMargins(2, 2, 2);
     $pdf->SetAutoPageBreak(false);
     $pdf->AddPage();
-    
-    // Much larger QR code (30x30mm) positioned to use more space
-    $pdf->Image($qrPath, 16, 3, 30, 30, 'PNG');
+
+    // Calculate QR placement to keep it centered and within bounds
+    $qrSize = min(30, $labelWidth, $labelHeight - 5); // reserve space for text
+    $qrX = ($labelWidth - $qrSize) / 2;
+    $qrY = ($labelHeight - 5 - $qrSize) / 2; // center vertically above text area
+    $pdf->Image($qrPath, $qrX, $qrY, $qrSize, $qrSize, 'PNG');
     @unlink($qrPath);
-    
+
     // Larger, bold font for location code
     $pdf->SetFont('Arial', 'B', 12);
     $labelText = iconv('UTF-8', 'ISO-8859-1//TRANSLIT', $name);
-    
-    // Position text at bottom with more space
-    $pdf->SetXY(0, 34);
-    $pdf->Cell(62, 5, $labelText, 0, 0, 'C');
+
+    // Position text at bottom, centered horizontally
+    $pdf->SetXY(0, $labelHeight - 5);
+    $pdf->Cell($labelWidth, 5, $labelText, 0, 1, 'C');
     
     $pdf->Output('F', $filePath);
 

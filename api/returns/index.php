@@ -432,8 +432,24 @@ function completeReturn(PDO $db, int $returnId) {
     $input = getJsonInput();
     $verifiedBy = isset($input['verified_by']) ? (int)$input['verified_by'] : 0;
     $notes = $input['notes'] ?? '';
+    $sellableLocation = isset($input['location_id']) ? (int)$input['location_id'] : 0;
+    $damagedLocation = isset($input['damaged_location_id']) ? (int)$input['damaged_location_id'] : null;
+    $defectiveLocation = isset($input['defective_location_id']) ? (int)$input['defective_location_id'] : null;
 
-    $stmt = $db->prepare("SELECT status FROM returns WHERE id = :id");
+    if ($sellableLocation <= 0) {
+        throw new Exception('location_id required', 400);
+    }
+
+    require_once BASE_PATH . '/models/Inventory.php';
+    if (file_exists(BASE_PATH . '/services/InventoryTransactionService.php')) {
+        require_once BASE_PATH . '/services/InventoryTransactionService.php';
+        $transactionService = new InventoryTransactionService($db);
+    } else {
+        $transactionService = null;
+    }
+    $inventoryModel = new Inventory($db);
+
+    $stmt = $db->prepare("SELECT status, order_id FROM returns WHERE id = :id FOR UPDATE");
     $stmt->execute([':id' => $returnId]);
     $ret = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$ret) {
@@ -446,14 +462,52 @@ function completeReturn(PDO $db, int $returnId) {
     try {
         $db->beginTransaction();
 
-        $itemsStmt = $db->prepare("SELECT product_id, quantity_returned FROM return_items WHERE return_id = :rid");
+        // Process each returned item and update inventory based on condition
+        $itemsStmt = $db->prepare("SELECT product_id, quantity_returned, item_condition FROM return_items WHERE return_id = :rid");
         $itemsStmt->execute([':rid' => $returnId]);
         while ($row = $itemsStmt->fetch(PDO::FETCH_ASSOC)) {
-            $upd = $db->prepare("UPDATE products SET quantity = quantity + :qty WHERE product_id = :pid");
-            $upd->execute([':qty' => $row['quantity_returned'], ':pid' => $row['product_id']]);
+            $pid = (int)$row['product_id'];
+            $qty = (int)$row['quantity_returned'];
+            $condition = $row['item_condition'];
+            $targetLoc = $sellableLocation;
+            $reason = 'Return - good condition';
+            $type = 'return_good';
+
+            if ($condition === 'damaged') {
+                $targetLoc = $damagedLocation ?? $sellableLocation;
+                $reason = 'Return - damaged item';
+                $type = 'return_damaged';
+            } elseif ($condition === 'defective') {
+                $targetLoc = $defectiveLocation ?? ($damagedLocation ?? $sellableLocation);
+                $reason = 'Return - defective item';
+                $type = 'return_defective';
+            }
+
+            if (!$inventoryModel->addStock([
+                'product_id' => $pid,
+                'location_id' => $targetLoc,
+                'quantity' => $qty,
+                'reference_type' => 'return',
+                'reference_id' => $returnId,
+                'reason' => $reason
+            ], false)) {
+                throw new Exception('Inventory update failed for product ' . $pid);
+            }
+
+            if ($transactionService) {
+                $transactionService->logTransaction([
+                    'transaction_type' => $type,
+                    'product_id' => $pid,
+                    'location_id' => $targetLoc,
+                    'quantity_change' => $qty,
+                    'reference_type' => 'return',
+                    'reference_id' => $returnId,
+                    'reason' => $reason
+                ]);
+            }
         }
 
-        // Detect missing or short quantities
+        // Detect missing or short quantities against order
         $checkStmt = $db->prepare("SELECT oi.id AS order_item_id, oi.product_id, oi.quantity,
                 COALESCE(SUM(CASE WHEN r.status = 'completed' THEN ri.quantity_returned ELSE 0 END),0) AS returned_completed,
                 COALESCE(SUM(CASE WHEN r.id = :rid THEN ri.quantity_returned ELSE 0 END),0) AS returned_current
@@ -474,6 +528,7 @@ function completeReturn(PDO $db, int $returnId) {
             }
         }
 
+        // Mark return as completed
         $update = $db->prepare("UPDATE returns SET status = 'completed', verified_by = :vby, verified_at = NOW(), notes = :notes WHERE id = :id");
         if ($verifiedBy > 0) {
             $update->bindValue(':vby', $verifiedBy, PDO::PARAM_INT);
@@ -484,10 +539,32 @@ function completeReturn(PDO $db, int $returnId) {
         $update->bindValue(':id', $returnId, PDO::PARAM_INT);
         $update->execute();
 
+        // Determine order status (partially_returned or fully_returned)
+        $orderCheck = $db->prepare("SELECT oi.quantity,
+                COALESCE(SUM(CASE WHEN r.status = 'completed' THEN ri.quantity_returned ELSE 0 END),0) AS returned_qty
+            FROM order_items oi
+            LEFT JOIN return_items ri ON ri.order_item_id = oi.id
+            LEFT JOIN returns r ON r.id = ri.return_id
+            WHERE oi.order_id = :oid
+            GROUP BY oi.id, oi.quantity");
+        $orderCheck->execute([':oid' => $ret['order_id']]);
+        $fullyReturned = true;
+        while ($row = $orderCheck->fetch(PDO::FETCH_ASSOC)) {
+            if ((int)$row['returned_qty'] < (int)$row['quantity']) {
+                $fullyReturned = false;
+                break;
+            }
+        }
+        $newStatus = $fullyReturned ? 'fully_returned' : 'partially_returned';
+        $updOrder = $db->prepare("UPDATE orders SET status = :st WHERE id = :id");
+        $updOrder->execute([':st' => $newStatus, ':id' => $ret['order_id']]);
+
         $db->commit();
-        echo json_encode(['success' => true]);
+        echo json_encode(['success' => true, 'order_status' => $newStatus]);
     } catch (Exception $e) {
-        $db->rollBack();
+        if ($db->inTransaction()) {
+            $db->rollBack();
+        }
         throw $e;
     }
 }

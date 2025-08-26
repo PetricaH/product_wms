@@ -77,7 +77,7 @@ if (isset($_SESSION['username'])) {
         </li>
         <?php if (isset($_SESSION['role']) && in_array($_SESSION['role'], ['admin', 'supervisor'])): ?>
         <li class="sidebar__item">
-            <a href="<?= getNavUrl('qc_management.php') ?>" 
+            <a href="<?= getNavUrl('qc_management.php') ?>"
                class="sidebar__link <?= getActiveClass('qc_management.php') ?>"
                data-tooltip="Control Calitate">
                 <span class="material-symbols-outlined">verified</span>
@@ -86,8 +86,19 @@ if (isset($_SESSION['username'])) {
         </li>
         <?php endif; ?>
 
+        <?php if (isset($_SESSION['role']) && in_array($_SESSION['role'], ['admin', 'manager'])): ?>
         <li class="sidebar__item">
-            <a href="<?= getNavUrl('products.php') ?>" 
+            <a href="<?= getNavUrl('returns_dashboard.php') ?>"
+               class="sidebar__link <?= getActiveClass('returns_dashboard.php') ?>"
+               data-tooltip="Returnări">
+                <span class="material-symbols-outlined">assignment_return</span>
+                <span class="link-text">Returnări</span>
+            </a>
+        </li>
+        <?php endif; ?>
+
+        <li class="sidebar__item">
+            <a href="<?= getNavUrl('products.php') ?>"
                class="sidebar__link <?= getActiveClass('products.php') ?>"
                data-tooltip="Produse">
                 <span class="material-symbols-outlined">inventory_2</span>

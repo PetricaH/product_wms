@@ -32,6 +32,7 @@ $pageSpecificCSS = [
     'product-units' => 'product-units.css',
     'printer-management' => 'printer-management.css',
     'qc_management' => 'qc-management.css',
+    'returns_dashboard' => 'warehouse-css/returns_dashboard.css',
     'warehouse_settings' => 'warehouse_settings.css'
 ];
 

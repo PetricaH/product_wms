@@ -99,3 +99,5 @@ $currentPage = 'mobile_returns';
     </div>
 
     <?php require_once __DIR__ . '/includes/warehouse_footer.php'; ?>
+</body>
+</html>

@@ -1974,7 +1974,6 @@ function printLocationQr(labelText) {
     const codeInput = document.getElementById('location_code');
     const code = codeInput ? codeInput.value.trim() : '';
     const name = labelText || code;
-
     if (!code) {
         alert('Cod locație invalid');
         return;

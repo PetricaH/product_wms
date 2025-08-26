@@ -1970,6 +1970,42 @@ function downloadLocationQr() {
     }
 }
 
+function printLocationQr() {
+    const codeInput = document.getElementById('location_code');
+    const code = codeInput ? codeInput.value.trim() : '';
+
+    if (!code) {
+        alert('Cod locație invalid');
+        return;
+    }
+
+    fetch('api/locations/print_qr.php', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'X-Requested-With': 'XMLHttpRequest'
+        },
+        credentials: 'include',
+        body: new URLSearchParams({
+            location_code: code,
+            location_name: code,
+            printer_id: 4 // GODEX G500
+        })
+    })
+    .then(resp => resp.json())
+    .then(data => {
+        if (data.success) {
+            alert('QR trimis la imprimantă');
+        } else {
+            alert(data.error || 'Eroare la printarea QR-ului');
+        }
+    })
+    .catch(err => {
+        console.error('QR print failed', err);
+        alert('Eroare la printarea QR-ului');
+    });
+}
+
 // =================== EVENT LISTENERS ===================
 
 function setupEventListeners() {
@@ -2737,6 +2773,7 @@ window.toggleLevel = toggleLevel;
 window.selectStoragePolicy = selectStoragePolicy;
 window.updateLocationQr = updateLocationQr;
 window.downloadLocationQr = downloadLocationQr;
+window.printLocationQr = printLocationQr;
 window.openCreateModal = openCreateModal;
 window.openEditModal = openEditModal;
 window.openEditModalById = openEditModalById;

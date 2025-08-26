@@ -1063,6 +1063,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                         <label class="form-label">QR Code</label>
                         <canvas id="locationQrCanvas" width="150" height="150" style="display:block;margin-bottom:0.5rem;"></canvas>
                         <button type="button" class="btn btn-secondary" id="downloadQrBtn" onclick="downloadLocationQr()">Descarcă QR</button>
+                        <button type="button" class="btn btn-secondary" id="printQrBtn" onclick="printLocationQr()">Printează QR</button>
                     </div>
 
                     <div class="form-row">

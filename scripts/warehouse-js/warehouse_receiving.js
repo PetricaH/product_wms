@@ -345,7 +345,7 @@ class WarehouseReceiving {
         try {
             const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content') || this.config.csrfToken;
 
-            const printerName = 'godex_ez6250i';
+            const printerName = 'Godex EZ6250i';
 
             for (let i = 0; i < qty; i++) {
                 const formData = new FormData();

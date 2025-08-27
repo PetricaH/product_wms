@@ -345,32 +345,7 @@ class WarehouseReceiving {
         try {
             const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content') || this.config.csrfToken;
 
-            // Generate label preview first
-            const previewData = new FormData();
-            previewData.append('product_id', this.selectedProductId);
-            previewData.append('quantity', qty);
-            previewData.append('batch_number', batch);
-            previewData.append('produced_at', date);
-            previewData.append('source', 'factory');
-            previewData.append('action', 'preview');
-
-            const previewResp = await fetch(`${this.config.apiBase}/receiving/record_production_receipt.php`, {
-                method: 'POST',
-                credentials: 'same-origin',
-                headers: { 'X-CSRF-Token': csrfToken },
-                body: previewData
-            });
-
-            const previewResult = await previewResp.json();
-            if (!previewResp.ok || !previewResult.success || !previewResult.label_url) {
-                throw new Error(previewResult.message || 'Eroare la generarea etichetei');
-            }
-
-            window.open(previewResult.label_url, '_blank');
-            if (!confirm('Trimitem eticheta la imprimantă?')) return;
-
-            const printerName = await chooseLabelPrinter();
-            if (!printerName) return;
+            const printerName = 'godex_ez6250i';
 
             for (let i = 0; i < qty; i++) {
                 const formData = new FormData();
@@ -1189,26 +1164,3 @@ function closeScannerModal() {
     }
 }
 
-async function chooseLabelPrinter() {
-    try {
-        const resp = await fetch('api/printer_management.php?path=printers');
-        const printers = await resp.json();
-        const labels = printers.filter(p => p.printer_type === 'label' && p.is_active);
-        if (labels.length === 0) {
-            alert('Nicio imprimantă de etichete disponibilă');
-            return null;
-        }
-        if (labels.length === 1) {
-            return labels[0].network_identifier;
-        }
-        const choice = prompt('Selectează imprimanta:\n' + labels.map((p,i) => `${i+1}: ${p.name}`).join('\n'), '1');
-        if (choice === null) return null;
-        const index = parseInt(choice, 10) - 1;
-        if (isNaN(index) || index < 0 || index >= labels.length) return null;
-        return labels[index].network_identifier;
-    } catch (err) {
-        console.error('Printer fetch error', err);
-        alert('Eroare la încărcarea imprimantelor');
-        return null;
-    }
-}

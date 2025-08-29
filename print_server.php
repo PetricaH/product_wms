@@ -13,7 +13,9 @@ file_put_contents($tempFile, file_get_contents($url));
 
 // Trimite-l la imprimantă
 $printerName = 'Brother_DCP_L3520CDW_series';
-$cmd = "lp -d $printerName \"$tempFile\"";
+$cmd = 'lp -d ' . escapeshellarg($printerName) .
+    ' -o media=Custom.62x40mm -o orientation-requested=4 -o fit-to-page ' .
+    escapeshellarg($tempFile);
 shell_exec($cmd);
 
 echo "Trimis la imprimantă.";

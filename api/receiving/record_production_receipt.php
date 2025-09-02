@@ -665,34 +665,48 @@ function saveFinalPDF($pdf, string $batch): ?string {
  */
 function findProductTemplate(string $sku, string $productName): ?string {
     $templateDir = BASE_PATH . '/storage/templates/product_labels/';
-    
+
+    // Determine if this SKU belongs to the APP brand
+    // Matches "APP", "App", "ap" prefixes, etc.
+    $isAppBrand = stripos($sku, 'app') !== false || stripos($sku, 'ap') === 0;
+
     // Extract number from SKU (e.g., "APF906.10" → "906", "806.25" → "806")
     if (preg_match('/(\d+)/', $sku, $matches)) {
         $productCode = $matches[1];
         error_log("Extracted product code '$productCode' from SKU '$sku'");
-        
-        // Look for PDF files first, then fallback to PNG
+
+        // Look for PDF files first, then fallback to PNG/JPG
         $extensions = ['pdf', 'png', 'jpg'];
-        
+
         foreach ($extensions as $ext) {
-            $availableTemplates = glob($templateDir . '*.' . $ext);
-            
-            foreach ($availableTemplates as $templatePath) {
-                $templateName = basename($templatePath, '.' . $ext);
-                
-                // Check if template name contains the product code
-                if (strpos($templateName, $productCode) !== false) {
+            if ($isAppBrand) {
+                // APP brand templates are prefixed with "APP-"
+                $pattern = $templateDir . 'APP-*' . $productCode . '*.' . $ext;
+                $matchesGlob = glob($pattern);
+                if (!empty($matchesGlob)) {
+                    $templatePath = $matchesGlob[0];
+                    error_log("✅ FOUND APP template: $templatePath for product code $productCode");
+                    return $templatePath;
+                }
+            } else {
+                // Regular templates should ignore APP-specific ones
+                $pattern = $templateDir . '*' . $productCode . '*.' . $ext;
+                $matchesGlob = array_filter(glob($pattern), function ($path) {
+                    return stripos(basename($path), 'APP-') !== 0;
+                });
+                if (!empty($matchesGlob)) {
+                    $templatePath = $matchesGlob[0];
                     error_log("✅ FOUND template: $templatePath for product code $productCode");
                     return $templatePath;
                 }
             }
         }
-        
+
         error_log("❌ No template found containing product code '$productCode'");
     } else {
         error_log("❌ No number found in SKU '$sku'");
     }
-    
+
     // Fallback: Generic template
     $genericOptions = ['generic_template.pdf', 'generic_template.png'];
     foreach ($genericOptions as $generic) {
@@ -702,7 +716,7 @@ function findProductTemplate(string $sku, string $productName): ?string {
             return $templatePath;
         }
     }
-    
+
     error_log("No template found for SKU '$sku'");
     return null;
 }

@@ -599,19 +599,31 @@ class Location {
             $levelNumber = $level['level_number'];
             $levelName = $level['level_name'] ?: "Nivel {$levelNumber}";
 
-            $query = "SELECT COALESCE(SUM(i.quantity), 0) as items
+            $items = 0;
+            $capacity = 0;
+
+            if (!empty($level['subdivisions_enabled']) || (int)($level['subdivision_count'] ?? 1) > 1) {
+                $subdivisions = $this->subdivisions->getSubdivisionsWithProducts($locationId, $levelNumber);
+                foreach ($subdivisions as $sub) {
+                    $items += (int)($sub['current_stock'] ?? 0);
+                    $capacity += (int)($sub['items_capacity'] ?: $sub['product_capacity'] ?: 0);
+                }
+            } else {
+                $query = "SELECT COALESCE(SUM(i.quantity), 0) as items
                       FROM inventory i
                       WHERE i.location_id = :location_id
                       AND i.shelf_level = :level_name";
 
-            $stmt = $this->conn->prepare($query);
-            $stmt->execute([
-                ':location_id' => $locationId,
-                ':level_name' => $levelName
-            ]);
+                $stmt = $this->conn->prepare($query);
+                $stmt->execute([
+                    ':location_id' => $locationId,
+                    ':level_name' => $levelName
+                ]);
 
-            $items = (int)$stmt->fetchColumn();
-            $capacity = (int)($level['items_capacity'] ?: 0);
+                $items = (int)$stmt->fetchColumn();
+                $capacity = (int)($level['items_capacity'] ?: 0);
+            }
+
             $percentage = $capacity > 0 ? round(($items / $capacity) * 100, 1) : 0;
 
             $occupancy[$levelNumber] = [
@@ -623,6 +635,33 @@ class Location {
         }
 
         return $occupancy;
+    }
+
+    /**
+     * Recalculate and persist total capacity for a location by
+     * summing capacities from each level and its subdivisions.
+     *
+     * @param int $locationId
+     * @return int Total capacity for the location
+     */
+    public function refreshCapacity(int $locationId): int {
+        $levels = $this->levelSettings->getLevelSettingsWithSubdivisions($locationId);
+        $totalCapacity = 0;
+
+        foreach ($levels as $level) {
+            if (!empty($level['subdivisions'])) {
+                foreach ($level['subdivisions'] as $sub) {
+                    $totalCapacity += (int)($sub['items_capacity'] ?: $sub['product_capacity'] ?: 0);
+                }
+            } else {
+                $totalCapacity += (int)($level['items_capacity'] ?? 0);
+            }
+        }
+
+        $stmt = $this->conn->prepare("UPDATE {$this->table} SET capacity = :capacity WHERE id = :id");
+        $stmt->execute([':capacity' => $totalCapacity, ':id' => $locationId]);
+
+        return $totalCapacity;
     }
 
     // ===== LOCATION CREATION METHODS =====

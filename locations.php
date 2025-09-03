@@ -698,8 +698,14 @@ function processSubdivisionData($locationId, $postData) {
             }
         }
         
+        // After all subdivisions are processed, refresh the total capacity
+        // for the location using all level and subdivision settings.
+        $locationModel = new Location($db);
+        $totalCapacity = $locationModel->refreshCapacity($locationId);
+        debugLog("Updated location capacity to " . $totalCapacity);
+
         debugLog("=== SUBDIVISION PROCESSING DEBUG SUCCESS ===");
-        
+
         return [
             'success' => true,
             'message' => 'Subdiviziunile au fost configurate cu succes',

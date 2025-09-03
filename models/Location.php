@@ -637,6 +637,33 @@ class Location {
         return $occupancy;
     }
 
+    /**
+     * Recalculate and persist total capacity for a location by
+     * summing capacities from each level and its subdivisions.
+     *
+     * @param int $locationId
+     * @return int Total capacity for the location
+     */
+    public function refreshCapacity(int $locationId): int {
+        $levels = $this->levelSettings->getLevelSettingsWithSubdivisions($locationId);
+        $totalCapacity = 0;
+
+        foreach ($levels as $level) {
+            if (!empty($level['subdivisions'])) {
+                foreach ($level['subdivisions'] as $sub) {
+                    $totalCapacity += (int)($sub['items_capacity'] ?: $sub['product_capacity'] ?: 0);
+                }
+            } else {
+                $totalCapacity += (int)($level['items_capacity'] ?? 0);
+            }
+        }
+
+        $stmt = $this->conn->prepare("UPDATE {$this->table} SET capacity = :capacity WHERE id = :id");
+        $stmt->execute([':capacity' => $totalCapacity, ':id' => $locationId]);
+
+        return $totalCapacity;
+    }
+
     // ===== LOCATION CREATION METHODS =====
 
     /**

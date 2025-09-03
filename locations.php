@@ -698,27 +698,10 @@ function processSubdivisionData($locationId, $postData) {
             }
         }
         
-        // After all subdivisions are processed, recalculate the total
-        // capacity for the location. This ensures that the main locations
-        // table has an accurate capacity value even when individual levels
-        // rely solely on subdivision capacities.
-        $totalCapacity = 0;
-        $levelsWithSubs = $levelSettingsModel->getLevelSettingsWithSubdivisions($locationId);
-        foreach ($levelsWithSubs as $lvl) {
-            if (!empty($lvl['subdivisions'])) {
-                foreach ($lvl['subdivisions'] as $sub) {
-                    $totalCapacity += (int)($sub['items_capacity'] ?: $sub['product_capacity'] ?: 0);
-                }
-            } else {
-                $totalCapacity += (int)($lvl['items_capacity'] ?? 0);
-            }
-        }
-
-        $capStmt = $db->prepare("UPDATE locations SET capacity = :capacity WHERE id = :id");
-        $capStmt->execute([
-            ':capacity' => $totalCapacity > 0 ? $totalCapacity : null,
-            ':id' => $locationId
-        ]);
+        // After all subdivisions are processed, refresh the total capacity
+        // for the location using all level and subdivision settings.
+        $locationModel = new Location($db);
+        $totalCapacity = $locationModel->refreshCapacity($locationId);
         debugLog("Updated location capacity to " . $totalCapacity);
 
         debugLog("=== SUBDIVISION PROCESSING DEBUG SUCCESS ===");

@@ -165,6 +165,8 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
     <meta name="csrf-token" content="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
     <title>Gestionare Comenzi - WMS</title>
     <link rel="stylesheet" href="styles/awb_generation.css?v=20250804.2">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 </head>
 <body>
     <div class="app">

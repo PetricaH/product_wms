@@ -227,7 +227,7 @@ function displayOrderDetails(order) {
                     <p><strong>Adresă:</strong> ${order.shipping_address || 'Nu este specificată'}</p>
                 </div>
             </div>
-            
+
             ${order.progress ? `
                 <div class="progress-section" style="margin-top: 2rem;">
                     <h4>Progres comandă</h4>
@@ -238,9 +238,21 @@ function displayOrderDetails(order) {
                     <p><strong>Progres:</strong> ${order.progress.progress_percent || 0}%</p>
                 </div>
             ` : ''}
-            
+
+            ${order.tracking ? `
+                <div class="tracking-section" style="margin-top:2rem;">
+                    <h4>Tracking AWB</h4>
+                    <p><strong>Status curent:</strong> ${order.tracking.current_status || 'N/A'}${order.tracking.current_location && order.tracking.current_location.location ? ' - ' + order.tracking.current_location.location : ''}</p>
+                    <div class="tracking-progress" style="height:8px;background:#e9ecef;border-radius:4px;overflow:hidden;">
+                        <div id="trackingProgressBar" style="height:100%;background:#28a745;width:${order.tracking.progress_percent || 0}%;"></div>
+                    </div>
+                    <div id="order-tracking-map" style="height:300px;margin-top:1rem;"></div>
+                    <ul id="trackingEventsList" style="list-style:none;margin-top:1rem;padding:0;"></ul>
+                </div>
+            ` : ''}
+
             ${itemsTableHtml}
-            
+
             ${order.notes ? `
                 <div class="notes-section" style="margin-top: 2rem;">
                     <h4>Observații</h4>
@@ -249,8 +261,12 @@ function displayOrderDetails(order) {
             ` : ''}
         </div>
     `;
-    
+
     document.getElementById('orderDetailsContent').innerHTML = content;
+
+    if (order.tracking && order.tracking.events) {
+        renderTracking(order.tracking);
+    }
 }
 
 function closeOrderDetailsModal() {
@@ -258,6 +274,63 @@ function closeOrderDetailsModal() {
     if (modal) {
         modal.style.display = 'none';
     }
+}
+
+function loadLeaflet(callback) {
+    if (window.L) {
+        callback();
+        return;
+    }
+    const existing = document.querySelector('script[src*="leaflet"]');
+    if (existing) {
+        existing.addEventListener('load', callback);
+        return;
+    }
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+    document.head.appendChild(link);
+
+    const script = document.createElement('script');
+    script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+    script.onload = callback;
+    document.body.appendChild(script);
+}
+
+function renderTracking(tracking) {
+    const eventsList = document.getElementById('trackingEventsList');
+    if (eventsList) {
+        eventsList.innerHTML = tracking.events.map(ev => {
+            const time = ev.time ? new Date(ev.time).toLocaleString('ro-RO') : '';
+            const loc = ev.location ? ` - ${ev.location}` : '';
+            return `<li><strong>${time}</strong>: ${ev.status}${loc}</li>`;
+        }).join('');
+    }
+
+    const progressEl = document.getElementById('trackingProgressBar');
+    if (progressEl) {
+        progressEl.style.width = `${tracking.progress_percent || 0}%`;
+    }
+
+    const coords = (tracking.events || []).filter(e => e.lat && e.lng).map(e => [e.lat, e.lng]);
+    if (!coords.length) {
+        return;
+    }
+
+    loadLeaflet(() => {
+        const map = L.map('order-tracking-map');
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19
+        }).addTo(map);
+
+        const poly = L.polyline(coords, {color: '#007bff'}).addTo(map);
+        coords.forEach((c, idx) => {
+            const ev = tracking.events[idx];
+            const popup = `${ev.status}${ev.location ? '<br>' + ev.location : ''}`;
+            L.marker(c).addTo(map).bindPopup(popup);
+        });
+        map.fitBounds(poly.getBounds(), {padding: [20, 20]});
+    });
 }
 
 /**

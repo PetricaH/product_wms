@@ -548,38 +548,47 @@ class Location {
      * @return array
      */
     public function getLevelOccupancyData(int $locationId, int $levelNumber): array {
-        $levelName = $this->levelSettings->getLevelNameByNumber($locationId, $levelNumber) ?? ('Level ' . $levelNumber);
-        
-        $query = "SELECT 
-                    COALESCE(SUM(i.quantity), 0) as items,
-                    l.capacity,
-                    l.levels
-                  FROM locations l
-                  LEFT JOIN inventory i ON l.id = i.location_id AND i.shelf_level = :level_name
-                  WHERE l.id = :location_id
-                  GROUP BY l.id";
-        
         try {
-            $stmt = $this->conn->prepare($query);
-            $stmt->bindParam(':location_id', $locationId, PDO::PARAM_INT);
-            $stmt->bindParam(':level_name', $levelName);
-            $stmt->execute();
-            
-            $result = $stmt->fetch(PDO::FETCH_ASSOC);
-            if (!$result) {
-                return ['items' => 0, 'capacity' => 0, 'occupancy_percent' => 0];
+            // Fetch level configuration to determine capacity source
+            $level = $this->levelSettings->getLevelSetting($locationId, $levelNumber);
+            $levelName = $level['level_name'] ?? (
+                $this->levelSettings->getLevelNameByNumber($locationId, $levelNumber) ?? ('Level ' . $levelNumber)
+            );
+
+            $items = 0;
+            $capacity = 0;
+
+            // When subdivisions are enabled, sum their capacities and stock
+            if ($level && (!empty($level['subdivisions_enabled']) || (int)($level['subdivision_count'] ?? 1) > 1)) {
+                $subs = $this->subdivisions->getSubdivisionsWithProducts($locationId, $levelNumber);
+                foreach ($subs as $sub) {
+                    $items += (int)($sub['current_stock'] ?? 0);
+                    $capacity += (int)($sub['items_capacity'] ?: $sub['product_capacity'] ?: 0);
+                }
+            } else {
+                // Otherwise use level capacity directly
+                $query = "SELECT COALESCE(SUM(i.quantity), 0) as items
+                          FROM inventory i
+                          WHERE i.location_id = :location_id
+                          AND i.shelf_level = :level_name";
+                $stmt = $this->conn->prepare($query);
+                $stmt->execute([
+                    ':location_id' => $locationId,
+                    ':level_name'  => $levelName
+                ]);
+
+                $items = (int)$stmt->fetchColumn();
+                $capacity = (int)($level['items_capacity'] ?? 0);
             }
-            
-            $levelCapacity = $result['levels'] > 0 ? intval($result['capacity'] / $result['levels']) : 0;
-            $items = intval($result['items']);
-            $occupancyPercent = $levelCapacity > 0 ? round(($items / $levelCapacity) * 100, 1) : 0;
-            
+
+            $occupancyPercent = $capacity > 0 ? round(($items / $capacity) * 100, 1) : 0;
+
             return [
                 'items' => $items,
-                'capacity' => $levelCapacity,
+                'capacity' => $capacity,
                 'occupancy_percent' => $occupancyPercent
             ];
-            
+
         } catch (PDOException $e) {
             error_log("Error getting level occupancy data: " . $e->getMessage());
             return ['items' => 0, 'capacity' => 0, 'occupancy_percent' => 0];

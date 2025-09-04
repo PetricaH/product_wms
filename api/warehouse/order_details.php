@@ -147,6 +147,56 @@ try {
         ]
     ];
 
+    // Include tracking information when an AWB exists
+    if (!empty($order['tracking_number'])) {
+        require_once BASE_PATH . '/models/CargusService.php';
+        $cargus = new CargusService($db);
+        $track = $cargus->trackAWB($order['tracking_number']);
+
+        if ($track['success']) {
+            $events = $track['data']['history'] ?? [];
+            $pudoPoints = $cargus->getPudoPoints();
+
+            // Map PUDO points by lowercase name for faster lookup
+            $pudoMap = [];
+            foreach ($pudoPoints as $p) {
+                $name = $p['Name'] ?? $p['name'] ?? null;
+                if ($name) {
+                    $pudoMap[strtolower($name)] = [
+                        'lat' => $p['Latitude'] ?? $p['latitude'] ?? null,
+                        'lng' => $p['Longitude'] ?? $p['longitude'] ?? null
+                    ];
+                }
+            }
+
+            $eventsWithCoords = [];
+            foreach ($events as $ev) {
+                $loc = $ev['location'] ?? '';
+                $coords = $pudoMap[strtolower($loc)] ?? ['lat' => null, 'lng' => null];
+                $eventsWithCoords[] = [
+                    'time' => $ev['time'],
+                    'status' => $ev['event'],
+                    'location' => $loc,
+                    'lat' => $coords['lat'],
+                    'lng' => $coords['lng']
+                ];
+            }
+
+            $currentLocation = end($eventsWithCoords) ?: null;
+            $progress = 0;
+            if (!empty($track['data']['status'])) {
+                $progress = stripos($track['data']['status'], 'delivered') !== false ? 100 : min(99, count($eventsWithCoords) * 20);
+            }
+
+            $response['data']['tracking'] = [
+                'current_status' => $track['data']['status'] ?? null,
+                'current_location' => $currentLocation,
+                'events' => $eventsWithCoords,
+                'progress_percent' => $progress
+            ];
+        }
+    }
+
     echo json_encode($response);
 
 } catch (PDOException $e) {

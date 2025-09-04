@@ -433,8 +433,9 @@ class CargusService
                 if (is_array($historyData)) {
                     foreach ($historyData as $h) {
                         $history[] = [
-                            'time'  => $h['Date'] ?? $h['time'] ?? null,
-                            'event' => $h['Status'] ?? $h['event'] ?? ''
+                            'time'     => $h['Date'] ?? $h['time'] ?? null,
+                            'event'    => $h['Status'] ?? $h['event'] ?? '',
+                            'location' => $h['Location'] ?? $h['LocationName'] ?? $h['location'] ?? null
                         ];
                     }
                 }
@@ -459,6 +460,46 @@ class CargusService
         } catch (Exception $e) {
             return ['success' => false, 'error' => $e->getMessage()];
         }
+    }
+
+    /**
+     * Retrieve PUDO (pick-up/drop-off) points with coordinates.
+     * Results are cached for 24h to avoid frequent API calls.
+     *
+     * @return array
+     */
+    public function getPudoPoints(): array
+    {
+        $cacheFile = sys_get_temp_dir() . '/cargus_pudo_cache.json';
+
+        // Return cached data if still fresh (24h)
+        if (file_exists($cacheFile) && (time() - filemtime($cacheFile) < 86400)) {
+            $cached = json_decode(file_get_contents($cacheFile), true);
+            if (is_array($cached)) {
+                return $cached;
+            }
+        }
+
+        try {
+            if (!$this->authenticate()) {
+                return [];
+            }
+
+            // The endpoint name is based on Cargus documentation.
+            // It may vary depending on API version.
+            $endpoint = 'Pudo/Get';
+            $response = $this->makeRequest('GET', $endpoint);
+
+            if ($response['success'] && isset($response['data'])) {
+                $data = is_array($response['data']) ? $response['data'] : [];
+                file_put_contents($cacheFile, json_encode($data));
+                return $data;
+            }
+        } catch (Exception $e) {
+            // Swallow exceptions and return empty array to avoid breaking the flow
+        }
+
+        return [];
     }
 
     

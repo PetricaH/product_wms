@@ -51,6 +51,14 @@ $hasOrderFromUrl = !empty($orderNumber);
                 <div class="input-group">
                     <label for="order-input">Numărul comenzii:</label>
                     <input type="text" id="order-input" placeholder="ORD-2025-000001" class="form-control">
+                    <button id="scan-order-btn" class="btn btn-primary">
+                        <span class="material-symbols-outlined">qr_code_scanner</span>
+                        Scanează
+                    </button>
+                    <button id="camera-order-btn" class="btn btn-secondary">
+                        <span class="material-symbols-outlined">photo_camera</span>
+                        Cameră
+                    </button>
                     <button id="load-order-btn" class="btn btn-primary">
                         <span class="material-symbols-outlined">search</span>
                         Încarcă Comanda
@@ -116,8 +124,8 @@ $hasOrderFromUrl = !empty($orderNumber);
                         Verifică Locația
                     </button>
                     <button id="back-to-scan-location" class="btn btn-secondary">
-                        <span class="material-symbols-outlined">qr_code_scanner</span>
-                        Înapoi la Scanare
+                        <span class="material-symbols-outlined">photo_camera</span>
+                        Scanare cu Camera
                     </button>
                 </div>
             </div>
@@ -156,8 +164,8 @@ $hasOrderFromUrl = !empty($orderNumber);
                         Verifică Produsul
                     </button>
                     <button id="back-to-scan-product" class="btn btn-secondary">
-                        <span class="material-symbols-outlined">qr_code_scanner</span>
-                        Înapoi la Scanare
+                        <span class="material-symbols-outlined">photo_camera</span>
+                        Scanare cu Camera
                     </button>
                 </div>
             </div>

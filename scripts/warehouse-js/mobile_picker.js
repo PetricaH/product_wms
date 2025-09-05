@@ -717,7 +717,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (type === 'location') {
             container = elements.locationManualSection;
 
-        }
         } else if (type === 'order') {
             container = elements.orderInputSection;
         }

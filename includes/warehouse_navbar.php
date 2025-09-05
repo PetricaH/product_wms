@@ -49,6 +49,7 @@ $pageTitle = $pageTitles[$currentPage] ?? 'WMS Warehouse';
             <li class="nav-item"><a href="warehouse_relocation.php" class="nav-link">Relocare Stoc</a></li>
             <li class="nav-item"><a href="warehouse_hub.php" class="nav-link">Hub</a></li>
             <li class="nav-item"><a href="biometric-setup.php" class="nav-link">Setare Amprentă</a></li>
+            <li class="nav-item"><a href="logout.php" class="nav-link">Log Out</a></li>
         </ul>
     </div>
 </div>

@@ -639,30 +639,58 @@ body {
 /* ===== MESSAGES ===== */
 .message-container {
   position: fixed;
-  top: 100px;
+  top: 50%;
   left: 50%;
-  transform: translateX(-50%);
+  transform: translate(-50%, -50%);
   z-index: 1500;
   max-width: 90%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
 }
 
 .message {
-  background-color: rgba(26, 26, 29, 0.95);
-  color: var(--white);
+  position: relative;
   padding: 1rem 1.5rem;
   border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
   margin-bottom: 0.5rem;
   animation: slideDown 0.3s ease;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--white);
+  background-color: rgba(26, 26, 29, 0.95);
+}
+
+.message-close {
+  position: absolute;
+  top: 4px;
+  right: 8px;
+  background: transparent;
+  border: none;
+  color: inherit;
+  font-size: 1.2rem;
+  cursor: pointer;
+  line-height: 1;
 }
 
 .message.success {
-  border-left: 4px solid var(--success-color);
+  background-color: var(--success-color);
 }
 
 .message.error {
-  border-left: 4px solid var(--danger-color);
+  background-color: var(--danger-color);
+}
+
+.message.warning {
+  background-color: var(--warning-color);
+  color: var(--black);
+}
+
+.message.info {
+  background-color: var(--info-color);
+  color: var(--black);
 }
 
 /* ===== ANIMATIONS ===== */

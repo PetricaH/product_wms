@@ -111,6 +111,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function init() {
         setupEventListeners();
+        setupKeyboardShortcuts();
         updateAwbButtons();
         loadAvailablePrinters();
 
@@ -180,6 +181,44 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Quantity input validation
         elements.pickedQuantityInput?.addEventListener('input', validateQuantityInput);
+    }
+
+    function setupKeyboardShortcuts() {
+        document.addEventListener('keydown', handleFunctionKeys);
+    }
+
+    function handleFunctionKeys(e) {
+        switch (e.key) {
+            case 'F1':
+                e.preventDefault();
+                if (currentOrder) {
+                    printInvoice();
+                } else {
+                    showMessage('Nicio comandă activă pentru printarea facturii.', 'error');
+                }
+                break;
+            case 'F2':
+                e.preventDefault();
+                if (!currentOrder) {
+                    showMessage('Nicio comandă activă pentru AWB.', 'error');
+                    return;
+                }
+                const awbCode = currentOrder.awb_barcode;
+                if (awbCode) {
+                    printAWBDirect(currentOrder.id, awbCode, currentOrder.order_number);
+                } else if (!elements.generateAwbBtn.classList.contains('hidden')) {
+                    generateAWB(currentOrder.id);
+                } else {
+                    showMessage('AWB lipsă pentru această comandă.', 'error');
+                }
+                break;
+            case 'F3':
+            case 'F4':
+            case 'F5':
+                e.preventDefault();
+                // Reserved for future use
+                break;
+        }
     }
 
     // Add this function to load available printers

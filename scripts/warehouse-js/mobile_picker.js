@@ -1054,15 +1054,19 @@ document.addEventListener('DOMContentLoaded', () => {
         const messageEl = document.createElement('div');
         messageEl.className = `message ${type}`;
         messageEl.textContent = message;
-        
+
+        const closeBtn = document.createElement('button');
+        closeBtn.className = 'message-close';
+        closeBtn.innerHTML = '&times;';
+        closeBtn.addEventListener('click', () => messageEl.remove());
+        messageEl.appendChild(closeBtn);
+
         elements.messageContainer.appendChild(messageEl);
-        
         // Auto-remove after 3 seconds for better visibility
         setTimeout(() => {
             messageEl.style.animation = 'slideUp 0.3s ease reverse';
             setTimeout(() => messageEl.remove(), 300);
         }, 3000);
-        
         console.log(`${type.toUpperCase()}: ${message}`);
     }
 

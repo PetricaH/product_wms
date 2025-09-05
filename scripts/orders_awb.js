@@ -535,72 +535,29 @@ async function performAwbPrint(orderId, awbCode, orderNumber, printerId = null, 
  * Show AWB requirements modal
  */
 function showAWBRequirementsModal(orderId, requirements) {
-    const modalHtml = `
-        <div id="awb-requirements-modal" class="modal" style="display: flex;">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h3>Cerințe pentru generarea AWB</h3>
-                    <button type="button" class="close-modal" onclick="closeAWBModal()">
-                        <span class="material-symbols-outlined">close</span>
-                    </button>
-                </div>
-                <div class="modal-body">
-                    ${requirements.existing_barcode ? `
-                        <div class="alert alert-info">
-                            <span class="material-symbols-outlined">info</span>
-                            AWB deja generat: <strong>${requirements.existing_barcode}</strong>
-                        </div>
-                    ` : `
-                        <div class="alert alert-warning">
-                            <span class="material-symbols-outlined">warning</span>
-                            Nu se poate genera AWB. Cerințe lipsă:
-                        </div>
-                        <ul class="requirements-list">
-                            ${requirements.requirements.map(req => `<li>${req}</li>`).join('')}
-                        </ul>
-                        
-                        ${requirements.weight_info && requirements.weight_info.weight > 0 ? `
-                            <div class="weight-info">
-                                <p><strong>Greutate calculată:</strong> ${requirements.weight_info.weight} kg</p>
-                                ${requirements.weight_info.warning ? `<p class="warning">${requirements.weight_info.warning}</p>` : ''}
-                            </div>
-                        ` : ''}
-                        
-                        ${requirements.address_parsed ? `
-                            <div class="address-info">
-                                <p><strong>Adresă detectată:</strong></p>
-                                <ul>
-                                    ${requirements.address_parsed.county ? `<li>Județ: ${requirements.address_parsed.county}</li>` : ''}
-                                    ${requirements.address_parsed.locality ? `<li>Localitate: ${requirements.address_parsed.locality}</li>` : ''}
-                                    ${requirements.address_parsed.street ? `<li>Stradă: ${requirements.address_parsed.street}</li>` : ''}
-                                </ul>
-                            </div>
-                        ` : ''}
-                    `}
-                    
-                    <div class="modal-actions">
-                        <button type="button" class="btn btn-secondary" onclick="closeAWBModal()">
-                            Închide
-                        </button>
-                        ${!requirements.existing_barcode && requirements.requirements.length > 0 ? `
-                            <button type="button" class="btn btn-primary" onclick="showAWBManualInputModal(${orderId}, ${JSON.stringify(requirements).replace(/"/g, '&quot;')})">
-                                Completează Manual
-                            </button>
-                        ` : ''}
-                    </div>
-                </div>
-            </div>
-        </div>
-    `;
-    
-    // Remove existing modal if any
     const existing = document.getElementById('awb-requirements-modal');
     if (existing) {
         existing.remove();
     }
-    
-    document.body.insertAdjacentHTML('beforeend', modalHtml);
-    document.body.style.overflow = 'hidden';
+
+    const container = document.createElement('div');
+    container.id = 'awb-requirements-modal';
+    container.className = 'message-container';
+
+    const messageEl = document.createElement('div');
+    messageEl.className = 'message error';
+    messageEl.textContent = 'Nu se poate genera AWB pentru această comandă.';
+
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'message-close';
+    closeBtn.innerHTML = '&times;';
+    closeBtn.addEventListener('click', () => closeAWBModal());
+    messageEl.appendChild(closeBtn);
+
+    container.appendChild(messageEl);
+    document.body.appendChild(container);
+
+    setTimeout(() => closeAWBModal(), 3000);
 }
 
 /**

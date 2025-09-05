@@ -658,8 +658,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (stepName === 'product' && currentItem) {
                 if (elements.targetProductName) elements.targetProductName.textContent = currentItem.product_name || 'Produs necunoscut';
                 if (elements.targetProductSku) elements.targetProductSku.textContent = currentItem.sku || 'N/A';
-                // Immediately prepare for physical scanning
-                startPhysicalScanning('product');
             } else if (stepName === 'quantity' && currentItem) {
                 const quantityOrdered = parseInt(currentItem.quantity_ordered) || 0;
                 const quantityPicked = parseInt(currentItem.picked_quantity) || 0;
@@ -680,9 +678,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function startPhysicalScanning(type) {
-        // Remove any leftover camera fallback buttons
-        document.querySelectorAll('.camera-fallback-btn').forEach(btn => btn.remove());
-
         if (type === 'location') {
             if (elements.locationScanSection) elements.locationScanSection.classList.add('hidden');
             if (elements.locationManualSection) elements.locationManualSection.classList.remove('hidden');
@@ -690,8 +685,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 elements.locationInput.placeholder = 'Pull trigger to scan or type manually';
                 elements.locationInput.focus();
             }
-            addCameraFallbackButton('location');
-
         } else if (type === 'product') {
             if (elements.productScanSection) elements.productScanSection.classList.add('hidden');
             if (elements.productManualSection) elements.productManualSection.classList.remove('hidden');
@@ -699,25 +692,24 @@ document.addEventListener('DOMContentLoaded', () => {
                 elements.productInput.placeholder = 'Pull trigger to scan or type manually';
                 elements.productInput.focus();
             }
-            // Hide camera options and adjust manual verify button text
-            if (elements.backToScanProduct) elements.backToScanProduct.classList.add('hidden');
-            if (elements.verifyProductBtn) elements.verifyProductBtn.textContent = 'Verifică produsul manual';
-
         } else if (type === 'order') {
             if (elements.orderInput) {
                 elements.orderInput.placeholder = 'Pull trigger to scan or type manually';
                 elements.orderInput.focus();
             }
-            addCameraFallbackButton('order');
         }
+
+        addCameraFallbackButton(type);
     }
 
     function addCameraFallbackButton(type) {
+        document.querySelectorAll('.camera-fallback-btn').forEach(btn => btn.remove());
+
         let container = null;
         if (type === 'location') {
             container = elements.locationManualSection;
-
-        }
+        } else if (type === 'product') {
+            container = elements.productManualSection;
         } else if (type === 'order') {
             container = elements.orderInputSection;
         }
@@ -755,6 +747,11 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
             showMessage(`Locație incorectă! Așteptat: ${expectedLocation}, Introdus: ${inputLocation}`, 'error');
         }
+    }
+
+    function showProductScanOptions() {
+        if (elements.productScanSection) elements.productScanSection.classList.remove('hidden');
+        if (elements.productManualSection) elements.productManualSection.classList.add('hidden');
     }
 
     function verifyProduct() {

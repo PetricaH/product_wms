@@ -238,6 +238,33 @@ function generateBatchLot() {
     if (lot) lot.value = 'L' + Math.floor(Math.random()*900000 + 100000);
 }
 
+function setExpiry(option) {
+    const input = document.getElementById('add-expiry');
+    if (!input) return;
+    const date = new Date();
+    switch (option) {
+        case 'none':
+            input.value = '';
+            break;
+        case '6m':
+            date.setMonth(date.getMonth() + 6);
+            input.value = date.toISOString().slice(0, 10);
+            break;
+        case '1y':
+            date.setFullYear(date.getFullYear() + 1);
+            input.value = date.toISOString().slice(0, 10);
+            break;
+        case '2y':
+            date.setFullYear(date.getFullYear() + 2);
+            input.value = date.toISOString().slice(0, 10);
+            break;
+        case '3y':
+            date.setFullYear(date.getFullYear() + 3);
+            input.value = date.toISOString().slice(0, 10);
+            break;
+    }
+}
+
 function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
@@ -248,6 +275,7 @@ window.searchProducts = searchProducts;
 window.showProductResults = showProductResults;
 window.addStockForProduct = addStockForProduct;
 window.updateSubdivisionOptions = updateSubdivisionOptions;
+window.setExpiry = setExpiry;
 
 function setDateRange(period) {
     const from = document.getElementById('date_from');

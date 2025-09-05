@@ -880,6 +880,13 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                             <div class="form-group">
                                 <label for="add-expiry" class="form-label">Data Expirării</label>
                                 <input type="date" id="add-expiry" name="expiry_date" class="form-control">
+                                <div class="expiry-quick-options">
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="setExpiry('none')">Fără dată de expirare</button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="setExpiry('6m')">6 luni</button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="setExpiry('1y')">1 an</button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="setExpiry('2y')">2 ani</button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="setExpiry('3y')">3 ani</button>
+                                </div>
                             </div>
                         </div>
                         

@@ -1062,13 +1062,11 @@ document.addEventListener('DOMContentLoaded', () => {
         messageEl.appendChild(closeBtn);
 
         elements.messageContainer.appendChild(messageEl);
-
         // Auto-remove after 3 seconds for better visibility
         setTimeout(() => {
             messageEl.style.animation = 'slideUp 0.3s ease reverse';
             setTimeout(() => messageEl.remove(), 300);
         }, 3000);
-
         console.log(`${type.toUpperCase()}: ${message}`);
     }
 

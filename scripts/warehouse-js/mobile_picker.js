@@ -126,9 +126,7 @@ document.addEventListener('DOMContentLoaded', () => {
         elements.orderInput?.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') handleLoadOrder();
         });
-        elements.scanOrderBtn?.addEventListener('click', () => {
-            elements.orderInput?.focus();
-        });
+        elements.scanOrderBtn?.addEventListener('click', () => startPhysicalScanning('order'));
         elements.cameraOrderBtn?.addEventListener('click', () => startScanner('order'));
         
         // Refresh
@@ -151,8 +149,8 @@ document.addEventListener('DOMContentLoaded', () => {
         
         
         // Location Step
-        elements.scanLocationBtn?.addEventListener('click', showManualLocationInput);
-        elements.manualLocationBtn?.addEventListener('click', showManualLocationInput);
+        elements.scanLocationBtn?.addEventListener('click', () => startPhysicalScanning('location'));
+        elements.manualLocationBtn?.addEventListener('click', () => startPhysicalScanning('location'));
         elements.verifyLocationBtn?.addEventListener('click', verifyLocation);
         elements.backToScanLocation?.addEventListener('click', () => startScanner('location'));
         elements.locationInput?.addEventListener('keypress', (e) => {
@@ -160,8 +158,8 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         // Product Step
-        elements.scanProductBtn?.addEventListener('click', showManualProductInput);
-        elements.manualProductBtn?.addEventListener('click', showManualProductInput);
+        elements.scanProductBtn?.addEventListener('click', () => startPhysicalScanning('product'));
+        elements.manualProductBtn?.addEventListener('click', () => startPhysicalScanning('product'));
         elements.verifyProductBtn?.addEventListener('click', verifyProduct);
         elements.backToScanProduct?.addEventListener('click', () => startScanner('product'));
         elements.productInput?.addEventListener('keypress', (e) => {
@@ -660,6 +658,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (stepName === 'product' && currentItem) {
                 if (elements.targetProductName) elements.targetProductName.textContent = currentItem.product_name || 'Produs necunoscut';
                 if (elements.targetProductSku) elements.targetProductSku.textContent = currentItem.sku || 'N/A';
+                // Immediately prepare for physical scanning
+                startPhysicalScanning('product');
             } else if (stepName === 'quantity' && currentItem) {
                 const quantityOrdered = parseInt(currentItem.quantity_ordered) || 0;
                 const quantityPicked = parseInt(currentItem.picked_quantity) || 0;
@@ -679,10 +679,53 @@ document.addEventListener('DOMContentLoaded', () => {
         if (elements.locationManualSection) elements.locationManualSection.classList.add('hidden');
     }
 
-    function showManualLocationInput() {
-        if (elements.locationScanSection) elements.locationScanSection.classList.add('hidden');
-        if (elements.locationManualSection) elements.locationManualSection.classList.remove('hidden');
-        if (elements.locationInput) elements.locationInput.focus();
+    function startPhysicalScanning(type) {
+        // Remove any leftover camera fallback buttons
+        document.querySelectorAll('.camera-fallback-btn').forEach(btn => btn.remove());
+
+        if (type === 'location') {
+            if (elements.locationScanSection) elements.locationScanSection.classList.add('hidden');
+            if (elements.locationManualSection) elements.locationManualSection.classList.remove('hidden');
+            if (elements.locationInput) {
+                elements.locationInput.placeholder = 'Pull trigger to scan or type manually';
+                elements.locationInput.focus();
+            }
+            addCameraFallbackButton('location');
+        } else if (type === 'product') {
+            if (elements.productScanSection) elements.productScanSection.classList.add('hidden');
+            if (elements.productManualSection) elements.productManualSection.classList.remove('hidden');
+            if (elements.productInput) {
+                elements.productInput.placeholder = 'Pull trigger to scan or type manually';
+                elements.productInput.focus();
+            }
+            // Hide camera options and adjust manual verify button text
+            if (elements.backToScanProduct) elements.backToScanProduct.classList.add('hidden');
+            if (elements.verifyProductBtn) elements.verifyProductBtn.textContent = 'Verifică produsul manual';
+        } else if (type === 'order') {
+            if (elements.orderInput) {
+                elements.orderInput.placeholder = 'Pull trigger to scan or type manually';
+                elements.orderInput.focus();
+            }
+            addCameraFallbackButton('order');
+        }
+    }
+
+    function addCameraFallbackButton(type) {
+        let container = null;
+        if (type === 'location') {
+            container = elements.locationManualSection;
+        } else if (type === 'order') {
+            container = elements.orderInputSection;
+        }
+
+        if (!container) return;
+
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = 'Use Camera Instead';
+        btn.className = 'camera-fallback-btn';
+        btn.addEventListener('click', () => startScanner(type));
+        container.appendChild(btn);
     }
 
     function verifyLocation() {
@@ -708,17 +751,6 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
             showMessage(`Locație incorectă! Așteptat: ${expectedLocation}, Introdus: ${inputLocation}`, 'error');
         }
-    }
-
-    function showProductScanOptions() {
-        if (elements.productScanSection) elements.productScanSection.classList.remove('hidden');
-        if (elements.productManualSection) elements.productManualSection.classList.add('hidden');
-    }
-
-    function showManualProductInput() {
-        if (elements.productScanSection) elements.productScanSection.classList.add('hidden');
-        if (elements.productManualSection) elements.productManualSection.classList.remove('hidden');
-        if (elements.productInput) elements.productInput.focus();
     }
 
     function verifyProduct() {
@@ -817,13 +849,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function handleScannerManualInput() {
+        const type = currentScannerType;
         closeScanner();
-        if (currentScannerType === 'location') {
-            showManualLocationInput();
-        } else if (currentScannerType === 'product') {
-            showManualProductInput();
-        } else if (currentScannerType === 'order') {
-            elements.orderInput?.focus();
+        if (type) {
+            startPhysicalScanning(type);
         }
     }
 

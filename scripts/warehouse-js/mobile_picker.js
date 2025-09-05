@@ -24,6 +24,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let scannedLocation = null;
     let scannedProduct = null;
     let html5QrCode = null;
+    let currentScannerType = null; // track which scanner context is active
 
     // DOM Elements
     const elements = {
@@ -47,6 +48,8 @@ document.addEventListener('DOMContentLoaded', () => {
         // Order Input
         orderInputSection: document.getElementById('order-input-section'),
         orderInput: document.getElementById('order-input'),
+        scanOrderBtn: document.getElementById('scan-order-btn'),
+        cameraOrderBtn: document.getElementById('camera-order-btn'),
         loadOrderBtn: document.getElementById('load-order-btn'),
         
         // Picking List
@@ -123,6 +126,10 @@ document.addEventListener('DOMContentLoaded', () => {
         elements.orderInput?.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') handleLoadOrder();
         });
+        elements.scanOrderBtn?.addEventListener('click', () => {
+            elements.orderInput?.focus();
+        });
+        elements.cameraOrderBtn?.addEventListener('click', () => startScanner('order'));
         
         // Refresh
         elements.refreshItemsBtn?.addEventListener('click', () => {
@@ -144,16 +151,22 @@ document.addEventListener('DOMContentLoaded', () => {
         
         
         // Location Step
-        elements.scanLocationBtn?.addEventListener('click', () => startScanner('location'));
+        elements.scanLocationBtn?.addEventListener('click', showManualLocationInput);
         elements.manualLocationBtn?.addEventListener('click', showManualLocationInput);
         elements.verifyLocationBtn?.addEventListener('click', verifyLocation);
-        elements.backToScanLocation?.addEventListener('click', showLocationScanOptions);
-        
-        // Product Step  
-        elements.scanProductBtn?.addEventListener('click', () => startScanner('product'));
+        elements.backToScanLocation?.addEventListener('click', () => startScanner('location'));
+        elements.locationInput?.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') verifyLocation();
+        });
+
+        // Product Step
+        elements.scanProductBtn?.addEventListener('click', showManualProductInput);
         elements.manualProductBtn?.addEventListener('click', showManualProductInput);
         elements.verifyProductBtn?.addEventListener('click', verifyProduct);
-        elements.backToScanProduct?.addEventListener('click', showProductScanOptions);
+        elements.backToScanProduct?.addEventListener('click', () => startScanner('product'));
+        elements.productInput?.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') verifyProduct();
+        });
         
         // Quantity Step
         elements.qtyDecrease?.addEventListener('click', () => adjustQuantity(-1));
@@ -729,10 +742,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Scanner Functions
     function startScanner(type) {
+        currentScannerType = type;
         if (elements.scannerContainer) {
             elements.scannerContainer.classList.remove('hidden');
             if (elements.scannerTitle) {
-                elements.scannerTitle.textContent = type === 'location' ? 'Scanare Locație' : 'Scanare Produs';
+                elements.scannerTitle.textContent =
+                    type === 'location'
+                        ? 'Scanare Locație'
+                        : type === 'product'
+                            ? 'Scanare Produs'
+                            : 'Scanare Comandă';
             }
             
             // Initialize HTML5 QR Code scanner
@@ -768,19 +787,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function handleScanSuccess(decodedText, type) {
         console.log('Scanned:', decodedText, 'Type:', type);
-        
+
         closeScanner();
-        
+
         if (type === 'location') {
             if (elements.locationInput) elements.locationInput.value = decodedText;
             verifyLocation();
         } else if (type === 'product') {
             if (elements.productInput) elements.productInput.value = decodedText;
             verifyProduct();
+        } else if (type === 'order') {
+            if (elements.orderInput) elements.orderInput.value = decodedText;
+            handleLoadOrder();
         }
     }
 
     function closeScanner() {
+        currentScannerType = null;
         if (html5QrCode) {
             html5QrCode.stop().then(() => {
                 if (elements.scannerContainer) elements.scannerContainer.classList.add('hidden');
@@ -795,10 +818,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function handleScannerManualInput() {
         closeScanner();
-        if (currentStep === 'location') {
+        if (currentScannerType === 'location') {
             showManualLocationInput();
-        } else if (currentStep === 'product') {
+        } else if (currentScannerType === 'product') {
             showManualProductInput();
+        } else if (currentScannerType === 'order') {
+            elements.orderInput?.focus();
         }
     }
 

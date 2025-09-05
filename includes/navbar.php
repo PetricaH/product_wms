@@ -117,7 +117,7 @@ if (isset($_SESSION['username'])) {
             <a href="<?= getNavUrl('locations.php') ?>" 
                class="sidebar__link <?= getActiveClass('locations.php') ?>"
                data-tooltip="Depozite">
-                <span class="material-symbols-outlined">warehouse</span>
+                <span class="material-symbols-outlined">shelf_position</span>
                 <span class="link-text">Locații</span>
             </a>
         </li>
@@ -165,7 +165,7 @@ if (isset($_SESSION['username'])) {
             <a href="<?= getNavUrl('warehouse_hub.php') ?>"
                class="sidebar__link <?= getActiveClass('warehouse_hub.php') ?>"
                data-tooltip="Warehouse View">
-                <span class="material-symbols-outlined">history</span>
+                <span class="material-symbols-outlined">warehouse</span>
                 <span class="link-text">Warehouse View</span>
             </a>
         </li>

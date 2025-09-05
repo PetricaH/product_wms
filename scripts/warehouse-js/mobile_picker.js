@@ -691,6 +691,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 elements.locationInput.focus();
             }
             addCameraFallbackButton('location');
+
         } else if (type === 'product') {
             if (elements.productScanSection) elements.productScanSection.classList.add('hidden');
             if (elements.productManualSection) elements.productManualSection.classList.remove('hidden');
@@ -701,6 +702,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // Hide camera options and adjust manual verify button text
             if (elements.backToScanProduct) elements.backToScanProduct.classList.add('hidden');
             if (elements.verifyProductBtn) elements.verifyProductBtn.textContent = 'Verifică produsul manual';
+
         } else if (type === 'order') {
             if (elements.orderInput) {
                 elements.orderInput.placeholder = 'Pull trigger to scan or type manually';
@@ -714,6 +716,8 @@ document.addEventListener('DOMContentLoaded', () => {
         let container = null;
         if (type === 'location') {
             container = elements.locationManualSection;
+
+        }
         } else if (type === 'order') {
             container = elements.orderInputSection;
         }

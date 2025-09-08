@@ -171,6 +171,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             break;
 
+        case 'assign_location':
+            $assignData = [
+                'product_id' => intval($_POST['product_id'] ?? 0),
+                'location_id' => intval($_POST['location_id'] ?? 0),
+                'shelf_level' => $_POST['shelf_level'] ?? null,
+                'subdivision_number' => isset($_POST['subdivision_number']) ? intval($_POST['subdivision_number']) : null
+            ];
+
+            if ($assignData['product_id'] <= 0 || $assignData['location_id'] <= 0) {
+                $message = 'Produsul și locația sunt obligatorii.';
+                $messageType = 'error';
+            } else {
+                if ($inventoryModel->assignProductLocation($assignData)) {
+                    $message = 'Locația a fost atribuită cu succes.';
+                    $messageType = 'success';
+                } else {
+                    $message = 'Eroare la atribuirea locației.';
+                    $messageType = 'error';
+                }
+            }
+            break;
+
             case 'bulk_action':
                 $bulkAction = $_POST['bulk_action'] ?? '';
                 $selectedIds = $_POST['selected_products'] ?? [];
@@ -542,7 +564,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                     <?php if (!empty($product['location_details'])): ?>
                                                         <span class="location-info"><?= htmlspecialchars($product['location_details']) ?></span>
                                                     <?php else: ?>
-                                                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="addStockForProduct(<?= $product['product_id'] ?>)">
+                                                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="assignLocationForProduct(<?= $product['product_id'] ?>)">
                                                             Atribuie Locatie
                                                         </button>
                                                     <?php endif; ?>
@@ -979,6 +1001,54 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
         </div>
     </div>
 </div>
+
+    <!-- Assign Location Modal -->
+    <div class="modal" id="assignLocationModal">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 class="modal-title">Atribuie Locație</h3>
+                    <button class="modal-close" onclick="closeAssignLocationModal()">
+                        <span class="material-symbols-outlined">close</span>
+                    </button>
+                </div>
+                <form method="POST" action="">
+                    <div class="modal-body">
+                        <input type="hidden" name="action" value="assign_location">
+                        <input type="hidden" id="assign-product-id" name="product_id">
+
+                        <div class="form-group">
+                            <label for="assign-location" class="form-label">Locație *</label>
+                            <select id="assign-location" name="location_id" class="form-control" required>
+                                <option value="">Selectează locația</option>
+                                <?php foreach ($allLocations as $location): ?>
+                                    <option value="<?= $location['id'] ?>">
+                                        <?= htmlspecialchars($location['location_code']) ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="assign-shelf-level" class="form-label">Nivel raft</label>
+                            <select id="assign-shelf-level" name="shelf_level" class="form-control" onchange="updateAssignSubdivisionOptions()">
+                                <option value="">--</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group" id="assign-subdivision-container" style="display:none;">
+                            <label for="assign-subdivision-number" class="form-label">Subdiviziune</label>
+                            <select id="assign-subdivision-number" name="subdivision_number" class="form-control"></select>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" onclick="closeAssignLocationModal()">Anulează</button>
+                        <button type="submit" class="btn btn-primary">Atribuie</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
 
     <!-- Add Stock Modal -->
     <div class="modal" id="addStockModal">

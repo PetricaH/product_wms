@@ -7,6 +7,7 @@
 const createModal = document.getElementById('createProductModal');
 const editModal = document.getElementById('editProductModal');
 const deleteModal = document.getElementById('deleteProductModal');
+const assignLocationModal = document.getElementById('assignLocationModal');
 
 // Global variables
 let selectedFile = null;
@@ -29,7 +30,7 @@ document.addEventListener('DOMContentLoaded', function() {
  */
 function initializeModals() {
     // Close modals when clicking outside
-    [createModal, editModal, deleteModal].forEach(modal => {
+    [createModal, editModal, deleteModal, assignLocationModal].forEach(modal => {
         if (modal) {
             modal.addEventListener('click', function(e) {
                 if (e.target === modal) {
@@ -104,7 +105,7 @@ function hideModal(modal) {
 }
 
 function closeAllModals() {
-    [createModal, editModal, deleteModal].forEach(modal => {
+    [createModal, editModal, deleteModal, assignLocationModal].forEach(modal => {
         if (modal) {
             hideModal(modal);
         }
@@ -116,6 +117,109 @@ function closeAllModals() {
         closeImportModal();
     }
 }
+
+function openAssignLocationModal(productId) {
+    const productInput = document.getElementById('assign-product-id');
+    const locSelect = document.getElementById('assign-location');
+    const levelSelect = document.getElementById('assign-shelf-level');
+    const subContainer = document.getElementById('assign-subdivision-container');
+    const subSelect = document.getElementById('assign-subdivision-number');
+
+    if (productInput) productInput.value = productId;
+    if (locSelect) locSelect.value = '';
+    if (levelSelect) levelSelect.innerHTML = '<option value="">--</option>';
+    if (subContainer) subContainer.style.display = 'none';
+    if (subSelect) subSelect.innerHTML = '';
+
+    showModal(assignLocationModal);
+}
+
+function closeAssignLocationModal() {
+    hideModal(assignLocationModal);
+}
+
+async function loadAssignLocationLevels(locationId) {
+    const levelSelect = document.getElementById('assign-shelf-level');
+    const subContainer = document.getElementById('assign-subdivision-container');
+    const subSelect = document.getElementById('assign-subdivision-number');
+
+    if (levelSelect) levelSelect.innerHTML = '<option value="">--</option>';
+    if (subContainer) subContainer.style.display = 'none';
+    if (subSelect) subSelect.innerHTML = '';
+
+    if (!locationId) return;
+
+    try {
+        const resp = await fetch(`api/location_info.php?id=${locationId}`);
+        const data = await resp.json();
+        if (resp.ok && data.levels) {
+            data.levels.forEach(l => {
+                const opt = document.createElement('option');
+                opt.value = l.number;
+                let label = l.name;
+                if ((l.current_stock > 0) || l.dedicated_product_id) {
+                    const info = l.capacity ? `${l.current_stock}/${l.capacity} articole - ${l.occupancy_percentage}%` : `${l.current_stock} articole`;
+                    const name = l.product_name ? l.product_name + ' - ' : '';
+                    label += ` (${name}${info})`;
+                }
+                opt.textContent = label;
+                opt.dataset.subdivisionCount = l.subdivision_count;
+                levelSelect.appendChild(opt);
+            });
+        }
+    } catch (e) { console.error(e); }
+}
+
+async function updateAssignSubdivisionOptions() {
+    const levelSelect = document.getElementById('assign-shelf-level');
+    const locId = document.getElementById('assign-location')?.value;
+    const productId = document.getElementById('assign-product-id')?.value;
+    const subContainer = document.getElementById('assign-subdivision-container');
+    const subSelect = document.getElementById('assign-subdivision-number');
+    const levelNumber = levelSelect ? levelSelect.value : '';
+
+    if (subSelect) subSelect.innerHTML = '';
+
+    if (!locId || !levelNumber) { if (subContainer) subContainer.style.display = 'none'; return; }
+
+    try {
+        const resp = await fetch(`api/subdivision_info.php?location_id=${locId}&level=${levelNumber}&product_id=${productId}`);
+        const data = await resp.json();
+        if (resp.ok && Array.isArray(data.subdivisions) && data.subdivisions.length) {
+            data.subdivisions.forEach(sd => {
+                const opt = document.createElement('option');
+                const info = sd.capacity ? `${sd.current_stock}/${sd.capacity} articole - ${sd.occupancy_percentage}%` : `${sd.current_stock} articole`;
+                const name = sd.product_name ? sd.product_name + ' - ' : '';
+                const prefix = sd.recommended ? '⭐ ' : (sd.compatible ? '' : '❌ ');
+                opt.value = sd.subdivision_number;
+                opt.textContent = `${prefix}Subdiviziunea ${sd.subdivision_number} (${name}${info})`;
+                if (!sd.compatible) opt.disabled = true;
+                subSelect.appendChild(opt);
+            });
+            if (subContainer) subContainer.style.display = 'block';
+        } else {
+            if (subContainer) subContainer.style.display = 'none';
+        }
+    } catch (e) {
+        console.error(e);
+        if (subContainer) subContainer.style.display = 'none';
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const locSelect = document.getElementById('assign-location');
+    if (locSelect) {
+        locSelect.addEventListener('change', () => loadAssignLocationLevels(locSelect.value));
+    }
+});
+
+function assignLocationForProduct(productId) {
+    openAssignLocationModal(productId);
+}
+
+window.assignLocationForProduct = assignLocationForProduct;
+window.closeAssignLocationModal = closeAssignLocationModal;
+window.updateAssignSubdivisionOptions = updateAssignSubdivisionOptions;
 
 /**
  * Form Management

@@ -174,7 +174,10 @@ async function loadLocationLevels(locationId) {
                 const opt = document.createElement('option');
                 opt.value = l.number;
                 let label = l.name;
-                if ((l.current_stock > 0) || l.dedicated_product_id) {
+                if (l.subdivision_count && l.subdivision_count > 0) {
+                    // For levels with subdivisions just show count, details handled in next dropdown
+                    label += ` (${l.subdivision_count} subdiviziuni)`;
+                } else if ((l.current_stock > 0) || l.dedicated_product_id) {
                     const info = l.capacity ? `${l.current_stock}/${l.capacity} articole - ${l.occupancy_percentage}%` : `${l.current_stock} articole`;
                     const name = l.product_name ? l.product_name + ' - ' : '';
                     label += ` (${name}${info})`;

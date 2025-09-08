@@ -89,6 +89,7 @@ foreach ($details['level_settings'] as $level) {
     $productName = null;
     $dedicatedId = $pid;
 
+    $subdivisionProducts = [];
     if (!empty($level['subdivisions_enabled'])) {
         $subProducts = [];
         if (!empty($level['subdivisions'])) {
@@ -103,7 +104,9 @@ foreach ($details['level_settings'] as $level) {
             }
         }
         if ($subProducts) {
-            $productName = count($subProducts) . ' subdiviziuni: ' . implode(', ', array_values($subProducts));
+            // Provide only the count here; subdivision details retrieved via subdivision_info API
+            $productName = count($subProducts) . ' subdiviziuni';
+            $subdivisionProducts = array_values($subProducts);
             // use first product ID to trigger frontend display
             $dedicatedId = array_key_first($subProducts);
         }
@@ -122,7 +125,8 @@ foreach ($details['level_settings'] as $level) {
         'current_stock' => (int)$levelOccupancy['items'],
         'occupancy_percentage' => $levelOccupancy['capacity'] ? $levelOccupancy['occupancy_percent'] : null,
         'product_name' => $productName,
-        'dedicated_product_id' => $dedicatedId
+        'dedicated_product_id' => $dedicatedId,
+        'subdivision_products' => $subdivisionProducts
     ];
 }
 

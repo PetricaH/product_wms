@@ -105,27 +105,12 @@ $hasOrderFromUrl = !empty($orderNumber);
                     </div>
                 </div>
                 
-                <div class="scan-section" id="location-scan-section">
-                    <button id="scan-location-btn" class="btn btn-primary btn-large">
-                        <span class="material-symbols-outlined">qr_code_scanner</span>
-                        Scanează Locația
-                    </button>
-                    <button id="manual-location-btn" class="btn btn-secondary">
-                        <span class="material-symbols-outlined">keyboard</span>
-                        Introdu Manual
-                    </button>
-                </div>
-                
-                <div class="manual-section hidden" id="location-manual-section">
+                <div class="manual-section" id="location-manual-section">
                     <label for="location-input">Codul locației:</label>
-                    <input type="text" id="location-input" class="form-control" placeholder="A1-01">
+                    <input type="text" id="location-input" class="form-control" placeholder="A1-01" inputmode="none">
                     <button id="verify-location-btn" class="btn btn-primary">
                         <span class="material-symbols-outlined">check</span>
                         Verifică Locația
-                    </button>
-                    <button id="back-to-scan-location" class="btn btn-secondary">
-                        <span class="material-symbols-outlined">photo_camera</span>
-                        Scanare cu Camera
                     </button>
                 </div>
             </div>

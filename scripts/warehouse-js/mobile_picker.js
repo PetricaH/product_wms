@@ -25,6 +25,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let scannedProduct = null;
     let html5QrCode = null;
     let currentScannerType = null; // track which scanner context is active
+    let productScanTimeout = null; // timeout handler for auto product verification
 
     // DOM Elements
     const elements = {
@@ -163,8 +164,20 @@ document.addEventListener('DOMContentLoaded', () => {
         elements.manualProductBtn?.addEventListener('click', () => startPhysicalScanning('product'));
         elements.verifyProductBtn?.addEventListener('click', verifyProduct);
         elements.backToScanProduct?.addEventListener('click', () => startScanner('product'));
-        elements.productInput?.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') verifyProduct();
+        // Listen for Enter key and auto-verify for scanner input
+        elements.productInput?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                verifyProduct();
+            }
+        });
+        elements.productInput?.addEventListener('input', () => {
+            clearTimeout(productScanTimeout);
+            productScanTimeout = setTimeout(() => {
+                if (currentStep === 'product' && elements.productInput.value.trim() !== '') {
+                    verifyProduct();
+                }
+            }, 300);
         });
         
         // Quantity Step
@@ -736,6 +749,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (elements.productManualSection) elements.productManualSection.classList.remove('hidden');
             if (elements.productInput) {
                 elements.productInput.placeholder = 'Pull trigger to scan or type manually';
+                elements.productInput.value = '';
                 elements.productInput.focus();
             }
             // Hide camera options and adjust manual verify button text
@@ -796,7 +810,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function verifyProduct() {
+        clearTimeout(productScanTimeout);
         const inputProduct = elements.productInput?.value?.trim().toUpperCase();
+        if (elements.productInput) elements.productInput.value = '';
         const expectedSku = (currentItem.sku || '').toUpperCase();
         const expectedBarcode = (currentItem.product_barcode || '').toUpperCase();
         
@@ -811,6 +827,7 @@ document.addEventListener('DOMContentLoaded', () => {
             setTimeout(() => showStep('quantity'), 1000);
         } else {
             showMessage(`Produs incorect! Așteptat: ${expectedSku}, Introdus: ${inputProduct}`, 'error');
+            if (elements.productInput) elements.productInput.focus();
         }
     }
 

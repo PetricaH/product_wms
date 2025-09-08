@@ -100,14 +100,17 @@ function displayProductResults(products) {
     container.classList.add('show');
 }
 
-function selectProduct(id, name, sku) {
+async function selectProduct(id, name, sku) {
     document.getElementById('add-product').value = id;
     const input = document.getElementById('add-product-search');
     input.value = name;
     input.dataset.sku = sku;
     hideProductResults();
     updateStockCounter(sku);
-    updateSubdivisionOptions();
+    const autoLocated = await fetchProductLocation(id);
+    if (!autoLocated) {
+        updateSubdivisionOptions();
+    }
 }
 
 function showProductResults() {
@@ -157,6 +160,31 @@ async function updateStockCounter(sku) {
     } catch (e) {
         span.textContent = '';
     }
+}
+
+async function fetchProductLocation(productId) {
+    try {
+        const resp = await fetch(`api/product_location.php?product_id=${productId}`);
+        const data = await resp.json();
+        if (resp.ok && data && data.location_id) {
+            const locSelect = document.getElementById('add-location');
+            locSelect.value = data.location_id;
+            await loadLocationLevels(data.location_id);
+            if (data.level_number) {
+                const levelSelect = document.getElementById('shelf_level');
+                levelSelect.value = data.level_number;
+                await updateSubdivisionOptions();
+                if (data.subdivision_number) {
+                    const subSelect = document.getElementById('subdivision_number');
+                    subSelect.value = data.subdivision_number;
+                }
+            }
+            return true;
+        }
+    } catch (e) {
+        console.error(e);
+    }
+    return false;
 }
 
 // -------- Location Levels ---------

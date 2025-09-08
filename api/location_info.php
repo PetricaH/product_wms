@@ -53,11 +53,24 @@ if (!$details || empty($details['level_settings'])) {
     exit;
 }
 
-// Map dedicated product IDs to names
+// Map dedicated product IDs (levels + subdivisions) to names
 $productMap = [];
-$ids = array_unique(array_filter(array_map(function($l){ 
-    return $l['dedicated_product_id'] ?? null; 
-}, $details['level_settings'])));
+$ids = [];
+
+foreach ($details['level_settings'] as $lvl) {
+    if (!empty($lvl['dedicated_product_id'])) {
+        $ids[] = (int)$lvl['dedicated_product_id'];
+    }
+    if (!empty($lvl['subdivisions'])) {
+        foreach ($lvl['subdivisions'] as $sub) {
+            if (!empty($sub['dedicated_product_id'])) {
+                $ids[] = (int)$sub['dedicated_product_id'];
+            }
+        }
+    }
+}
+
+$ids = array_unique(array_filter($ids));
 
 if ($ids) {
     $placeholders = implode(',', array_fill(0, count($ids), '?'));
@@ -73,6 +86,33 @@ foreach ($details['level_settings'] as $level) {
     $levelOccupancy = $locModel->getLevelOccupancyData($locationId, $level['level_number']);
     $pid = !empty($level['dedicated_product_id']) ? (int)$level['dedicated_product_id'] : null;
 
+    $productName = null;
+    $dedicatedId = $pid;
+
+    if (!empty($level['subdivisions_enabled'])) {
+        $subProducts = [];
+        if (!empty($level['subdivisions'])) {
+            foreach ($level['subdivisions'] as $sub) {
+                if (!empty($sub['dedicated_product_id'])) {
+                    $subId = (int)$sub['dedicated_product_id'];
+                    $name = $sub['product_name'] ?? ($productMap[$subId] ?? null);
+                    if ($name) {
+                        $subProducts[$subId] = $name; // ensure uniqueness by product ID
+                    }
+                }
+            }
+        }
+        if ($subProducts) {
+            $productName = count($subProducts) . ' subdiviziuni: ' . implode(', ', array_values($subProducts));
+            // use first product ID to trigger frontend display
+            $dedicatedId = array_key_first($subProducts);
+        }
+    } else {
+        if ($pid && isset($productMap[$pid])) {
+            $productName = $productMap[$pid];
+        }
+    }
+
     $levels[] = [
         'number' => (int)$level['level_number'],
         'name' => $level['level_name'] ?: ('Nivel ' . $level['level_number']),
@@ -81,8 +121,8 @@ foreach ($details['level_settings'] as $level) {
         'capacity' => $levelOccupancy['capacity'] ?: null,
         'current_stock' => (int)$levelOccupancy['items'],
         'occupancy_percentage' => $levelOccupancy['capacity'] ? $levelOccupancy['occupancy_percent'] : null,
-        'product_name' => $pid && isset($productMap[$pid]) ? $productMap[$pid] : null,
-        'dedicated_product_id' => $pid
+        'product_name' => $productName,
+        'dedicated_product_id' => $dedicatedId
     ];
 }
 

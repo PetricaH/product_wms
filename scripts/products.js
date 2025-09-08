@@ -226,6 +226,7 @@ function assignLocationForProduct(productId) {
 window.assignLocationForProduct = assignLocationForProduct;
 window.closeAssignLocationModal = closeAssignLocationModal;
 window.updateAssignSubdivisionOptions = updateAssignSubdivisionOptions;
+window.loadAssignLocationLevels = loadAssignLocationLevels;
 
 /**
  * Form Management

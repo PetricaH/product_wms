@@ -65,13 +65,9 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Location Step
         targetLocation: document.getElementById('target-location'),
-        locationScanSection: document.getElementById('location-scan-section'),
         locationManualSection: document.getElementById('location-manual-section'),
-        scanLocationBtn: document.getElementById('scan-location-btn'),
-        manualLocationBtn: document.getElementById('manual-location-btn'),
         locationInput: document.getElementById('location-input'),
         verifyLocationBtn: document.getElementById('verify-location-btn'),
-        backToScanLocation: document.getElementById('back-to-scan-location'),
         
         // Product Step
         targetProductName: document.getElementById('target-product-name'),
@@ -151,12 +147,16 @@ document.addEventListener('DOMContentLoaded', () => {
         
         
         // Location Step
-        elements.scanLocationBtn?.addEventListener('click', () => startPhysicalScanning('location'));
-        elements.manualLocationBtn?.addEventListener('click', () => startPhysicalScanning('location'));
         elements.verifyLocationBtn?.addEventListener('click', verifyLocation);
-        elements.backToScanLocation?.addEventListener('click', () => startScanner('location'));
         elements.locationInput?.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') verifyLocation();
+        });
+        elements.locationInput?.addEventListener('pointerdown', () => {
+            elements.locationInput.setAttribute('inputmode', 'text');
+            setTimeout(() => elements.locationInput?.focus(), 0);
+        });
+        elements.locationInput?.addEventListener('blur', () => {
+            elements.locationInput.setAttribute('inputmode', 'none');
         });
 
         // Product Step
@@ -677,8 +677,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Show location step only if a location code exists
         if (item.location_code) {
-            const expectedLocation = item.location_code;
-            if (elements.targetLocation) elements.targetLocation.textContent = expectedLocation;
             showStep('location');
         } else {
             // No location specified, skip directly to product verification
@@ -705,9 +703,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const targetStep = elements[`${stepName}Step`];
         if (targetStep) {
             targetStep.classList.remove('hidden');
-            
+
             // Setup step-specific data
-            if (stepName === 'product' && currentItem) {
+            if (stepName === 'location' && currentItem) {
+                if (elements.targetLocation) elements.targetLocation.textContent = currentItem.location_code || 'N/A';
+                startPhysicalScanning('location');
+            } else if (stepName === 'product' && currentItem) {
                 if (elements.targetProductName) elements.targetProductName.textContent = currentItem.product_name || 'Produs necunoscut';
                 if (elements.targetProductSku) elements.targetProductSku.textContent = currentItem.sku || 'N/A';
                 // Immediately prepare for physical scanning
@@ -716,7 +717,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const quantityOrdered = parseInt(currentItem.quantity_ordered) || 0;
                 const quantityPicked = parseInt(currentItem.picked_quantity) || 0;
                 const remaining = Math.max(0, quantityOrdered - quantityPicked);
-                
+
                 if (elements.requiredQuantity) elements.requiredQuantity.textContent = remaining;
                 if (elements.pickedQuantityInput) {
                     elements.pickedQuantityInput.value = remaining;
@@ -726,20 +727,16 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function showLocationScanOptions() {
-        if (elements.locationScanSection) elements.locationScanSection.classList.remove('hidden');
-        if (elements.locationManualSection) elements.locationManualSection.classList.add('hidden');
-    }
-
     function startPhysicalScanning(type) {
         // Remove any leftover camera fallback buttons
         document.querySelectorAll('.camera-fallback-btn').forEach(btn => btn.remove());
 
         if (type === 'location') {
-            if (elements.locationScanSection) elements.locationScanSection.classList.add('hidden');
             if (elements.locationManualSection) elements.locationManualSection.classList.remove('hidden');
             if (elements.locationInput) {
                 elements.locationInput.placeholder = 'Pull trigger to scan or type manually';
+                elements.locationInput.value = '';
+                elements.locationInput.setAttribute('inputmode', 'none');
                 elements.locationInput.focus();
             }
             addCameraFallbackButton('location');

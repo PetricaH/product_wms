@@ -1019,7 +1019,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
 
                         <div class="form-group">
                             <label for="assign-location" class="form-label">Locație *</label>
-                            <select id="assign-location" name="location_id" class="form-control" required onchange="loadAssignLocationLevels(this.value)">
+                            <select id="assign-location" name="location_id" class="form-control" required>
                                 <option value="">Selectează locația</option>
                                 <?php foreach ($allLocations as $location): ?>
                                     <option value="<?= $location['id'] ?>">
@@ -1031,7 +1031,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
 
                         <div class="form-group">
                             <label for="assign-shelf-level" class="form-label">Nivel raft</label>
-                            <select id="assign-shelf-level" name="shelf_level" class="form-control" onchange="updateAssignSubdivisionOptions()">
+                            <select id="assign-shelf-level" name="shelf_level" class="form-control">
                                 <option value="">--</option>
                             </select>
                         </div>

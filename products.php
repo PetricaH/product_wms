@@ -1019,7 +1019,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
 
                         <div class="form-group">
                             <label for="assign-location" class="form-label">Locație *</label>
-                            <select id="assign-location" name="location_id" class="form-control" required>
+                            <select id="assign-location" name="location_id" class="form-control" required onchange="loadAssignLocationLevels(this.value)">
                                 <option value="">Selectează locația</option>
                                 <?php foreach ($allLocations as $location): ?>
                                     <option value="<?= $location['id'] ?>">

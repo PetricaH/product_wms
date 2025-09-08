@@ -208,8 +208,14 @@ async function updateAssignSubdivisionOptions() {
 
 document.addEventListener('DOMContentLoaded', () => {
     const locSelect = document.getElementById('assign-location');
+    const levelSelect = document.getElementById('assign-shelf-level');
+
     if (locSelect) {
         locSelect.addEventListener('change', () => loadAssignLocationLevels(locSelect.value));
+    }
+
+    if (levelSelect) {
+        levelSelect.addEventListener('change', updateAssignSubdivisionOptions);
     }
 });
 
@@ -220,6 +226,7 @@ function assignLocationForProduct(productId) {
 window.assignLocationForProduct = assignLocationForProduct;
 window.closeAssignLocationModal = closeAssignLocationModal;
 window.updateAssignSubdivisionOptions = updateAssignSubdivisionOptions;
+window.loadAssignLocationLevels = loadAssignLocationLevels;
 
 /**
  * Form Management

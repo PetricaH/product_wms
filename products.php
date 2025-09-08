@@ -1031,14 +1031,16 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
 
                         <div class="form-group">
                             <label for="assign-shelf-level" class="form-label">Nivel raft</label>
-                            <select id="assign-shelf-level" name="shelf_level" class="form-control">
+                            <select id="assign-shelf-level" name="shelf_level" class="form-control" onchange="updateAssignSubdivisionOptions()">
                                 <option value="">--</option>
                             </select>
                         </div>
 
                         <div class="form-group" id="assign-subdivision-container" style="display:none;">
                             <label for="assign-subdivision-number" class="form-label">Subdiviziune</label>
-                            <select id="assign-subdivision-number" name="subdivision_number" class="form-control"></select>
+                            <select id="assign-subdivision-number" name="subdivision_number" class="form-control">
+                                <option value="">--</option>
+                            </select>
                         </div>
                     </div>
                     <div class="modal-footer">

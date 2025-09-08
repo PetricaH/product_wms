@@ -129,7 +129,7 @@ function openAssignLocationModal(productId) {
     if (locSelect) locSelect.value = '';
     if (levelSelect) levelSelect.innerHTML = '<option value="">--</option>';
     if (subContainer) subContainer.style.display = 'none';
-    if (subSelect) subSelect.innerHTML = '';
+    if (subSelect) subSelect.innerHTML = '<option value="">--</option>';
 
     showModal(assignLocationModal);
 }
@@ -145,10 +145,9 @@ async function loadAssignLocationLevels(locationId) {
 
     if (levelSelect) {
         levelSelect.innerHTML = '<option value="">--</option>';
-        levelSelect.removeEventListener('change', updateAssignSubdivisionOptions);
     }
     if (subContainer) subContainer.style.display = 'none';
-    if (subSelect) subSelect.innerHTML = '';
+    if (subSelect) subSelect.innerHTML = '<option value="">--</option>';
 
     if (!locationId) return;
 
@@ -172,9 +171,7 @@ async function loadAssignLocationLevels(locationId) {
         }
     } catch (e) { console.error(e); }
 
-    if (levelSelect) {
-        levelSelect.addEventListener('change', updateAssignSubdivisionOptions);
-    }
+    // event listener handled via inline onchange in the HTML
 }
 
 async function updateAssignSubdivisionOptions() {
@@ -185,7 +182,7 @@ async function updateAssignSubdivisionOptions() {
     const subSelect = document.getElementById('assign-subdivision-number');
     const levelNumber = levelSelect ? levelSelect.value : '';
 
-    if (subSelect) subSelect.innerHTML = '';
+    if (subSelect) subSelect.innerHTML = '<option value="">--</option>';
 
     if (!locId || !levelNumber) { if (subContainer) subContainer.style.display = 'none'; return; }
 
@@ -219,10 +216,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (locSelect) {
         locSelect.addEventListener('change', () => loadAssignLocationLevels(locSelect.value));
-    }
-
-    if (levelSelect) {
-        levelSelect.addEventListener('change', updateAssignSubdivisionOptions);
     }
 });
 

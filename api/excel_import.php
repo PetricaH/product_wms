@@ -488,6 +488,17 @@ class ImprovedExcelImportHandler {
      * Improved product processing with better matching
      */
     private function processProductDataImproved($productData, $rowNumber) {
+        // Validate price to avoid database errors
+        if (isset($productData['price'])) {
+            $productData['price'] = floatval($productData['price']);
+            $maxPrice = 99999999.99; // matches DECIMAL(10,2) limit
+            if ($productData['price'] > $maxPrice) {
+                $this->results['errors'][] = "Row {$rowNumber}: Price {$productData['price']} exceeds maximum allowed ({$maxPrice})";
+                $this->results['skipped']++;
+                return;
+            }
+        }
+
         // Try to find existing product by SKU first, then by name
         $existingProduct = null;
 

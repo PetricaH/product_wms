@@ -159,13 +159,12 @@ async function loadAssignLocationLevels(locationId) {
                 const opt = document.createElement('option');
                 opt.value = l.number;
                 let label = l.name;
-                if (l.subdivision_count && l.subdivision_count > 0) {
-                    // Show only subdivision count, names handled in next dropdown
-                    label += ` (${l.subdivision_count} subdiviziuni)`;
-                } else if ((l.current_stock > 0) || l.dedicated_product_id) {
-                    const info = l.capacity ? `${l.current_stock}/${l.capacity} articole - ${l.occupancy_percentage}%` : `${l.current_stock} articole`;
-                    const name = l.product_name ? l.product_name + ' - ' : '';
-                    label += ` (${name}${info})`;
+                if (!(l.subdivision_count && l.subdivision_count > 0)) {
+                    if ((l.current_stock > 0) || l.dedicated_product_id) {
+                        const info = l.capacity ? `${l.current_stock}/${l.capacity} articole - ${l.occupancy_percentage}%` : `${l.current_stock} articole`;
+                        const name = l.product_name ? l.product_name + ' - ' : '';
+                        label += ` (${name}${info})`;
+                    }
                 }
                 opt.textContent = label;
                 opt.dataset.subdivisionCount = l.subdivision_count;

@@ -1031,7 +1031,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
 
                         <div class="form-group">
                             <label for="assign-shelf-level" class="form-label">Nivel raft</label>
-                            <select id="assign-shelf-level" name="shelf_level" class="form-control" onchange="updateAssignSubdivisionOptions()">
+                            <select id="assign-shelf-level" name="shelf_level" class="form-control">
                                 <option value="">--</option>
                             </select>
                         </div>

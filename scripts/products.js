@@ -219,6 +219,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (locSelect) {
         locSelect.addEventListener('change', () => loadAssignLocationLevels(locSelect.value));
     }
+    if (levelSelect) {
+        levelSelect.addEventListener('change', updateAssignSubdivisionOptions);
+    }
 });
 
 function assignLocationForProduct(productId) {

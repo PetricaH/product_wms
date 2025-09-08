@@ -490,18 +490,21 @@ class ImprovedExcelImportHandler {
     private function processProductDataImproved($productData, $rowNumber) {
         // Try to find existing product by SKU first, then by name
         $existingProduct = null;
-        
+
         if (!empty($productData['sku'])) {
             $existingProduct = $this->findProductBySku($productData['sku']);
         }
-        
+
         if (!$existingProduct && !empty($productData['name'])) {
             $existingProduct = $this->findProductByName($productData['name']);
         }
-        
+
+        $productId = null;
+
         if ($existingProduct) {
             // Update existing product
-            $this->updateProductImproved($existingProduct['product_id'], $productData, $existingProduct);
+            $productId = (int)$existingProduct['product_id'];
+            $this->updateProductImproved($productId, $productData, $existingProduct);
             $this->results['updated']++;
         } else {
             // Create new product
@@ -512,6 +515,45 @@ class ImprovedExcelImportHandler {
                 throw new Exception("Failed to create product for row $rowNumber");
             }
         }
+
+        // Add stock to designated location if quantity provided
+        if ($productId && !empty($productData['quantity']) && (int)$productData['quantity'] > 0) {
+            $this->addStockToDesignatedLocation($productId, (int)$productData['quantity']);
+        }
+    }
+
+    private function addStockToDesignatedLocation(int $productId, int $quantity): void {
+        try {
+            $locationId = $this->findDesignatedLocation($productId);
+
+            if ($locationId) {
+                require_once BASE_PATH . '/models/Inventory.php';
+                $inventory = new Inventory($this->db);
+                $inventory->addStock([
+                    'product_id' => $productId,
+                    'location_id' => $locationId,
+                    'quantity' => $quantity
+                ], false);
+            } else {
+                $this->results['warnings'][] = "No designated location found for product ID {$productId}";
+            }
+        } catch (Exception $e) {
+            $this->results['errors'][] = "Failed to add stock for product ID {$productId}: " . $e->getMessage();
+        }
+    }
+
+    private function findDesignatedLocation(int $productId): ?int {
+        $stmt = $this->db->prepare("SELECT location_id FROM location_subdivisions WHERE dedicated_product_id = ? LIMIT 1");
+        $stmt->execute([$productId]);
+        $locationId = $stmt->fetchColumn();
+
+        if (!$locationId) {
+            $stmt = $this->db->prepare("SELECT location_id FROM location_level_settings WHERE dedicated_product_id = ? LIMIT 1");
+            $stmt->execute([$productId]);
+            $locationId = $stmt->fetchColumn();
+        }
+
+        return $locationId ? (int)$locationId : null;
     }
     
     private function findProductBySku($sku) {

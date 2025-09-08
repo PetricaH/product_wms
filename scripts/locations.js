@@ -1751,26 +1751,31 @@ function collectLevelData() {
  */
 function collectSubdivisionData() {
     const subdivisionData = {};
-    
+
     createdLevels.forEach(level => {
         const levelId = level.id;
         const enableCheckbox = document.getElementById(`level_${levelId}_enable_subdivisions`);
-        
+
         if (enableCheckbox && enableCheckbox.checked) {
             const subdivisionsList = document.getElementById(`subdivisions-list-${levelId}`);
+            if (!subdivisionsList) {
+                console.warn(`Subdivisions list not found for level ${levelId}`);
+                return;
+            }
+
             const subdivisions = subdivisionsList.querySelectorAll('.subdivision-item');
-            
+
             subdivisionData[levelId] = {
                 enabled: true,
                 subdivisions: []
             };
-            
+
             subdivisions.forEach((subdivision, index) => {
                 const subdivisionIndex = index + 1;
                 const productId = document.getElementById(`level_${levelId}_subdivision_${subdivisionIndex}_product_id`)?.value;
                 const capacity = document.getElementById(`level_${levelId}_subdivision_${subdivisionIndex}_capacity`)?.value;
                 const notes = document.querySelector(`[name="level_${levelId}_subdivision_${subdivisionIndex}_notes"]`)?.value;
-                
+
                 if (productId && capacity) {
                     subdivisionData[levelId].subdivisions.push({
                         product_id: productId,
@@ -1781,9 +1786,10 @@ function collectSubdivisionData() {
             });
         }
     });
-    
+
     return subdivisionData;
 }
+
 
 /**
  * Enhanced form submission with level data

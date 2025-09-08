@@ -887,17 +887,6 @@ async function startProcessing() {
         
         if (result.success) {
             showImportResults(result);
-            
-            // Refresh the products table if on products page
-            if (typeof refreshProductsTable === 'function') {
-                refreshProductsTable();
-            }
-            
-            // Reset form after short delay
-            setTimeout(() => {
-                resetImportForm();
-            }, 3000);
-            
         } else {
             showImportError(result);
         }
@@ -1097,6 +1086,9 @@ function closeImportModal() {
     if (modal) {
         modal.style.display = 'none';
         resetImportForm();
+        if (typeof refreshProductsTable === 'function') {
+            refreshProductsTable();
+        }
     }
 }
 

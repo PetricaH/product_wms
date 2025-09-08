@@ -12,6 +12,7 @@ const assignLocationModal = document.getElementById('assignLocationModal');
 // Global variables
 let selectedFile = null;
 let importInProgress = false;
+const API_KEY = window.APP_CONFIG && window.APP_CONFIG.apiKey ? window.APP_CONFIG.apiKey : '';
 
 /**
  * Initialize page functionality
@@ -152,7 +153,9 @@ async function loadAssignLocationLevels(locationId) {
     if (!locationId) return;
 
     try {
-        const resp = await fetch(`api/location_info.php?id=${locationId}`);
+        const params = new URLSearchParams({ id: locationId });
+        if (API_KEY) params.append('api_key', API_KEY);
+        const resp = await fetch(`api/location_info.php?${params.toString()}`, { credentials: 'same-origin' });
         const data = await resp.json();
         if (resp.ok && data.levels) {
             data.levels.forEach(l => {
@@ -173,7 +176,6 @@ async function loadAssignLocationLevels(locationId) {
         }
     } catch (e) { console.error(e); }
 
-    // event listener handled via inline onchange in the HTML
 }
 
 async function updateAssignSubdivisionOptions() {
@@ -189,7 +191,9 @@ async function updateAssignSubdivisionOptions() {
     if (!locId || !levelNumber) { if (subContainer) subContainer.style.display = 'none'; return; }
 
     try {
-        const resp = await fetch(`api/subdivision_info.php?location_id=${locId}&level=${levelNumber}&product_id=${productId}`);
+        const params = new URLSearchParams({ location_id: locId, level: levelNumber, product_id: productId });
+        if (API_KEY) params.append('api_key', API_KEY);
+        const resp = await fetch(`api/subdivision_info.php?${params.toString()}`, { credentials: 'same-origin' });
         const data = await resp.json();
         if (resp.ok && Array.isArray(data.subdivisions) && data.subdivisions.length) {
             data.subdivisions.forEach(sd => {

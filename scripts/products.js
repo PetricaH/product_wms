@@ -143,7 +143,10 @@ async function loadAssignLocationLevels(locationId) {
     const subContainer = document.getElementById('assign-subdivision-container');
     const subSelect = document.getElementById('assign-subdivision-number');
 
-    if (levelSelect) levelSelect.innerHTML = '<option value="">--</option>';
+    if (levelSelect) {
+        levelSelect.innerHTML = '<option value="">--</option>';
+        levelSelect.removeEventListener('change', updateAssignSubdivisionOptions);
+    }
     if (subContainer) subContainer.style.display = 'none';
     if (subSelect) subSelect.innerHTML = '';
 
@@ -168,6 +171,10 @@ async function loadAssignLocationLevels(locationId) {
             });
         }
     } catch (e) { console.error(e); }
+
+    if (levelSelect) {
+        levelSelect.addEventListener('change', updateAssignSubdivisionOptions);
+    }
 }
 
 async function updateAssignSubdivisionOptions() {
@@ -208,8 +215,14 @@ async function updateAssignSubdivisionOptions() {
 
 document.addEventListener('DOMContentLoaded', () => {
     const locSelect = document.getElementById('assign-location');
+    const levelSelect = document.getElementById('assign-shelf-level');
+
     if (locSelect) {
         locSelect.addEventListener('change', () => loadAssignLocationLevels(locSelect.value));
+    }
+
+    if (levelSelect) {
+        levelSelect.addEventListener('change', updateAssignSubdivisionOptions);
     }
 });
 
@@ -220,6 +233,7 @@ function assignLocationForProduct(productId) {
 window.assignLocationForProduct = assignLocationForProduct;
 window.closeAssignLocationModal = closeAssignLocationModal;
 window.updateAssignSubdivisionOptions = updateAssignSubdivisionOptions;
+window.loadAssignLocationLevels = loadAssignLocationLevels;
 
 /**
  * Form Management

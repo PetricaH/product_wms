@@ -1794,42 +1794,23 @@ function collectSubdivisionData() {
 /**
  * Enhanced form submission with level data
  */
+// Add this enhanced version of enhanceFormSubmission to your locations.js file
+// This includes extensive debugging to identify the issue
+
 function enhanceFormSubmission() {
     const form = document.getElementById('locationForm');
-    if (!form) return;
+    if (!form) {
+        console.error('❌ locationForm not found');
+        return;
+    }
 
     form.addEventListener('submit', function(event) {
         event.preventDefault();
-        console.log('Form submission started. Created levels:', createdLevels.length);
+        console.log('Form submission started.');
 
-        // Validate form fields across tabs
-        if (!form.checkValidity()) {
-            event.preventDefault();
-            const firstInvalid = form.querySelector(':invalid');
-            if (firstInvalid) {
-                // If the field is inside a hidden tab, switch to that tab first
-                const tabContent = firstInvalid.closest('.tab-content');
-                if (tabContent && !tabContent.classList.contains('active')) {
-                    const tabName = tabContent.id.replace('-tab', '');
-                    switchLocationTab(tabName);
-                }
-                // Delay focus to allow tab visibility change to apply
-                setTimeout(() => {
-                    firstInvalid.focus();
-                    firstInvalid.reportValidity();
-                }, 50);
-            }
-            return false;
-        }
-
-        if (createdLevels.length === 0) {
-            event.preventDefault();
-            alert('Trebuie să adăugați cel puțin un nivel!');
-            return false;
-        }
-        
-        // Collect level data
+        // Check if all required data is present
         const levelData = collectLevelData();
+        console.log('Created levels:', Object.keys(levelData).length);
         console.log('Level data collected:', levelData);
         
         // Add to form as hidden field
@@ -1841,7 +1822,6 @@ function enhanceFormSubmission() {
             hiddenField.name = 'dynamic_levels_data';
             form.appendChild(hiddenField);
         }
-        
         hiddenField.value = JSON.stringify(levelData);
         
         // Collect subdivision data
@@ -1865,25 +1845,77 @@ function enhanceFormSubmission() {
         
         console.log('Form submission data prepared');
 
+        // DEBUG: Check if action field exists and has value
+        const actionField = document.getElementById('formAction');
+        if (!actionField) {
+            console.error('❌ formAction field not found!');
+            alert('Form action field missing. Please refresh the page and try again.');
+            return;
+        }
+        console.log('🔍 Action field value:', actionField.value);
+
+        // DEBUG: Check if location ID exists for updates
+        const locationIdField = document.getElementById('locationId');
+        if (locationIdField) {
+            console.log('🔍 Location ID:', locationIdField.value);
+        }
+
+        // DEBUG: Log all form fields before submission
         const formData = new FormData(form);
+        console.log('🔍 Form data contents:');
+        for (let [key, value] of formData.entries()) {
+            console.log(`  ${key}: ${value}`);
+        }
+
+        // Add AJAX indicator
         formData.append('ajax', '1');
+
+        console.log('🚀 Starting fetch request to locations.php...');
 
         fetch('locations.php', {
             method: 'POST',
-            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            headers: { 
+                'X-Requested-With': 'XMLHttpRequest'
+            },
             body: formData
         })
-        .then(resp => resp.json())
+        .then(response => {
+            console.log('✅ Response received:', response.status, response.statusText);
+            
+            // Check if response is OK
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            // Check content type
+            const contentType = response.headers.get('content-type');
+            console.log('🔍 Content-Type:', contentType);
+            
+            if (!contentType || !contentType.includes('application/json')) {
+                console.warn('⚠️ Response is not JSON. Getting text instead...');
+                return response.text().then(text => {
+                    console.log('📄 Response text:', text);
+                    throw new Error('Server returned non-JSON response: ' + text.substring(0, 200));
+                });
+            }
+            
+            return response.json();
+        })
         .then(data => {
+            console.log('✅ JSON data received:', data);
+            
             if (data.success) {
+                console.log('🎉 Success! Reloading page...');
                 window.location.reload();
             } else {
+                console.error('❌ Server returned error:', data.message);
                 alert(data.message || 'Eroare la salvarea locației');
             }
         })
         .catch(err => {
-            console.error('AJAX submit failed', err);
-            alert('Eroare la salvarea locației');
+            console.error('❌ AJAX submit failed:', err);
+            console.error('Full error object:', err);
+            alert('Eroare la salvarea locației: ' + err.message);
         });
     });
 }

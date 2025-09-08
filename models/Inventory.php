@@ -364,6 +364,64 @@ class Inventory {
         }
     }
 
+    /**
+     * Assign a product to a location without adjusting stock quantity
+     * @param array $data Assignment data
+     * @return bool Success status
+     */
+    public function assignProductLocation(array $data): bool {
+        $required = ['product_id', 'location_id'];
+        foreach ($required as $field) {
+            if (empty($data[$field])) {
+                error_log("Assign product location failed: Missing {$field}");
+                return false;
+            }
+        }
+
+        $shelfLevel = $data['shelf_level'] ?? null;
+        $subdivision = $data['subdivision_number'] ?? null;
+
+        // Resolve numeric level name if needed
+        if ($shelfLevel !== null && $shelfLevel !== '') {
+            if (is_numeric($shelfLevel)) {
+                require_once __DIR__ . '/LocationLevelSettings.php';
+                $lls = new LocationLevelSettings($this->conn);
+                $name = $lls->getLevelNameByNumber((int)$data['location_id'], (int)$shelfLevel);
+                $shelfLevel = $name ?: 'Nivel ' . $shelfLevel;
+            }
+        } else {
+            $shelfLevel = null;
+        }
+
+        try {
+            $query = "INSERT INTO {$this->inventoryTable}
+                    (product_id, location_id, shelf_level, subdivision_number, quantity, received_at)
+                    VALUES (:product_id, :location_id, :shelf_level, :subdivision, 0, NOW())
+                    ON DUPLICATE KEY UPDATE
+                        shelf_level = VALUES(shelf_level),
+                        subdivision_number = VALUES(subdivision_number)";
+
+            $stmt = $this->conn->prepare($query);
+            $stmt->bindParam(':product_id', $data['product_id'], PDO::PARAM_INT);
+            $stmt->bindParam(':location_id', $data['location_id'], PDO::PARAM_INT);
+            $stmt->bindParam(':shelf_level', $shelfLevel, PDO::PARAM_STR);
+            $stmt->bindParam(':subdivision', $subdivision, PDO::PARAM_INT);
+
+            if (!$stmt->execute()) {
+                error_log('Assign product location failed: DB execute error');
+                return false;
+            }
+
+            // Update location occupancy though quantity is zero to ensure consistency
+            $this->updateLocationOccupancy($data['location_id']);
+
+            return true;
+        } catch (PDOException $e) {
+            error_log('Assign product location failed: ' . $e->getMessage());
+            return false;
+        }
+    }
+
     private function detectShelfLevel(int $locationId): ?string {
         $stmt = $this->conn->prepare("SELECT location_code FROM locations WHERE id = ?");
         $stmt->execute([$locationId]);

@@ -143,7 +143,10 @@ async function loadAssignLocationLevels(locationId) {
     const subContainer = document.getElementById('assign-subdivision-container');
     const subSelect = document.getElementById('assign-subdivision-number');
 
-    if (levelSelect) levelSelect.innerHTML = '<option value="">--</option>';
+    if (levelSelect) {
+        levelSelect.innerHTML = '<option value="">--</option>';
+        levelSelect.removeEventListener('change', updateAssignSubdivisionOptions);
+    }
     if (subContainer) subContainer.style.display = 'none';
     if (subSelect) subSelect.innerHTML = '';
 
@@ -168,6 +171,10 @@ async function loadAssignLocationLevels(locationId) {
             });
         }
     } catch (e) { console.error(e); }
+
+    if (levelSelect) {
+        levelSelect.addEventListener('change', updateAssignSubdivisionOptions);
+    }
 }
 
 async function updateAssignSubdivisionOptions() {

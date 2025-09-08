@@ -989,20 +989,19 @@ function showImportResults(result) {
             <div class="import-errors">
                 <h5><span class="material-symbols-outlined">warning</span> Erori (${result.errors.length})</h5>
                 <ul>
-                    ${result.errors.slice(0, 10).map(error => `<li>${error}</li>`).join('')}
-                    ${result.errors.length > 10 ? `<li>... și încă ${result.errors.length - 10} erori</li>` : ''}
+                    ${result.errors.map(error => `<li>${error}</li>`).join('')}
                 </ul>
             </div>
         `;
     }
-    
+
     // Show warnings if any
     if (result.warnings && result.warnings.length > 0) {
         html += `
             <div class="import-warnings">
                 <h5><span class="material-symbols-outlined">info</span> Avertismente (${result.warnings.length})</h5>
                 <ul>
-                    ${result.warnings.slice(0, 5).map(warning => `<li>${warning}</li>`).join('')}
+                    ${result.warnings.map(warning => `<li>${warning}</li>`).join('')}
                 </ul>
             </div>
         `;

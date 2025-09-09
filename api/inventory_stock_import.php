@@ -19,7 +19,6 @@ require_once BASE_PATH . '/models/Inventory.php';
 
 use PhpOffice\PhpSpreadsheet\IOFactory;
 
-// Session is started in bootstrap.php; no need to start it again here
 if (!isset($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'admin') {
     http_response_code(403);
     echo json_encode(['success' => false, 'message' => 'Unauthorized']);
@@ -209,6 +208,7 @@ class InventoryStockImporter {
             if ($this->cellMatches($headerLower, $skuPatterns)) {
                 $map['sku'] = $idx;
             } elseif ($this->cellMatches($headerLower, $qtyPatterns)) {
+
                 $map['quantity'] = $idx;
             }
         }

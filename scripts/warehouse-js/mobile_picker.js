@@ -26,6 +26,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let html5QrCode = null;
     let currentScannerType = null; // track which scanner context is active
     let productScanTimeout = null; // timeout handler for auto product verification
+    let locationScanTimeout = null; // timeout handler for auto location verification
 
     // DOM Elements
     const elements = {
@@ -148,15 +149,28 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Location Step
         elements.verifyLocationBtn?.addEventListener('click', verifyLocation);
-        elements.locationInput?.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') verifyLocation();
+        elements.locationInput?.addEventListener('input', () => {
+            clearTimeout(locationScanTimeout);
+            locationScanTimeout = setTimeout(verifyLocation, 300);
+        });
+        elements.locationInput?.addEventListener('keydown', (e) => {
+            if (elements.locationInput.hasAttribute('readonly')) {
+                elements.locationInput.removeAttribute('readonly');
+            }
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                verifyLocation();
+            }
         });
         elements.locationInput?.addEventListener('pointerdown', () => {
+            elements.locationInput.removeAttribute('readonly');
             elements.locationInput.setAttribute('inputmode', 'text');
             setTimeout(() => elements.locationInput?.focus(), 0);
         });
         elements.locationInput?.addEventListener('blur', () => {
+            elements.locationInput.setAttribute('readonly', 'true');
             elements.locationInput.setAttribute('inputmode', 'none');
+            clearTimeout(locationScanTimeout);
         });
 
         // Product Step
@@ -737,9 +751,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 elements.locationInput.placeholder = 'Pull trigger to scan or type manually';
                 elements.locationInput.value = '';
                 elements.locationInput.setAttribute('inputmode', 'none');
-                elements.locationInput.focus();
+                elements.locationInput.setAttribute('readonly', 'true');
+                elements.locationInput.focus({ preventScroll: true });
             }
-            addCameraFallbackButton('location');
+            // Camera fallback removed for location scanning
 
         } else if (type === 'product') {
             if (elements.productScanSection) elements.productScanSection.classList.add('hidden');
@@ -782,6 +797,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function verifyLocation() {
+        clearTimeout(locationScanTimeout);
         // If no location code is provided for the item, skip verification
         if (!currentItem.location_code) {
             scannedLocation = '';
@@ -800,9 +816,20 @@ document.addEventListener('DOMContentLoaded', () => {
         if (inputLocation === expectedLocation) {
             scannedLocation = inputLocation;
             showMessage('Locație verificată cu succes!', 'success');
+            if (elements.locationInput) {
+                elements.locationInput.value = '';
+                elements.locationInput.setAttribute('readonly', 'true');
+                elements.locationInput.setAttribute('inputmode', 'none');
+            }
             setTimeout(() => showStep('product'), 1000);
         } else {
             showMessage(`Locație incorectă! Așteptat: ${expectedLocation}, Introdus: ${inputLocation}`, 'error');
+            if (elements.locationInput) {
+                elements.locationInput.value = '';
+                elements.locationInput.setAttribute('readonly', 'true');
+                elements.locationInput.setAttribute('inputmode', 'none');
+                elements.locationInput.focus({ preventScroll: true });
+            }
         }
     }
 

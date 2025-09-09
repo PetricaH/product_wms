@@ -64,8 +64,6 @@ if (file_exists($universalJsPath)) {
 
 // Load development-only scripts
 if (!in_prod()) {
-    echo '<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>';
-    
     $themeToggleJsPath = BASE_PATH . '/scripts/theme-toggle.js';
     if(file_exists($themeToggleJsPath)) {
         echo '<script src="' . BASE_URL . 'scripts/theme-toggle.js?v=' . filemtime($themeToggleJsPath) . '" defer></script>';
@@ -74,4 +72,3 @@ if (!in_prod()) {
 ?>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="scripts/sellers-import.js"></script>

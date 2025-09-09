@@ -280,6 +280,10 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                             <span class="material-symbols-outlined">add_box</span>
                             Adaugă Stoc
                         </button>
+                        <button class="btn btn-secondary" onclick="openImportStockModal()" style="margin-left:10px;">
+                            <span class="material-symbols-outlined">upload_file</span>
+                            Import Stoc
+                        </button>
                     </div>
                 </header>
                 
@@ -1009,4 +1013,49 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
             </div>
         </div>
     </div>
+
+    <!-- Stock Import Modal -->
+    <div class="modal" id="importStockModal">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 class="modal-title">Import Stoc</h3>
+                    <button class="modal-close" onclick="closeImportStockModal()">
+                        <span class="material-symbols-outlined">close</span>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div id="stock-import-upload" class="stock-import-step">
+                        <div id="stock-import-drop" class="file-drop-area">
+                            <span class="material-symbols-outlined">upload_file</span>
+                            <p>Trage fișierul aici sau apasă pentru selectare</p>
+                            <input type="file" id="stock-import-file" accept=".xls,.xlsx" style="display:none;">
+                        </div>
+                        <div id="stock-import-selected" class="selected-file" style="display:none; gap:10px; align-items:center; margin-top:10px;">
+                            <span id="stock-import-filename"></span>
+                            <button type="button" class="btn btn-sm btn-secondary" id="stock-import-remove">Șterge</button>
+                        </div>
+                        <div style="margin-top:15px;">
+                            <button type="button" class="btn btn-primary" id="stock-import-start" disabled>Importă</button>
+                        </div>
+                    </div>
+                    <div id="stock-import-progress" class="stock-import-step" style="display:none;">
+                        <div class="progress-bar" style="height:20px;background:#f0f0f0;border-radius:4px;overflow:hidden;">
+                            <div id="stock-import-progress-bar" class="progress" style="height:100%;width:0;background:#4caf50;"></div>
+                        </div>
+                        <p style="margin-top:10px;">Procesare fișier...</p>
+                    </div>
+                    <div id="stock-import-results" class="stock-import-step" style="display:none;">
+                        <div id="stock-import-summary"></div>
+                        <div id="stock-import-warnings" style="margin-top:10px;"></div>
+                        <div id="stock-import-errors" style="margin-top:10px;"></div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="closeImportStockModal()">Închide</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <?php require_once __DIR__ . '/includes/footer.php'; ?>

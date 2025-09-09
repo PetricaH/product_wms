@@ -567,6 +567,13 @@ class ImprovedExcelImportHandler {
         $stmt->execute([$sku]);
         return $stmt->fetch(PDO::FETCH_ASSOC);
     }
+
+    private function getProductNameById(int $productId): ?string {
+        $stmt = $this->db->prepare("SELECT name FROM products WHERE product_id = ? LIMIT 1");
+        $stmt->execute([$productId]);
+        $name = $stmt->fetchColumn();
+        return $name !== false ? $name : null;
+    }
     
     private function updateProductImproved($productId, $productData, $existingProduct) {
         $updateFields = [];
@@ -705,18 +712,36 @@ class ImprovedExcelImportHandler {
             return $row;
         }
 
+        // Last resort: use existing inventory record if available
+        $stmt = $this->db->prepare(
+            "SELECT location_id, shelf_level, subdivision_number
+             FROM inventory
+             WHERE product_id = ?
+             ORDER BY id DESC
+             LIMIT 1"
+        );
+        $stmt->execute([$productId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($row) {
+            return [
+                'location_id' => $row['location_id'],
+                'subdivision_number' => $row['subdivision_number'],
+                'shelf_level' => $row['shelf_level'],
+            ];
+        }
+
         return null;
     }
 
     private function updateInventoryRecord(int $productId, array $productData): void {
         try {
-            // Remove existing inventory for the product
-            $del = $this->db->prepare("DELETE FROM inventory WHERE product_id = ?");
-            $del->execute([$productId]);
-
             $quantity = intval($productData['quantity'] ?? 0);
+            $productName = $productData['name'] ?? $this->getProductNameById($productId) ?? 'unknown';
             if ($quantity <= 0) {
-                return; // nothing to add
+                // Remove any existing inventory when quantity is zero
+                $del = $this->db->prepare("DELETE FROM inventory WHERE product_id = ?");
+                $del->execute([$productId]);
+                return;
             }
 
             $locationId = isset($productData['location_id']) ? intval($productData['location_id']) : null;
@@ -729,23 +754,31 @@ class ImprovedExcelImportHandler {
                     if ($locationId === null && isset($locData['location_id'])) {
                         $locationId = (int)$locData['location_id'];
                     }
-                    if ($subdivision === null && isset($locData['subdivision_number'])) {
-                        $subdivision = (int)$locData['subdivision_number'];
+                    if ($subdivision === null && array_key_exists('subdivision_number', $locData)) {
+                        $subdivision = $locData['subdivision_number'] !== null ? (int)$locData['subdivision_number'] : null;
                     }
-                    if ($shelfLevel === null && isset($locData['level_number'])) {
-                        require_once BASE_PATH . '/models/LocationLevelSettings.php';
-                        $lls = new LocationLevelSettings($this->db);
-                        $levelName = $lls->getLevelNameByNumber((int)$locData['location_id'], (int)$locData['level_number']);
-                        if ($levelName) {
-                            $shelfLevel = $levelName;
+                    if ($shelfLevel === null) {
+                        if (isset($locData['shelf_level']) && $locData['shelf_level'] !== null) {
+                            $shelfLevel = $locData['shelf_level'];
+                        } elseif (isset($locData['level_number'])) {
+                            require_once BASE_PATH . '/models/LocationLevelSettings.php';
+                            $lls = new LocationLevelSettings($this->db);
+                            $levelName = $lls->getLevelNameByNumber((int)$locData['location_id'], (int)$locData['level_number']);
+                            if ($levelName) {
+                                $shelfLevel = $levelName;
+                            }
                         }
                     }
                 }
             }
 
+            // Remove existing inventory after location resolution
+            $del = $this->db->prepare("DELETE FROM inventory WHERE product_id = ?");
+            $del->execute([$productId]);
+
             // Skip inventory creation if essential data like location or shelf level is missing
             if ($locationId === null || $shelfLevel === null) {
-                $this->results['warnings'][] = 'Skipped inventory for product ' . $productId . ' due to missing location or shelf level';
+                $this->results['warnings'][] = 'Skipped inventory for product ' . $productId . ' (' . $productName . ') due to missing location or shelf level';
                 return;
             }
 
@@ -774,7 +807,8 @@ class ImprovedExcelImportHandler {
             $inventory->addStock($data, false);
 
         } catch (Exception $e) {
-            $this->results['warnings'][] = 'Inventory update failed for product ' . $productId . ': ' . $e->getMessage();
+            $productName = $productData['name'] ?? $this->getProductNameById($productId) ?? 'unknown';
+            $this->results['warnings'][] = 'Inventory update failed for product ' . $productId . ' (' . $productName . '): ' . $e->getMessage();
         }
     }
     

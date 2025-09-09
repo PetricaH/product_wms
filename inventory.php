@@ -873,7 +873,9 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                         </div>
                         <div class="form-group" id="subdivision-container" style="display:none;">
                             <label for="subdivision_number" class="form-label">Subdiviziune</label>
-                            <select id="subdivision_number" name="subdivision_number" class="form-control"></select>
+                            <select id="subdivision_number" name="subdivision_number" class="form-control">
+                                <option value="">--</option>
+                            </select>
                         </div>
                         
                         <div class="row">

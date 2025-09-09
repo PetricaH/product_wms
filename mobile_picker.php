@@ -107,7 +107,7 @@ $hasOrderFromUrl = !empty($orderNumber);
                 
                 <div class="manual-section" id="location-manual-section">
                     <label for="location-input">Codul locației:</label>
-                    <input type="text" id="location-input" class="form-control" placeholder="A1-01" inputmode="none">
+                    <input type="text" id="location-input" class="form-control" placeholder="A1-01" inputmode="none" readonly>
                     <button id="verify-location-btn" class="btn btn-primary">
                         <span class="material-symbols-outlined">check</span>
                         Verifică Locația

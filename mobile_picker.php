@@ -143,7 +143,7 @@ $hasOrderFromUrl = !empty($orderNumber);
                 
                 <div class="manual-section hidden" id="product-manual-section">
                     <label for="product-input">Codul produsului:</label>
-                    <input type="text" id="product-input" class="form-control" placeholder="SKU sau Barcode">
+                    <input type="text" id="product-input" class="form-control" placeholder="SKU sau Barcode" inputmode="none" readonly>
                     <button id="verify-product-btn" class="btn btn-primary">
                         <span class="material-symbols-outlined">check</span>
                         Verifică Produsul

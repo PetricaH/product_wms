@@ -180,10 +180,23 @@ document.addEventListener('DOMContentLoaded', () => {
         elements.backToScanProduct?.addEventListener('click', () => startScanner('product'));
         // Listen for Enter key and auto-verify for scanner input
         elements.productInput?.addEventListener('keydown', (e) => {
+            if (elements.productInput.hasAttribute('readonly')) {
+                elements.productInput.removeAttribute('readonly');
+            }
             if (e.key === 'Enter') {
                 e.preventDefault();
                 verifyProduct();
             }
+        });
+        elements.productInput?.addEventListener('pointerdown', () => {
+            elements.productInput.removeAttribute('readonly');
+            elements.productInput.setAttribute('inputmode', 'text');
+            setTimeout(() => elements.productInput?.focus(), 0);
+        });
+        elements.productInput?.addEventListener('blur', () => {
+            elements.productInput.setAttribute('readonly', 'true');
+            elements.productInput.setAttribute('inputmode', 'none');
+            clearTimeout(productScanTimeout);
         });
         elements.productInput?.addEventListener('input', () => {
             clearTimeout(productScanTimeout);

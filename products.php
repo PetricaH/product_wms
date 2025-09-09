@@ -745,17 +745,6 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                         
                         <div class="option-group">
                             <label class="checkbox-option">
-                                <input type="checkbox" id="overwriteExisting" checked>
-                                <span class="checkmark"></span>
-                                <div class="option-text">
-                                    <strong>Actualizează produsele existente</strong>
-                                    <small>Suprascrie datele produselor care au același SKU</small>
-                                </div>
-                            </label>
-                        </div>
-                        
-                        <div class="option-group">
-                            <label class="checkbox-option">
                                 <input type="checkbox" id="syncSmartBill">
                                 <span class="checkmark"></span>
                                 <div class="option-text">

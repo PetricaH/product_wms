@@ -333,6 +333,24 @@ class ImprovedExcelImportHandler {
             ],
             'min_stock_level' => [
                 'stoc minim', 'stoc_minim', 'minimum', 'minim'
+            ],
+            'location_id' => [
+                'location_id', 'locatie', 'location', 'loc', 'location code', 'locatie_id'
+            ],
+            'subdivision_number' => [
+                'subdivision', 'subdivision_number', 'raft', 'compartiment', 'slot'
+            ],
+            'shelf_level' => [
+                'shelf_level', 'nivel', 'level', 'nivel raft', 'raft nivel'
+            ],
+            'batch_number' => [
+                'batch', 'batch_number', 'batch no', 'batch_no', 'cod lot', 'nr lot'
+            ],
+            'lot_number' => [
+                'lot', 'lot_number', 'numar lot', 'nr lot'
+            ],
+            'expiry_date' => [
+                'expiry_date', 'expirare', 'data expirare', 'exp date', 'exp', 'expiration'
             ]
         ];
         
@@ -428,17 +446,45 @@ class ImprovedExcelImportHandler {
                     $numericValue = floatval($cleanValue);
                     $productData['min_stock_level'] = max(0, intval($numericValue));
                     break;
-                    
+
                 case 'total_value':
                     // Handle Romanian currency format - convert to unit price if quantity exists
                     $cleanValue = str_replace(['.', ','], ['', '.'], $value);
                     $totalValue = max(0, floatval($cleanValue));
-                    
+
                     // Try to calculate unit price if we have quantity
                     if (isset($productData['quantity']) && $productData['quantity'] > 0) {
                         $productData['price'] = round($totalValue / $productData['quantity'], 2);
                     } else {
                         $productData['price'] = $totalValue;
+                    }
+                    break;
+
+                case 'location_id':
+                    $productData['location_id'] = is_numeric($value) ? intval($value) : null;
+                    break;
+
+                case 'subdivision_number':
+                    $productData['subdivision_number'] = is_numeric($value) ? intval($value) : null;
+                    break;
+
+                case 'shelf_level':
+                    $level = trim((string)$value);
+                    $productData['shelf_level'] = $level !== '' ? $level : null;
+                    break;
+
+                case 'batch_number':
+                    $productData['batch_number'] = $value;
+                    break;
+
+                case 'lot_number':
+                    $productData['lot_number'] = $value;
+                    break;
+
+                case 'expiry_date':
+                    $ts = strtotime($value);
+                    if ($ts !== false) {
+                        $productData['expiry_date'] = date('Y-m-d', $ts);
                     }
                     break;
             }
@@ -485,23 +531,21 @@ class ImprovedExcelImportHandler {
     }
     
     /**
-     * Improved product processing with better matching
+     * Process a product row using SKU as the sole identifier
      */
     private function processProductDataImproved($productData, $rowNumber) {
-        // Try to find existing product by SKU first, then by name
-        $existingProduct = null;
-        
-        if (!empty($productData['sku'])) {
-            $existingProduct = $this->findProductBySku($productData['sku']);
+        if (empty($productData['sku'])) {
+            $this->results['warnings'][] = "Row $rowNumber: missing SKU, skipped";
+            $this->results['skipped']++;
+            return;
         }
-        
-        if (!$existingProduct && !empty($productData['name'])) {
-            $existingProduct = $this->findProductByName($productData['name']);
-        }
-        
+
+        $existingProduct = $this->findProductBySku($productData['sku']);
+
         if ($existingProduct) {
             // Update existing product
-            $this->updateProductImproved($existingProduct['product_id'], $productData, $existingProduct);
+            $productId = (int)$existingProduct['product_id'];
+            $this->updateProductImproved($productId, $productData, $existingProduct);
             $this->results['updated']++;
         } else {
             // Create new product
@@ -512,19 +556,15 @@ class ImprovedExcelImportHandler {
                 throw new Exception("Failed to create product for row $rowNumber");
             }
         }
+
+        // Ensure inventory reflects imported quantity and location
+        $this->updateInventoryRecord($productId, $productData);
     }
-    
+
     private function findProductBySku($sku) {
         $query = "SELECT * FROM products WHERE sku = ? LIMIT 1";
         $stmt = $this->db->prepare($query);
         $stmt->execute([$sku]);
-        return $stmt->fetch(PDO::FETCH_ASSOC);
-    }
-    
-    private function findProductByName($name) {
-        $query = "SELECT * FROM products WHERE name = ? LIMIT 1";
-        $stmt = $this->db->prepare($query);
-        $stmt->execute([$name]);
         return $stmt->fetch(PDO::FETCH_ASSOC);
     }
     
@@ -633,8 +673,109 @@ class ImprovedExcelImportHandler {
         $stmt = $this->db->prepare($query);
         $executeValues = array_merge($baseValues, $optionalValues);
         $stmt->execute($executeValues);
-        
+
         return $this->db->lastInsertId();
+    }
+
+    private function getProductLocationData(int $productId): ?array {
+        // Try dedicated subdivision first
+        $stmt = $this->db->prepare(
+            "SELECT location_id, level_number, subdivision_number
+             FROM location_subdivisions
+             WHERE dedicated_product_id = ?
+             LIMIT 1"
+        );
+        $stmt->execute([$productId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($row) {
+            return $row;
+        }
+
+        // Fallback to level assignment
+        $stmt = $this->db->prepare(
+            "SELECT location_id, level_number
+             FROM location_level_settings
+             WHERE dedicated_product_id = ?
+             LIMIT 1"
+        );
+        $stmt->execute([$productId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($row) {
+            $row['subdivision_number'] = null;
+            return $row;
+        }
+
+        return null;
+    }
+
+    private function updateInventoryRecord(int $productId, array $productData): void {
+        try {
+            // Remove existing inventory for the product
+            $del = $this->db->prepare("DELETE FROM inventory WHERE product_id = ?");
+            $del->execute([$productId]);
+
+            $quantity = intval($productData['quantity'] ?? 0);
+            if ($quantity <= 0) {
+                return; // nothing to add
+            }
+
+            $locationId = isset($productData['location_id']) ? intval($productData['location_id']) : null;
+            $subdivision = isset($productData['subdivision_number']) ? intval($productData['subdivision_number']) : null;
+            $shelfLevel = $productData['shelf_level'] ?? null;
+
+            if ($locationId === null || $subdivision === null || $shelfLevel === null) {
+                $locData = $this->getProductLocationData($productId);
+                if ($locData) {
+                    if ($locationId === null && isset($locData['location_id'])) {
+                        $locationId = (int)$locData['location_id'];
+                    }
+                    if ($subdivision === null && isset($locData['subdivision_number'])) {
+                        $subdivision = (int)$locData['subdivision_number'];
+                    }
+                    if ($shelfLevel === null && isset($locData['level_number'])) {
+                        require_once BASE_PATH . '/models/LocationLevelSettings.php';
+                        $lls = new LocationLevelSettings($this->db);
+                        $levelName = $lls->getLevelNameByNumber((int)$locData['location_id'], (int)$locData['level_number']);
+                        if ($levelName) {
+                            $shelfLevel = $levelName;
+                        }
+                    }
+                }
+            }
+
+            // Skip inventory creation if essential data like location or shelf level is missing
+            if ($locationId === null || $shelfLevel === null) {
+                $this->results['warnings'][] = 'Skipped inventory for product ' . $productId . ' due to missing location or shelf level';
+                return;
+            }
+
+            require_once BASE_PATH . '/models/Inventory.php';
+            $inventory = new Inventory($this->db);
+
+            $data = [
+                'product_id' => $productId,
+                'location_id' => $locationId,
+                'subdivision_number' => $subdivision,
+                'shelf_level' => $shelfLevel,
+                'quantity' => $quantity,
+            ];
+
+            if (!empty($productData['batch_number'])) {
+                $data['batch_number'] = $productData['batch_number'];
+            }
+            if (!empty($productData['lot_number'])) {
+                $data['lot_number'] = $productData['lot_number'];
+            }
+            if (!empty($productData['expiry_date'])) {
+                $data['expiry_date'] = $productData['expiry_date'];
+            }
+
+            // Use outer transaction, so disable internal transaction
+            $inventory->addStock($data, false);
+
+        } catch (Exception $e) {
+            $this->results['warnings'][] = 'Inventory update failed for product ' . $productId . ': ' . $e->getMessage();
+        }
     }
     
     private function getTableColumns() {

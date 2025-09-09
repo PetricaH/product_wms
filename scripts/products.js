@@ -875,7 +875,6 @@ async function startProcessing() {
         const formData = new FormData();
         formData.append('excel_file', selectedFile);
         formData.append('sync_smartbill', document.getElementById('syncSmartBill')?.checked || false);
-        formData.append('overwrite_existing', document.getElementById('overwriteExisting')?.checked || false);
         
         // Upload and process
         const response = await fetch('api/excel_import.php', {

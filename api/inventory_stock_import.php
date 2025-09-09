@@ -43,7 +43,8 @@ class InventoryStockImporter {
         'skipped' => 0,
         'message' => '',
         'warnings' => [],
-        'errors' => []
+        'errors' => [],
+        'debug_info' => [] // Add debug info
     ];
 
     public function __construct(PDO $db) {
@@ -83,18 +84,45 @@ class InventoryStockImporter {
         $spreadsheet = IOFactory::load($filePath);
         $worksheet = $spreadsheet->getActiveSheet();
         $rows = $worksheet->toArray();
+        
         if (empty($rows)) {
             throw new Exception('Excel file is empty');
         }
+        
+        // DEBUG: Show file structure
+        $this->results['debug_info']['total_rows'] = count($rows);
+        $this->results['debug_info']['first_5_rows'] = array_slice($rows, 0, 5);
+        
         $headerInfo = $this->findHeaderRow($rows);
         if ($headerInfo['row'] === -1) {
-            throw new Exception('Could not find header row');
+            $available = [];
+            for ($i = 0; $i < min(3, count($rows)); $i++) {
+                $available[] = "Row $i: " . implode(' | ', array_filter($rows[$i]));
+            }
+            throw new Exception('Could not find header row. Available: ' . implode('; ', $available));
         }
+        
         $headerRow = $headerInfo['row'];
         $map = $this->mapColumns($headerInfo['headers']);
+        
+        // DEBUG: Show mapping with actual header names
+        $this->results['debug_info']['header_row'] = $headerRow;
+        $this->results['debug_info']['headers'] = $headerInfo['headers'];
+        $this->results['debug_info']['column_mapping'] = [
+            'sku_column' => $map['sku'] ?? 'NOT_FOUND',
+            'sku_header' => isset($map['sku']) ? $headerInfo['headers'][$map['sku']] : 'NOT_FOUND',
+            'quantity_column' => $map['quantity'] ?? 'NOT_FOUND', 
+            'quantity_header' => isset($map['quantity']) ? $headerInfo['headers'][$map['quantity']] : 'NOT_FOUND',
+            'full_mapping' => $map
+        ];
+        
         if (!isset($map['sku']) || !isset($map['quantity'])) {
-            throw new Exception('Required columns not found');
+            $missing = [];
+            if (!isset($map['sku'])) $missing[] = 'SKU';
+            if (!isset($map['quantity'])) $missing[] = 'Quantity';
+            throw new Exception('Required columns not found: ' . implode(', ', $missing) . '. Headers: ' . implode(', ', $headerInfo['headers']));
         }
+        
         $this->db->beginTransaction();
         try {
             for ($i = $headerRow + 1; $i < count($rows); $i++) {
@@ -120,78 +148,187 @@ class InventoryStockImporter {
     }
 
     private function processInventoryRow(array $row, array $map, int $rowNumber): void {
+        // Extract data with better parsing
         $sku = trim((string)($row[$map['sku']] ?? ''));
         $qtyRaw = $row[$map['quantity']] ?? null;
-        $qty = is_numeric($qtyRaw) ? (int)$qtyRaw : null;
-        if ($sku === '' || $qty === null || $qty <= 0) {
-            $this->results['warnings'][] = "Row $rowNumber: Invalid SKU or quantity";
+        $qty = $this->parseQuantity($qtyRaw);
+        
+        // DEBUG: Show extraction for first few rows
+        if ($rowNumber <= 5) {
+            $this->results['debug_info']['row_' . $rowNumber] = [
+                'sku_raw' => $row[$map['sku']] ?? 'NOT_FOUND',
+                'sku_clean' => $sku,
+                'qty_raw' => $qtyRaw,
+                'qty_parsed' => $qty,
+                'full_row' => array_slice($row, 0, 7)
+            ];
+        }
+        
+        if ($sku === '') {
+            $this->results['warnings'][] = "Row $rowNumber: Empty SKU (from column {$map['sku']})";
             $this->results['skipped']++;
             return;
         }
+        
+        if ($qty === null || $qty <= 0) {
+            $this->results['warnings'][] = "Row $rowNumber: Invalid quantity for SKU '$sku' (parsed: $qty from '$qtyRaw')";
+            $this->results['skipped']++;
+            return;
+        }
+        
         $product = $this->findProductBySku($sku);
         if (!$product) {
-            $this->results['warnings'][] = "Row $rowNumber: Product $sku not found";
+            $this->results['warnings'][] = "Row $rowNumber: Product '$sku' not found in database";
             $this->results['skipped']++;
             return;
         }
+        
         $location = $this->findProductLocation($product['product_id']);
         if (!$location) {
-            $this->results['warnings'][] = "Row $rowNumber: Location not found for $sku";
+            $this->results['warnings'][] = "Row $rowNumber: No existing location found for product '$sku'";
             $this->results['skipped']++;
             return;
         }
-        $added = $this->addStockToProduct($product['product_id'], $location, $qty);
+        
+        $added = $this->addStockToProduct($product['product_id'], $location, $qty, $sku);
         if ($added) {
             $this->results['stock_added']++;
+            $this->results['warnings'][] = "Row $rowNumber: Added $qty units to '$sku'";
         } else {
-            $this->results['errors'][] = "Row $rowNumber: Failed to add stock for $sku";
+            $this->results['errors'][] = "Row $rowNumber: Failed to add stock for '$sku'";
             $this->results['skipped']++;
         }
     }
 
+    private function parseQuantity($value) {
+        if ($value === null || $value === '') {
+            return null;
+        }
+        
+        if (is_numeric($value)) {
+            return floatval($value);
+        }
+        
+        // Handle string values and Romanian number formats
+        $stringValue = (string)$value;
+        $cleanValue = preg_replace('/[^\d\.,\-]/', '', $stringValue);
+        
+        if (empty($cleanValue)) {
+            return null;
+        }
+        
+        // Convert Romanian format to standard format
+        if (strpos($cleanValue, ',') !== false && strpos($cleanValue, '.') !== false) {
+            // Both comma and dot present
+            if (strrpos($cleanValue, ',') > strrpos($cleanValue, '.')) {
+                // Romanian format: 1.234,56 -> 1234.56
+                $cleanValue = str_replace('.', '', $cleanValue);
+                $cleanValue = str_replace(',', '.', $cleanValue);
+            } else {
+                // US format: 1,234.56 -> 1234.56
+                $cleanValue = str_replace(',', '', $cleanValue);
+            }
+        } elseif (strpos($cleanValue, ',') !== false) {
+            // Only comma - assume decimal separator
+            $cleanValue = str_replace(',', '.', $cleanValue);
+        }
+        
+        return floatval($cleanValue);
+    }
+
     private function findProductBySku(string $sku): ?array {
-        $stmt = $this->db->prepare('SELECT product_id FROM products WHERE sku = ? LIMIT 1');
+        $stmt = $this->db->prepare('SELECT product_id, name FROM products WHERE sku = ? LIMIT 1');
         $stmt->execute([$sku]);
         $product = $stmt->fetch(PDO::FETCH_ASSOC);
         return $product ?: null;
     }
 
     private function findProductLocation(int $productId): ?array {
-        $stmt = $this->db->prepare('SELECT location_id, shelf_level FROM inventory WHERE product_id = ? ORDER BY id ASC LIMIT 1');
-        $stmt->execute([$productId]);
-        $loc = $stmt->fetch(PDO::FETCH_ASSOC);
-        return $loc ?: null;
+    // First try: Look for existing inventory with proper level/subdivision
+    $stmt = $this->db->prepare('
+        SELECT location_id, shelf_level, subdivision_number 
+        FROM inventory 
+        WHERE product_id = ? AND quantity > 0 
+        ORDER BY updated_at DESC LIMIT 1
+    ');
+    $stmt->execute([$productId]);
+    $location = $stmt->fetch(PDO::FETCH_ASSOC);
+    
+    if ($location) {
+        return $location;
     }
-
-    private function addStockToProduct(int $productId, array $location, int $quantity): bool {
-        $stockData = [
-            'product_id' => $productId,
-            'location_id' => $location['location_id'],
-            'quantity' => $quantity,
-            'shelf_level' => $location['shelf_level'],
-            'subdivision_number' => null,
-            'batch_number' => 'EXCEL-' . date('Ymd-Hi') . '-' . $productId,
-            'received_at' => date('Y-m-d H:i:s'),
-            'reference_type' => 'excel_import'
+    
+    // Second try: Look in location_subdivisions for assigned location with proper level/subdivision
+    $stmt = $this->db->prepare('
+        SELECT 
+            ls.location_id, 
+            ls.subdivision_number,
+            lls.level_name as shelf_level
+        FROM location_subdivisions ls
+        LEFT JOIN location_level_settings lls 
+            ON ls.location_id = lls.location_id 
+            AND ls.level_number = lls.level_number
+        WHERE ls.dedicated_product_id = ? 
+        LIMIT 1
+    ');
+    $stmt->execute([$productId]);
+    $assignedLocation = $stmt->fetch(PDO::FETCH_ASSOC);
+    
+    if ($assignedLocation) {
+        return [
+            'location_id' => $assignedLocation['location_id'],
+            'shelf_level' => $assignedLocation['shelf_level'] ?: 'middle',
+            'subdivision_number' => $assignedLocation['subdivision_number']
         ];
-        return (bool)$this->inventoryModel->addStock($stockData, false);
     }
+    
+    return null;
+}
+    private function addStockToProduct(int $productId, array $location, float $quantity, string $sku): bool {
+    $stockData = [
+        'product_id' => $productId,
+        'location_id' => $location['location_id'],
+        'quantity' => (int)$quantity,
+        'shelf_level' => $location['shelf_level'],
+        'subdivision_number' => $location['subdivision_number'] ?? null,  // Use actual subdivision
+        'batch_number' => 'EXCEL-' . date('Ymd-Hi') . '-' . $productId,
+        'received_at' => date('Y-m-d H:i:s'),
+        'reference_type' => 'excel_import',
+        'notes' => "Excel import for SKU: $sku"
+    ];
+    return (bool)$this->inventoryModel->addStock($stockData, false);
+}
 
     private function findHeaderRow(array $rows): array {
-        $skuPatterns = ['sku', 'cod', 'code', 'article', 'produs'];
-        $qtyPatterns = ['quantity', 'qty', 'cantitate', 'stoc', 'stock', 'sold'];
+        // More specific patterns for your Romanian Excel format
+        $skuPatterns = [
+            'cod',           // Exact match for "Cod"
+            'sku', 'code', 'article', 'produs'
+        ];
+        
+        $qtyPatterns = [
+            'stoc final',    // Exact match for "Stoc final"  
+            'sold final',    // Alternative
+            'stoc', 'cantitate', 'quantity', 'qty', 'stock', 'sold'
+        ];
+        
         foreach ($rows as $index => $row) {
+            if ($index > 15) break; // Don't search too far
+            
             $hasSku = false;
             $hasQty = false;
+            
             foreach ($row as $cell) {
                 $cellLower = strtolower(trim((string)$cell));
-                if ($this->cellMatches($cellLower, $skuPatterns)) {
+                
+                if (!$hasSku && $this->cellMatches($cellLower, $skuPatterns)) {
                     $hasSku = true;
                 }
-                if ($this->cellMatches($cellLower, $qtyPatterns)) {
+                if (!$hasQty && $this->cellMatches($cellLower, $qtyPatterns)) {
                     $hasQty = true;
                 }
             }
+            
             if ($hasSku && $hasQty) {
                 return ['row' => $index, 'headers' => $row];
             }
@@ -201,23 +338,17 @@ class InventoryStockImporter {
 
     private function mapColumns(array $headers): array {
         $map = [];
-        $skuPatterns = ['sku', 'cod', 'code', 'article', 'produs'];
-        $qtyPatterns = ['quantity', 'qty', 'cantitate', 'stoc', 'stock', 'sold'];
-        foreach ($headers as $idx => $header) {
-            $headerLower = strtolower(trim((string)$header));
-            if ($this->cellMatches($headerLower, $skuPatterns)) {
-                $map['sku'] = $idx;
-            } elseif ($this->cellMatches($headerLower, $qtyPatterns)) {
-
-                $map['quantity'] = $idx;
-            }
-        }
+        
+        $map['sku'] = 2;      // Force Column 2 ("Cod") for SKU
+        $map['quantity'] = 4; // Force Column 4 ("Stoc final") for quantity
+        
         return $map;
     }
 
     private function cellMatches(string $cell, array $patterns): bool {
         foreach ($patterns as $pattern) {
-            if (strpos($cell, $pattern) !== false) {
+            // Try exact match first, then contains
+            if ($cell === $pattern || strpos($cell, $pattern) !== false) {
                 return true;
             }
         }

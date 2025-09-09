@@ -4,6 +4,9 @@
 let selectedSellersFile = null;
 let sellersImportInProgress = false;
 
+// Preserve any existing global notification handler
+const existingShowNotification = window.showNotification;
+
 /**
  * Initialize sellers import functionality
  */
@@ -193,12 +196,12 @@ function formatFileSize(bytes) {
  * Show notification message
  */
 function showNotification(message, type = 'info') {
-    // Try to use existing notification system first
-    if (typeof window.showNotification === 'function') {
-        window.showNotification(message, type);
+    // Try to use previously defined notification system first
+    if (typeof existingShowNotification === 'function') {
+        existingShowNotification(message, type);
         return;
     }
-    
+
     // Fallback: create simple notification
     const notification = document.createElement('div');
     notification.className = `notification notification-${type}`;
@@ -216,9 +219,9 @@ function showNotification(message, type = 'info') {
         word-wrap: break-word;
     `;
     notification.textContent = message;
-    
+
     document.body.appendChild(notification);
-    
+
     // Auto remove after 5 seconds
     setTimeout(() => {
         if (notification.parentNode) {

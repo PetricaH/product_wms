@@ -19,7 +19,6 @@ require_once BASE_PATH . '/models/Inventory.php';
 
 use PhpOffice\PhpSpreadsheet\IOFactory;
 
-session_start();
 if (!isset($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'admin') {
     http_response_code(403);
     echo json_encode(['success' => false, 'message' => 'Unauthorized']);
@@ -182,18 +181,19 @@ class InventoryStockImporter {
         $skuPatterns = ['sku', 'cod', 'code', 'article', 'produs'];
         $qtyPatterns = ['quantity', 'qty', 'cantitate', 'stoc', 'stock', 'sold'];
         foreach ($rows as $index => $row) {
+            $hasSku = false;
+            $hasQty = false;
             foreach ($row as $cell) {
-                if (!is_string($cell)) continue;
-                $cellLower = strtolower(trim($cell));
-                if (in_array($cellLower, $skuPatterns, true)) {
-                    // Look for quantity in same row
-                    foreach ($row as $cell2) {
-                        if (!is_string($cell2)) continue;
-                        if (in_array(strtolower(trim($cell2)), $qtyPatterns, true)) {
-                            return ['row' => $index, 'headers' => $row];
-                        }
-                    }
+                $cellLower = strtolower(trim((string)$cell));
+                if ($this->cellMatches($cellLower, $skuPatterns)) {
+                    $hasSku = true;
                 }
+                if ($this->cellMatches($cellLower, $qtyPatterns)) {
+                    $hasQty = true;
+                }
+            }
+            if ($hasSku && $hasQty) {
+                return ['row' => $index, 'headers' => $row];
             }
         }
         return ['row' => -1, 'headers' => []];
@@ -205,13 +205,23 @@ class InventoryStockImporter {
         $qtyPatterns = ['quantity', 'qty', 'cantitate', 'stoc', 'stock', 'sold'];
         foreach ($headers as $idx => $header) {
             $headerLower = strtolower(trim((string)$header));
-            if (in_array($headerLower, $skuPatterns, true)) {
+            if ($this->cellMatches($headerLower, $skuPatterns)) {
                 $map['sku'] = $idx;
-            } elseif (in_array($headerLower, $qtyPatterns, true)) {
+            } elseif ($this->cellMatches($headerLower, $qtyPatterns)) {
+
                 $map['quantity'] = $idx;
             }
         }
         return $map;
+    }
+
+    private function cellMatches(string $cell, array $patterns): bool {
+        foreach ($patterns as $pattern) {
+            if (strpos($cell, $pattern) !== false) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private function isEmptyRow(array $row): bool {

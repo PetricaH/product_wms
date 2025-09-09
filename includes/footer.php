@@ -39,7 +39,7 @@ if (empty($apiKey)) {
 // Define an array of page-specific JavaScript files.
 $pageSpecificJS = [
     'products' => ['products.js', 'inventory.js'],
-    'inventory' => 'inventory.js',
+    'inventory' => ['inventory.js', 'inventory-stock-import.js'],
     'users' => 'users.js',
     'transactions' => 'transactions.js',
     'theme-toggle' => 'theme-toggle.js',

@@ -7,6 +7,17 @@ function openAddStockModal(productId = null) {
     const modal = document.getElementById('addStockModal');
     modal.classList.add('show');
     generateBatchLot();
+
+    // Reset location and subdivision fields each time the modal opens
+    const locSelect = document.getElementById('add-location');
+    const levelSelect = document.getElementById('shelf_level');
+    const subContainer = document.getElementById('subdivision-container');
+    const subSelect = document.getElementById('subdivision_number');
+    if (locSelect) locSelect.value = '';
+    if (levelSelect) levelSelect.innerHTML = '<option value="">--</option>';
+    if (subSelect) subSelect.innerHTML = '<option value="">--</option>';
+    if (subContainer) subContainer.style.display = 'none';
+
     if (productId) {
         loadProductDetails(productId);
     } else {
@@ -175,8 +186,10 @@ async function fetchProductLocation(productId) {
                 levelSelect.value = data.level_number;
                 await updateSubdivisionOptions();
                 if (data.subdivision_number) {
+                    const subContainer = document.getElementById('subdivision-container');
                     const subSelect = document.getElementById('subdivision_number');
                     subSelect.value = data.subdivision_number;
+                    if (subContainer) subContainer.style.display = 'block';
                 }
             }
             return true;
@@ -192,7 +205,7 @@ async function loadLocationLevels(locationId) {
     const levelSelect = document.getElementById('shelf_level');
     levelSelect.innerHTML = '<option value="">--</option>';
     document.getElementById('subdivision-container').style.display = 'none';
-    document.getElementById('subdivision_number').innerHTML = '';
+    document.getElementById('subdivision_number').innerHTML = '<option value="">--</option>';
     if (!locationId) return;
     try {
         const resp = await fetch(`api/location_info.php?id=${locationId}`);
@@ -225,7 +238,7 @@ async function updateSubdivisionOptions() {
     const subSelect = document.getElementById('subdivision_number');
     const levelNumber = levelSelect.value;
 
-    subSelect.innerHTML = '';
+    subSelect.innerHTML = '<option value="">--</option>';
 
     if (!locId || !levelNumber) { subContainer.style.display = 'none'; return; }
 

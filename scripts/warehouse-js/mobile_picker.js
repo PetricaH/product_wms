@@ -253,6 +253,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 break;
             case 'F3':
+                e.preventDefault();
+                if (currentStep === 'quantity') {
+                    elements.confirmQuantityBtn?.click();
+                }
+                break;
             case 'F4':
             case 'F5':
                 e.preventDefault();

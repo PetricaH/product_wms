@@ -175,9 +175,9 @@ $hasOrderFromUrl = !empty($orderNumber);
                         <button class="qty-btn" id="qty-increase">+</button>
                     </div>
                     <div class="quantity-actions">
-                        <button id="confirm-quantity-btn" class="btn btn-success btn-large">
+                        <button id="confirm-quantity-btn" class="btn btn-success btn-large" title="Confirmă Colectarea (F3)">
                             <span class="material-symbols-outlined">check_circle</span>
-                            Confirmă Colectarea
+                            F3 - Confirmă Colectarea
                         </button>
                         <button id="back-to-product" class="btn btn-secondary">
                             <span class="material-symbols-outlined">arrow_back</span>

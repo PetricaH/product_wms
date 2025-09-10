@@ -6,7 +6,13 @@ if (!defined('BASE_PATH')) {
     define('BASE_PATH', __DIR__);
 }
 
-// FIXED: Start session early in bootstrap
+// Configure session to persist until manual logout
+$sessionLifetime = 60 * 60 * 24 * 365 * 10; // 10 years
+ini_set('session.gc_maxlifetime', $sessionLifetime);
+ini_set('session.cookie_lifetime', $sessionLifetime);
+session_set_cookie_params($sessionLifetime);
+
+// Start session with the extended lifetime
 session_start();
 
 // FIXED: Generate CSRF token if not exists

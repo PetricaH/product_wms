@@ -762,9 +762,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                 <span class="column required">Nume Produs</span>
                                 <span class="column optional">Descriere</span>
                                 <span class="column optional">Categorie</span>
-                                <span class="column optional">Cantitate</span>
                                 <span class="column optional">Preț</span>
-                                <span class="column optional">Stoc Minim</span>
                                 <span class="column optional">Unitate Măsură</span>
                             </div>
                             <small class="text-muted">

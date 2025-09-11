@@ -6,12 +6,12 @@ function addRotatedQRAndTextToPDF($pdf, string $sku, string $productName, int $q
     $pdf->SetTextColor(0, 0, 0);
     
     // Position QR code where the red diamonds are (upper edge after rotation)
-    $qrX = 5;    // Far left edge  
-    $qrY = 5;    // Far top edge
+    $qrX = 121;    // Far left edge  
+    $qrY = 115;    // Far top edge
     
     // Position text where the red lines are (lower edge after rotation)
-    $textX = 5;  // Far left edge
-    $textY = $labelHeight - 40; // Near bottom edge (adjust based on label height)
+    $textX = 90;  // Far left edge
+    $textY = $labelHeight - 70; // Near bottom edge (adjust based on label height)
     
     // Add QR code first
     $qrImagePath = generateTempQRImage($sku);
@@ -673,7 +673,7 @@ function findProductTemplate(string $sku, string $productName): ?string {
     // Extract number from SKU (e.g., "APF906.10" → "906", "806.25" → "806")
     if (preg_match('/(\d+)/', $sku, $matches)) {
         $productCode = $matches[1];
-        error_log("Extracted product code '$productCode' from SKU '$sku'");
+        error_log("Codul produsului extras '$productCode' din SKU '$sku'");
 
         // Look for PDF files first, then fallback to PNG/JPG
         $extensions = ['pdf', 'png', 'jpg'];
@@ -685,7 +685,7 @@ function findProductTemplate(string $sku, string $productName): ?string {
                 $matchesGlob = glob($pattern);
                 if (!empty($matchesGlob)) {
                     $templatePath = $matchesGlob[0];
-                    error_log("✅ FOUND APP template: $templatePath for product code $productCode");
+                    error_log("Template APP gasit: $templatePath pentru codul produsului $productCode");
                     return $templatePath;
                 }
             } else {
@@ -694,17 +694,18 @@ function findProductTemplate(string $sku, string $productName): ?string {
                 $matchesGlob = array_filter(glob($pattern), function ($path) {
                     return stripos(basename($path), 'APP-') !== 0;
                 });
+                $matchesGlob = array_values($matchesGlob); // Fix array indexing after filter
                 if (!empty($matchesGlob)) {
                     $templatePath = $matchesGlob[0];
-                    error_log("✅ FOUND template: $templatePath for product code $productCode");
+                    error_log("Template gasit: $templatePath pentru codul produsului $productCode");
                     return $templatePath;
                 }
             }
         }
 
-        error_log("❌ No template found containing product code '$productCode'");
+        error_log("Nu s-a gasit template pentru codul produsului '$productCode'");
     } else {
-        error_log("❌ No number found in SKU '$sku'");
+        error_log("Nu s-a gasit numar in SKU '$sku'");
     }
 
     // Fallback: Generic template
@@ -712,12 +713,12 @@ function findProductTemplate(string $sku, string $productName): ?string {
     foreach ($genericOptions as $generic) {
         $templatePath = $templateDir . $generic;
         if (file_exists($templatePath)) {
-            error_log("Using generic template: $templatePath");
+            error_log("Se foloseste template generic: $templatePath");
             return $templatePath;
         }
     }
 
-    error_log("No template found for SKU '$sku'");
+    error_log("Nu s-a gasit niciun template pentru SKU '$sku'");
     return null;
 }
 

@@ -307,7 +307,30 @@ class InventoryStockImporter {
         $current = (int)($locInfo['current_occupancy'] ?? 0);
         $available = $capacity > 0 ? max(0, $capacity - $current) : (int)$quantity;
 
-        $qtyPrimary = min((int)$quantity, $available);
+        // Check subdivision capacity if subdivision info exists
+        $subdivisionAvailable = $available;
+        $subdivisionNumber = $location['subdivision_number'] ?? null;
+        if ($subdivisionNumber !== null) {
+            // Resolve numeric level number from the provided shelf level name
+            $levelStmt = $this->db->prepare("SELECT level_number FROM location_level_settings WHERE location_id = ? AND level_name = ? LIMIT 1");
+            $levelStmt->execute([$locationId, $location['shelf_level']]);
+            $levelNumber = $levelStmt->fetchColumn();
+
+            if ($levelNumber !== false && $levelNumber !== null) {
+                $subdivisionModel = new LocationSubdivision($this->db);
+                $check = $subdivisionModel->canPlaceProduct($locationId, (int)$levelNumber, (int)$subdivisionNumber, $productId, (int)$quantity);
+
+                // If subdivision cannot accept the entire quantity, log the reason
+                if (!$check['allowed']) {
+                    $this->results['warnings'][] = "Subdivision capacity issue at location {$locInfo['location_code']} level {$location['shelf_level']} subdivision {$subdivisionNumber}: {$check['reason']}";
+                }
+
+                // Effective available capacity is min of overall location and subdivision capacities
+                $subdivisionAvailable = min($available, max(0, (int)$check['available_capacity']));
+            }
+        }
+
+        $qtyPrimary = min((int)$quantity, $subdivisionAvailable);
         $overflow = (int)$quantity - $qtyPrimary;
 
         $batch = 'EXCEL-' . date('Ymd-Hi') . '-' . $productId;

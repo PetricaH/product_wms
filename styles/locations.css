@@ -1036,6 +1036,59 @@
     color: var(--text-primary);
 }
 
+/* ===== TEMPORARY LOCATIONS ===== */
+.temporary-section {
+    margin-top: 2rem;
+}
+
+.temporary-title {
+    font-size: 1.1rem;
+    margin-bottom: 1rem;
+    color: #b45309;
+}
+
+.temporary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 1rem;
+}
+
+.temporary-item {
+    background-color: #fff7ed;
+    border: 1px solid #fb923c;
+    border-radius: var(--border-radius);
+    padding: 1rem;
+}
+
+.temporary-code {
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+}
+
+.temporary-bar {
+    height: 12px;
+    background-color: #fde68a;
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 0.5rem;
+}
+
+.temporary-fill {
+    height: 100%;
+    background-color: #fbbf24;
+}
+
+.temporary-fill.occupancy-empty { background-color: var(--medium-gray); }
+.temporary-fill.occupancy-low { background-color: #fde68a; }
+.temporary-fill.occupancy-medium { background-color: #fbbf24; }
+.temporary-fill.occupancy-high { background-color: #f97316; }
+.temporary-fill.occupancy-full { background-color: #dc2626; }
+
+.temporary-stats {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
 .legend-indicator {
     width: 14px;
     height: 14px;

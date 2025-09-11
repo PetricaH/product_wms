@@ -2227,11 +2227,13 @@ class EnhancedWarehouseVisualization {
             return window.dynamicZones.map(zone => ({
                 name: zone.zone_name,
                 shelfCount: parseInt(zone.shelf_count) || 0,
+                temporaryCount: parseInt(zone.temporary_count) || 0,
+                locationCount: parseInt(zone.location_count) || ((parseInt(zone.shelf_count) || 0) + (parseInt(zone.temporary_count) || 0)),
                 avgOccupancy: parseFloat(zone.avg_occupancy) || 0,
                 totalCapacity: parseInt(zone.total_capacity) || 0,
                 totalItems: parseInt(zone.total_items) || 0,
-                // FIXED: Case insensitive filtering
-                shelves: this.locations.filter(l => l.zone === zone.zone_name && l.type.toLowerCase() === 'shelf')
+                // include shelves and temporary locations
+                shelves: this.locations.filter(l => l.zone === zone.zone_name && ['shelf','temporary'].includes(l.type.toLowerCase()))
             }));
         }
         
@@ -2240,20 +2242,26 @@ class EnhancedWarehouseVisualization {
         
         this.locations.forEach(location => {
             const zoneName = location.zone;
-            // FIXED: Case insensitive type check
-            if (zoneName && location.type.toLowerCase() === 'shelf') {
+            if (zoneName && ['shelf','temporary'].includes(location.type.toLowerCase())) {
                 if (!zoneMap.has(zoneName)) {
                     zoneMap.set(zoneName, {
                         name: zoneName,
                         shelves: [],
                         totalOccupancy: 0,
-                        shelfCount: 0
+                        locationCount: 0,
+                        shelfCount: 0,
+                        temporaryCount: 0
                     });
                 }
-                
+
                 const zone = zoneMap.get(zoneName);
                 zone.shelves.push(location);
-                zone.shelfCount++;
+                zone.locationCount++;
+                if (location.type.toLowerCase() === 'temporary') {
+                    zone.temporaryCount++;
+                } else {
+                    zone.shelfCount++;
+                }
                 zone.totalOccupancy += (location.occupancy?.total || 0);
             }
         });
@@ -2261,9 +2269,9 @@ class EnhancedWarehouseVisualization {
         // Calculate average occupancy for each zone
         const zones = Array.from(zoneMap.values()).map(zone => ({
             ...zone,
-            avgOccupancy: zone.shelfCount > 0 ? zone.totalOccupancy / zone.shelfCount : 0
+            avgOccupancy: zone.locationCount > 0 ? zone.totalOccupancy / zone.locationCount : 0
         }));
-        
+
         return zones.sort((a, b) => a.name.localeCompare(b.name));
     }
 
@@ -2459,13 +2467,19 @@ class EnhancedWarehouseVisualization {
             return;
         }
         
-        zonesGrid.innerHTML = this.zones.map(zone => `
+        zonesGrid.innerHTML = this.zones.map(zone => {
+            const count = typeof zone.locationCount !== 'undefined' ? zone.locationCount : (zone.shelfCount || 0);
+            const hasShelves = (zone.shelfCount || 0) > 0;
+            const hasTemps = (zone.temporaryCount || 0) > 0;
+            const label = hasShelves && !hasTemps ? 'rafturi' : 'locații';
+            return `
             <div class="storage-zone" data-zone="${zone.name}">
                 <span class="material-symbols-outlined zone-icon">shelves</span>
                 <div class="zone-label">Zona ${zone.name}</div>
-                <div class="zone-stats">${zone.shelfCount || 0} rafturi • ${Math.round(zone.avgOccupancy || 0)}% ocupare</div>
+                <div class="zone-stats">${count} ${label} • ${Math.round(zone.avgOccupancy || 0)}% ocupare</div>
             </div>
-        `).join('');
+        `;
+        }).join('');
     }
 
     renderShelves() {
@@ -2481,24 +2495,24 @@ class EnhancedWarehouseVisualization {
                 shelvesTitle.textContent = 'Selectează o zonă pentru a vedea rafturile';
             }
             this.toggleLegend(false);
-            this.renderTemporaryLocations();
             return;
         }
         
         // Update header
         if (shelvesTitle) {
-            shelvesTitle.textContent = `Rafturi - Zona ${this.currentZone}`;
+            const zoneInfo = this.zones.find(z => z.name === this.currentZone);
+            const hasShelves = zoneInfo && (zoneInfo.shelfCount || 0) > 0 && (zoneInfo.temporaryCount || 0) === 0;
+            shelvesTitle.textContent = `${hasShelves ? 'Rafturi' : 'Locații'} - Zona ${this.currentZone}`;
         }
         
         // FIXED: Case insensitive type filtering
-        const zoneShelves = this.locations.filter(l => 
-            l.zone === this.currentZone && l.type.toLowerCase() === 'shelf'
+        const zoneShelves = this.locations.filter(l =>
+            l.zone === this.currentZone && ['shelf','temporary'].includes(l.type.toLowerCase())
         );
         
         if (zoneShelves.length === 0) {
-            shelvesGrid.innerHTML = this.getEmptyShelvesState(`Nu există rafturi în zona ${this.currentZone}`);
+            shelvesGrid.innerHTML = this.getEmptyShelvesState(`Nu există locații în zona ${this.currentZone}`);
             this.toggleLegend(false);
-            this.renderTemporaryLocations();
             return;
         }
         
@@ -2507,12 +2521,13 @@ class EnhancedWarehouseVisualization {
         
         shelvesGrid.innerHTML = zoneShelves.map(shelf => this.createShelfElement(shelf)).join('');
         this.toggleLegend(true);
-        this.renderTemporaryLocations();
     }
 
     createShelfElement(shelf) {
         const occupancyTotal = shelf.occupancy?.total || 0;
-        const levelsHTML = this.renderDynamicShelfLevels(shelf);
+        const levelsHTML = shelf.type.toLowerCase() === 'temporary'
+            ? this.renderSimpleShelfBar(occupancyTotal)
+            : this.renderDynamicShelfLevels(shelf);
 
         return `
             <div class="shelf-item ${this.getOccupancyClass(occupancyTotal)}" data-shelf-id="${shelf.id}">
@@ -2543,36 +2558,12 @@ class EnhancedWarehouseVisualization {
         return `<div class="shelf-levels">${levelBars}</div>`;
     }
 
-    renderTemporaryLocations() {
-        const container = document.getElementById('temporaryLocationsContainer');
-        const grid = document.getElementById('temporaryLocationsGrid');
-        if (!container || !grid) return;
-
-        const tempLocations = this.locations.filter(l => (l.type || '').toLowerCase() === 'temporary');
-        if (tempLocations.length === 0) {
-            container.style.display = 'none';
-            grid.innerHTML = '';
-            return;
-        }
-
-        container.style.display = 'block';
-        grid.innerHTML = tempLocations.map(loc => this.createTemporaryLocationElement(loc)).join('');
-    }
-
-    createTemporaryLocationElement(location) {
-        const current = location.total_items || 0;
-        const capacity = location.capacity || 0;
-        const percentage = capacity > 0 ? (current / capacity) * 100 : 0;
-        const percentText = Math.round(percentage);
-        const className = this.getOccupancyClass(percentage);
-
+    renderSimpleShelfBar(percentage) {
         return `
-            <div class="temporary-item">
-                <div class="temporary-code">${location.location_code}</div>
-                <div class="temporary-bar">
-                    <div class="temporary-fill ${className}" style="width: ${percentage}%"></div>
+            <div class="shelf-levels">
+                <div class="shelf-level">
+                    <div class="level-fill ${this.getOccupancyClass(percentage)}" style="width: ${percentage}%"></div>
                 </div>
-                <div class="temporary-stats">${current}/${capacity} - ${percentText}%</div>
             </div>
         `;
     }

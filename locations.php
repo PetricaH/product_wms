@@ -988,11 +988,6 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                         </div>
                                     </div>
 
-                                    <!-- Temporary Locations -->
-                                    <div class="temporary-section" id="temporaryLocationsContainer" style="display: none;">
-                                        <h3 class="temporary-title">Locații Temporare</h3>
-                                        <div class="temporary-grid" id="temporaryLocationsGrid"></div>
-                                    </div>
                                 </div>
                             </div>
                         </div>

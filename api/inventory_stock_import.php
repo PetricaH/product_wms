@@ -285,20 +285,98 @@ class InventoryStockImporter {
     return null;
 }
     private function addStockToProduct(int $productId, array $location, float $quantity, string $sku): bool {
-    $stockData = [
-        'product_id' => $productId,
-        'location_id' => $location['location_id'],
-        'quantity' => (int)$quantity,
-        'shelf_level' => $location['shelf_level'],
-        'subdivision_number' => $location['subdivision_number'] ?? null,  // Use actual subdivision
-        'batch_number' => 'EXCEL-' . date('Ymd-Hi') . '-' . $productId,
-        'received_at' => date('Y-m-d H:i:s'),
-        'reference_type' => 'excel_import',
-        'notes' => "Excel import for SKU: $sku"
-    ];
-    return (bool)$this->inventoryModel->addStock($stockData, false);
-}
+        $locationModel = new Location($this->db);
+        $relocationModel = new RelocationTask($this->db);
 
+        $locationId = (int)$location['location_id'];
+
+        $stmt = $this->db->prepare("SELECT capacity, current_occupancy, type, location_code FROM locations WHERE id = ?");
+        $stmt->execute([$locationId]);
+        $locInfo = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$locInfo) {
+            $this->results['errors'][] = "Location $locationId not found for SKU $sku";
+            return false;
+        }
+
+        if (($locInfo['type'] ?? '') === Location::TYPE_TEMPORARY) {
+            $this->results['errors'][] = "Temporary location {$locInfo['location_code']} cannot be primary storage for SKU $sku";
+            return false;
+        }
+
+        $capacity = (int)($locInfo['capacity'] ?? 0);
+        $current = (int)($locInfo['current_occupancy'] ?? 0);
+        $available = $capacity > 0 ? max(0, $capacity - $current) : (int)$quantity;
+
+        $qtyPrimary = min((int)$quantity, $available);
+        $overflow = (int)$quantity - $qtyPrimary;
+
+        $batch = 'EXCEL-' . date('Ymd-Hi') . '-' . $productId;
+
+        if ($qtyPrimary > 0) {
+            $stockData = [
+                'product_id' => $productId,
+                'location_id' => $locationId,
+                'quantity' => $qtyPrimary,
+                'shelf_level' => $location['shelf_level'],
+                'subdivision_number' => $location['subdivision_number'] ?? null,
+                'batch_number' => $batch,
+                'received_at' => date('Y-m-d H:i:s'),
+                'reference_type' => 'excel_import',
+                'notes' => "Excel import for SKU: $sku",
+            ];
+            if (!$this->inventoryModel->addStock($stockData, false)) {
+                return false;
+            }
+        }
+
+        while ($overflow > 0) {
+            $tempId = $locationModel->findAvailableTemporaryLocation();
+            if (!$tempId) {
+                $this->results['warnings'][] = "No temporary location available for $overflow units of '$sku'";
+                return false;
+            }
+
+            $stmt = $this->db->prepare("SELECT capacity, current_occupancy, location_code FROM locations WHERE id = ?");
+            $stmt->execute([$tempId]);
+            $tmpInfo = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$tmpInfo) {
+                $this->results['warnings'][] = "Temporary location $tempId not found for overflow of '$sku'";
+                return false;
+            }
+
+            $tmpCapacity = (int)($tmpInfo['capacity'] ?? 0);
+            $tmpCurrent = (int)($tmpInfo['current_occupancy'] ?? 0);
+            $tmpAvailable = $tmpCapacity > 0 ? max(0, $tmpCapacity - $tmpCurrent) : $overflow;
+            if ($tmpAvailable <= 0) {
+                $this->results['warnings'][] = "Temporary location {$tmpInfo['location_code']} is full";
+                return false;
+            }
+
+            $qtyTemp = min($overflow, $tmpAvailable);
+
+            $stockData = [
+                'product_id' => $productId,
+                'location_id' => $tempId,
+                'quantity' => $qtyTemp,
+                'shelf_level' => $location['shelf_level'],
+                'subdivision_number' => $location['subdivision_number'] ?? null,
+                'batch_number' => $batch,
+                'received_at' => date('Y-m-d H:i:s'),
+                'reference_type' => 'excel_import_overflow',
+                'notes' => "Overflow from SKU $sku",
+            ];
+            if (!$this->inventoryModel->addStock($stockData, false)) {
+                return false;
+            }
+
+            $relocationModel->createTask($productId, $tempId, $locationId, $qtyTemp);
+            $this->results['warnings'][] = "Location {$locInfo['location_code']} full; placed $qtyTemp units of '$sku' in temporary location {$tmpInfo['location_code']}";
+
+            $overflow -= $qtyTemp;
+        }
+
+        return true;
+    }
     private function findHeaderRow(array $rows): array {
         // More specific patterns for your Romanian Excel format
         $skuPatterns = [

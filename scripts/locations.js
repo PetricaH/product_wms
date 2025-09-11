@@ -2481,6 +2481,7 @@ class EnhancedWarehouseVisualization {
                 shelvesTitle.textContent = 'Selectează o zonă pentru a vedea rafturile';
             }
             this.toggleLegend(false);
+            this.renderTemporaryLocations();
             return;
         }
         
@@ -2497,6 +2498,7 @@ class EnhancedWarehouseVisualization {
         if (zoneShelves.length === 0) {
             shelvesGrid.innerHTML = this.getEmptyShelvesState(`Nu există rafturi în zona ${this.currentZone}`);
             this.toggleLegend(false);
+            this.renderTemporaryLocations();
             return;
         }
         
@@ -2505,6 +2507,7 @@ class EnhancedWarehouseVisualization {
         
         shelvesGrid.innerHTML = zoneShelves.map(shelf => this.createShelfElement(shelf)).join('');
         this.toggleLegend(true);
+        this.renderTemporaryLocations();
     }
 
     createShelfElement(shelf) {
@@ -2538,6 +2541,40 @@ class EnhancedWarehouseVisualization {
             }).join('');
 
         return `<div class="shelf-levels">${levelBars}</div>`;
+    }
+
+    renderTemporaryLocations() {
+        const container = document.getElementById('temporaryLocationsContainer');
+        const grid = document.getElementById('temporaryLocationsGrid');
+        if (!container || !grid) return;
+
+        const tempLocations = this.locations.filter(l => (l.type || '').toLowerCase() === 'temporary');
+        if (tempLocations.length === 0) {
+            container.style.display = 'none';
+            grid.innerHTML = '';
+            return;
+        }
+
+        container.style.display = 'block';
+        grid.innerHTML = tempLocations.map(loc => this.createTemporaryLocationElement(loc)).join('');
+    }
+
+    createTemporaryLocationElement(location) {
+        const current = location.total_items || 0;
+        const capacity = location.capacity || 0;
+        const percentage = capacity > 0 ? (current / capacity) * 100 : 0;
+        const percentText = Math.round(percentage);
+        const className = this.getOccupancyClass(percentage);
+
+        return `
+            <div class="temporary-item">
+                <div class="temporary-code">${location.location_code}</div>
+                <div class="temporary-bar">
+                    <div class="temporary-fill ${className}" style="width: ${percentage}%"></div>
+                </div>
+                <div class="temporary-stats">${current}/${capacity} - ${percentText}%</div>
+            </div>
+        `;
     }
 
     getOccupancyClass(percentage) {

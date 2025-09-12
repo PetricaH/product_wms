@@ -21,7 +21,8 @@ const ProductUnitsApp = {
             testCargus: `${baseUrl}/api/test_cargus.php`,
             recalculateWeight: `${baseUrl}/api/recalculate_weight.php`,
             stockSettings: `${baseUrl}/api/inventory_settings.php`,
-            barrelDimensions: `${baseUrl}/api/barrel_dimensions.php`
+            barrelDimensions: `${baseUrl}/api/barrel_dimensions.php`,
+            labelTemplates: `${baseUrl}/api/label_templates.php`
         },
         debounceDelay: 300,
         refreshInterval: 30000, // 30 seconds
@@ -48,7 +49,11 @@ const ProductUnitsApp = {
             product: '',
             unit: '',
             status: ''
-        }
+        },
+        labelTemplates: [],
+        labelFilters: { search: '', status: '' },
+        labelStats: { total: 0, with_label: 0, without_label: 0 },
+        labelPagination: { limit: 50, offset: 0, total: 0, has_next: false }
     },
 
     // DOM elements cache
@@ -77,6 +82,9 @@ const ProductUnitsApp = {
             totalUnitTypes: document.getElementById('totalUnitTypes'),
             totalPackagingRules: document.getElementById('totalPackagingRules'),
             pendingProducts: document.getElementById('pendingProducts'),
+            productsWithLabels: document.getElementById('productsWithLabels'),
+            productsWithoutLabels: document.getElementById('productsWithoutLabels'),
+            showUnlabeledBtn: document.getElementById('showUnlabeledBtn'),
             
             // Filters
             productFilter: document.getElementById('productFilter'),
@@ -96,6 +104,19 @@ const ProductUnitsApp = {
             productUnitsBody: document.getElementById('productUnitsBody'),
             tableResultsCount: document.getElementById('tableResultsCount'),
             refreshTable: document.getElementById('refreshTable'),
+
+            // Label management
+            labelTable: document.getElementById('labelTable'),
+            labelTableBody: document.getElementById('labelTableBody'),
+            labelTableResults: document.getElementById('labelTableResults'),
+            labelSearchInput: document.getElementById('labelSearch'),
+            labelStatusFilter: document.getElementById('labelStatusFilter'),
+            clearLabelFilters: document.getElementById('clearLabelFilters'),
+            applyLabelFilters: document.getElementById('applyLabelFilters'),
+            refreshLabelTable: document.getElementById('refreshLabelTable'),
+            reloadLabelData: document.getElementById('reloadLabelData'),
+            bulkLabelUpload: document.getElementById('bulkLabelUpload'),
+            labelPagination: document.getElementById('labelPagination'),
             
             // Buttons
             addProductUnitBtn: document.getElementById('addProductUnitBtn'),
@@ -371,6 +392,100 @@ const ProductUnitsApp = {
             });
         }
 
+        if (this.elements.labelPagination) {
+            this.elements.labelPagination.addEventListener('click', (e) => {
+                if (e.target.classList.contains('prev-page')) {
+                    if (this.state.labelPagination.offset >= this.state.labelPagination.limit) {
+                        this.state.labelPagination.offset -= this.state.labelPagination.limit;
+                        this.loadLabelTemplates();
+                    }
+                } else if (e.target.classList.contains('next-page')) {
+                    if (this.state.labelPagination.has_next) {
+                        this.state.labelPagination.offset += this.state.labelPagination.limit;
+                        this.loadLabelTemplates();
+                    }
+                }
+            });
+        }
+
+        // Label management events
+        if (this.elements.showUnlabeledBtn) {
+            this.elements.showUnlabeledBtn.addEventListener('click', () => {
+                this.switchTab('label-management');
+                if (this.elements.labelStatusFilter) {
+                    this.elements.labelStatusFilter.value = 'without';
+                }
+                this.state.labelFilters = { search: '', status: 'without' };
+                this.state.labelPagination.offset = 0;
+                this.loadLabelTemplates();
+            });
+        }
+
+        if (this.elements.applyLabelFilters) {
+            this.elements.applyLabelFilters.addEventListener('click', () => {
+                this.state.labelFilters.search = this.elements.labelSearchInput.value.trim();
+                this.state.labelFilters.status = this.elements.labelStatusFilter.value;
+                this.state.labelPagination.offset = 0;
+                this.loadLabelTemplates();
+            });
+        }
+
+        if (this.elements.clearLabelFilters) {
+            this.elements.clearLabelFilters.addEventListener('click', () => {
+                if (this.elements.labelSearchInput) this.elements.labelSearchInput.value = '';
+                if (this.elements.labelStatusFilter) this.elements.labelStatusFilter.value = '';
+                this.state.labelFilters = { search: '', status: '' };
+                this.state.labelPagination.offset = 0;
+                this.loadLabelTemplates();
+            });
+        }
+
+        if (this.elements.refreshLabelTable) {
+            this.elements.refreshLabelTable.addEventListener('click', () => this.loadLabelTemplates());
+        }
+
+        if (this.elements.reloadLabelData) {
+            this.elements.reloadLabelData.addEventListener('click', () => this.loadLabelTemplates());
+        }
+
+        if (this.elements.labelTableBody) {
+            this.elements.labelTableBody.addEventListener('change', (e) => {
+                if (e.target.matches('.label-file-input')) {
+                    const id = e.target.dataset.id;
+                    const file = e.target.files[0];
+                    if (file) {
+                        this.uploadLabelTemplate(id, file);
+                    }
+                }
+            });
+            this.elements.labelTableBody.addEventListener('click', (e) => {
+                const actionEl = e.target.closest('[data-action]');
+                if (!actionEl) return;
+                const id = actionEl.dataset.id;
+                const action = actionEl.dataset.action;
+                if (action === 'delete') {
+                    this.deleteLabelTemplate(id);
+                }
+            });
+        }
+
+        if (this.elements.bulkLabelUpload) {
+            this.elements.bulkLabelUpload.addEventListener('change', (e) => {
+                const files = Array.from(e.target.files);
+                if (!files.length) return;
+                const uploads = files.map(file => {
+                    const match = file.name.match(/(\d+)/);
+                    if (!match) return Promise.resolve();
+                    const code = match[1];
+                    const product = this.state.products.find(p => p.sku && p.sku.includes(code));
+                    if (!product) return Promise.resolve();
+                    return this.uploadLabelTemplate(product.product_id, file, false);
+                });
+                Promise.all(uploads).then(() => this.loadLabelTemplates());
+                this.elements.bulkLabelUpload.value = '';
+            });
+        }
+
         // Cargus config events
         if (this.elements.testCargusConnection) {
             this.elements.testCargusConnection.addEventListener('click', () => this.testCargusConnection());
@@ -429,6 +544,9 @@ const ProductUnitsApp = {
             case 'cargus-config':
                 this.loadCargusConfiguration();
                 break;
+            case 'label-management':
+                this.loadLabelTemplates();
+                break;
             // Other tabs can be implemented as needed
         }
     },
@@ -455,19 +573,23 @@ const ProductUnitsApp = {
 
     async loadStatistics() {
         try {
-            const [productsResponse, productUnitsResponse] = await Promise.all([
+            const [productsResponse, productUnitsResponse, labelResponse] = await Promise.all([
                 this.apiCall('GET', `${this.config.apiEndpoints.products}?limit=10000`),
-                this.apiCall('GET', this.config.apiEndpoints.productUnits)
+                this.apiCall('GET', this.config.apiEndpoints.productUnits),
+                this.apiCall('GET', `${this.config.apiEndpoints.labelTemplates}?limit=0`)
             ]);
 
             const products = productsResponse.data || productsResponse;
             const productUnits = productUnitsResponse.data || productUnitsResponse;
+            const labelStats = (labelResponse.data && labelResponse.data.stats) ? labelResponse.data.stats : (labelResponse.stats || { total:0, with_label:0, without_label:0 });
 
             // Update statistics
             this.updateStatistic('totalProducts', productUnits.length);
-            this.updateStatistic('pendingProducts', 
+            this.updateStatistic('pendingProducts',
                 products.filter(p => p.configured_units === 0).length
             );
+            this.updateStatistic('productsWithLabels', labelStats.with_label);
+            this.updateStatistic('productsWithoutLabels', labelStats.without_label);
 
             console.log('Statistics updated successfully');
         } catch (error) {
@@ -1726,8 +1848,8 @@ showError(message) {
     this.showNotification(message, 'error');
 },
 
-showNotification(message, type = 'info') {
-    const notification = document.createElement('div');
+    showNotification(message, type = 'info') {
+        const notification = document.createElement('div');
     notification.className = `notification notification-${type}`;
     notification.innerHTML = `
         <span class="material-symbols-outlined">
@@ -1755,7 +1877,144 @@ showNotification(message, type = 'info') {
             notification.remove();
         }
     }, 5000);
-},
+    },
+
+    // ===== LABEL MANAGEMENT FUNCTIONS =====
+    async loadLabelTemplates() {
+        if (!this.elements.labelTableBody) return;
+        this.elements.labelTableBody.innerHTML = `
+            <tr class="loading-row"><td colspan="4" class="text-center">
+                <div class="loading-spinner">
+                    <span class="material-symbols-outlined spinning">progress_activity</span>
+                    Încărcare date...
+                </div>
+            </td></tr>`;
+        try {
+            const params = new URLSearchParams({
+                limit: this.state.labelPagination.limit,
+                offset: this.state.labelPagination.offset
+            });
+            if (this.state.labelFilters.search) params.append('search', this.state.labelFilters.search);
+            if (this.state.labelFilters.status) params.append('status', this.state.labelFilters.status);
+            const url = `${this.config.apiEndpoints.labelTemplates}?${params.toString()}`;
+            const response = await this.apiCall('GET', url);
+            const data = response.data || response;
+            this.state.labelTemplates = data.products || [];
+            this.state.labelStats = data.stats || { total:0, with_label:0, without_label:0 };
+            this.state.labelPagination.total = data.total || 0;
+            this.state.labelPagination.has_next = data.pagination?.has_next || false;
+            this.renderLabelTemplates();
+            this.renderLabelPagination();
+            this.updateStatistic('productsWithLabels', this.state.labelStats.with_label);
+            this.updateStatistic('productsWithoutLabels', this.state.labelStats.without_label);
+        } catch (error) {
+            console.error('Error loading label templates:', error);
+            this.elements.labelTableBody.innerHTML = '<tr><td colspan="4" class="text-center">Eroare la încărcare</td></tr>';
+        }
+    },
+
+    renderLabelTemplates() {
+        if (!this.elements.labelTableBody) return;
+        const tbody = this.elements.labelTableBody;
+        tbody.innerHTML = '';
+        if (this.state.labelTemplates.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4" class="text-center">Niciun produs găsit</td></tr>';
+            if (this.elements.labelTableResults) {
+                this.elements.labelTableResults.textContent = '0 rezultate';
+            }
+            return;
+        }
+        this.state.labelTemplates.forEach(prod => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${this.escapeHtml(prod.name)}</td>
+                <td>${this.escapeHtml(prod.sku)}</td>
+                <td>${prod.has_label ? '<span class="status-active">Da</span>' : '<span class="status-inactive">Nu</span>'}</td>
+                <td>
+                    ${prod.has_label ? `<a href="${baseUrl}/storage/templates/product_labels/${prod.template}" target="_blank" class="btn btn-sm btn-secondary" data-action="preview" data-id="${prod.product_id}"><span class="material-symbols-outlined">visibility</span></a>` : ''}
+                    <label class="btn btn-sm btn-primary" for="file-${prod.product_id}" data-action="upload" data-id="${prod.product_id}">
+                        <span class="material-symbols-outlined">${prod.has_label ? 'upload' : 'add'}</span>
+                    </label>
+                    <input type="file" id="file-${prod.product_id}" data-id="${prod.product_id}" class="label-file-input" style="display:none" accept="image/png">
+                    ${prod.has_label ? `<button class="btn btn-sm btn-danger" data-action="delete" data-id="${prod.product_id}"><span class="material-symbols-outlined">delete</span></button>` : ''}
+                </td>`;
+            tbody.appendChild(tr);
+        });
+        if (this.elements.labelTableResults) {
+            const { offset, limit, total } = this.state.labelPagination;
+            const start = total === 0 ? 0 : offset + 1;
+            const end = Math.min(offset + limit, total);
+            this.elements.labelTableResults.textContent = `Afișare ${start}-${end} din ${total}`;
+        }
+    },
+
+    renderLabelPagination() {
+        if (!this.elements.labelPagination) return;
+        const { limit, offset, total, has_next } = this.state.labelPagination;
+        if (total === 0) {
+            this.elements.labelPagination.innerHTML = '';
+            return;
+        }
+        const start = total === 0 ? 0 : offset + 1;
+        const end = Math.min(offset + limit, total);
+        const prevDisabled = offset === 0 ? 'disabled' : '';
+        const nextDisabled = !has_next ? 'disabled' : '';
+        this.elements.labelPagination.innerHTML = `
+            <div class="pagination-info">Afișare ${start}-${end} din ${total}</div>
+            <div class="pagination-controls">
+                <button class="btn btn-secondary prev-page" ${prevDisabled}>Anterior</button>
+                <button class="btn btn-secondary next-page" ${nextDisabled}>Următor</button>
+            </div>
+        `;
+    },
+
+    async uploadLabelTemplate(id, file, reload = true) {
+        const formData = new FormData();
+        formData.append('product_id', id);
+        formData.append('template', file);
+        try {
+            const response = await fetch(this.config.apiEndpoints.labelTemplates, {
+                method: 'POST',
+                body: formData,
+                credentials: 'same-origin',
+                headers: {
+                    'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
+                }
+            });
+            if (!response.ok) {
+                throw new Error('Upload failed');
+            }
+            await response.json();
+            if (reload) {
+                this.loadLabelTemplates();
+            }
+        } catch (error) {
+            console.error('Error uploading template:', error);
+            this.showError('Eroare la încărcarea șablonului');
+        }
+    },
+
+    async deleteLabelTemplate(id) {
+        try {
+            const response = await fetch(this.config.apiEndpoints.labelTemplates, {
+                method: 'DELETE',
+                body: new URLSearchParams({ product_id: id }).toString(),
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
+                },
+                credentials: 'same-origin'
+            });
+            if (!response.ok) {
+                throw new Error('Delete failed');
+            }
+            await response.json();
+            this.loadLabelTemplates();
+        } catch (error) {
+            console.error('Error deleting template:', error);
+            this.showError('Eroare la ștergerea șablonului');
+        }
+    },
 
     // ===== STOCK MANAGEMENT FUNCTIONS =====
     async loadStockSettings() {

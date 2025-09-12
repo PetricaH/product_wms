@@ -107,6 +107,27 @@ $currentPage = 'product-units';
                                 Vezi Produsele<span class="material-symbols-outlined">list</span>
                             </button>
                         </div>
+                        <div class="stat-card">
+                            <div class="stat-icon">
+                                <span class="material-symbols-outlined">sell</span>
+                            </div>
+                            <div class="stat-content">
+                                <div class="stat-number" id="productsWithLabels">-</div>
+                                <div class="stat-label">Produse cu Etichetă</div>
+                            </div>
+                        </div>
+                        <div class="stat-card warning">
+                            <div class="stat-icon">
+                                <span class="material-symbols-outlined">sell</span>
+                            </div>
+                            <div class="stat-content">
+                                <div class="stat-number" id="productsWithoutLabels">-</div>
+                                <div class="stat-label">Fără Etichetă</div>
+                            </div>
+                            <button class="btn btn-sm btn-secondary" id="showUnlabeledBtn" title="Vezi produse">
+                                Vezi Produsele<span class="material-symbols-outlined">list</span>
+                            </button>
+                        </div>
                     </div>
                 </div>
 
@@ -116,6 +137,10 @@ $currentPage = 'product-units';
                         <button class="tab-button active" data-tab="product-units">
                             <span class="material-symbols-outlined">inventory_2</span>
                             Unități Produse
+                        </button>
+                        <button class="tab-button" data-tab="label-management">
+                            <span class="material-symbols-outlined">sell</span>
+                            Etichete Produse
                         </button>
                         <!-- <button class="tab-button" data-tab="unit-types">
                             <span class="material-symbols-outlined">straighten</span>
@@ -236,10 +261,88 @@ $currentPage = 'product-units';
                                     </tbody>
                                 </table>
                             </div>
+                    </div>
+                </div>
+
+                <!-- Label Management Tab -->
+                <div id="label-management" class="tab-content">
+                    <div class="tab-header">
+                        <h2>Gestionare Etichete</h2>
+                        <div class="tab-actions">
+                            <button class="btn btn-secondary" id="reloadLabelData">
+                                <span class="material-symbols-outlined">refresh</span>
+                            </button>
+                            <label class="btn btn-primary" for="bulkLabelUpload">
+                                <span class="material-symbols-outlined">upload_file</span>
+                                Încarcă Multiplu
+                            </label>
+                            <input type="file" id="bulkLabelUpload" style="display:none" multiple accept="image/png">
                         </div>
                     </div>
+                    <div class="filters-section">
+                        <div class="filters-form">
+                            <div class="filter-group">
+                                <label for="labelSearch" class="filter-label">Produs</label>
+                                <input type="text" id="labelSearch" class="filter-input" placeholder="Caută după nume sau SKU...">
+                            </div>
+                            <div class="filter-group">
+                                <label for="labelStatusFilter" class="filter-label">Status</label>
+                                <select id="labelStatusFilter" class="filter-select">
+                                    <option value="">Toate</option>
+                                    <option value="with">Cu etichetă</option>
+                                    <option value="without">Fără etichetă</option>
+                                </select>
+                            </div>
+                            <div class="filter-actions">
+                                <button type="button" class="btn btn-secondary" id="clearLabelFilters">
+                                    <span class="material-symbols-outlined">clear</span>
+                                    Șterge
+                                </button>
+                                <button type="button" class="btn btn-primary" id="applyLabelFilters">
+                                    <span class="material-symbols-outlined">search</span>
+                                    Filtrează
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="table-container">
+                        <div class="table-header">
+                            <div class="table-info">
+                                <span id="labelTableResults">Încărcare...</span>
+                            </div>
+                            <div class="table-controls">
+                                <button class="btn btn-secondary btn-sm" id="refreshLabelTable">
+                                    <span class="material-symbols-outlined">refresh</span>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="table-wrapper">
+                            <table class="data-table" id="labelTable">
+                                <thead>
+                                    <tr>
+                                        <th>Produs</th>
+                                        <th>SKU</th>
+                                        <th>Etichetă</th>
+                                        <th>Acțiuni</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="labelTableBody">
+                                    <tr class="loading-row">
+                                        <td colspan="4" class="text-center">
+                                            <div class="loading-spinner">
+                                                <span class="material-symbols-outlined spinning">progress_activity</span>
+                                                Încărcare date...
+                                            </div>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div id="labelPagination" class="pagination-wrapper"></div>
+                    </div>
+                </div>
 
-                    <!-- Unit Types Tab -->
+                <!-- Unit Types Tab -->
                     <div id="unit-types" class="tab-content">
                         <div class="tab-header">
                             <h2>Tipuri de Unități</h2>

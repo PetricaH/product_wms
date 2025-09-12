@@ -338,6 +338,8 @@ $currentPage = 'product-units';
                                 </tbody>
                             </table>
                         </div>
+                        <div id="labelPagination" class="pagination-wrapper"></div>
+
                     </div>
                 </div>
 

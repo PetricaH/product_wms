@@ -52,7 +52,8 @@ const ProductUnitsApp = {
         },
         labelTemplates: [],
         labelFilters: { search: '', status: '' },
-        labelStats: { total: 0, with_label: 0, without_label: 0 }
+        labelStats: { total: 0, with_label: 0, without_label: 0 },
+        labelPagination: { limit: 50, offset: 0, total: 0, has_next: false }
     },
 
     // DOM elements cache
@@ -115,6 +116,7 @@ const ProductUnitsApp = {
             refreshLabelTable: document.getElementById('refreshLabelTable'),
             reloadLabelData: document.getElementById('reloadLabelData'),
             bulkLabelUpload: document.getElementById('bulkLabelUpload'),
+            labelPagination: document.getElementById('labelPagination'),
             
             // Buttons
             addProductUnitBtn: document.getElementById('addProductUnitBtn'),
@@ -390,6 +392,22 @@ const ProductUnitsApp = {
             });
         }
 
+        if (this.elements.labelPagination) {
+            this.elements.labelPagination.addEventListener('click', (e) => {
+                if (e.target.classList.contains('prev-page')) {
+                    if (this.state.labelPagination.offset >= this.state.labelPagination.limit) {
+                        this.state.labelPagination.offset -= this.state.labelPagination.limit;
+                        this.loadLabelTemplates();
+                    }
+                } else if (e.target.classList.contains('next-page')) {
+                    if (this.state.labelPagination.has_next) {
+                        this.state.labelPagination.offset += this.state.labelPagination.limit;
+                        this.loadLabelTemplates();
+                    }
+                }
+            });
+        }
+
         // Label management events
         if (this.elements.showUnlabeledBtn) {
             this.elements.showUnlabeledBtn.addEventListener('click', () => {
@@ -398,6 +416,7 @@ const ProductUnitsApp = {
                     this.elements.labelStatusFilter.value = 'without';
                 }
                 this.state.labelFilters = { search: '', status: 'without' };
+                this.state.labelPagination.offset = 0;
                 this.loadLabelTemplates();
             });
         }
@@ -406,6 +425,7 @@ const ProductUnitsApp = {
             this.elements.applyLabelFilters.addEventListener('click', () => {
                 this.state.labelFilters.search = this.elements.labelSearchInput.value.trim();
                 this.state.labelFilters.status = this.elements.labelStatusFilter.value;
+                this.state.labelPagination.offset = 0;
                 this.loadLabelTemplates();
             });
         }
@@ -415,6 +435,7 @@ const ProductUnitsApp = {
                 if (this.elements.labelSearchInput) this.elements.labelSearchInput.value = '';
                 if (this.elements.labelStatusFilter) this.elements.labelStatusFilter.value = '';
                 this.state.labelFilters = { search: '', status: '' };
+                this.state.labelPagination.offset = 0;
                 this.loadLabelTemplates();
             });
         }
@@ -1869,7 +1890,10 @@ showError(message) {
                 </div>
             </td></tr>`;
         try {
-            const params = new URLSearchParams();
+            const params = new URLSearchParams({
+                limit: this.state.labelPagination.limit,
+                offset: this.state.labelPagination.offset
+            });
             if (this.state.labelFilters.search) params.append('search', this.state.labelFilters.search);
             if (this.state.labelFilters.status) params.append('status', this.state.labelFilters.status);
             const url = `${this.config.apiEndpoints.labelTemplates}?${params.toString()}`;
@@ -1877,7 +1901,10 @@ showError(message) {
             const data = response.data || response;
             this.state.labelTemplates = data.products || [];
             this.state.labelStats = data.stats || { total:0, with_label:0, without_label:0 };
+            this.state.labelPagination.total = data.total || 0;
+            this.state.labelPagination.has_next = data.pagination?.has_next || false;
             this.renderLabelTemplates();
+            this.renderLabelPagination();
             this.updateStatistic('productsWithLabels', this.state.labelStats.with_label);
             this.updateStatistic('productsWithoutLabels', this.state.labelStats.without_label);
         } catch (error) {
@@ -1914,8 +1941,31 @@ showError(message) {
             tbody.appendChild(tr);
         });
         if (this.elements.labelTableResults) {
-            this.elements.labelTableResults.textContent = `${this.state.labelTemplates.length} rezultate`;
+            const { offset, limit, total } = this.state.labelPagination;
+            const start = total === 0 ? 0 : offset + 1;
+            const end = Math.min(offset + limit, total);
+            this.elements.labelTableResults.textContent = `Afișare ${start}-${end} din ${total}`;
         }
+    },
+
+    renderLabelPagination() {
+        if (!this.elements.labelPagination) return;
+        const { limit, offset, total, has_next } = this.state.labelPagination;
+        if (total === 0) {
+            this.elements.labelPagination.innerHTML = '';
+            return;
+        }
+        const start = total === 0 ? 0 : offset + 1;
+        const end = Math.min(offset + limit, total);
+        const prevDisabled = offset === 0 ? 'disabled' : '';
+        const nextDisabled = !has_next ? 'disabled' : '';
+        this.elements.labelPagination.innerHTML = `
+            <div class="pagination-info">Afișare ${start}-${end} din ${total}</div>
+            <div class="pagination-controls">
+                <button class="btn btn-secondary prev-page" ${prevDisabled}>Anterior</button>
+                <button class="btn btn-secondary next-page" ${nextDisabled}>Următor</button>
+            </div>
+        `;
     },
 
     async uploadLabelTemplate(id, file, reload = true) {

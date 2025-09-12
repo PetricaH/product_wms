@@ -75,22 +75,22 @@ function handleGet(PDO $db, string $templateDir): void {
     ];
 
     $products = [];
+    $totalFiltered = 0;
     if ($limit > 0) {
-        $query = 'SELECT product_id, sku, name FROM products WHERE 1=1';
+        $query = 'SELECT product_id, sku, name FROM products';
         $params = [];
         if ($search !== '') {
-            $query .= ' AND (name LIKE :s OR sku LIKE :s)';
+            $query .= ' WHERE (name LIKE :s OR sku LIKE :s)';
             $params[':s'] = "%$search%";
         }
-        $query .= ' ORDER BY name ASC LIMIT :limit OFFSET :offset';
+        $query .= ' ORDER BY name ASC';
         $stmt = $db->prepare($query);
         foreach ($params as $k => $v) {
             $stmt->bindValue($k, $v);
         }
-        $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
-        $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
         $stmt->execute();
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $filtered = [];
         foreach ($rows as $row) {
             $template = findLabelTemplate($row['sku'], $templateDir);
             $has = $template !== null;
@@ -104,13 +104,21 @@ function handleGet(PDO $db, string $templateDir): void {
             if ($has) {
                 $row['template'] = basename($template);
             }
-            $products[] = $row;
+            $filtered[] = $row;
         }
+        $totalFiltered = count($filtered);
+        $products = array_slice($filtered, $offset, $limit);
     }
 
     respond(['status' => 'success', 'data' => [
         'products' => $products,
-        'stats' => $stats
+        'stats' => $stats,
+        'total' => $totalFiltered,
+        'pagination' => [
+            'limit' => $limit,
+            'offset' => $offset,
+            'has_next' => $limit > 0 ? ($offset + $limit) < $totalFiltered : false
+        ]
     ]]);
 }
 

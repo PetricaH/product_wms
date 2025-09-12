@@ -679,27 +679,25 @@ function findProductTemplate(string $sku, string $productName): ?string {
         $extensions = ['pdf', 'png', 'jpg'];
 
         foreach ($extensions as $ext) {
-            if ($isAppBrand) {
-                // APP brand templates are prefixed with "APP-"
-                $pattern = $templateDir . 'APP-*' . $productCode . '*.' . $ext;
-                $matchesGlob = glob($pattern);
-                if (!empty($matchesGlob)) {
-                    $templatePath = $matchesGlob[0];
-                    error_log("Template APP gasit: $templatePath pentru codul produsului $productCode");
-                    return $templatePath;
+            $files = glob($templateDir . '*.' . $ext);
+            $files = array_filter($files, function ($path) use ($productCode, $isAppBrand, $ext) {
+                $name = basename($path);
+                if ($isAppBrand) {
+                    if (stripos($name, 'APP-') !== 0) {
+                        return false;
+                    }
+                } else {
+                    if (stripos($name, 'APP-') === 0) {
+                        return false;
+                    }
                 }
-            } else {
-                // Regular templates should ignore APP-specific ones
-                $pattern = $templateDir . '*' . $productCode . '*.' . $ext;
-                $matchesGlob = array_filter(glob($pattern), function ($path) {
-                    return stripos(basename($path), 'APP-') !== 0;
-                });
-                $matchesGlob = array_values($matchesGlob); // Fix array indexing after filter
-                if (!empty($matchesGlob)) {
-                    $templatePath = $matchesGlob[0];
-                    error_log("Template gasit: $templatePath pentru codul produsului $productCode");
-                    return $templatePath;
-                }
+                return preg_match('/-(\d+)(?:_[^.]*)?\.' . preg_quote($ext, '/') . '$/i', $name, $m) && $m[1] === $productCode;
+            });
+            if (!empty($files)) {
+                $files = array_values($files);
+                $templatePath = $files[0];
+                error_log(($isAppBrand ? 'Template APP gasit: ' : 'Template gasit: ') . "$templatePath pentru codul produsului $productCode");
+                return $templatePath;
             }
         }
 

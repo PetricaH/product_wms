@@ -188,8 +188,11 @@ function findLabelTemplate(string $sku, string $dir): ?string {
     if ($code === '') {
         return null;
     }
-    foreach (glob($dir . '*'.$code.'*.png') as $file) {
-        return $file;
+    foreach (glob($dir . '*.png') as $file) {
+        $name = basename($file);
+        if (preg_match('/-(\d+)(?:_[^.]*)?\.png$/', $name, $m) && $m[1] === $code) {
+            return $file;
+        }
     }
     return null;
 }
@@ -197,9 +200,12 @@ function findLabelTemplate(string $sku, string $dir): ?string {
 function deleteExistingTemplates(string $sku, string $dir): bool {
     $code = extractCodeFromSku($sku);
     $deleted = false;
-    foreach (glob($dir . '*'.$code.'*.png') as $file) {
-        @unlink($file);
-        $deleted = true;
+    foreach (glob($dir . '*.png') as $file) {
+        $name = basename($file);
+        if (preg_match('/-(\d+)(?:_[^.]*)?\.png$/', $name, $m) && $m[1] === $code) {
+            @unlink($file);
+            $deleted = true;
+        }
     }
     return $deleted;
 }

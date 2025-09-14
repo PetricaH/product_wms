@@ -240,32 +240,78 @@ async function updateSubdivisionOptions() {
 
     subSelect.innerHTML = '<option value="">--</option>';
 
-    if (!locId || !levelNumber) { subContainer.style.display = 'none'; return; }
+    if (!locId || !levelNumber) { 
+        subContainer.style.display = 'none'; 
+        return; 
+    }
 
     try {
-        const resp = await fetch(`api/subdivision_info.php?location_id=${locId}&level=${levelNumber}&product_id=${productId}`);
+        // Build URL parameters with proper authentication
+        const params = new URLSearchParams({ 
+            location_id: locId, 
+            level: levelNumber, 
+            product_id: productId 
+        });
+        
+        // Add API key if available
+        if (API_KEY) {
+            params.append('api_key', API_KEY);
+        }
+        
+        // Make request with credentials for session authentication
+        const resp = await fetch(`api/subdivision_info.php?${params.toString()}`, {
+            credentials: 'same-origin'  // This ensures cookies/session are sent
+        });
+        
         const data = await resp.json();
-        if (resp.ok && Array.isArray(data.subdivisions) && data.subdivisions.length) {
+        
+        if (!resp.ok) {
+            console.error('API Error:', data);
+            if (subContainer) subContainer.style.display = 'none';
+            return;
+        }
+        
+        if (Array.isArray(data.subdivisions) && data.subdivisions.length) {
+            let autoSelectedSubdivision = null;
+            
             data.subdivisions.forEach(sd => {
                 const opt = document.createElement('option');
                 const info = sd.capacity ? `${sd.current_stock}/${sd.capacity} articole - ${sd.occupancy_percentage}%` : `${sd.current_stock} articole`;
                 const name = sd.product_name ? sd.product_name + ' - ' : '';
                 const prefix = sd.recommended ? '⭐ ' : (sd.compatible ? '' : '❌ ');
+                
                 opt.value = sd.subdivision_number;
                 opt.textContent = `${prefix}Subdiviziunea ${sd.subdivision_number} (${name}${info})`;
-                if (!sd.compatible) opt.disabled = true;
+                
+                if (!sd.compatible) {
+                    opt.disabled = true;
+                }
+                
+                // Check if this subdivision is dedicated to the selected product
+                if (productId && sd.dedicated_product_id && 
+                    parseInt(sd.dedicated_product_id) === parseInt(productId)) {
+                    autoSelectedSubdivision = sd.subdivision_number;
+                    opt.selected = true;
+                }
+                
                 subSelect.appendChild(opt);
             });
-            subContainer.style.display = 'block';
+            
+            // If we found a matching subdivision, select it programmatically
+            if (autoSelectedSubdivision) {
+                subSelect.value = autoSelectedSubdivision;
+                console.log(`Auto-selected subdivision ${autoSelectedSubdivision} for product ${productId}`);
+            }
+            
+            if (subContainer) subContainer.style.display = 'block';
         } else {
-            subContainer.style.display = 'none';
+            if (subContainer) subContainer.style.display = 'none';
         }
     } catch (e) {
-        console.error(e);
-        subContainer.style.display = 'none';
+        console.error('Error updating subdivision options:', e);
+        if (subContainer) subContainer.style.display = 'none';
     }
 }
-
 document.addEventListener('DOMContentLoaded', () => {
     const locSelect = document.getElementById('add-location');
     if (locSelect) {

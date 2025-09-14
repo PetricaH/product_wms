@@ -209,13 +209,17 @@ class ProductionWMSAPI {
             case $endpoint === 'inventory/check' && $method === 'GET':
                 $this->checkInventory();
                 break;
-                
+
             case $endpoint === 'products' && $method === 'GET':
                 $this->getProducts();
                 break;
-                
+
             case $endpoint === 'products' && $method === 'POST':
                 $this->createProduct();
+                break;
+
+            case preg_match('#^products/lookup/(.+)$#', $endpoint, $matches) && $method === 'GET':
+                $this->lookupProduct($matches[1]);
                 break;
                 
             default:
@@ -577,6 +581,72 @@ class ProductionWMSAPI {
             'product_id' => $productId,
             'message' => 'Product created successfully'
         ], 201);
+    }
+
+    private function lookupProduct(string $barcode) {
+        $code = trim($barcode);
+        if ($code === '') {
+            throw new Exception('Barcode required', 400);
+        }
+        $query = "
+            SELECT p.product_id, p.name, p.sku, p.barcode,
+                   COALESCE(SUM(i.quantity),0) AS current_stock
+            FROM products p
+            LEFT JOIN inventory i ON p.product_id = i.product_id
+            WHERE p.sku = :code OR p.barcode = :code
+            GROUP BY p.product_id
+            LIMIT 1
+        ";
+        $stmt = $this->conn->prepare($query);
+        $stmt->execute([':code' => $code]);
+        $product = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if ($product) {
+            $this->sendResponse([
+                'id' => (int)$product['product_id'],
+                'name' => $product['name'],
+                'sku' => $product['sku'],
+                'barcode' => $product['barcode'] ?: $product['sku'],
+                'scanned_barcode' => $code,
+                'current_stock' => (int)$product['current_stock']
+            ]);
+            return;
+        }
+
+        $query = "
+            SELECT p.product_id, p.name, p.sku, p.barcode,
+                   i.id AS inventory_id, i.location_id, i.subdivision_number, i.quantity,
+                   l.location_code,
+                   (SELECT COALESCE(SUM(quantity),0) FROM inventory WHERE product_id = p.product_id) AS current_stock
+            FROM inventory i
+            JOIN products p ON i.product_id = p.product_id
+            JOIN locations l ON i.location_id = l.id
+            WHERE i.batch_number = :code AND i.quantity > 0
+            LIMIT 1
+        ";
+        $stmt = $this->conn->prepare($query);
+        $stmt->execute([':code' => $code]);
+        $unit = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$unit) {
+            throw new Exception('Product not found', 404);
+        }
+
+        $this->sendResponse([
+            'id' => (int)$unit['product_id'],
+            'name' => $unit['name'],
+            'sku' => $unit['sku'],
+            'barcode' => $unit['barcode'] ?: $unit['sku'],
+            'scanned_barcode' => $code,
+            'current_stock' => (int)$unit['current_stock'],
+            'unit' => [
+                'inventory_id' => (int)$unit['inventory_id'],
+                'location_id' => (int)$unit['location_id'],
+                'location_code' => $unit['location_code'],
+                'subdivision_number' => $unit['subdivision_number'] !== null ? (int)$unit['subdivision_number'] : null,
+                'quantity' => (int)$unit['quantity']
+            ]
+        ]);
     }
     
     // === HELPER METHODS ===

@@ -588,12 +588,13 @@ class ProductionWMSAPI {
         if ($code === '') {
             throw new Exception('Barcode required', 400);
         }
+        // First: direct product lookup by SKU (manufactured QR codes)
         $query = "
             SELECT p.product_id, p.name, p.sku, p.barcode,
                    COALESCE(SUM(i.quantity),0) AS current_stock
             FROM products p
             LEFT JOIN inventory i ON p.product_id = i.product_id
-            WHERE p.sku = :code OR p.barcode = :code
+            WHERE p.sku = :code
             GROUP BY p.product_id
             LIMIT 1
         ";
@@ -613,6 +614,42 @@ class ProductionWMSAPI {
             return;
         }
 
+        // Second: lookup by supplier unit barcode stored in inventory
+        $query = "
+            SELECT p.product_id, p.name, p.sku, p.barcode,
+                   i.id AS inventory_id, i.location_id, i.subdivision_number, i.quantity,
+                   l.location_code,
+                   (SELECT COALESCE(SUM(quantity),0) FROM inventory WHERE product_id = p.product_id) AS current_stock
+            FROM inventory i
+            JOIN products p ON i.product_id = p.product_id
+            JOIN locations l ON i.location_id = l.id
+            WHERE i.product_barcode = :code AND i.quantity > 0
+            LIMIT 1
+        ";
+        $stmt = $this->conn->prepare($query);
+        $stmt->execute([':code' => $code]);
+        $unit = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if ($unit) {
+            $this->sendResponse([
+                'id' => (int)$unit['product_id'],
+                'name' => $unit['name'],
+                'sku' => $unit['sku'],
+                'barcode' => $unit['barcode'] ?: $unit['sku'],
+                'scanned_barcode' => $code,
+                'current_stock' => (int)$unit['current_stock'],
+                'unit' => [
+                    'inventory_id' => (int)$unit['inventory_id'],
+                    'location_id' => (int)$unit['location_id'],
+                    'location_code' => $unit['location_code'],
+                    'subdivision_number' => $unit['subdivision_number'] !== null ? (int)$unit['subdivision_number'] : null,
+                    'quantity' => (int)$unit['quantity']
+                ]
+            ]);
+            return;
+        }
+
+        // Third: fallback lookup by batch number
         $query = "
             SELECT p.product_id, p.name, p.sku, p.barcode,
                    i.id AS inventory_id, i.location_id, i.subdivision_number, i.quantity,

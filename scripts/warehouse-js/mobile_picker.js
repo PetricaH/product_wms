@@ -863,7 +863,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Use lookup API to resolve SKU or barcode to product ID
         try {
-            const resp = await fetch(`${API_BASE}/products/lookup/${encodeURIComponent(inputProduct)}`);
+            const resp = await fetch(`${API_BASE}/index.php?endpoint=products/lookup/${inputProduct}`);
             if (!resp.ok) {
                 throw new Error('Lookup failed');
             }

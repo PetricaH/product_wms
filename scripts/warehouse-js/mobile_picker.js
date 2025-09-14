@@ -856,23 +856,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const inputProduct = elements.productInput?.value?.trim().toUpperCase();
         if (elements.productInput) elements.productInput.value = '';
 
-        const expectedSku = (currentItem.sku || '').toUpperCase();
-        const expectedBarcode = (currentItem.product_barcode || '').toUpperCase();
-
         if (!inputProduct) {
             showMessage('Vă rugăm să introduceți codul produsului.', 'error');
             return;
         }
 
-        // First allow direct comparison against known SKU/barcode
-        if (inputProduct === expectedSku || inputProduct === expectedBarcode) {
-            scannedProduct = inputProduct;
-            showMessage('Produs verificat cu succes!', 'success');
-            setTimeout(() => showStep('quantity'), 1000);
-            return;
-        }
-
-        // Fallback to lookup API for supplier unit barcodes
+        // Use lookup API to resolve SKU or barcode to product ID
         try {
             const resp = await fetch(`${API_BASE}/products/lookup/${encodeURIComponent(inputProduct)}`);
             if (!resp.ok) {

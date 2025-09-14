@@ -851,24 +851,45 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function verifyProduct() {
+    async function verifyProduct() {
         clearTimeout(productScanTimeout);
         const inputProduct = elements.productInput?.value?.trim().toUpperCase();
         if (elements.productInput) elements.productInput.value = '';
+
         const expectedSku = (currentItem.sku || '').toUpperCase();
         const expectedBarcode = (currentItem.product_barcode || '').toUpperCase();
-        
+
         if (!inputProduct) {
             showMessage('Vă rugăm să introduceți codul produsului.', 'error');
             return;
         }
-        
+
+        // First allow direct comparison against known SKU/barcode
         if (inputProduct === expectedSku || inputProduct === expectedBarcode) {
             scannedProduct = inputProduct;
             showMessage('Produs verificat cu succes!', 'success');
             setTimeout(() => showStep('quantity'), 1000);
-        } else {
-            showMessage(`Produs incorect! Așteptat: ${expectedSku}, Introdus: ${inputProduct}`, 'error');
+            return;
+        }
+
+        // Fallback to lookup API for supplier unit barcodes
+        try {
+            const resp = await fetch(`${API_BASE}/products/lookup/${encodeURIComponent(inputProduct)}`);
+            if (!resp.ok) {
+                throw new Error('Lookup failed');
+            }
+            const data = await resp.json();
+            if (data.id === currentItem.product_id) {
+                scannedProduct = inputProduct;
+                showMessage('Produs verificat cu succes!', 'success');
+                setTimeout(() => showStep('quantity'), 1000);
+            } else {
+                showMessage(`Produs incorect! Așteptat: ${currentItem.sku}, Scanat: ${inputProduct}`, 'error');
+                if (elements.productInput) elements.productInput.focus();
+            }
+        } catch (err) {
+            console.error('Product lookup failed:', err);
+            showMessage('Produs negăsit sau indisponibil.', 'error');
             if (elements.productInput) elements.productInput.focus();
         }
     }

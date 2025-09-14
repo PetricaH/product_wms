@@ -125,25 +125,25 @@ $hasOrderFromUrl = !empty($orderNumber);
                         <span class="material-symbols-outlined">inventory_2</span>
                         <div>
                             <div><strong id="target-product-name">Product Name</strong></div>
-                            <div>SKU: <span id="target-product-sku">SKU123</span></div>
+                            <div>Cod Produs/QR: <span id="target-product-sku">SKU123</span></div>
                         </div>
                     </div>
                 </div>
-                
+
                 <div class="scan-section" id="product-scan-section">
                     <button id="scan-product-btn" class="btn btn-primary btn-large">
                         <span class="material-symbols-outlined">qr_code_scanner</span>
-                        Scanează Produsul
+                        Scanează codul produsului/QR
                     </button>
                     <button id="manual-product-btn" class="btn btn-secondary">
                         <span class="material-symbols-outlined">keyboard</span>
                         Introdu Manual
                     </button>
                 </div>
-                
+
                 <div class="manual-section hidden" id="product-manual-section">
-                    <label for="product-input">Codul produsului:</label>
-                    <input type="text" id="product-input" class="form-control" placeholder="SKU sau Barcode" inputmode="none" readonly>
+                    <label for="product-input">Cod produs/QR:</label>
+                    <input type="text" id="product-input" class="form-control" placeholder="Cod produs sau cod QR" inputmode="none" readonly>
                     <button id="verify-product-btn" class="btn btn-primary">
                         <span class="material-symbols-outlined">check</span>
                         Verifică Produsul

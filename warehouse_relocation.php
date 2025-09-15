@@ -19,7 +19,7 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
-if (!isset($_SESSION['user_id']) || !in_array($_SESSION['role'], ['warehouse', 'admin', 'manager'])) {
+if (!isset($_SESSION['user_id']) || !in_array($_SESSION['role'], ['warehouse', 'admin', 'manager', 'warehouse_worker'])) {
     header('Location: ' . getNavUrl('login.php'));
     exit;
 }

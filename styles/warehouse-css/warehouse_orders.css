@@ -373,7 +373,7 @@ body {
 /* ===== RESPONSIVE DESIGN ===== */
 @media (max-width: 768px) {
     .main-container {
-        padding: 1rem;
+        padding: .3rem;
     }
     
     .page-title {

@@ -16,10 +16,6 @@ $hasOrderFromUrl = !empty($orderNumber);
     <!-- Simple Header (matching existing warehouse_orders.php style) -->
     <div class="picker-header">
         <div class="header-content">
-            <h1>
-                <span class="material-symbols-outlined">inventory</span>
-                Mobile Picker
-            </h1>
             <div id="order-info" class="order-info <?= !$hasOrderFromUrl ? 'hidden' : '' ?>">
                 <div class="top-row">
                     <div class="order-number">#<span id="current-order-number"><?= $orderNumber ?></span></div>

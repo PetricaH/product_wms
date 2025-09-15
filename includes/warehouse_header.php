@@ -42,6 +42,7 @@ $warehousePageCSS = [
     'warehouse_inventory' => 'warehouse_inventory.css',
     'warehouse_relocation' => 'warehouse_relocation.css',
     'mobile_returns' => 'mobile_returns.css',
+    'warehouse_barcode_scan' => 'warehouse_barcode_scan.css',
 ];
 
 if (isset($warehousePageCSS[$currentPage])) {

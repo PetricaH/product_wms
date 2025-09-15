@@ -72,7 +72,8 @@ try {
         'status'=>'success',
         'scanned'=>$task['scanned_quantity'],
         'expected'=>$task['expected_quantity'],
-        'completed'=>$task['status']==='completed'
+        'completed'=>$task['status']==='completed',
+        'inventory_id'=>$inventoryId
     ]);
 } catch (Exception $e) {
     if ($db->inTransaction()) {

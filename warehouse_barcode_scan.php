@@ -27,14 +27,14 @@ if (empty($task['assigned_to'])) {
 <html lang="ro">
 <head>
     <?php include_once 'includes/warehouse_header.php'; ?>
-    <title>Scan Task - WMS</title>
+    <title>Sarcină de Scanare - WMS</title>
 </head>
 <body>
 <?php include_once 'includes/warehouse_navbar.php'; ?>
 <div class="main-container scan-container">
     <h2><?= htmlspecialchars($task['product_name']) ?> - <?= htmlspecialchars($task['location_code']) ?></h2>
-    <p id="scan-progress">Unit <?= $task['scanned_quantity'] ?>/<?= $task['expected_quantity'] ?> scanned</p>
-    <input type="text" id="scan-input" class="barcode-input" autofocus placeholder="Scan barcode...">
+    <p id="scan-progress">Unități <?= $task['scanned_quantity'] ?>/<?= $task['expected_quantity'] ?> scanate</p>
+    <input type="text" id="scan-input" class="barcode-input" autofocus placeholder="Scanează codul de bare...">
     <div id="scanned-list" class="scanned-list"></div>
 </div>
 <?php include_once 'includes/warehouse_footer.php'; ?>
@@ -54,6 +54,8 @@ class BarcodeCapture {
         this.expected = <?= $task['expected_quantity'] ?>;
         this.scanned = <?= $task['scanned_quantity'] ?>;
         this.editingCard = null;
+        this.storageKey = `barcode_scans_${this.taskId}`;
+        this.inputTimer = null;
         this.init();
     }
     init() {
@@ -65,18 +67,34 @@ class BarcodeCapture {
                 this.submit();
             }
         });
+        this.input.addEventListener('input', () => {
+            clearTimeout(this.inputTimer);
+            this.inputTimer = setTimeout(() => this.submit(), 200);
+        });
         this.loadScans();
     }
     async loadScans() {
+        const stored = JSON.parse(localStorage.getItem(this.storageKey) || '[]');
+        let remote = [];
         try {
             const res = await fetch(`${this.apiBase}/barcode_capture/list.php?task_id=${this.taskId}`);
             const data = await res.json();
             if (data.status === 'success') {
                 this.scanned = data.scanned;
-                this.progress.textContent = `Unit ${data.scanned}/${data.expected} scanned`;
-                data.scans.forEach(s => this.addCard(s.barcode, s.inventory_id, false));
+                this.progress.textContent = `Unități ${data.scanned}/${data.expected} scanate`;
+                remote = data.scans || [];
             }
         } catch (e) {}
+        const mergedMap = new Map();
+        [...stored, ...remote].forEach(s => {
+            if (s.barcode) {
+                mergedMap.set(s.barcode, s);
+            }
+        });
+        const merged = Array.from(mergedMap.values());
+        this.list.innerHTML = '';
+        merged.forEach(s => this.addCard(s.barcode, s.inventory_id, false));
+        localStorage.setItem(this.storageKey, JSON.stringify(merged));
     }
     addCard(barcode, inventoryId, prepend = true) {
         const card = document.createElement('div');
@@ -90,11 +108,16 @@ class BarcodeCapture {
         } else {
             this.list.appendChild(card);
         }
+        if (prepend) {
+            const stored = JSON.parse(localStorage.getItem(this.storageKey) || '[]');
+            stored.unshift({barcode, inventory_id: inventoryId});
+            localStorage.setItem(this.storageKey, JSON.stringify(stored));
+        }
     }
     startEditing(card) {
         const barcode = card.dataset.barcode;
         if (!barcode) return;
-        if (!confirm('Delete this barcode?')) return;
+        if (!confirm('Ștergi acest cod de bare?')) return;
         this.deleteScan(card);
     }
     async deleteScan(card) {
@@ -109,23 +132,31 @@ class BarcodeCapture {
             const data = await res.json();
             if (data.status === 'success') {
                 this.scanned = data.scanned;
-                this.progress.textContent = `Unit ${data.scanned}/${data.expected} scanned`;
+                this.progress.textContent = `Unități ${data.scanned}/${data.expected} scanate`;
+                const stored = JSON.parse(localStorage.getItem(this.storageKey) || '[]').filter(s => !(s.barcode === barcode && s.inventory_id == inventoryId));
+                localStorage.setItem(this.storageKey, JSON.stringify(stored));
                 card.classList.add('editing');
                 card.dataset.barcode = '';
                 card.dataset.inventoryId = '';
-                card.textContent = 'Scan barcode...';
+                card.textContent = 'Scanează codul de bare...';
                 this.editingCard = card;
                 this.input.focus();
             } else {
-                alert(data.message || 'Error');
+                alert(data.message || 'Eroare');
             }
         } catch (e) {
-            alert('Network error');
+            alert('Eroare de rețea');
         }
     }
     async submit() {
         const code = this.input.value.trim();
         if (!code) return;
+        if ([...this.list.querySelectorAll('.barcode-card')].some(c => c.dataset.barcode === code)) {
+            alert('Codul de bare a fost deja scanat');
+            this.input.value = '';
+            this.input.focus();
+            return;
+        }
         try {
             const res = await fetch(`${this.apiBase}/barcode_capture/scan.php`, {
                 method: 'POST',
@@ -135,7 +166,7 @@ class BarcodeCapture {
             const data = await res.json();
             if (data.status === 'success') {
                 this.scanned = data.scanned;
-                this.progress.textContent = `Unit ${data.scanned}/${data.expected} scanned`;
+                this.progress.textContent = `Unități ${data.scanned}/${data.expected} scanate`;
                 if (this.editingCard) {
                     this.editingCard.classList.remove('editing');
                     this.editingCard.dataset.barcode = code;
@@ -146,14 +177,14 @@ class BarcodeCapture {
                     this.addCard(code, data.inventory_id);
                 }
                 if (data.completed) {
-                    alert('Task completed');
+                    alert('Sarcină completată');
                     window.location.href = 'warehouse_barcode_tasks.php';
                 }
             } else {
-                alert(data.message || 'Error');
+                alert(data.message || 'Eroare');
             }
         } catch (e) {
-            alert('Network error');
+            alert('Eroare de rețea');
         }
         this.input.value = '';
         this.input.focus();

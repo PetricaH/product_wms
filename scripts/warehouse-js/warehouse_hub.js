@@ -59,6 +59,10 @@ class WarehouseHub {
                         e.preventDefault();
                         this.navigateToOperation('relocation');
                         break;
+                    case '6':
+                        e.preventDefault();
+                        this.navigateToOperation('barcode');
+                        break;
                 }
             }
         });
@@ -153,7 +157,9 @@ class WarehouseHub {
             scheduled_counts: Math.floor(Math.random() * 10) + 2,
             variance_items: Math.floor(Math.random() * 30) + 5,
             pending_relocations: Math.floor(Math.random() * 20),
-            relocations_today: Math.floor(Math.random() * 20)
+            relocations_today: Math.floor(Math.random() * 20),
+            pending_barcode_tasks: Math.floor(Math.random() * 10),
+            barcode_tasks_today: Math.floor(Math.random() * 10)
         };
         
         this.updateStatistics();
@@ -181,6 +187,10 @@ class WarehouseHub {
         // Update relocation stats
         this.updateStatElement('pending-relocations', this.stats.pending_relocations);
         this.updateStatElement('relocated-today', this.stats.relocations_today);
+
+        // Update barcode task stats
+        this.updateStatElement('pending-barcode-tasks', this.stats.pending_barcode_tasks);
+        this.updateStatElement('completed-barcode-tasks', this.stats.barcode_tasks_today);
     }
 
     updateStatElement(elementId, value) {
@@ -215,6 +225,10 @@ class WarehouseHub {
         const relocationStatus = this.stats.pending_relocations > 15 ? 'danger' :
                                  this.stats.pending_relocations > 5 ? 'warning' : 'success';
         this.updateStatusIndicator('relocation-status', relocationStatus);
+
+        const barcodeStatus = this.stats.pending_barcode_tasks > 20 ? 'danger' :
+                               this.stats.pending_barcode_tasks > 0 ? 'warning' : 'success';
+        this.updateStatusIndicator('barcode-task-status', barcodeStatus);
     }
 
     updateStatusIndicator(elementId, status) {
@@ -274,6 +288,10 @@ class WarehouseHub {
                     case 'relocation':
                         console.log('🔄 Navigating to relocation tasks...');
                         window.location.href = 'warehouse_relocation.php';
+                        break;
+                    case 'barcode':
+                        console.log('📋 Navigating to barcode tasks...');
+                        window.location.href = 'warehouse_barcode_tasks.php';
                         break;
                     default:
                         console.warn(`⚠️ Unknown operation: ${operation}`);

@@ -135,6 +135,18 @@ try {
     $stmt->execute();
     $stats['relocations_today'] = (int)$stmt->fetchColumn();
 
+    // 10. Pending barcode capture tasks
+    $pendingBarcodeQuery = "SELECT COUNT(*) FROM barcode_capture_tasks WHERE status IN ('pending','in_progress')";
+    $stmt = $db->prepare($pendingBarcodeQuery);
+    $stmt->execute();
+    $stats['pending_barcode_tasks'] = (int)$stmt->fetchColumn();
+
+    // 11. Barcode tasks completed today
+    $barcodeTodayQuery = "SELECT COUNT(*) FROM barcode_capture_tasks WHERE status = 'completed' AND DATE(completed_at) = CURDATE()";
+    $stmt = $db->prepare($barcodeTodayQuery);
+    $stmt->execute();
+    $stats['barcode_tasks_today'] = (int)$stmt->fetchColumn();
+
     // Return the statistics
     echo json_encode([
         'status' => 'success',

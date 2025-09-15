@@ -79,6 +79,23 @@ if (!isset($_SESSION['user_id'])) {
                     </div>
                 </div>
             </div>
+
+            <!-- Barcode Tasks -->
+            <div class="operation-card barcode-task-card" data-operation="barcode">
+                <div class="status-indicator" id="barcode-task-status"></div>
+                <span class="material-symbols-outlined operation-icon">qr_code_scanner</span>
+                <h2 class="operation-title">Sarcini Coduri</h2>
+                <div class="operation-stats">
+                    <div class="stat-item">
+                        <span class="stat-number" id="pending-barcode-tasks">-</span>
+                        <span class="stat-label">În așteptare</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-number" id="completed-barcode-tasks">-</span>
+                        <span class="stat-label">Finalizate</span>
+                    </div>
+                </div>
+            </div>
             
             <!-- Inventory -->
             <div class="operation-card inventory-card" data-operation="inventory">

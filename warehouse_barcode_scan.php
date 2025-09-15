@@ -74,22 +74,27 @@ class BarcodeCapture {
         this.loadScans();
     }
     async loadScans() {
+        const stored = JSON.parse(localStorage.getItem(this.storageKey) || '[]');
+        let remote = [];
         try {
             const res = await fetch(`${this.apiBase}/barcode_capture/list.php?task_id=${this.taskId}`);
             const data = await res.json();
             if (data.status === 'success') {
                 this.scanned = data.scanned;
                 this.progress.textContent = `Unități ${data.scanned}/${data.expected} scanate`;
-                if (data.scans.length) {
-                    this.list.innerHTML = '';
-                    data.scans.forEach(s => this.addCard(s.barcode, s.inventory_id, false));
-                    localStorage.setItem(this.storageKey, JSON.stringify(data.scans));
-                    return;
-                }
+                remote = data.scans || [];
             }
         } catch (e) {}
-        const stored = JSON.parse(localStorage.getItem(this.storageKey) || '[]');
-        stored.forEach(s => this.addCard(s.barcode, s.inventory_id, false));
+        const mergedMap = new Map();
+        [...stored, ...remote].forEach(s => {
+            if (s.barcode) {
+                mergedMap.set(s.barcode, s);
+            }
+        });
+        const merged = Array.from(mergedMap.values());
+        this.list.innerHTML = '';
+        merged.forEach(s => this.addCard(s.barcode, s.inventory_id, false));
+        localStorage.setItem(this.storageKey, JSON.stringify(merged));
     }
     addCard(barcode, inventoryId, prepend = true) {
         const card = document.createElement('div');
@@ -146,6 +151,12 @@ class BarcodeCapture {
     async submit() {
         const code = this.input.value.trim();
         if (!code) return;
+        if ([...this.list.querySelectorAll('.barcode-card')].some(c => c.dataset.barcode === code)) {
+            alert('Codul de bare a fost deja scanat');
+            this.input.value = '';
+            this.input.focus();
+            return;
+        }
         try {
             const res = await fetch(`${this.apiBase}/barcode_capture/scan.php`, {
                 method: 'POST',

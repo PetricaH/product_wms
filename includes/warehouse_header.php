@@ -61,6 +61,7 @@ if (isset($warehousePageCSS[$currentPage])) {
 <script>
     window.WMS_CONFIG = {
         apiBase: '<?= $apiBase ?>', // FIXED: Now works in both dev and production
+        baseUrl: '<?= rtrim(BASE_URL, '/') . '/' ?>', // Added for reliable navigation
         csrfToken: '<?= getCsrfToken() ?>', // FIXED: Added CSRF token from bootstrap
         warehouseMode: true,
         currentUser: <?= json_encode([

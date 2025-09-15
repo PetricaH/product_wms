@@ -4,6 +4,7 @@
 class WarehouseHub {
     constructor() {
         this.apiBase = window.WMS_CONFIG?.apiBase || '/api';
+        this.baseUrl = window.WMS_CONFIG?.baseUrl || '/';
         this.currentUser = null;
         this.stats = {};
         this.init();
@@ -271,27 +272,27 @@ class WarehouseHub {
                 switch(operation) {
                     case 'picking':
                         console.log('🛒 Navigating to picking orders dashboard...');
-                        window.location.href = 'warehouse_orders.php';
+                        window.location.href = `${this.baseUrl}warehouse_orders.php`;
                         break;
                     case 'receiving':
                         console.log('📦 Navigating to receiving interface...');
-                        window.location.href = 'warehouse_receiving.php';
+                        window.location.href = `${this.baseUrl}warehouse_receiving.php`;
                         break;
                     case 'inventory':
                         console.log('📋 Navigating to inventory search...');
-                        window.location.href = 'warehouse_inventory.php';
+                        window.location.href = `${this.baseUrl}warehouse_inventory.php`;
                         break;
                     case 'cycle-count':
                         console.log('🔍 Navigating to cycle count interface...');
-                        window.location.href = 'warehouse_cycle_count.php';
+                        window.location.href = `${this.baseUrl}warehouse_cycle_count.php`;
                         break;
                     case 'relocation':
                         console.log('🔄 Navigating to relocation tasks...');
-                        window.location.href = 'warehouse_relocation.php';
+                        window.location.href = `${this.baseUrl}warehouse_relocation.php`;
                         break;
                     case 'barcode':
                         console.log('📋 Navigating to barcode tasks...');
-                        window.location.href = 'warehouse_barcode_tasks.php';
+                        window.location.href = `${this.baseUrl}warehouse_barcode_tasks.php`;
                         break;
                     default:
                         console.warn(`⚠️ Unknown operation: ${operation}`);

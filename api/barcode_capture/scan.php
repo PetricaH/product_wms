@@ -44,6 +44,11 @@ try {
     if (empty($task['assigned_to'])) {
         $taskModel->assignToWorker($taskId, $_SESSION['user_id']);
     }
+    $dupStmt = $db->prepare('SELECT COUNT(*) FROM inventory WHERE product_barcode = :b');
+    $dupStmt->execute([':b' => $barcode]);
+    if ($dupStmt->fetchColumn() > 0) {
+        throw new Exception('Codul de bare a fost deja scanat', 409);
+    }
     $stockData = [
         'product_id' => $task['product_id'],
         'location_id' => $task['location_id'],
@@ -79,6 +84,10 @@ try {
     if ($db->inTransaction()) {
         $db->rollBack();
     }
-    http_response_code(500);
+    $code = $e->getCode();
+    if ($code < 400 || $code > 599) {
+        $code = 500;
+    }
+    http_response_code($code);
     echo json_encode(['status'=>'error','message'=>$e->getMessage()]);
 }

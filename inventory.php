@@ -35,11 +35,13 @@ require_once BASE_PATH . '/models/Product.php';
 require_once BASE_PATH . '/models/Location.php';
 require_once BASE_PATH . '/models/LocationLevelSettings.php';
 require_once BASE_PATH . '/models/User.php';
+require_once BASE_PATH . '/models/BarcodeCaptureTask.php';
 
 $inventoryModel = new Inventory($db);
 $productModel = new Product($db);
 $locationModel = new Location($db);
 $userModel = new Users($db);
+$barcodeTaskModel = new BarcodeCaptureTask($db);
 
 $transactionTypes = [
     'receive' => ['label' => 'Primire', 'color' => 'success', 'icon' => '📦'],
@@ -74,6 +76,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'shelf_level' => $_POST['shelf_level'] ?? null,
                 'subdivision_number' => isset($_POST['subdivision_number']) ? intval($_POST['subdivision_number']) : null
             ];
+            $trackingMethod = $_POST['tracking_method'] ?? 'bulk';
 
             if (!empty($stockData['received_at'])) {
                 if (strpos($stockData['received_at'], 'T') !== false) {
@@ -88,12 +91,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $message = 'Produsul, locația și cantitatea sunt obligatorii.';
                 $messageType = 'error';
             } else {
-                if ($inventoryModel->addStock($stockData)) {
-                    $message = 'Stocul a fost adăugat cu succes.';
-                    $messageType = 'success';
+                if ($trackingMethod === 'individual') {
+                    $taskId = $barcodeTaskModel->createTask(
+                        $stockData['product_id'],
+                        $stockData['location_id'],
+                        $stockData['quantity'],
+                        $_SESSION['user_id'] ?? 0
+                    );
+                    if ($taskId) {
+                        $message = '✅ Barcode capture task created. Warehouse team needs to scan ' . $stockData['quantity'] . ' individual units.';
+                        $messageType = 'success';
+                    } else {
+                        $message = 'Eroare la crearea taskului de scanare.';
+                        $messageType = 'error';
+                    }
                 } else {
-                    $message = 'Eroare la adăugarea stocului.';
-                    $messageType = 'error';
+                    if ($inventoryModel->addStock($stockData)) {
+                        $message = 'Stocul a fost adăugat cu succes.';
+                        $messageType = 'success';
+                    } else {
+                        $message = 'Eroare la adăugarea stocului.';
+                        $messageType = 'error';
+                    }
                 }
             }
             break;
@@ -893,6 +912,14 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                     <button type="button" class="btn btn-sm btn-outline-secondary" onclick="setExpiry('2y')">2 ani</button>
                                     <button type="button" class="btn btn-sm btn-outline-secondary" onclick="setExpiry('3y')">3 ani</button>
                                 </div>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">Metodă de urmărire</label>
+                            <div>
+                                <label><input type="radio" name="tracking_method" value="bulk" checked> Bulk inventory</label>
+                                <label style="margin-left:1rem;"><input type="radio" name="tracking_method" value="individual"> Individual unit tracking</label>
                             </div>
                         </div>
                         

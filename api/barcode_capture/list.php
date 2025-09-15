@@ -37,8 +37,8 @@ if (!$task) {
     echo json_encode(['status'=>'error','message'=>'Task not found']);
     exit;
 }
-$stmt = $db->prepare('SELECT id, product_barcode FROM inventory WHERE product_id = :p AND location_id = :l AND received_at >= :c ORDER BY id DESC');
-$stmt->execute([':p'=>$task['product_id'], ':l'=>$task['location_id'], ':c'=>$task['created_at']]);
+$stmt = $db->prepare('SELECT id, product_barcode FROM inventory WHERE product_id = :p AND location_id = :l AND product_barcode IS NOT NULL AND product_barcode != "" ORDER BY id DESC');
+$stmt->execute([':p'=>$task['product_id'], ':l'=>$task['location_id']]);
 $scans = [];
 while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
     if (!empty($row['product_barcode'])) {

@@ -34,7 +34,15 @@ define('BASE_URL', $baseUrl . $basePath);
 // Authentication system
 $publicPages = ['login.php', 'logout.php'];
 $currentScript = basename($_SERVER['SCRIPT_NAME']);
-$requiresAuth = !in_array($currentScript, $publicPages);
+
+// Skip authentication for specific API endpoints
+$apiWhitelist = [
+    'webhook_process_import.php',
+    'index.php' // if you have api/index.php
+];
+$isApiRequest = strpos($_SERVER['REQUEST_URI'], '/api/') !== false && 
+                in_array($currentScript, $apiWhitelist);
+$requiresAuth = !in_array($currentScript, $publicPages) && !$isApiRequest;
 
 if ($requiresAuth && !isset($_SESSION['user_id'])) {
     header('Location: ' . getNavUrl('login.php'));

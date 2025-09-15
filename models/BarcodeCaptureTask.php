@@ -67,7 +67,6 @@ class BarcodeCaptureTask {
         $stmt->bindParam(':task_id', $taskId, PDO::PARAM_INT);
         return $stmt->execute();
     }
-
     public function decrementScannedQuantity(int $taskId, int $decrement = 1): bool {
         $sql = "UPDATE {$this->table} SET scanned_quantity = GREATEST(scanned_quantity - :dec,0), status = CASE WHEN scanned_quantity - :dec <= 0 THEN 'pending' ELSE 'in_progress' END WHERE task_id = :task_id";
         $stmt = $this->conn->prepare($sql);

@@ -38,12 +38,47 @@ $dbFactory = $config['connection_factory'];
 $db = $dbFactory();
 require_once BASE_PATH . '/models/Product.php';
 require_once BASE_PATH . '/models/PurchasableProduct.php';
+require_once BASE_PATH . '/models/BarcodeCaptureTask.php';
 
 function getDefaultLocationId(PDO $db, string $type): ?int {
     $stmt = $db->prepare("SELECT id FROM locations WHERE type = :type LIMIT 1");
     $stmt->execute([':type' => $type]);
     $id = $stmt->fetchColumn();
     return $id ? (int)$id : null;
+}
+
+function updateReceivingSessionProgress(PDO $db, int $sessionId): void {
+    $stmt = $db->prepare("
+        UPDATE receiving_sessions rs
+        SET total_items_received = (
+            SELECT COUNT(DISTINCT filtered.purchase_order_item_id)
+            FROM (
+                SELECT
+                    ri.purchase_order_item_id,
+                    ri.tracking_method,
+                    bct.status AS barcode_status,
+                    bct.scanned_quantity,
+                    bct.expected_quantity
+                FROM receiving_items ri
+                LEFT JOIN barcode_capture_tasks bct ON ri.barcode_task_id = bct.task_id
+                WHERE ri.receiving_session_id = :session_id
+            ) AS filtered
+            WHERE filtered.purchase_order_item_id IS NOT NULL
+              AND (
+                filtered.tracking_method = 'bulk'
+                OR (
+                    filtered.tracking_method = 'individual'
+                    AND (
+                        filtered.barcode_status = 'completed'
+                        OR filtered.scanned_quantity >= filtered.expected_quantity
+                    )
+                )
+            )
+        ),
+        updated_at = NOW()
+        WHERE rs.id = :session_id
+    ");
+    $stmt->execute([':session_id' => $sessionId]);
 }
 
 function getFirstActiveLocation(PDO $db): ?array {
@@ -66,6 +101,11 @@ try {
     $batchNumber = trim($input['batch_number'] ?? '');
     $expiryDate = trim($input['expiry_date'] ?? '');
     $notes = trim($input['notes'] ?? '');
+    $trackingMethod = $input['tracking_method'] ?? 'bulk';
+
+    if (!in_array($trackingMethod, ['bulk', 'individual'], true)) {
+        $trackingMethod = 'bulk';
+    }
     
     if (!$sessionId || !$itemId || $receivedQuantity <= 0) {
         throw new Exception('Session ID, item ID and received quantity (>0) are required');
@@ -170,9 +210,9 @@ try {
     
     // Check if item already received in this session
     $stmt = $db->prepare("
-        SELECT id, received_quantity 
-        FROM receiving_items 
-        WHERE receiving_session_id = :session_id 
+        SELECT id, received_quantity, tracking_method, barcode_task_id
+        FROM receiving_items
+        WHERE receiving_session_id = :session_id
         AND purchase_order_item_id = :item_id
     ");
     $stmt->execute([
@@ -181,6 +221,42 @@ try {
     ]);
     $existingReceiving = $stmt->fetch(PDO::FETCH_ASSOC);
     
+    $barcodeTaskId = null;
+    $barcodeTask = null;
+
+    if ($trackingMethod === 'individual') {
+        $intQuantity = (int)round($receivedQuantity);
+        if ($intQuantity <= 0) {
+            throw new Exception('Cantitatea pentru scanare trebuie să fie un număr întreg pozitiv');
+        }
+
+        $barcodeTaskModel = new BarcodeCaptureTask($db);
+
+        if ($existingReceiving && !empty($existingReceiving['barcode_task_id'])) {
+            $barcodeTaskId = (int)$existingReceiving['barcode_task_id'];
+            $stmt = $db->prepare("UPDATE barcode_capture_tasks SET expected_quantity = :expected WHERE task_id = :task_id");
+            $stmt->execute([
+                ':expected' => $intQuantity,
+                ':task_id' => $barcodeTaskId
+            ]);
+        } else {
+            $barcodeTaskId = $barcodeTaskModel->createTask(
+                (int)$orderItem['main_product_id'],
+                (int)$location['id'],
+                $intQuantity,
+                (int)($_SESSION['user_id'] ?? 0)
+            );
+
+            if (!$barcodeTaskId) {
+                throw new Exception('Nu am putut crea sarcina de scanare pentru codurile de bare');
+            }
+        }
+
+        $stmt = $db->prepare('SELECT expected_quantity, scanned_quantity, status FROM barcode_capture_tasks WHERE task_id = :task_id');
+        $stmt->execute([':task_id' => $barcodeTaskId]);
+        $barcodeTask = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+    }
+
     if ($existingReceiving) {
         // Update existing receiving record
         $stmt = $db->prepare("
@@ -192,6 +268,8 @@ try {
                 location_id = :location_id,
                 approval_status = :approval_status,
                 notes = :notes,
+                tracking_method = :tracking_method,
+                barcode_task_id = :barcode_task_id,
                 updated_at = NOW()
             WHERE id = :receiving_item_id
         ");
@@ -203,6 +281,8 @@ try {
             ':location_id' => $location['id'],
             ':approval_status' => $approvalStatus,
             ':notes' => $notes,
+            ':tracking_method' => $trackingMethod,
+            ':barcode_task_id' => $barcodeTaskId,
             ':receiving_item_id' => $existingReceiving['id']
         ]);
         $receivingItemId = $existingReceiving['id'];
@@ -213,12 +293,12 @@ try {
                 receiving_session_id, product_id, purchase_order_item_id,
                 expected_quantity, received_quantity, unit_price,
                 condition_status, batch_number, expiry_date, location_id,
-                approval_status, notes
+                approval_status, notes, tracking_method, barcode_task_id
             ) VALUES (
                 :session_id, :product_id, :item_id, :expected_quantity,
                 :received_quantity, :unit_price, :condition_status,
                 :batch_number, :expiry_date, :location_id,
-                :approval_status, :notes
+                :approval_status, :notes, :tracking_method, :barcode_task_id
             )
         ");
         $stmt->execute([
@@ -233,17 +313,19 @@ try {
             ':expiry_date' => $expiryDate ?: null,
             ':location_id' => $location['id'],
             ':approval_status' => $approvalStatus,
-            ':notes' => $notes
+            ':notes' => $notes,
+            ':tracking_method' => $trackingMethod,
+            ':barcode_task_id' => $barcodeTaskId
         ]);
         $receivingItemId = $db->lastInsertId();
     }
-    
+
     // Update inventory only for approved good items
-    if ($approvalStatus === 'approved' && $conditionStatus === 'good') {
+    if ($trackingMethod === 'bulk' && $approvalStatus === 'approved' && $conditionStatus === 'good') {
         // Check if inventory record exists for this product/location
         $stmt = $db->prepare("
-            SELECT id, quantity 
-            FROM inventory 
+            SELECT id, quantity
+            FROM inventory
             WHERE product_id = :product_id AND location_id = :location_id
         ");
         $stmt->execute([
@@ -292,92 +374,111 @@ try {
             ]);
         }
     }
-    
+
+    if ($trackingMethod === 'individual' && !$barcodeTask) {
+        $stmt = $db->prepare('SELECT expected_quantity, scanned_quantity, status FROM barcode_capture_tasks WHERE task_id = :task_id');
+        $stmt->execute([':task_id' => $barcodeTaskId]);
+        $barcodeTask = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+    }
+
     // Check for discrepancies
-if ($receivedQuantity != $expectedQuantity) {
-    // Create discrepancy record
-    $discrepancyType = $receivedQuantity < $expectedQuantity ? 'quantity_short' : 'quantity_over';
-    $discrepancyQuantity = abs($receivedQuantity - $expectedQuantity);
-    
-    // Create description for the discrepancy
-    $description = $notes ?: "Quantity discrepancy: Expected {$expectedQuantity}, received {$receivedQuantity}";
-    
-    // Check if discrepancy already exists for this session and product
-    $stmt = $db->prepare("
-        SELECT id FROM receiving_discrepancies 
-        WHERE receiving_session_id = :session_id 
-        AND product_id = :product_id
-    ");
-    $stmt->execute([
-        ':session_id' => $sessionId,
-        ':product_id' => $orderItem['main_product_id']
-    ]);
-    $existingDiscrepancy = $stmt->fetchColumn();
-    
-    if ($existingDiscrepancy) {
-        // Update existing discrepancy
+    if ($receivedQuantity != $expectedQuantity) {
+        // Create discrepancy record
+        $discrepancyType = $receivedQuantity < $expectedQuantity ? 'quantity_short' : 'quantity_over';
+        $discrepancyQuantity = abs($receivedQuantity - $expectedQuantity);
+
+        // Create description for the discrepancy
+        $description = $notes ?: "Quantity discrepancy: Expected {$expectedQuantity}, received {$receivedQuantity}";
+
+        // Check if discrepancy already exists for this session and product
         $stmt = $db->prepare("
-            UPDATE receiving_discrepancies SET
-                discrepancy_type = :discrepancy_type,
-                expected_quantity = :expected_quantity,
-                actual_quantity = :actual_quantity,
-                description = :description,
-                resolution_notes = :resolution_notes
-            WHERE id = :discrepancy_id
-        ");
-        $stmt->execute([
-            ':discrepancy_type' => $discrepancyType,
-            ':expected_quantity' => $expectedQuantity,
-            ':actual_quantity' => $receivedQuantity,
-            ':description' => $description,
-            ':resolution_notes' => $notes,
-            ':discrepancy_id' => $existingDiscrepancy
-        ]);
-    } else {
-        // Create new discrepancy record
-        $stmt = $db->prepare("
-            INSERT INTO receiving_discrepancies (
-                receiving_session_id, product_id,
-                discrepancy_type, expected_quantity, actual_quantity,
-                description, resolution_notes
-            ) VALUES (
-                :session_id, :product_id, :discrepancy_type,
-                :expected_quantity, :actual_quantity, :description, :resolution_notes
-            )
+            SELECT id FROM receiving_discrepancies
+            WHERE receiving_session_id = :session_id
+            AND product_id = :product_id
         ");
         $stmt->execute([
             ':session_id' => $sessionId,
-            ':product_id' => $orderItem['main_product_id'],
-            ':discrepancy_type' => $discrepancyType,
-            ':expected_quantity' => $expectedQuantity,
-            ':actual_quantity' => $receivedQuantity,
-            ':description' => $description,
-            ':resolution_notes' => $notes
+            ':product_id' => $orderItem['main_product_id']
         ]);
+        $existingDiscrepancy = $stmt->fetchColumn();
+
+        if ($existingDiscrepancy) {
+            // Update existing discrepancy
+            $stmt = $db->prepare("
+                UPDATE receiving_discrepancies SET
+                    discrepancy_type = :discrepancy_type,
+                    expected_quantity = :expected_quantity,
+                    actual_quantity = :actual_quantity,
+                    description = :description,
+                    resolution_notes = :resolution_notes
+                WHERE id = :discrepancy_id
+            ");
+            $stmt->execute([
+                ':discrepancy_type' => $discrepancyType,
+                ':expected_quantity' => $expectedQuantity,
+                ':actual_quantity' => $receivedQuantity,
+                ':description' => $description,
+                ':resolution_notes' => $notes,
+                ':discrepancy_id' => $existingDiscrepancy
+            ]);
+        } else {
+            // Create new discrepancy record
+            $stmt = $db->prepare("
+                INSERT INTO receiving_discrepancies (
+                    receiving_session_id, product_id,
+                    discrepancy_type, expected_quantity, actual_quantity,
+                    description, resolution_notes
+                ) VALUES (
+                    :session_id, :product_id, :discrepancy_type,
+                    :expected_quantity, :actual_quantity, :description, :resolution_notes
+                )
+            ");
+            $stmt->execute([
+                ':session_id' => $sessionId,
+                ':product_id' => $orderItem['main_product_id'],
+                ':discrepancy_type' => $discrepancyType,
+                ':expected_quantity' => $expectedQuantity,
+                ':actual_quantity' => $receivedQuantity,
+                ':description' => $description,
+                ':resolution_notes' => $notes
+            ]);
+        }
     }
-}
     
     // Update session progress
-    $stmt = $db->prepare("
-        UPDATE receiving_sessions SET 
-            total_items_received = (
-                SELECT COUNT(DISTINCT purchase_order_item_id) 
-                FROM receiving_items 
-                WHERE receiving_session_id = :session_id
-            ),
-            updated_at = NOW()
-        WHERE id = :session_id
-    ");
-    $stmt->execute([':session_id' => $sessionId]);
-    
+    updateReceivingSessionProgress($db, $sessionId);
+
     // Commit transaction
     $db->commit();
-    
+
+    $status = 'pending';
+    if ($receivedQuantity >= $expectedQuantity) {
+        $status = 'received';
+    } elseif ($receivedQuantity > 0 && $receivedQuantity < $expectedQuantity) {
+        $status = 'partial';
+    }
+
+    $barcodeExpected = $barcodeTask['expected_quantity'] ?? null;
+    $barcodeScanned = $barcodeTask['scanned_quantity'] ?? null;
+    $barcodeStatus = $barcodeTask['status'] ?? null;
+
+    if ($trackingMethod === 'individual') {
+        $status = ($barcodeStatus === 'completed' || ($barcodeExpected !== null && $barcodeScanned !== null && $barcodeScanned >= $barcodeExpected))
+            ? 'received'
+            : 'pending_scan';
+    }
+
     // Return success response
     echo json_encode([
         'success' => true,
         'message' => 'Item received successfully',
         'receiving_item_id' => $receivingItemId,
+        'status' => $status,
+        'tracking_method' => $trackingMethod,
+        'barcode_task_id' => $barcodeTaskId ? (int)$barcodeTaskId : null,
+        'barcode_expected' => $barcodeExpected !== null ? (int)$barcodeExpected : null,
+        'barcode_scanned' => $barcodeScanned !== null ? (int)$barcodeScanned : null,
+        'barcode_status' => $barcodeStatus,
         'item_details' => [
             'id' => $itemId,
             'product_name' => $orderItem['product_name'],

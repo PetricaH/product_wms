@@ -16,11 +16,14 @@ class WarehouseReceiving {
         this.selectedPurchaseOrder = null;
         this.receivingItems = [];
         this.selectedProductId = null;
-        this.scanner = null;
-        this.scannerActive = false;
         this.productionMode = false;
         this.labelsPrinted = false;
         this.lastPrintData = null;
+        this.barcodeDecisionModal = null;
+        this.barcodeDecisionResolve = null;
+        this.barcodeDecisionKeyHandler = null;
+        this.activeBarcodeTask = null;
+        this.barcodeCaptureSession = null;
 
         // TIMING INTEGRATION - Silent timing for performance tracking
         this.timingManager = null;
@@ -119,17 +122,12 @@ class WarehouseReceiving {
 
         // Scanner controls
         const scanBarcodeBtn = document.getElementById('scan-barcode-btn');
-        const startScannerBtn = document.getElementById('start-scanner');
-        const stopScannerBtn = document.getElementById('stop-scanner');
 
         if (scanBarcodeBtn) {
-            scanBarcodeBtn.addEventListener('click', () => this.openScannerModal());
-        }
-        if (startScannerBtn) {
-            startScannerBtn.addEventListener('click', () => this.startScanner());
-        }
-        if (stopScannerBtn) {
-            stopScannerBtn.addEventListener('click', () => this.stopScanner());
+            scanBarcodeBtn.addEventListener('click', () => {
+                const targetUrl = `${this.config.baseUrl}/warehouse_barcode_tasks.php`;
+                window.open(targetUrl, '_blank');
+            });
         }
 
         // Close modal on outside click
@@ -138,7 +136,21 @@ class WarehouseReceiving {
             if (e.target === scannerModal) {
                 this.closeScannerModal();
             }
+            const decisionModal = document.getElementById('barcode-decision-modal');
+            if (e.target === decisionModal) {
+                this.cancelBarcodeDecision();
+            }
         });
+
+        this.barcodeDecisionModal = document.getElementById('barcode-decision-modal');
+        if (this.barcodeDecisionModal) {
+            this.barcodeDecisionModal.querySelectorAll('[data-barcode-choice]').forEach(btn => {
+                btn.addEventListener('click', (event) => {
+                    const choice = event.currentTarget.getAttribute('data-barcode-choice');
+                    this.handleBarcodeDecisionChoice(choice);
+                });
+            });
+        }
 
         const toggleBtn = document.getElementById('toggle-production');
         if (toggleBtn) {
@@ -641,6 +653,21 @@ class WarehouseReceiving {
                             ${this.getLocationOptions(selectedLoc)}
                         </select>
                     </div>
+                    ${item.tracking_method === 'individual' ? `
+                        <div class="barcode-task-banner">
+                            <div class="barcode-task-info">
+                                <span class="material-symbols-outlined">qr_code_scanner</span>
+                                <div>
+                                    <div class="barcode-task-title">Scanare coduri de bare</div>
+                                    <div class="barcode-task-progress">${item.barcode_scanned || 0} / ${item.barcode_expected || item.received_quantity || item.expected_quantity || 0} unități scanate</div>
+                                </div>
+                            </div>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="receivingSystem.openBarcodeScannerByItem(${item.id})">
+                                <span class="material-symbols-outlined">play_arrow</span>
+                                Continuă scanarea
+                            </button>
+                        </div>
+                    ` : ''}
                     <button type="button" class="receive-item-btn" onclick="receivingSystem.receiveItem(${item.id})">
                         <span class="material-symbols-outlined">check</span>
                         Primește
@@ -660,30 +687,40 @@ class WarehouseReceiving {
     async receiveItem(itemId) {
         const receivedQtyInput = document.getElementById(`received-qty-${itemId}`);
         const locationSelect = document.getElementById(`location-${itemId}`);
-        
+
         if (!receivedQtyInput || !locationSelect) return;
-        
+
         const receivedQty = parseFloat(receivedQtyInput.value) || 0;
         const locationId = locationSelect.value;
-        
+
         if (receivedQty <= 0) {
             this.showError('Cantitatea primită trebuie să fie mai mare decât 0');
             return;
         }
-        
+
         if (!locationId) {
             this.showError('Selectează o locație pentru produs');
             return;
         }
 
-        // Find the item to start timing
-        const item = this.receivingItems.find(i => i.id == itemId);
+        const item = this.receivingItems.find(i => i.id == itemId) || null;
+
+        const trackingChoice = await this.promptBarcodeDecision(item, receivedQty);
+        if (!trackingChoice) {
+            return;
+        }
+
+        if (trackingChoice === 'individual' && !Number.isInteger(receivedQty)) {
+            this.showError('Pentru scanarea individuală, cantitatea trebuie să fie un număr întreg.');
+            return;
+        }
+
         if (item) {
             await this.startItemTiming(item);
         }
 
         this.showLoading(true);
-        
+
         try {
             const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || this.config.csrfToken;
             const response = await fetch(`${this.config.apiBase}/receiving/receive_item.php`, {
@@ -697,12 +734,13 @@ class WarehouseReceiving {
                     session_id: this.currentReceivingSession.id,
                     item_id: itemId,
                     received_quantity: receivedQty,
-                    location_id: locationId
+                    location_id: locationId,
+                    tracking_method: trackingChoice
                 })
             });
 
             const result = await response.json();
-            
+
             if (!response.ok) {
                 throw new Error(result.message || 'Eroare la primirea produsului');
             }
@@ -710,11 +748,45 @@ class WarehouseReceiving {
             // Complete timing silently
             await this.completeItemTiming(itemId, receivedQty);
 
-            // Update item status
+            if (item) {
+                item.status = result.status;
+                item.received_quantity = result.item_details?.received_quantity ?? receivedQty;
+                item.location_code = locationId;
+                item.tracking_method = result.tracking_method || 'bulk';
+                item.barcode_task_id = result.barcode_task_id || null;
+                if (item.tracking_method === 'individual') {
+                    item.barcode_expected = result.barcode_expected || item.barcode_expected || item.received_quantity;
+                    item.barcode_scanned = typeof result.barcode_scanned === 'number' ? result.barcode_scanned : item.barcode_scanned || 0;
+                    item.barcode_status = result.barcode_status || item.barcode_status || null;
+                } else {
+                    item.barcode_expected = null;
+                    item.barcode_scanned = null;
+                    item.barcode_status = null;
+                }
+            }
+
             this.updateItemStatus(itemId, result.status);
+            this.displayReceivingItems();
             this.updateReceivingSummary();
-            this.showSuccess('Produs primit cu succes');
-            
+
+            if (trackingChoice === 'individual') {
+                this.showSuccess('Sarcina de scanare a fost creată. Scanează fiecare unitate.');
+                if (result.barcode_task_id) {
+                    const productName = item?.product_name || result.item_details?.product_name || '';
+                    this.openBarcodeScanner({
+                        taskId: result.barcode_task_id,
+                        expected: result.barcode_expected || Math.round(receivedQty),
+                        scanned: result.barcode_scanned || 0,
+                        status: result.barcode_status || 'pending',
+                        productName,
+                        sku: item?.sku || result.item_details?.sku || '',
+                        locationCode: locationId
+                    }, itemId);
+                }
+            } else {
+                this.showSuccess('Produs primit cu succes');
+            }
+
         } catch (error) {
             console.error('Error receiving item:', error);
             this.showError('Eroare la primirea produsului: ' + error.message);
@@ -900,12 +972,147 @@ class WarehouseReceiving {
         this.resumeSession(sessionId);
     }
 
-    // Scanner functionality
-    openScannerModal() {
-        const modal = document.getElementById('scanner-modal');
-        if (modal) {
-            modal.style.display = 'block';
+    // Barcode scanning workflow
+    async promptBarcodeDecision(item, quantity) {
+        if (!this.barcodeDecisionModal) {
+            return 'bulk';
         }
+
+        return new Promise((resolve) => {
+            this.barcodeDecisionResolve = resolve;
+
+            const questionEl = this.barcodeDecisionModal.querySelector('.modal-question');
+            if (questionEl) {
+                const qtyText = quantity ? `${quantity} ${quantity === 1 ? 'bucată' : 'bucăți'}` : 'aceste bucăți';
+                questionEl.textContent = `Există coduri de bare de scanat pentru ${qtyText}?`;
+            }
+
+            this.barcodeDecisionModal.style.display = 'flex';
+
+            this.barcodeDecisionKeyHandler = (event) => {
+                if (event.key === 'F1') {
+                    event.preventDefault();
+                    this.handleBarcodeDecisionChoice('individual');
+                } else if (event.key === 'F2') {
+                    event.preventDefault();
+                    this.handleBarcodeDecisionChoice('bulk');
+                } else if (event.key === 'Escape') {
+                    event.preventDefault();
+                    this.cancelBarcodeDecision();
+                }
+            };
+
+            document.addEventListener('keydown', this.barcodeDecisionKeyHandler);
+        });
+    }
+
+    handleBarcodeDecisionChoice(choice) {
+        if (!this.barcodeDecisionResolve) {
+            return;
+        }
+        const resolver = this.barcodeDecisionResolve;
+        this.cleanupBarcodeDecision();
+        resolver(choice);
+    }
+
+    cancelBarcodeDecision() {
+        if (!this.barcodeDecisionResolve) {
+            this.cleanupBarcodeDecision();
+            return;
+        }
+        const resolver = this.barcodeDecisionResolve;
+        this.cleanupBarcodeDecision();
+        resolver(null);
+    }
+
+    cleanupBarcodeDecision() {
+        if (this.barcodeDecisionModal) {
+            this.barcodeDecisionModal.style.display = 'none';
+        }
+        if (this.barcodeDecisionKeyHandler) {
+            document.removeEventListener('keydown', this.barcodeDecisionKeyHandler);
+            this.barcodeDecisionKeyHandler = null;
+        }
+        this.barcodeDecisionResolve = null;
+    }
+
+    openBarcodeScanner(taskInfo, itemId) {
+        const modal = document.getElementById('scanner-modal');
+        if (!modal) return;
+
+        if (this.barcodeCaptureSession) {
+            this.barcodeCaptureSession.destroy();
+        }
+
+        const titleEl = document.getElementById('barcode-modal-title');
+        const subtitleEl = document.getElementById('barcode-modal-subtitle');
+        const progressTextEl = document.getElementById('barcode-progress-text');
+        const progressFillEl = document.getElementById('barcode-progress-fill');
+        const inputEl = document.getElementById('barcode-scan-input');
+        const listEl = document.getElementById('barcode-scanned-list');
+        const alertEl = document.getElementById('barcode-scan-alert');
+
+        if (listEl) {
+            listEl.innerHTML = '';
+        }
+        if (alertEl) {
+            alertEl.style.display = 'none';
+            alertEl.textContent = '';
+        }
+
+        if (titleEl) {
+            titleEl.textContent = 'Scanare coduri de bare';
+        }
+        if (subtitleEl) {
+            const parts = [];
+            if (taskInfo.productName) {
+                parts.push(taskInfo.productName);
+            }
+            if (taskInfo.sku) {
+                parts.push(`SKU ${taskInfo.sku}`);
+            }
+            if (taskInfo.locationCode) {
+                parts.push(`Locație ${taskInfo.locationCode}`);
+            }
+            subtitleEl.textContent = parts.join(' • ');
+        }
+
+        modal.style.display = 'flex';
+        this.activeBarcodeTask = { itemId, taskId: taskInfo.taskId };
+
+        this.barcodeCaptureSession = new BarcodeCaptureSession({
+            taskId: taskInfo.taskId,
+            apiBase: this.config.apiBase,
+            expected: taskInfo.expected,
+            scanned: taskInfo.scanned,
+            elements: {
+                progressText: progressTextEl,
+                progressFill: progressFillEl,
+                input: inputEl,
+                list: listEl,
+                alert: alertEl
+            },
+            onProgress: (data) => this.updateItemBarcodeProgress(itemId, data),
+            onComplete: (data) => this.onBarcodeTaskComplete(itemId, data)
+        });
+    }
+
+    openBarcodeScannerByItem(itemId) {
+        const item = this.receivingItems.find(i => i.id == itemId);
+        if (!item || !item.barcode_task_id) {
+            this.showError('Nu există o sarcină de scanare pentru acest produs.');
+            return;
+        }
+
+        this.openBarcodeScanner({
+            taskId: item.barcode_task_id,
+            expected: item.barcode_expected || item.received_quantity || item.expected_quantity || 0,
+            scanned: item.barcode_scanned || 0,
+            status: item.barcode_status || 'pending',
+            productName: item.product_name,
+            sku: item.sku,
+            locationCode: item.location_code
+        }, itemId);
     }
 
     closeScannerModal() {
@@ -913,67 +1120,51 @@ class WarehouseReceiving {
         if (modal) {
             modal.style.display = 'none';
         }
-        this.stopScanner();
+        if (this.barcodeCaptureSession) {
+            this.barcodeCaptureSession.destroy();
+            this.barcodeCaptureSession = null;
+        }
+        this.activeBarcodeTask = null;
     }
 
-    async startScanner() {
-        if (this.scannerActive) return;
-        
-        try {
-            // Initialize scanner (would use QuaggaJS or similar in production)
-            const scannerContainer = document.getElementById('scanner-container');
-            if (scannerContainer) {
-                scannerContainer.innerHTML = `
-                    <div style="text-align: center; padding: 2rem; color: var(--light-gray);">
-                        <div style="font-size: 2rem; margin-bottom: 1rem;">📷</div>
-                        <p>Scanner simulat - introdu barcode manual:</p>
-                        <input type="text" id="manual-barcode" placeholder="Scanează sau introdu barcode" 
-                               style="padding: 0.5rem; margin: 1rem; width: 200px; text-align: center;">
-                        <button onclick="receivingSystem.processBarcode(document.getElementById('manual-barcode').value)" 
-                                style="padding: 0.5rem 1rem; background: var(--success); color: white; border: none; border-radius: 4px;">
-                            Procesează
-                        </button>
-                    </div>
-                `;
+    updateItemBarcodeProgress(itemId, progress) {
+        const item = this.receivingItems.find(i => i.id == itemId);
+        if (!item) return;
+
+        if (typeof progress.expected === 'number') {
+            item.barcode_expected = progress.expected;
+        }
+        if (typeof progress.scanned === 'number') {
+            item.barcode_scanned = progress.scanned;
+        }
+        if (progress.status) {
+            item.barcode_status = progress.status;
+        }
+
+        if (item.tracking_method === 'individual') {
+            if (item.barcode_status === 'completed' || (item.barcode_expected && item.barcode_scanned >= item.barcode_expected)) {
+                item.status = 'received';
+            } else {
+                item.status = 'pending_scan';
             }
-            
-            this.scannerActive = true;
-            
-        } catch (error) {
-            console.error('Error starting scanner:', error);
-            this.showError('Eroare la pornirea scannerului');
         }
+
+        this.displayReceivingItems();
+        this.updateReceivingSummary();
     }
 
-    stopScanner() {
-        this.scannerActive = false;
-        const scannerContainer = document.getElementById('scanner-container');
-        if (scannerContainer) {
-            scannerContainer.innerHTML = `
-                <div id="scanner-placeholder" class="scanner-placeholder">
-                    <span class="material-symbols-outlined">qr_code_scanner</span>
-                    <p>Apasă "Pornește Scanner" pentru a scana</p>
-                </div>
-            `;
-        }
-    }
-
-    processBarcode(barcode) {
-        if (!barcode) return;
-        
-        // Find product by barcode and auto-fill receiving form
-        const item = this.receivingItems.find(item => item.barcode === barcode);
+    onBarcodeTaskComplete(itemId, progress) {
+        const item = this.receivingItems.find(i => i.id == itemId);
         if (item) {
-            const receivedQtyInput = document.getElementById(`received-qty-${item.id}`);
-            if (receivedQtyInput) {
-                receivedQtyInput.focus();
-                receivedQtyInput.select();
-            }
-            this.closeScannerModal();
-            this.showSuccess(`Produs găsit: ${item.product_name}`);
-        } else {
-            this.showError('Produsul nu a fost găsit în lista de așteptare');
+            item.barcode_expected = progress.expected;
+            item.barcode_scanned = progress.scanned;
+            item.barcode_status = progress.status;
+            item.status = 'received';
         }
+        this.showSuccess('Scanarea codurilor de bare a fost finalizată.');
+        this.closeScannerModal();
+        this.displayReceivingItems();
+        this.updateReceivingSummary();
     }
 
     // Navigation functions
@@ -1060,7 +1251,8 @@ class WarehouseReceiving {
         const statusMap = {
             'pending': 'În Așteptare',
             'received': 'Primit',
-            'partial': 'Parțial'
+            'partial': 'Parțial',
+            'pending_scan': 'Scanare în curs'
         };
         return statusMap[status] || status;
     }
@@ -1121,6 +1313,262 @@ class WarehouseReceiving {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+}
+
+class BarcodeCaptureSession {
+    constructor(config) {
+        this.taskId = config.taskId;
+        this.apiBase = config.apiBase;
+        this.expected = config.expected || 0;
+        this.scanned = config.scanned || 0;
+        this.elements = config.elements || {};
+        this.onProgress = config.onProgress;
+        this.onComplete = config.onComplete;
+        this.storageKey = `barcode_scans_${this.taskId}`;
+        this.editingCard = null;
+
+        this.submitHandler = this.handleInputChange.bind(this);
+        this.keypressHandler = this.handleKeypress.bind(this);
+        this.listClickHandler = this.handleListClick.bind(this);
+
+        this.init();
+    }
+
+    init() {
+        this.updateProgressUI();
+        this.loadScans();
+
+        if (this.elements.input) {
+            this.elements.input.value = '';
+            this.elements.input.focus();
+            this.elements.input.addEventListener('change', this.submitHandler);
+            this.elements.input.addEventListener('keypress', this.keypressHandler);
+        }
+        if (this.elements.list) {
+            this.elements.list.addEventListener('click', this.listClickHandler);
+        }
+    }
+
+    emitProgress(statusOverride = null) {
+        if (typeof this.onProgress === 'function') {
+            const status = statusOverride || (this.expected > 0 && this.scanned >= this.expected ? 'completed' : 'in_progress');
+            this.onProgress({
+                expected: this.expected,
+                scanned: this.scanned,
+                status
+            });
+        }
+    }
+
+    updateProgressUI() {
+        if (this.elements.progressText) {
+            this.elements.progressText.textContent = `Scanate ${this.scanned}/${this.expected} unități`;
+        }
+        if (this.elements.progressFill) {
+            const percent = this.expected > 0 ? Math.min(100, Math.round((this.scanned / this.expected) * 100)) : 0;
+            this.elements.progressFill.style.width = `${percent}%`;
+        }
+        this.emitProgress();
+    }
+
+    async loadScans() {
+        const stored = JSON.parse(localStorage.getItem(this.storageKey) || '[]');
+        let remote = [];
+
+        try {
+            const res = await fetch(`${this.apiBase}/barcode_capture/list.php?task_id=${this.taskId}`, {
+                credentials: 'same-origin'
+            });
+            const data = await res.json();
+            if (data.status === 'success') {
+                if (typeof data.expected === 'number') {
+                    this.expected = data.expected;
+                }
+                if (typeof data.scanned === 'number') {
+                    this.scanned = data.scanned;
+                }
+                remote = data.scans || [];
+            }
+        } catch (error) {
+            console.error('Failed to load barcode scans:', error);
+        }
+
+        const mergedMap = new Map();
+        [...stored, ...remote].forEach(scan => {
+            if (scan && scan.barcode) {
+                mergedMap.set(scan.barcode, scan);
+            }
+        });
+
+        const merged = Array.from(mergedMap.values());
+        this.renderScannedList(merged);
+        localStorage.setItem(this.storageKey, JSON.stringify(merged));
+        this.updateProgressUI();
+    }
+
+    renderScannedList(scans) {
+        if (!this.elements.list) return;
+        this.elements.list.innerHTML = '';
+        scans.forEach(scan => {
+            this.addCard(scan.barcode, scan.inventory_id, false);
+        });
+    }
+
+    addCard(barcode, inventoryId, prepend = true) {
+        if (!this.elements.list || !barcode) return;
+        const card = document.createElement('div');
+        card.className = 'barcode-card';
+        card.dataset.barcode = barcode;
+        card.dataset.inventoryId = inventoryId || '';
+        card.textContent = barcode;
+
+        if (prepend && this.elements.list.firstChild) {
+            this.elements.list.insertBefore(card, this.elements.list.firstChild);
+        } else {
+            this.elements.list.appendChild(card);
+        }
+    }
+
+    handleListClick(event) {
+        const card = event.target.closest('.barcode-card');
+        if (!card || !card.dataset.barcode) return;
+        if (!confirm('Ștergi acest cod de bare?')) return;
+        this.deleteScan(card);
+    }
+
+    async deleteScan(card) {
+        const inventoryId = card.dataset.inventoryId || null;
+        const barcode = card.dataset.barcode;
+        if (!barcode) return;
+
+        try {
+            const res = await fetch(`${this.apiBase}/barcode_capture/delete_scan.php`, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    task_id: this.taskId,
+                    inventory_id: inventoryId,
+                    barcode
+                })
+            });
+            const data = await res.json();
+            if (data.status === 'success') {
+                this.expected = typeof data.expected === 'number' ? data.expected : this.expected;
+                this.scanned = typeof data.scanned === 'number' ? data.scanned : this.scanned;
+                card.remove();
+                this.removeFromStorage(barcode, inventoryId);
+                this.clearAlert();
+                this.updateProgressUI();
+            } else {
+                this.showAlert(data.message || 'Eroare la ștergerea codului');
+            }
+        } catch (error) {
+            console.error('Delete scan error:', error);
+            this.showAlert('Eroare de rețea la ștergerea codului');
+        }
+    }
+
+    removeFromStorage(barcode, inventoryId) {
+        const stored = JSON.parse(localStorage.getItem(this.storageKey) || '[]');
+        const filtered = stored.filter(scan => !(scan.barcode === barcode && String(scan.inventory_id || '') === String(inventoryId || '')));
+        localStorage.setItem(this.storageKey, JSON.stringify(filtered));
+    }
+
+    handleInputChange() {
+        this.submit();
+    }
+
+    handleKeypress(event) {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            this.submit();
+        }
+    }
+
+    async submit() {
+        if (!this.elements.input) return;
+        const code = this.elements.input.value.trim();
+        if (!code) return;
+
+        const existing = Array.from(this.elements.list?.querySelectorAll('.barcode-card') || [])
+            .some(card => card.dataset.barcode === code);
+        if (existing) {
+            this.showAlert('Codul de bare a fost deja scanat');
+            this.elements.input.value = '';
+            this.elements.input.focus();
+            return;
+        }
+
+        try {
+            const res = await fetch(`${this.apiBase}/barcode_capture/scan.php`, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    task_id: this.taskId,
+                    barcode: code
+                })
+            });
+            const data = await res.json();
+            if (data.status === 'success') {
+                this.clearAlert();
+                this.expected = typeof data.expected === 'number' ? data.expected : this.expected;
+                this.scanned = typeof data.scanned === 'number' ? data.scanned : this.scanned;
+                this.addCard(code, data.inventory_id);
+                this.addToStorage(code, data.inventory_id);
+                this.updateProgressUI();
+                this.elements.input.value = '';
+                this.elements.input.focus();
+                if (data.completed) {
+                    this.emitProgress('completed');
+                    if (typeof this.onComplete === 'function') {
+                        this.onComplete({
+                            expected: this.expected,
+                            scanned: this.scanned,
+                            status: 'completed'
+                        });
+                    }
+                }
+            } else {
+                this.showAlert(data.message || 'Eroare la scanare');
+            }
+        } catch (error) {
+            console.error('Scan submit error:', error);
+            this.showAlert('Eroare de rețea la scanare');
+        }
+    }
+
+    addToStorage(barcode, inventoryId) {
+        const stored = JSON.parse(localStorage.getItem(this.storageKey) || '[]');
+        stored.unshift({ barcode, inventory_id: inventoryId });
+        localStorage.setItem(this.storageKey, JSON.stringify(stored));
+    }
+
+    showAlert(message) {
+        if (!this.elements.alert) return;
+        this.elements.alert.textContent = message;
+        this.elements.alert.style.display = 'block';
+        this.elements.alert.classList.add('error');
+    }
+
+    clearAlert() {
+        if (!this.elements.alert) return;
+        this.elements.alert.textContent = '';
+        this.elements.alert.style.display = 'none';
+        this.elements.alert.classList.remove('error');
+    }
+
+    destroy() {
+        this.clearAlert();
+        if (this.elements.input) {
+            this.elements.input.removeEventListener('change', this.submitHandler);
+            this.elements.input.removeEventListener('keypress', this.keypressHandler);
+        }
+        if (this.elements.list) {
+            this.elements.list.removeEventListener('click', this.listClickHandler);
+        }
     }
 }
 

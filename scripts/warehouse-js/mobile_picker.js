@@ -104,6 +104,68 @@ document.addEventListener('DOMContentLoaded', () => {
         completionSection: document.getElementById('completion-section')
     };
 
+    // Location helpers
+    function normalizeLocationCode(code) {
+        return (code || '')
+            .toString()
+            .trim()
+            .replace(/\s+/g, '')
+            .toUpperCase();
+    }
+
+    function parseLocationCodes(locationString) {
+        if (!locationString || typeof locationString !== 'string') {
+            return [];
+        }
+
+        const seen = new Set();
+
+        return locationString
+            .split(',')
+            .map(loc => loc.trim())
+            .filter(loc => {
+                if (!loc) {
+                    return false;
+                }
+
+                const normalized = normalizeLocationCode(loc);
+                if (seen.has(normalized)) {
+                    return false;
+                }
+
+                seen.add(normalized);
+                return true;
+            });
+    }
+
+    function getLocationList(item) {
+        if (!item) {
+            return [];
+        }
+
+        if (Array.isArray(item.location_codes) && item.location_codes.length > 0) {
+            return item.location_codes;
+        }
+
+        if (typeof item.location_code === 'string' && item.location_code.trim() !== '') {
+            const parsed = parseLocationCodes(item.location_code);
+            if (parsed.length > 0) {
+                item.location_codes = parsed;
+            }
+            return parsed;
+        }
+
+        return [];
+    }
+
+    function getLocationDisplay(item) {
+        const locations = getLocationList(item);
+        if (locations.length === 0) {
+            return 'N/A';
+        }
+        return locations.join(' • ');
+    }
+
     // Initialize
     init();
 
@@ -322,7 +384,41 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // Fix: Handle the correct API response structure
             currentOrder = data.data || data.order;
-            orderItems = currentOrder.items || data.items || [];
+
+            const rawItems = currentOrder?.items || data.items || [];
+            const normalizedItems = rawItems.map((item) => {
+                const hasArray = Array.isArray(item.location_codes) && item.location_codes.length > 0;
+                const locationString = typeof item.location_code === 'string'
+                    ? item.location_code
+                    : hasArray
+                        ? item.location_codes.join(', ')
+                        : '';
+                const parsedLocations = hasArray
+                    ? item.location_codes.map(loc => loc.trim()).filter(Boolean)
+                    : parseLocationCodes(locationString);
+                const uniqueLocations = [];
+                const seenLocations = new Set();
+
+                parsedLocations.forEach(loc => {
+                    const normalized = normalizeLocationCode(loc);
+                    if (!seenLocations.has(normalized)) {
+                        seenLocations.add(normalized);
+                        uniqueLocations.push(loc.trim());
+                    }
+                });
+
+                const normalizedLocationString = locationString || (uniqueLocations.length ? uniqueLocations.join(', ') : '');
+
+                return {
+                    ...item,
+                    location_code: normalizedLocationString,
+                    location_codes: uniqueLocations,
+                    primary_location_code: uniqueLocations[0] || null
+                };
+            });
+
+            orderItems = normalizedItems;
+            currentOrder.items = normalizedItems;
 
             // Normalize AWB field from API (tracking_number vs awb_barcode)
             if (currentOrder) {
@@ -650,7 +746,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const card = document.createElement('div');
         card.className = `item-card ${status}`;
         card.onclick = () => startPickingWorkflow(item, index);
-        
+
+        const locationDisplay = getLocationDisplay(item);
+
         card.innerHTML = `
             <div class="item-header">
                 <div class="item-info">
@@ -663,7 +761,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="item-details">
                 <div class="item-detail">
                     <span class="material-symbols-outlined">pin_drop</span>
-                    <span>${escapeHtml(item.location_code || 'N/A')}</span>
+                    <span>${escapeHtml(locationDisplay)}</span>
                 </div>
                 <div class="item-detail">
                     <span class="material-symbols-outlined">inventory</span>
@@ -708,7 +806,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // Show location step only if a location code exists
-        if (item.location_code) {
+        const hasLocation = getLocationList(item).length > 0;
+
+        if (hasLocation) {
             showStep('location');
         } else {
             // No location specified, skip directly to product verification
@@ -738,7 +838,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Setup step-specific data
             if (stepName === 'location' && currentItem) {
-                if (elements.targetLocation) elements.targetLocation.textContent = currentItem.location_code || 'N/A';
+                const locationDisplay = getLocationDisplay(currentItem);
+                if (elements.targetLocation) elements.targetLocation.textContent = locationDisplay;
                 startPhysicalScanning('location');
             } else if (stepName === 'product' && currentItem) {
                 if (elements.targetProductName) elements.targetProductName.textContent = currentItem.product_name || 'Produs necunoscut';
@@ -816,24 +917,32 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function verifyLocation() {
         clearTimeout(locationScanTimeout);
-        // If no location code is provided for the item, skip verification
-        if (!currentItem.location_code) {
+
+        const expectedLocations = getLocationList(currentItem);
+
+        if (!currentItem || expectedLocations.length === 0) {
             scannedLocation = '';
             showStep('product');
             return;
         }
 
-        const inputLocation = elements.locationInput?.value?.trim().toUpperCase();
-        const expectedLocation = currentItem.location_code.toUpperCase();
+        const rawInput = elements.locationInput?.value ?? '';
+        const trimmedInput = rawInput.trim();
 
-        if (!inputLocation) {
+        if (!trimmedInput) {
             showMessage('Vă rugăm să introduceți codul locației.', 'error');
             return;
         }
 
-        if (inputLocation === expectedLocation) {
-            scannedLocation = inputLocation;
-            showMessage('Locație verificată cu succes!', 'success');
+        const normalizedInput = normalizeLocationCode(rawInput);
+        const matchedLocation = expectedLocations.find(loc => normalizeLocationCode(loc) === normalizedInput);
+
+        if (matchedLocation) {
+            scannedLocation = matchedLocation;
+            const successMessage = expectedLocations.length > 1
+                ? `Locație verificată: ${matchedLocation}`
+                : 'Locație verificată cu succes!';
+            showMessage(successMessage, 'success');
             if (elements.locationInput) {
                 elements.locationInput.value = '';
                 elements.locationInput.setAttribute('readonly', 'true');
@@ -841,7 +950,8 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             setTimeout(() => showStep('product'), 1000);
         } else {
-            showMessage(`Locație incorectă! Așteptat: ${expectedLocation}, Introdus: ${inputLocation}`, 'error');
+            const expectedText = expectedLocations.join(', ');
+            showMessage(`Locație incorectă! Așteptat: ${expectedText}, Introdus: ${trimmedInput}`, 'error');
             if (elements.locationInput) {
                 elements.locationInput.value = '';
                 elements.locationInput.setAttribute('readonly', 'true');
@@ -1017,7 +1127,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         
-        const locationRequired = !!currentItem.location_code;
+        const locationRequired = getLocationList(currentItem).length > 0;
         if (!scannedProduct || (locationRequired && !scannedLocation)) {
             showMessage('Eroare: Produsul și, dacă este cazul, locația trebuie verificate înainte de confirmare.', 'error');
             return;

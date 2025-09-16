@@ -443,6 +443,7 @@ class InventoryStockImporter {
                 $this->results['warnings'][] = "No temporary location available for {$overflow} remaining units of '$sku'";
                 break;
             }
+        }
 
             $checked[] = (int)$tempInfo['id'];
 

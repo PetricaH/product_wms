@@ -87,6 +87,178 @@ function getFirstActiveLocation(PDO $db): ?array {
     return $loc ?: null;
 }
 
+function fetchLocationByCode(PDO $db, string $locationCode): ?array {
+    $stmt = $db->prepare("SELECT id, location_code FROM locations WHERE location_code = :code AND status = 'active' LIMIT 1");
+    $stmt->execute([':code' => $locationCode]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$row) {
+        return null;
+    }
+    return [
+        'id' => (int)$row['id'],
+        'location_code' => $row['location_code']
+    ];
+}
+
+function getLocationById(PDO $db, int $locationId): ?array {
+    $stmt = $db->prepare("SELECT id, location_code FROM locations WHERE id = :id LIMIT 1");
+    $stmt->execute([':id' => $locationId]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$row) {
+        return null;
+    }
+    return [
+        'id' => (int)$row['id'],
+        'location_code' => $row['location_code']
+    ];
+}
+
+function findDedicatedSubdivision(PDO $db, int $productId, ?int $locationId = null): ?array {
+    $params = [':product_id' => $productId];
+    $query = "
+        SELECT
+            ls.location_id,
+            l.location_code,
+            ls.subdivision_number,
+            COALESCE(lls.level_name, CONCAT('Nivel ', ls.level_number)) AS shelf_level,
+            l.status
+        FROM location_subdivisions ls
+        JOIN locations l ON ls.location_id = l.id
+        LEFT JOIN location_level_settings lls
+            ON lls.location_id = ls.location_id AND lls.level_number = ls.level_number
+        WHERE ls.dedicated_product_id = :product_id";
+
+    if ($locationId !== null) {
+        $query .= " AND ls.location_id = :location_id";
+        $params[':location_id'] = $locationId;
+    }
+
+    $query .= " ORDER BY (l.status = 'active') DESC, ls.updated_at DESC, ls.subdivision_number ASC LIMIT 1";
+
+    $stmt = $db->prepare($query);
+    $stmt->execute($params);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$row) {
+        return null;
+    }
+
+    return [
+        'id' => (int)$row['location_id'],
+        'location_code' => $row['location_code'],
+        'shelf_level' => $row['shelf_level'] ?: null,
+        'subdivision_number' => $row['subdivision_number'] !== null ? (int)$row['subdivision_number'] : null
+    ];
+}
+
+function findDedicatedLevel(PDO $db, int $productId, ?int $locationId = null): ?array {
+    $params = [':product_id' => $productId];
+    $query = "
+        SELECT
+            lls.location_id,
+            l.location_code,
+            COALESCE(lls.level_name, CONCAT('Nivel ', lls.level_number)) AS shelf_level,
+            l.status
+        FROM location_level_settings lls
+        JOIN locations l ON lls.location_id = l.id
+        WHERE lls.dedicated_product_id = :product_id";
+
+    if ($locationId !== null) {
+        $query .= " AND lls.location_id = :location_id";
+        $params[':location_id'] = $locationId;
+    }
+
+    $query .= " ORDER BY (l.status = 'active') DESC, lls.updated_at DESC, lls.level_number ASC LIMIT 1";
+
+    $stmt = $db->prepare($query);
+    $stmt->execute($params);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$row) {
+        return null;
+    }
+
+    return [
+        'id' => (int)$row['location_id'],
+        'location_code' => $row['location_code'],
+        'shelf_level' => $row['shelf_level'] ?: null,
+        'subdivision_number' => null
+    ];
+}
+
+function findInventoryLocation(PDO $db, int $productId, ?int $locationId = null): ?array {
+    $params = [':product_id' => $productId];
+    $query = "
+        SELECT
+            i.location_id,
+            l.location_code,
+            i.shelf_level,
+            i.subdivision_number,
+            i.quantity,
+            i.updated_at,
+            i.received_at
+        FROM inventory i
+        JOIN locations l ON i.location_id = l.id
+        WHERE i.product_id = :product_id";
+
+    if ($locationId !== null) {
+        $query .= " AND i.location_id = :location_id";
+        $params[':location_id'] = $locationId;
+    }
+
+    $query .= " ORDER BY (CASE WHEN i.quantity > 0 THEN 1 ELSE 0 END) DESC, i.updated_at DESC, i.received_at DESC LIMIT 1";
+
+    $stmt = $db->prepare($query);
+    $stmt->execute($params);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$row) {
+        return null;
+    }
+
+    return [
+        'id' => (int)$row['location_id'],
+        'location_code' => $row['location_code'],
+        'shelf_level' => $row['shelf_level'] ?: null,
+        'subdivision_number' => $row['subdivision_number'] !== null ? (int)$row['subdivision_number'] : null
+    ];
+}
+
+function resolveProductLocation(PDO $db, int $productId, ?array $requestedLocation = null): array {
+    if ($requestedLocation) {
+        $candidate = findDedicatedSubdivision($db, $productId, (int)$requestedLocation['id'])
+            ?? findDedicatedLevel($db, $productId, (int)$requestedLocation['id'])
+            ?? findInventoryLocation($db, $productId, (int)$requestedLocation['id']);
+        if ($candidate) {
+            return $candidate;
+        }
+    }
+
+    $candidate = findDedicatedSubdivision($db, $productId)
+        ?? findDedicatedLevel($db, $productId)
+        ?? findInventoryLocation($db, $productId);
+
+    if ($candidate) {
+        return $candidate;
+    }
+
+    if ($requestedLocation) {
+        return [
+            'id' => (int)$requestedLocation['id'],
+            'location_code' => $requestedLocation['location_code'],
+            'shelf_level' => null,
+            'subdivision_number' => null
+        ];
+    }
+
+    return [
+        'id' => null,
+        'location_code' => null,
+        'shelf_level' => null,
+        'subdivision_number' => null
+    ];
+}
+
 try {
     $productModel = new Product($db);
     $purchasableModel = new PurchasableProduct($db);
@@ -109,16 +281,6 @@ try {
     
     if (!$sessionId || !$itemId || $receivedQuantity <= 0) {
         throw new Exception('Session ID, item ID and received quantity (>0) are required');
-    }
-    
-    $location = null;
-    if (!$locationCode) {
-        $location = getFirstActiveLocation($db);
-        if ($location) {
-            $locationCode = $location['location_code'];
-        } else {
-            throw new Exception('Location is required');
-        }
     }
     
     // Validate session exists and is active
@@ -182,29 +344,92 @@ try {
         $orderItem['main_product_id'] = $newProductId;
     }
     
-    // Validate location exists if not already determined
-    if (!$location) {
-        $stmt = $db->prepare("SELECT id, location_code FROM locations WHERE location_code = :location_code AND status = 'active'");
-        $stmt->execute([':location_code' => $locationCode]);
-        $location = $stmt->fetch(PDO::FETCH_ASSOC);
-
-        if (!$location) {
+    $requestedLocation = null;
+    if ($locationCode !== '') {
+        $requestedLocation = fetchLocationByCode($db, $locationCode);
+        if (!$requestedLocation) {
             throw new Exception('Location not found or inactive');
         }
     }
 
+    $resolvedLocation = resolveProductLocation($db, (int)$orderItem['main_product_id'], $requestedLocation);
+
+    if (!$resolvedLocation['id']) {
+        if ($requestedLocation) {
+            $resolvedLocation = [
+                'id' => (int)$requestedLocation['id'],
+                'location_code' => $requestedLocation['location_code'],
+                'shelf_level' => null,
+                'subdivision_number' => null
+            ];
+        } else {
+            $fallback = getFirstActiveLocation($db);
+            if (!$fallback) {
+                throw new Exception('Location is required');
+            }
+            $resolvedLocation = [
+                'id' => (int)$fallback['id'],
+                'location_code' => $fallback['location_code'],
+                'shelf_level' => null,
+                'subdivision_number' => null
+            ];
+        }
+    }
+
+    if (empty($resolvedLocation['location_code'])) {
+        $locInfo = getLocationById($db, (int)$resolvedLocation['id']);
+        if ($locInfo) {
+            $resolvedLocation['location_code'] = $locInfo['location_code'];
+        }
+    }
+
+    if ($resolvedLocation['shelf_level'] === null) {
+        $existingPlacement = findInventoryLocation($db, (int)$orderItem['main_product_id'], (int)$resolvedLocation['id']);
+        if ($existingPlacement) {
+            $resolvedLocation['shelf_level'] = $existingPlacement['shelf_level'];
+            if ($existingPlacement['subdivision_number'] !== null) {
+                $resolvedLocation['subdivision_number'] = $existingPlacement['subdivision_number'];
+            }
+        }
+    }
+
+    $location = [
+        'id' => (int)$resolvedLocation['id'],
+        'location_code' => $resolvedLocation['location_code'],
+        'shelf_level' => $resolvedLocation['shelf_level'],
+        'subdivision_number' => $resolvedLocation['subdivision_number'] ?? null
+    ];
+    $locationCode = $location['location_code'];
+
     $expectedQuantity = (float)$orderItem['quantity'];
     $approvalStatus = 'approved';
-    $targetLocationId = $location['id'];
     if ($conditionStatus !== 'good') {
         $approvalStatus = 'pending';
-        $targetLocationId = getDefaultLocationId($db, 'quarantine') ?? $location['id'];
+        $quarantineId = getDefaultLocationId($db, 'quarantine');
+        if ($quarantineId && $quarantineId != $location['id']) {
+            $quarantineInfo = getLocationById($db, (int)$quarantineId);
+            $location['id'] = (int)$quarantineId;
+            if ($quarantineInfo) {
+                $location['location_code'] = $quarantineInfo['location_code'];
+            }
+            $location['shelf_level'] = null;
+            $location['subdivision_number'] = null;
+        }
     } elseif ($receivedQuantity != $expectedQuantity) {
         $approvalStatus = 'pending';
-        $targetLocationId = getDefaultLocationId($db, 'qc_hold') ?? $location['id'];
+        $qcHoldId = getDefaultLocationId($db, 'qc_hold');
+        if ($qcHoldId && $qcHoldId != $location['id']) {
+            $qcInfo = getLocationById($db, (int)$qcHoldId);
+            $location['id'] = (int)$qcHoldId;
+            if ($qcInfo) {
+                $location['location_code'] = $qcInfo['location_code'];
+            }
+            $location['shelf_level'] = null;
+            $location['subdivision_number'] = null;
+        }
     }
-    $location['id'] = $targetLocationId;
-    
+    $locationCode = $location['location_code'];
+
     // Start transaction
     $db->beginTransaction();
     
@@ -322,52 +547,92 @@ try {
 
     // Update inventory only for approved good items
     if ($trackingMethod === 'bulk' && $approvalStatus === 'approved' && $conditionStatus === 'good') {
-        // Check if inventory record exists for this product/location
-        $stmt = $db->prepare("
-            SELECT id, quantity
-            FROM inventory
-            WHERE product_id = :product_id AND location_id = :location_id
-        ");
-        $stmt->execute([
-            ':product_id' => $orderItem['main_product_id'],
-            ':location_id' => $location['id']
-        ]);
-        $inventoryRecord = $stmt->fetch(PDO::FETCH_ASSOC);
-        
-        if ($inventoryRecord) {
-            // Update existing inventory
+        $subdivisionNumber = $location['subdivision_number'] ?? null;
+        $inventoryRecord = null;
+
+        if ($subdivisionNumber !== null) {
             $stmt = $db->prepare("
-                UPDATE inventory SET 
+                SELECT id, quantity, shelf_level, subdivision_number
+                FROM inventory
+                WHERE product_id = :product_id
+                  AND location_id = :location_id
+                  AND subdivision_number = :subdivision
+                LIMIT 1
+            ");
+            $stmt->execute([
+                ':product_id' => $orderItem['main_product_id'],
+                ':location_id' => $location['id'],
+                ':subdivision' => $subdivisionNumber
+            ]);
+            $inventoryRecord = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+        }
+
+        if (!$inventoryRecord) {
+            $stmt = $db->prepare("
+                SELECT id, quantity, shelf_level, subdivision_number
+                FROM inventory
+                WHERE product_id = :product_id
+                  AND location_id = :location_id
+                ORDER BY quantity DESC, id ASC
+                LIMIT 1
+            ");
+            $stmt->execute([
+                ':product_id' => $orderItem['main_product_id'],
+                ':location_id' => $location['id']
+            ]);
+            $inventoryRecord = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+        }
+
+        $resolvedShelfLevel = $location['shelf_level'] ?? ($inventoryRecord['shelf_level'] ?? null);
+        $resolvedSubdivision = $location['subdivision_number'] ?? ($inventoryRecord['subdivision_number'] ?? null);
+
+        if ($resolvedShelfLevel === null && $resolvedSubdivision !== null) {
+            $levelName = ShelfLevelResolver::getCorrectShelfLevel(
+                $db,
+                (int)$location['id'],
+                (int)$orderItem['main_product_id'],
+                (int)$resolvedSubdivision
+            );
+            if ($levelName !== null) {
+                $resolvedShelfLevel = $levelName;
+            }
+        }
+
+        if ($resolvedShelfLevel === null) {
+            $resolvedShelfLevel = 'middle';
+        }
+
+        if ($inventoryRecord) {
+            $stmt = $db->prepare("
+                UPDATE inventory SET
                     quantity = quantity + :received_quantity,
+                    shelf_level = :shelf_level,
+                    subdivision_number = :subdivision_number,
                     received_at = NOW(),
                     updated_at = NOW()
                 WHERE id = :inventory_id
             ");
             $stmt->execute([
                 ':received_quantity' => $receivedQuantity,
+                ':shelf_level' => $resolvedShelfLevel,
+                ':subdivision_number' => $resolvedSubdivision,
                 ':inventory_id' => $inventoryRecord['id']
             ]);
         } else {
-            // Create new inventory record
             $stmt = $db->prepare("
                 INSERT INTO inventory (
-                    product_id, location_id, shelf_level, quantity, batch_number,
+                    product_id, location_id, shelf_level, subdivision_number, quantity, batch_number,
                     expiry_date, received_at
                 ) VALUES (
-                    :product_id, :location_id, :shelf_level, :quantity, :batch_number,
+                    :product_id, :location_id, :shelf_level, :subdivision_number, :quantity, :batch_number,
                     :expiry_date, NOW()
                 )
             ");
-            $shelfLevel = ShelfLevelResolver::getCorrectShelfLevel(
-                $db,
-                $location['id'],
-                $orderItem['main_product_id'],
-                null
-            ) ?? 'middle';
             $stmt->execute([
                 ':product_id' => $orderItem['main_product_id'],
                 ':location_id' => $location['id'],
-                ':shelf_level' => $shelfLevel,
+                ':shelf_level' => $resolvedShelfLevel,
+                ':subdivision_number' => $resolvedSubdivision,
                 ':quantity' => $receivedQuantity,
                 ':batch_number' => $batchNumber ?: null,
                 ':expiry_date' => $expiryDate ?: null

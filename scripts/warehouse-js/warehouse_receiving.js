@@ -1327,9 +1327,11 @@ class BarcodeCaptureSession {
         this.onComplete = config.onComplete;
         this.storageKey = `barcode_scans_${this.taskId}`;
         this.editingCard = null;
+        this.inputDebounceTimer = null;
 
         this.submitHandler = this.handleInputChange.bind(this);
         this.keypressHandler = this.handleKeypress.bind(this);
+        this.inputHandler = this.handleInputEvent.bind(this);
         this.listClickHandler = this.handleListClick.bind(this);
 
         this.init();
@@ -1344,6 +1346,7 @@ class BarcodeCaptureSession {
             this.elements.input.focus();
             this.elements.input.addEventListener('change', this.submitHandler);
             this.elements.input.addEventListener('keypress', this.keypressHandler);
+            this.elements.input.addEventListener('input', this.inputHandler);
         }
         if (this.elements.list) {
             this.elements.list.addEventListener('click', this.listClickHandler);
@@ -1487,8 +1490,25 @@ class BarcodeCaptureSession {
         }
     }
 
+    handleInputEvent() {
+        if (!this.elements.input) return;
+        const value = this.elements.input.value.trim();
+        clearTimeout(this.inputDebounceTimer);
+        if (!value) {
+            this.inputDebounceTimer = null;
+            return;
+        }
+        this.inputDebounceTimer = setTimeout(() => {
+            this.submit();
+        }, 150);
+    }
+
     async submit() {
         if (!this.elements.input) return;
+        if (this.inputDebounceTimer) {
+            clearTimeout(this.inputDebounceTimer);
+            this.inputDebounceTimer = null;
+        }
         const code = this.elements.input.value.trim();
         if (!code) return;
 
@@ -1565,9 +1585,14 @@ class BarcodeCaptureSession {
         if (this.elements.input) {
             this.elements.input.removeEventListener('change', this.submitHandler);
             this.elements.input.removeEventListener('keypress', this.keypressHandler);
+            this.elements.input.removeEventListener('input', this.inputHandler);
         }
         if (this.elements.list) {
             this.elements.list.removeEventListener('click', this.listClickHandler);
+        }
+        if (this.inputDebounceTimer) {
+            clearTimeout(this.inputDebounceTimer);
+            this.inputDebounceTimer = null;
         }
     }
 }

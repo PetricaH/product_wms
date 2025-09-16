@@ -371,23 +371,15 @@ $currentPage = 'warehouse_receiving';
             <div class="modal-body">
                 <p class="modal-question">Există coduri de bare de scanat pentru aceste bucăți?</p>
                 <div class="modal-shortcuts">
-                    <div class="shortcut-option">
+                    <div class="shortcut-option" data-barcode-choice="individual">
                         <span class="shortcut-key">F1</span>
                         <span class="shortcut-text">Da</span>
                     </div>
-                    <div class="shortcut-option">
+                    <div class="shortcut-option" data-barcode-choice="bulk">
                         <span class="shortcut-key">F2</span>
                         <span class="shortcut-text">Nu</span>
                     </div>
                 </div>
-            </div>
-            <div class="modal-footer decision-actions">
-                <button type="button" class="btn btn-primary" data-barcode-choice="individual">
-                    Da, trebuie să scanez
-                </button>
-                <button type="button" class="btn btn-secondary" data-barcode-choice="bulk">
-                    Nu, recepție în bloc
-                </button>
             </div>
         </div>
     </div>

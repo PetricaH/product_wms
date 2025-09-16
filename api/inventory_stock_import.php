@@ -16,6 +16,9 @@ if (!defined('BASE_PATH')) {
 require_once BASE_PATH . '/bootstrap.php';
 require_once BASE_PATH . '/vendor/autoload.php';
 require_once BASE_PATH . '/models/Inventory.php';
+require_once BASE_PATH . '/models/Location.php';
+require_once BASE_PATH . '/models/LocationSubdivision.php';
+require_once BASE_PATH . '/models/RelocationTask.php';
 
 use PhpOffice\PhpSpreadsheet\IOFactory;
 
@@ -47,9 +50,14 @@ class InventoryStockImporter {
         'debug_info' => [] // Add debug info
     ];
 
+    private LocationSubdivision $subdivisionModel;
+    private RelocationTask $relocationModel;
+
     public function __construct(PDO $db) {
         $this->db = $db;
         $this->inventoryModel = new Inventory($db);
+        $this->subdivisionModel = new LocationSubdivision($db);
+        $this->relocationModel = new RelocationTask($db);
     }
 
     public function processUpload(): array {
@@ -192,7 +200,6 @@ class InventoryStockImporter {
         
         $added = $this->addStockToProduct($product['product_id'], $location, $qty, $sku);
         if ($added) {
-            $this->results['stock_added']++;
             $this->results['warnings'][] = "Row $rowNumber: Added $qty units to '$sku'";
         } else {
             $this->results['errors'][] = "Row $rowNumber: Failed to add stock for '$sku'";
@@ -285,14 +292,8 @@ class InventoryStockImporter {
     return null;
 }
     private function addStockToProduct(int $productId, array $location, float $quantity, string $sku): bool {
-        $locationModel = new Location($this->db);
-        $relocationModel = new RelocationTask($this->db);
-
         $locationId = (int)$location['location_id'];
-
-        $stmt = $this->db->prepare("SELECT capacity, current_occupancy, type, location_code FROM locations WHERE id = ?");
-        $stmt->execute([$locationId]);
-        $locInfo = $stmt->fetch(PDO::FETCH_ASSOC);
+        $locInfo = $this->getLocationInfo($locationId);
         if (!$locInfo) {
             $this->results['errors'][] = "Location $locationId not found for SKU $sku";
             return false;
@@ -307,31 +308,22 @@ class InventoryStockImporter {
         $current = (int)($locInfo['current_occupancy'] ?? 0);
         $available = $capacity > 0 ? max(0, $capacity - $current) : (int)$quantity;
 
-        // Check subdivision capacity if subdivision info exists
-        $subdivisionAvailable = $available;
+        $shelfLevel = $location['shelf_level'] ?? null;
         $subdivisionNumber = $location['subdivision_number'] ?? null;
-        if ($subdivisionNumber !== null) {
-            // Resolve numeric level number from the provided shelf level name
-            $levelStmt = $this->db->prepare("SELECT level_number FROM location_level_settings WHERE location_id = ? AND level_name = ? LIMIT 1");
-            $levelStmt->execute([$locationId, $location['shelf_level']]);
-            $levelNumber = $levelStmt->fetchColumn();
 
-            if ($levelNumber !== false && $levelNumber !== null) {
-                $subdivisionModel = new LocationSubdivision($this->db);
-                $check = $subdivisionModel->canPlaceProduct($locationId, (int)$levelNumber, (int)$subdivisionNumber, $productId, (int)$quantity);
-
-                // If subdivision cannot accept the entire quantity, log the reason
-                if (!$check['allowed']) {
-                    $this->results['warnings'][] = "Subdivision capacity issue at location {$locInfo['location_code']} level {$location['shelf_level']} subdivision {$subdivisionNumber}: {$check['reason']}";
-                }
-
-                // Effective available capacity is min of overall location and subdivision capacities
-                $subdivisionAvailable = min($available, max(0, (int)$check['available_capacity']));
-            }
-        }
+        $subdivisionAvailable = $this->resolveSubdivisionAvailability(
+            $locationId,
+            $shelfLevel,
+            $subdivisionNumber,
+            $productId,
+            (int)$quantity,
+            $available,
+            $locInfo['location_code'] ?? ''
+        );
 
         $qtyPrimary = min((int)$quantity, $subdivisionAvailable);
-        $overflow = (int)$quantity - $qtyPrimary;
+        $overflowOriginal = max(0, (int)$quantity - $qtyPrimary);
+        $totalAdded = 0;
 
         $batch = 'EXCEL-' . date('Ymd-Hi') . '-' . $productId;
 
@@ -340,8 +332,8 @@ class InventoryStockImporter {
                 'product_id' => $productId,
                 'location_id' => $locationId,
                 'quantity' => $qtyPrimary,
-                'shelf_level' => $location['shelf_level'],
-                'subdivision_number' => $location['subdivision_number'] ?? null,
+                'shelf_level' => $shelfLevel,
+                'subdivision_number' => $subdivisionNumber,
                 'batch_number' => $batch,
                 'received_at' => date('Y-m-d H:i:s'),
                 'reference_type' => 'excel_import',
@@ -350,55 +342,168 @@ class InventoryStockImporter {
             if (!$this->inventoryModel->addStock($stockData, false)) {
                 return false;
             }
+            $totalAdded += $qtyPrimary;
+        }
+        if ($overflowOriginal > 0) {
+            $placedOverflow = $this->placeOverflowInTemporaryLocations(
+                $productId,
+                $locationId,
+                $overflowOriginal,
+                $sku,
+                $batch,
+                $shelfLevel
+            );
+
+            $totalAdded += $placedOverflow;
+
+            if ($placedOverflow < $overflowOriginal) {
+                $remaining = $overflowOriginal - $placedOverflow;
+                $this->results['warnings'][] = "Only placed {$placedOverflow} of {$overflowOriginal} overflow units for '$sku'. {$remaining} units still require manual assignment.";
+                return false;
+            }
         }
 
+        if ($totalAdded > 0) {
+            $this->results['stock_added'] += $totalAdded;
+            return true;
+        }
+
+        return false;
+    }
+
+    private function getLocationInfo(int $locationId): ?array {
+        $stmt = $this->db->prepare("SELECT id, location_code, capacity, current_occupancy, type FROM locations WHERE id = ?");
+        $stmt->execute([$locationId]);
+        $locInfo = $stmt->fetch(PDO::FETCH_ASSOC);
+        return $locInfo ?: null;
+    }
+
+    private function resolveSubdivisionAvailability(
+        int $locationId,
+        ?string $shelfLevel,
+        ?int $subdivisionNumber,
+        int $productId,
+        int $requestedQuantity,
+        int $locationAvailable,
+        string $locationCode
+    ): int {
+        if ($subdivisionNumber === null) {
+            return $locationAvailable;
+        }
+
+        $levelNumber = $this->resolveLevelNumber($locationId, $shelfLevel);
+        if ($levelNumber === null) {
+            return $locationAvailable;
+        }
+
+        $check = $this->subdivisionModel->canPlaceProduct(
+            $locationId,
+            (int)$levelNumber,
+            (int)$subdivisionNumber,
+            $productId,
+            $requestedQuantity
+        );
+
+        if (!$check['allowed']) {
+            $reason = $check['reason'] ?? 'Subdivision capacity constraint';
+            $this->results['warnings'][] = "Subdivision capacity issue at location {$locationCode} level {$shelfLevel} subdivision {$subdivisionNumber}: {$reason}";
+        }
+
+        $available = isset($check['available_capacity']) ? (int)$check['available_capacity'] : 0;
+        $available = max(0, $available);
+
+        return min($locationAvailable, $available);
+    }
+
+    private function resolveLevelNumber(int $locationId, ?string $shelfLevel): ?int {
+        if ($shelfLevel === null) {
+            return null;
+        }
+
+        $stmt = $this->db->prepare("SELECT level_number FROM location_level_settings WHERE location_id = ? AND level_name = ? LIMIT 1");
+        $stmt->execute([$locationId, $shelfLevel]);
+        $levelNumber = $stmt->fetchColumn();
+
+        return $levelNumber !== false ? (int)$levelNumber : null;
+    }
+
+    private function placeOverflowInTemporaryLocations(
+        int $productId,
+        int $targetLocationId,
+        int $overflow,
+        string $sku,
+        string $batch,
+        ?string $shelfLevel
+    ): int {
+        $placed = 0;
+        $checked = [];
+
         while ($overflow > 0) {
-            $tempId = $locationModel->findAvailableTemporaryLocation();
-            if (!$tempId) {
-                $this->results['warnings'][] = "No temporary location available for $overflow units of '$sku'";
-                return false;
+            $tempInfo = $this->findTemporaryLocationExcluding($checked);
+            if (!$tempInfo) {
+                $this->results['warnings'][] = "No temporary location available for {$overflow} remaining units of '$sku'";
+                break;
             }
 
-            $stmt = $this->db->prepare("SELECT capacity, current_occupancy, location_code FROM locations WHERE id = ?");
-            $stmt->execute([$tempId]);
-            $tmpInfo = $stmt->fetch(PDO::FETCH_ASSOC);
-            if (!$tmpInfo) {
-                $this->results['warnings'][] = "Temporary location $tempId not found for overflow of '$sku'";
-                return false;
-            }
+            $checked[] = (int)$tempInfo['id'];
 
-            $tmpCapacity = (int)($tmpInfo['capacity'] ?? 0);
-            $tmpCurrent = (int)($tmpInfo['current_occupancy'] ?? 0);
+            $tmpCapacity = (int)($tempInfo['capacity'] ?? 0);
+            $tmpCurrent = (int)($tempInfo['current_occupancy'] ?? 0);
             $tmpAvailable = $tmpCapacity > 0 ? max(0, $tmpCapacity - $tmpCurrent) : $overflow;
+
             if ($tmpAvailable <= 0) {
-                $this->results['warnings'][] = "Temporary location {$tmpInfo['location_code']} is full";
-                return false;
+                continue;
             }
 
             $qtyTemp = min($overflow, $tmpAvailable);
 
             $stockData = [
                 'product_id' => $productId,
-                'location_id' => $tempId,
+                'location_id' => (int)$tempInfo['id'],
                 'quantity' => $qtyTemp,
-                'shelf_level' => $location['shelf_level'],
-                'subdivision_number' => $location['subdivision_number'] ?? null,
+                'shelf_level' => $shelfLevel ?? 'temporary',
+                'subdivision_number' => null,
                 'batch_number' => $batch,
                 'received_at' => date('Y-m-d H:i:s'),
                 'reference_type' => 'excel_import_overflow',
                 'notes' => "Overflow from SKU $sku",
             ];
+
             if (!$this->inventoryModel->addStock($stockData, false)) {
-                return false;
+                $this->results['errors'][] = "Failed to add overflow stock for '$sku' into temporary location {$tempInfo['location_code']}";
+                break;
             }
 
-            $relocationModel->createTask($productId, $tempId, $locationId, $qtyTemp);
-            $this->results['warnings'][] = "Location {$locInfo['location_code']} full; placed $qtyTemp units of '$sku' in temporary location {$tmpInfo['location_code']}";
+            $this->relocationModel->createTask($productId, (int)$tempInfo['id'], $targetLocationId, $qtyTemp);
+            $this->results['warnings'][] = "Location {$tempInfo['location_code']} assigned temporarily for {$qtyTemp} units of '$sku'.";
 
             $overflow -= $qtyTemp;
+            $placed += $qtyTemp;
         }
 
-        return true;
+        return $placed;
+    }
+
+    private function findTemporaryLocationExcluding(array $excludeIds): ?array {
+        $placeholders = '';
+        $params = [];
+
+        if (!empty($excludeIds)) {
+            $placeholders = implode(',', array_fill(0, count($excludeIds), '?'));
+        }
+
+        $sql = "SELECT id, location_code, capacity, current_occupancy FROM locations WHERE type = 'temporary' AND status = 'active'";
+        if ($placeholders !== '') {
+            $sql .= " AND id NOT IN ($placeholders)";
+            $params = $excludeIds;
+        }
+        $sql .= " AND (capacity = 0 OR current_occupancy < capacity) ORDER BY id LIMIT 1";
+
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        $location = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        return $location ?: null;
     }
     private function findHeaderRow(array $rows): array {
         // More specific patterns for your Romanian Excel format

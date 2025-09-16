@@ -359,7 +359,6 @@ class InventoryStockImporter {
             if ($placedOverflow < $overflowOriginal) {
                 $remaining = $overflowOriginal - $placedOverflow;
                 $this->results['warnings'][] = "Only placed {$placedOverflow} of {$overflowOriginal} overflow units for '$sku'. {$remaining} units still require manual assignment.";
-                return false;
             }
         }
 
@@ -444,6 +443,7 @@ class InventoryStockImporter {
                 $this->results['warnings'][] = "No temporary location available for {$overflow} remaining units of '$sku'";
                 break;
             }
+        }
 
             $checked[] = (int)$tempInfo['id'];
 
@@ -492,12 +492,17 @@ class InventoryStockImporter {
             $placeholders = implode(',', array_fill(0, count($excludeIds), '?'));
         }
 
-        $sql = "SELECT id, location_code, capacity, current_occupancy FROM locations WHERE type = 'temporary' AND status = 'active'";
+        $sql = "SELECT id, location_code, capacity, COALESCE(current_occupancy, 0) AS current_occupancy
+                FROM locations
+                WHERE LOWER(type) = 'temporary'
+                  AND LOWER(status) = 'active'";
         if ($placeholders !== '') {
             $sql .= " AND id NOT IN ($placeholders)";
             $params = $excludeIds;
         }
-        $sql .= " AND (capacity = 0 OR current_occupancy < capacity) ORDER BY id LIMIT 1";
+        $sql .= " AND (capacity = 0 OR COALESCE(current_occupancy, 0) < capacity)
+                  ORDER BY COALESCE(current_occupancy, 0) ASC, id ASC
+                  LIMIT 1";
 
         $stmt = $this->db->prepare($sql);
         $stmt->execute($params);

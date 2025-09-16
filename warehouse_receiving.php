@@ -362,32 +362,67 @@ $currentPage = 'warehouse_receiving';
         </div>
     </div>
 
+    <!-- Barcode Decision Modal -->
+    <div id="barcode-decision-modal" class="modal">
+        <div class="modal-content barcode-decision">
+            <div class="modal-header">
+                <h3>Scanare coduri de bare</h3>
+            </div>
+            <div class="modal-body">
+                <p class="modal-question">Există coduri de bare de scanat pentru aceste bucăți?</p>
+                <div class="modal-shortcuts">
+                    <div class="shortcut-option">
+                        <span class="shortcut-key">F1</span>
+                        <span class="shortcut-text">Da</span>
+                    </div>
+                    <div class="shortcut-option">
+                        <span class="shortcut-key">F2</span>
+                        <span class="shortcut-text">Nu</span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer decision-actions">
+                <button type="button" class="btn btn-primary" data-barcode-choice="individual">
+                    Da, trebuie să scanez
+                </button>
+                <button type="button" class="btn btn-secondary" data-barcode-choice="bulk">
+                    Nu, recepție în bloc
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Barcode Scanner Modal -->
     <div id="scanner-modal" class="modal">
-        <div class="modal-content">
+        <div class="modal-content modal-lg">
             <div class="modal-header">
-                <h3>Scanează Barcode</h3>
+                <div>
+                    <h3 id="barcode-modal-title">Scanare coduri de bare</h3>
+                    <p id="barcode-modal-subtitle" class="modal-subtitle"></p>
+                </div>
                 <button type="button" class="modal-close" onclick="closeScannerModal()">
                     <span class="material-symbols-outlined">close</span>
                 </button>
             </div>
             <div class="modal-body">
-                <div id="scanner-container">
-                    <div id="scanner-placeholder" class="scanner-placeholder">
-                        <span class="material-symbols-outlined">qr_code_scanner</span>
-                        <p>Apasă "Pornește Scanner" pentru a scana</p>
+                <div class="barcode-progress-container">
+                    <div id="barcode-progress-text" class="barcode-progress-text">Scanate 0/0 unități</div>
+                    <div class="barcode-progress-bar">
+                        <div id="barcode-progress-fill"></div>
                     </div>
                 </div>
-                <div class="scanner-controls">
-                    <button type="button" class="btn btn-primary" id="start-scanner">
-                        <span class="material-symbols-outlined">play_arrow</span>
-                        Pornește Scanner
-                    </button>
-                    <button type="button" class="btn btn-secondary" id="stop-scanner">
-                        <span class="material-symbols-outlined">stop</span>
-                        Oprește Scanner
-                    </button>
+                <div class="barcode-input-wrapper">
+                    <label for="barcode-scan-input">Scanează codul de bare</label>
+                    <input type="text" id="barcode-scan-input" class="form-input"
+                           placeholder="Scanează sau introdu codul de bare" autocomplete="off">
                 </div>
+                <div id="barcode-scan-alert" class="barcode-alert" style="display:none;"></div>
+                <div id="barcode-scanned-list" class="scanned-list"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeScannerModal()">
+                    Închide
+                </button>
             </div>
         </div>
     </div>

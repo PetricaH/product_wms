@@ -85,19 +85,58 @@ try {
     if (!$session) {
         throw new Exception('Receiving session not found or not accessible');
     }
-    
+
+    // Ensure all barcode scanning tasks are completed before finalizing
+    $pendingBarcodeStmt = $db->prepare("
+        SELECT COUNT(*)
+        FROM receiving_items ri
+        JOIN barcode_capture_tasks bct ON ri.barcode_task_id = bct.task_id
+        WHERE ri.receiving_session_id = :session_id
+          AND COALESCE(ri.tracking_method, 'bulk') = 'individual'
+          AND (
+            bct.status != 'completed'
+            OR (bct.expected_quantity IS NOT NULL AND bct.scanned_quantity < bct.expected_quantity)
+          )
+    ");
+    $pendingBarcodeStmt->execute([':session_id' => $sessionId]);
+    if ((int)$pendingBarcodeStmt->fetchColumn() > 0) {
+        throw new Exception('Există sarcini de scanare nefinalizate. Finalizează scanarea codurilor de bare înainte de a închide recepția.');
+    }
+
     // Get receiving statistics
     $stmt = $db->prepare("
-        SELECT 
+        SELECT
             COUNT(DISTINCT poi.id) as total_expected_items,
-            COUNT(DISTINCT ri.purchase_order_item_id) as total_received_items,
+            COUNT(DISTINCT CASE
+                WHEN ri.id IS NULL THEN NULL
+                WHEN COALESCE(ri.tracking_method, 'bulk') = 'individual'
+                     AND NOT (
+                        bct.status = 'completed'
+                        OR (bct.expected_quantity IS NOT NULL AND bct.scanned_quantity >= bct.expected_quantity)
+                     )
+                    THEN NULL
+                ELSE ri.purchase_order_item_id
+            END) as total_received_items,
             COUNT(DISTINCT rd.id) as total_discrepancies,
-            SUM(CASE WHEN ri.received_quantity > 0 THEN ri.received_quantity ELSE 0 END) as total_received_quantity,
+            SUM(
+                CASE
+                    WHEN ri.id IS NULL THEN 0
+                    WHEN COALESCE(ri.tracking_method, 'bulk') = 'individual'
+                         AND NOT (
+                            bct.status = 'completed'
+                            OR (bct.expected_quantity IS NOT NULL AND bct.scanned_quantity >= bct.expected_quantity)
+                         )
+                        THEN 0
+                    WHEN ri.received_quantity > 0 THEN ri.received_quantity
+                    ELSE 0
+                END
+            ) as total_received_quantity,
             SUM(poi.quantity) as total_expected_quantity
         FROM purchase_order_items poi
         LEFT JOIN purchasable_products pp ON poi.purchasable_product_id = pp.id
         LEFT JOIN receiving_items ri ON poi.id = ri.purchase_order_item_id
             AND ri.receiving_session_id = :session_id
+        LEFT JOIN barcode_capture_tasks bct ON ri.barcode_task_id = bct.task_id
         LEFT JOIN receiving_discrepancies rd ON rd.receiving_session_id = :session_id
             AND rd.product_id = pp.internal_product_id
         WHERE poi.purchase_order_id = :purchase_order_id

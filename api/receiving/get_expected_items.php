@@ -99,7 +99,7 @@ try {
     
     // Get expected items from purchase order with current receiving status
     $stmt = $db->prepare("
-        SELECT 
+        SELECT
             poi.id,
             COALESCE(pp.internal_product_id, p.product_id) as product_id,
             pp.supplier_product_name as product_name,
@@ -114,8 +114,20 @@ try {
             ri.batch_number,
             ri.expiry_date,
             ri.notes,
-            CASE 
+            COALESCE(ri.tracking_method, 'bulk') as tracking_method,
+            ri.barcode_task_id,
+            bct.expected_quantity as barcode_expected_quantity,
+            bct.scanned_quantity as barcode_scanned_quantity,
+            bct.status as barcode_task_status,
+            CASE
                 WHEN ri.id IS NULL THEN 'pending'
+                WHEN COALESCE(ri.tracking_method, 'bulk') = 'individual' AND (
+                    bct.task_id IS NULL
+                    OR NOT (
+                        bct.status = 'completed'
+                        OR (bct.scanned_quantity >= bct.expected_quantity AND bct.expected_quantity IS NOT NULL)
+                    )
+                ) THEN 'pending_scan'
                 WHEN ri.received_quantity >= poi.quantity THEN 'received'
                 WHEN ri.received_quantity < poi.quantity THEN 'partial'
                 ELSE 'pending'
@@ -124,8 +136,9 @@ try {
         FROM purchase_order_items poi
         JOIN purchasable_products pp ON poi.purchasable_product_id = pp.id
         LEFT JOIN products p ON (pp.internal_product_id = p.product_id OR pp.supplier_product_code = p.sku)
-        LEFT JOIN receiving_items ri ON poi.id = ri.purchase_order_item_id 
+        LEFT JOIN receiving_items ri ON poi.id = ri.purchase_order_item_id
             AND ri.receiving_session_id = :session_id
+        LEFT JOIN barcode_capture_tasks bct ON ri.barcode_task_id = bct.task_id
         LEFT JOIN locations l ON ri.location_id = l.id
         WHERE poi.purchase_order_id = :purchase_order_id
         ORDER BY poi.id ASC
@@ -153,11 +166,16 @@ try {
             'batch_number' => $item['batch_number'] ?: '',
             'expiry_date' => $item['expiry_date'] ?: '',
             'notes' => $item['notes'] ?: '',
+            'tracking_method' => $item['tracking_method'],
+            'barcode_task_id' => $item['barcode_task_id'] ? (int)$item['barcode_task_id'] : null,
+            'barcode_expected' => $item['barcode_expected_quantity'] !== null ? (int)$item['barcode_expected_quantity'] : null,
+            'barcode_scanned' => $item['barcode_scanned_quantity'] !== null ? (int)$item['barcode_scanned_quantity'] : null,
+            'barcode_status' => $item['barcode_task_status'],
             'status' => $item['status'],
             'received_at' => $item['received_at']
         ];
     }, $items);
-    
+
     // FIXED: Return session data with correct progress totals
     echo json_encode([
         'success' => true,
@@ -187,6 +205,9 @@ try {
             })),
             'total_pending' => count(array_filter($items, function($item) {
                 return $item['status'] === 'pending';
+            })),
+            'total_pending_scan' => count(array_filter($items, function($item) {
+                return $item['status'] === 'pending_scan';
             }))
         ]
     ]);

@@ -33,6 +33,40 @@ $dbFactory = $config['connection_factory'];
 $db = $dbFactory();
 require_once BASE_PATH . '/models/BarcodeCaptureTask.php';
 require_once BASE_PATH . '/models/Inventory.php';
+
+function updateReceivingSessionProgress(PDO $db, int $sessionId): void {
+    $stmt = $db->prepare("
+        UPDATE receiving_sessions rs
+        SET total_items_received = (
+            SELECT COUNT(DISTINCT filtered.purchase_order_item_id)
+            FROM (
+                SELECT
+                    ri.purchase_order_item_id,
+                    ri.tracking_method,
+                    bct.status AS barcode_status,
+                    bct.scanned_quantity,
+                    bct.expected_quantity
+                FROM receiving_items ri
+                LEFT JOIN barcode_capture_tasks bct ON ri.barcode_task_id = bct.task_id
+                WHERE ri.receiving_session_id = :session_id
+            ) AS filtered
+            WHERE filtered.purchase_order_item_id IS NOT NULL
+              AND (
+                filtered.tracking_method = 'bulk'
+                OR (
+                    filtered.tracking_method = 'individual'
+                    AND (
+                        filtered.barcode_status = 'completed'
+                        OR filtered.scanned_quantity >= filtered.expected_quantity
+                    )
+                )
+            )
+        ),
+        updated_at = NOW()
+        WHERE rs.id = :session_id
+    ");
+    $stmt->execute([':session_id' => $sessionId]);
+}
 $taskModel = new BarcodeCaptureTask($db);
 $inventoryModel = new Inventory($db);
 try {
@@ -71,6 +105,12 @@ try {
     if ($task['scanned_quantity'] >= $task['expected_quantity']) {
         $taskModel->markCompleted($taskId);
         $task['status'] = 'completed';
+        $sessionStmt = $db->prepare('SELECT receiving_session_id FROM receiving_items WHERE barcode_task_id = :task_id LIMIT 1');
+        $sessionStmt->execute([':task_id' => $taskId]);
+        $sessionId = $sessionStmt->fetchColumn();
+        if ($sessionId) {
+            updateReceivingSessionProgress($db, (int)$sessionId);
+        }
     }
     $db->commit();
     echo json_encode([

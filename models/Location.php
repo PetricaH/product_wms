@@ -1615,20 +1615,35 @@ class Location {
      */
     private function enhanceLocationOccupancy($location) {
         $locationId = (int)$location['id'];
-        $levelOccupancy = $this->getDynamicLevelOccupancy($locationId);
-
-        $totalItems = array_sum(array_column($levelOccupancy, 'items'));
-        $totalCapacity = array_sum(array_column($levelOccupancy, 'capacity'));
-        $totalPercentage = $totalCapacity > 0 ? round(($totalItems / $totalCapacity) * 100, 1) : 0;
-
-        $location['occupancy'] = [
-            'total' => $totalPercentage,
-            'levels' => $levelOccupancy
-        ];
-
-        $location['total_items'] = $totalItems;
-        $location['capacity'] = $totalCapacity;
-
+        
+        // Special handling for temporary locations - use simple calculation
+        if (strtolower($location['type']) === 'temporary') {
+            $totalItems = (int)($location['total_items'] ?? 0);
+            $totalCapacity = (int)($location['capacity'] ?? 0);
+            $totalPercentage = $totalCapacity > 0 ? round(($totalItems / $totalCapacity) * 100, 1) : 0;
+            
+            $location['occupancy'] = [
+                'total' => $totalPercentage,
+                'levels' => []
+            ];
+        } else {
+            // Regular locations use level-based calculation
+            $levelOccupancy = $this->getDynamicLevelOccupancy($locationId);
+    
+            $totalItems = array_sum(array_column($levelOccupancy, 'items'));
+            $totalCapacity = array_sum(array_column($levelOccupancy, 'capacity'));
+            $totalPercentage = $totalCapacity > 0 ? round(($totalItems / $totalCapacity) * 100, 1) : 0;
+    
+            $location['occupancy'] = [
+                'total' => $totalPercentage,
+                'levels' => $levelOccupancy
+            ];
+            
+            $location['total_items'] = $totalItems;
+            $location['capacity'] = $totalCapacity;
+        }
+    
+        // Set occupancy status
         if ($totalPercentage === 0) {
             $location['occupancy_status'] = 'empty';
         } elseif ($totalPercentage <= 50) {
@@ -1640,10 +1655,9 @@ class Location {
         } else {
             $location['occupancy_status'] = 'full';
         }
-
+    
         return $location;
     }
-
     // ===== BACKWARD COMPATIBILITY ALIASES =====
     // These methods provide backward compatibility for existing code
 

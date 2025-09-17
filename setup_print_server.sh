@@ -53,9 +53,13 @@ try {
     
     // Print command
     if (PHP_OS_FAMILY === "Darwin") {
-        $cmd = "lp -d " . escapeshellarg($printer) . " " . escapeshellarg($tempFile);
+        $cmd = "lp -d " . escapeshellarg($printer) .
+            " -o media=Custom.62x40mm -o orientation-requested=4 -o fit-to-page " .
+            escapeshellarg($tempFile);
     } else {
-        $cmd = "lp -d " . escapeshellarg($printer) . " " . escapeshellarg($tempFile);
+        $cmd = "lp -d " . escapeshellarg($printer) .
+            " -o media=Custom.62x40mm -o orientation-requested=4 -o fit-to-page " .
+            escapeshellarg($tempFile);
     }
     
     $output = [];

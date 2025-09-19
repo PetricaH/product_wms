@@ -71,6 +71,7 @@
                 destination: false,
             };
             this.autoSubmitTimer = null;
+
             this.scannerPaused = false;
 
             this.elements = {
@@ -86,6 +87,7 @@
                 scannerState: document.getElementById('scannerState'),
                 manualEntry: document.getElementById('manualEntry'),
                 manualLabel: document.getElementById('manualLabel'),
+
                 manualInput: document.getElementById('manualInput'),
                 manualConfirm: document.getElementById('manualConfirm'),
                 manualCancel: document.getElementById('manualCancel'),
@@ -95,6 +97,7 @@
                 f3Action: document.getElementById('f3Action'),
                 f4Action: document.getElementById('f4Action'),
                 f5Action: document.getElementById('f5Action'),
+
             };
 
             this.stepConfig = [
@@ -279,6 +282,7 @@
                 this.elements.manualInput.value = '';
                 this.elements.manualInput.readOnly = true;
             }
+
             this.stepCompletion = {
                 source: false,
                 product: false,
@@ -672,6 +676,7 @@
             if (this.autoSubmitTimer) {
                 clearTimeout(this.autoSubmitTimer);
                 this.autoSubmitTimer = null;
+
             }
         }
 
@@ -681,6 +686,7 @@
             }
             this.scannerPaused = false;
             this.focusManualInput();
+
         }
 
         handleCode(rawCode, isManual) {
@@ -719,6 +725,7 @@
                     this.audio.play('success');
                     this.stepCompletion[step.id] = true;
                     this.clearCodeInput(isManual);
+
                     this.pauseScanner().then(() => {
                         setTimeout(() => {
                             this.advanceStep();

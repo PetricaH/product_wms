@@ -416,6 +416,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                             <div class="scanner-state" id="scannerState">Scanner inactiv</div>
                             <div class="manual-entry" id="manualEntry" hidden>
                                 <label for="manualInput" id="manualLabel">Introduceți codul:</label>
+
                                 <input type="text" id="manualInput" inputmode="text" autocomplete="off">
                                 <div class="manual-buttons">
                                     <button type="button" id="manualConfirm">Confirmă</button>

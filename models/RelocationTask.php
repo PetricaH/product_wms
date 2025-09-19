@@ -130,7 +130,6 @@ class RelocationTask {
         if (!$this->hasInventoryTransactionTable()) {
             return;
         }
-
         $taskId = (int)($task['id'] ?? 0);
         $productId = (int)($task['product_id'] ?? 0);
         $fromLocationId = (int)($task['from_location_id'] ?? 0);
@@ -147,7 +146,6 @@ class RelocationTask {
                 $userId = 1;
             }
         }
-
         $locationCodes = $this->getLocationCodes([$fromLocationId, $toLocationId]);
         $fromCode = $locationCodes[$fromLocationId] ?? 'N/A';
         $toCode = $locationCodes[$toLocationId] ?? 'N/A';

@@ -695,18 +695,26 @@ require_once __DIR__ . '/includes/header.php';
                         
                         <!-- Seller Selection -->
                         <div class="form-group">
-                            <label for="seller_id" class="form-label">Furnizor *</label>
-                            <select name="seller_id" id="seller_id" class="form-control" required onchange="updateSellerContact()">
-                                <option value="">Selectează furnizor</option>
+                            <label for="seller_search_input" class="form-label">Furnizor *</label>
+                            <input type="hidden" name="seller_id" id="seller_id_field">
+                            <input type="text"
+                                   id="seller_search_input"
+                                   class="form-control"
+                                   placeholder="Caută furnizor..."
+                                   list="seller-options"
+                                   autocomplete="off"
+                                   required>
+                            <datalist id="seller-options">
                                 <?php foreach ($sellers as $seller): ?>
-                                    <option value="<?= $seller['id'] ?>" 
+                                    <option value="<?= htmlspecialchars($seller['supplier_name'] ?? '') ?>"
+                                            data-id="<?= (int) ($seller['id'] ?? 0) ?>"
                                             data-email="<?= htmlspecialchars($seller['email'] ?? '') ?>"
                                             data-contact="<?= htmlspecialchars($seller['contact_person'] ?? '') ?>"
-                                            data-phone="<?= htmlspecialchars($seller['phone'] ?? '') ?>">
-                                        <?= htmlspecialchars($seller['supplier_name'] ?? '') ?>
+                                            data-phone="<?= htmlspecialchars($seller['phone'] ?? '') ?>"
+                                            label="<?= htmlspecialchars(($seller['supplier_name'] ?? '') . (!empty($seller['contact_person']) ? ' (' . $seller['contact_person'] . ')' : '')) ?>">
                                     </option>
                                 <?php endforeach; ?>
-                            </select>
+                            </datalist>
                         </div>
 
                         <!-- Contact Information -->
@@ -1063,6 +1071,7 @@ require_once __DIR__ . '/includes/header.php';
 // Make purchasable products available globally for JavaScript
 window.purchasableProducts = <?= json_encode($purchasableProducts) ?>;
 window.allProducts = <?= json_encode($allProducts) ?>;
+window.sellersList = <?= json_encode($sellers) ?>;
 </script>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

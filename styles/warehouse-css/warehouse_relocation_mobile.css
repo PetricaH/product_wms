@@ -1,0 +1,358 @@
+:root {
+  --mobile-bg: #10161d;
+  --mobile-card: #1b232d;
+  --mobile-accent: #00d1b2;
+  --mobile-accent-muted: rgba(0, 209, 178, 0.25);
+  --mobile-text: #f4f7fb;
+  --mobile-text-muted: #8ea2b8;
+  --mobile-warning: #ff3860;
+}
+
+.mobile-mode {
+  padding: 1rem;
+}
+
+.mobile-relocation-app {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  color: var(--mobile-text);
+}
+
+.mobile-task-card {
+  background: var(--mobile-card);
+  border-radius: 18px;
+  padding: 1rem 1.25rem 5.5rem;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.45);
+  position: relative;
+  min-height: 420px;
+  border: 1px solid rgba(0, 209, 178, 0.15);
+}
+
+.mobile-task-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 1.1rem;
+  margin-bottom: 1rem;
+  font-weight: 600;
+}
+
+.task-progress {
+  font-size: 1.125rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--mobile-text-muted);
+}
+
+.task-back {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 1rem;
+}
+
+.function-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.4rem;
+  height: 2.4rem;
+  border-radius: 12px;
+  border: 1px solid var(--mobile-accent);
+  color: var(--mobile-accent);
+  font-weight: 700;
+  background: rgba(0, 209, 178, 0.1);
+}
+
+.function-text {
+  color: var(--mobile-text-muted);
+  font-size: 0.95rem;
+}
+
+.task-summary {
+  text-align: left;
+  margin-bottom: 1rem;
+}
+
+.task-type {
+  font-size: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: var(--mobile-accent);
+  margin-bottom: 0.75rem;
+}
+
+.task-product {
+  font-size: 1.65rem;
+  margin: 0;
+  color: var(--mobile-text);
+  line-height: 1.4;
+}
+
+.task-sku,
+.task-qty {
+  margin: 0.2rem 0;
+  font-size: 1.1rem;
+  color: var(--mobile-text-muted);
+}
+
+.task-qty {
+  font-weight: 600;
+}
+
+.task-locations {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 1.1rem;
+}
+
+.location {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 0.85rem 1rem;
+  border-radius: 14px;
+  font-size: 1.2rem;
+  flex: 1;
+  min-height: 3.3rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.location.from {
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.location.to {
+  border-color: var(--mobile-accent-muted);
+  background: rgba(0, 209, 178, 0.08);
+}
+
+.location-arrow {
+  font-size: 1.4rem;
+  color: var(--mobile-text-muted);
+}
+
+.task-step {
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(0, 209, 178, 0.15);
+  padding: 1rem;
+  min-height: 200px;
+}
+
+.step-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.8rem;
+}
+
+.step-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--mobile-text);
+}
+
+.step-status {
+  font-size: 0.95rem;
+  color: var(--mobile-text-muted);
+}
+
+.step-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  font-size: 1.05rem;
+}
+
+.expected-label {
+  text-transform: uppercase;
+  font-size: 0.9rem;
+  letter-spacing: 0.15em;
+  color: var(--mobile-text-muted);
+}
+
+.expected-value {
+  font-size: 1.45rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--mobile-text);
+}
+
+.scanner-state {
+  background: rgba(0, 209, 178, 0.12);
+  color: var(--mobile-accent);
+  border-radius: 12px;
+  padding: 0.85rem 1rem;
+  font-size: 1rem;
+  border: 1px solid rgba(0, 209, 178, 0.35);
+}
+
+.scanner-state.error {
+  background: rgba(255, 56, 96, 0.1);
+  border-color: rgba(255, 56, 96, 0.35);
+  color: var(--mobile-warning);
+}
+
+.manual-entry {
+  background: rgba(0, 0, 0, 0.35);
+  border-radius: 14px;
+  padding: 1rem;
+  border: 1px dashed rgba(255, 255, 255, 0.25);
+}
+
+.manual-entry label {
+  display: block;
+  font-size: 0.95rem;
+  color: var(--mobile-text-muted);
+  margin-bottom: 0.5rem;
+}
+
+.manual-entry input {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+  padding: 0.75rem;
+  font-size: 1.1rem;
+  color: var(--mobile-text);
+}
+
+.manual-entry input:focus {
+  outline: 2px solid var(--mobile-accent);
+}
+
+.manual-buttons {
+  margin-top: 0.75rem;
+  display: flex;
+  gap: 0.75rem;
+}
+
+.manual-buttons button {
+  flex: 1;
+  padding: 0.75rem 0.5rem;
+  border-radius: 10px;
+  border: none;
+  font-size: 1.05rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+}
+
+#manualConfirm {
+  background: var(--mobile-accent);
+  color: var(--mobile-bg);
+}
+
+#manualCancel {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--mobile-text);
+}
+
+.function-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  background: rgba(3, 7, 12, 0.95);
+  border-radius: 0 0 18px 18px;
+  overflow: hidden;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.function-key {
+  padding: 0.85rem 0.25rem;
+  text-align: center;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  align-items: center;
+  justify-content: center;
+}
+
+.function-key:last-child {
+  border-right: none;
+}
+
+.function-key.active {
+  background: rgba(0, 209, 178, 0.18);
+}
+
+.function-key.disabled {
+  opacity: 0.4;
+}
+
+.key-label {
+  font-weight: 700;
+  font-size: 1.1rem;
+  color: var(--mobile-accent);
+}
+
+.key-action {
+  font-size: 0.95rem;
+  color: var(--mobile-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.scanner-buffer {
+  position: absolute;
+  left: -9999px;
+  top: auto;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  border: 0;
+  padding: 0;
+  pointer-events: none;
+}
+
+.view-switcher-inline {
+  margin-bottom: 0.75rem;
+  text-align: right;
+}
+
+.view-switcher-inline .btn {
+  font-size: 0.95rem;
+}
+
+@media (min-width: 768px) {
+  .mobile-task-card {
+    max-width: 540px;
+    margin: 0 auto;
+  }
+}
+
+@media (max-width: 480px) {
+  .mobile-task-card {
+    padding: 0.85rem 0.85rem 5rem;
+  }
+
+  .task-product {
+    font-size: 1.4rem;
+  }
+
+  .location {
+    font-size: 1.05rem;
+  }
+
+  .function-key {
+    padding: 0.65rem 0.25rem;
+  }
+
+  .key-label {
+    font-size: 1rem;
+  }
+
+  .key-action {
+    font-size: 0.8rem;
+  }
+}

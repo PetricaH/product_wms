@@ -447,19 +447,13 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                             <span class="key-action" id="f5Action">Înapoi</span>
                         </div>
                     </footer>
-                </div>
-
-                <div id="scannerContainer" class="scanner-overlay" hidden>
-                    <div class="scanner-overlay-card">
-                        <header>
-                            <h2>Mod scanner activ</h2>
-                            <p id="scannerOverlayHint">Aliniați codul de bare în cadrul camerei.</p>
-                        </header>
-                        <div id="scannerPreview" class="scanner-preview"></div>
-                        <footer>
-                            <button type="button" id="closeScanner">Închide scanner</button>
-                        </footer>
-                    </div>
+                    <input type="text"
+                           id="scannerBuffer"
+                           class="scanner-buffer"
+                           autocomplete="off"
+                           inputmode="text"
+                           aria-hidden="true"
+                           tabindex="-1">
                 </div>
             </div>
         <?php else: ?>
@@ -553,7 +547,6 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
         });
     </script>
 
-    <script src="https://unpkg.com/html5-qrcode" defer></script>
     <script>
         window.WAREHOUSE_RELOCATION_CONFIG = {
             csrfToken: '<?= $_SESSION['csrf_token'] ?>',

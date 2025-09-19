@@ -70,8 +70,8 @@
                 product: false,
                 destination: false,
             };
-            this.scannerInstance = null;
-            this.preferredCameraId = null;
+            this.scanBuffer = '';
+            this.scanTimer = null;
             this.scannerPaused = false;
 
             this.elements = {
@@ -95,10 +95,7 @@
                 f3Action: document.getElementById('f3Action'),
                 f4Action: document.getElementById('f4Action'),
                 f5Action: document.getElementById('f5Action'),
-                scannerContainer: document.getElementById('scannerContainer'),
-                scannerPreview: document.getElementById('scannerPreview'),
-                closeScanner: document.getElementById('closeScanner'),
-                scannerOverlayHint: document.getElementById('scannerOverlayHint'),
+                scannerBuffer: document.getElementById('scannerBuffer'),
             };
 
             this.stepConfig = [
@@ -146,29 +143,37 @@
                 if (!this.root.isConnected) {
                     return;
                 }
+
+                if (this.handleScannerKey(event)) {
+                    return;
+                }
+
                 if (event.repeat) {
                     return;
                 }
-                const key = event.key;
-                if (!['F1', 'F2', 'F3', 'F4', 'F5'].includes(key)) {
-                    return;
-                }
-                event.preventDefault();
-                switch (key) {
+
+                switch (event.key) {
                     case 'F1':
+                        event.preventDefault();
                         this.handleF1();
                         break;
                     case 'F2':
+                        event.preventDefault();
                         this.handleF2();
                         break;
                     case 'F3':
+                        event.preventDefault();
                         this.handleF3();
                         break;
                     case 'F4':
+                        event.preventDefault();
                         this.handleF4();
                         break;
                     case 'F5':
+                        event.preventDefault();
                         this.handleF5();
+                        break;
+                    default:
                         break;
                 }
             });
@@ -184,9 +189,13 @@
                 this.toggleManualMode(false);
             });
 
-            this.elements.closeScanner.addEventListener('click', () => {
-                this.toggleScanner(false);
-            });
+            if (this.elements.scannerBuffer) {
+                this.elements.scannerBuffer.addEventListener('blur', () => {
+                    if (this.scannerActive && !this.scannerPaused) {
+                        this.focusScannerBuffer();
+                    }
+                });
+            }
         }
 
         applyInitialTask() {
@@ -313,7 +322,7 @@
             }
 
             if (this.scannerActive) {
-                this.elements.scannerState.textContent = 'Scanner activ - poziționați codul';
+                this.elements.scannerState.textContent = 'Scanner laser activ - scanați codul';
                 this.elements.scannerState.classList.remove('error');
             } else {
                 this.elements.scannerState.textContent = 'Scanner inactiv';
@@ -484,9 +493,80 @@
             this.manualMode = newState;
             if (!newState) {
                 this.elements.manualInput.value = '';
+                if (this.scannerActive && !this.scannerPaused) {
+                    this.focusScannerBuffer();
+                }
+            } else {
+                this.toggleScanner(false);
             }
             this.updateStepUI();
             this.updateFunctionBar();
+        }
+
+        focusScannerBuffer() {
+            if (!this.elements.scannerBuffer) {
+                return;
+            }
+            try {
+                this.elements.scannerBuffer.focus({ preventScroll: true });
+            } catch (err) {
+                this.elements.scannerBuffer.focus();
+            }
+        }
+
+        resetScanTimer() {
+            if (this.scanTimer) {
+                clearTimeout(this.scanTimer);
+                this.scanTimer = null;
+            }
+            if (!this.scannerActive || this.scannerPaused) {
+                return;
+            }
+            this.scanTimer = window.setTimeout(() => {
+                if (!this.scanBuffer) {
+                    return;
+                }
+                const code = this.scanBuffer;
+                this.scanBuffer = '';
+                this.handleCode(code, false);
+            }, 120);
+        }
+
+        handleScannerKey(event) {
+            if (!this.scannerActive || this.scannerPaused || this.manualMode) {
+                return false;
+            }
+            const key = event.key;
+            if (['F1', 'F2', 'F3', 'F4', 'F5'].includes(key)) {
+                return false;
+            }
+            if (key === 'Enter') {
+                event.preventDefault();
+                const code = this.scanBuffer.trim();
+                this.scanBuffer = '';
+                if (code) {
+                    this.handleCode(code, false);
+                }
+                return true;
+            }
+            if (key === 'Escape') {
+                event.preventDefault();
+                this.toggleScanner(false);
+                return true;
+            }
+            if (key === 'Backspace') {
+                event.preventDefault();
+                this.scanBuffer = this.scanBuffer.slice(0, -1);
+                this.resetScanTimer();
+                return true;
+            }
+            if (key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
+                event.preventDefault();
+                this.scanBuffer += key;
+                this.resetScanTimer();
+                return true;
+            }
+            return false;
         }
 
         toggleScanner(force) {
@@ -502,101 +582,54 @@
             if (this.scannerActive) {
                 return;
             }
-            if (typeof Html5Qrcode === 'undefined') {
-                this.elements.scannerState.textContent = 'Scanner indisponibil pe acest dispozitiv.';
-                this.elements.scannerState.classList.add('error');
-                return;
+            this.scannerActive = true;
+            this.scannerPaused = false;
+            this.scanBuffer = '';
+            if (this.elements.scannerBuffer) {
+                this.elements.scannerBuffer.value = '';
             }
-
-            try {
-                if (!this.scannerInstance) {
-                    this.scannerInstance = new Html5Qrcode(this.elements.scannerPreview.id);
-                }
-
-                const cameras = await Html5Qrcode.getCameras();
-                if (!cameras || cameras.length === 0) {
-                    this.elements.scannerState.textContent = 'Nu s-a găsit cameră pentru scanare.';
-                    this.elements.scannerState.classList.add('error');
-                    return;
-                }
-
-                const cameraId = this.preferredCameraId || cameras[0].id;
-                this.preferredCameraId = cameraId;
-                await this.scannerInstance.start(
-                    cameraId,
-                    { fps: 12, qrbox: { width: 250, height: 250 } },
-                    (decodedText) => this.handleCode(decodedText, false),
-                    (errorMessage) => {
-                        if (errorMessage) {
-                            this.elements.scannerState.textContent = 'Căutare cod...';
-                        }
-                    }
-                );
-                this.scannerActive = true;
-                this.scannerPaused = false;
-                this.elements.scannerContainer.hidden = false;
-                this.elements.scannerState.textContent = 'Scanner activ - poziționați codul';
-                this.elements.scannerState.classList.remove('error');
-                this.updateFunctionBar();
-            } catch (err) {
-                console.error('Nu s-a putut porni scannerul', err);
-                this.elements.scannerState.textContent = 'Eroare la pornirea scannerului.';
-                this.elements.scannerState.classList.add('error');
-            }
+            this.elements.scannerState.textContent = 'Scanner laser activ - scanați codul';
+            this.elements.scannerState.classList.remove('error');
+            this.focusScannerBuffer();
+            this.updateFunctionBar();
         }
 
         async stopScanner() {
-            if (!this.scannerInstance || !this.scannerActive) {
-                this.elements.scannerContainer.hidden = true;
-                this.scannerActive = false;
-                this.updateStepUI();
-                if (!this.currentTask) {
-                    this.updateFunctionBar(true);
-                } else {
-                    this.updateFunctionBar();
-                }
-                return;
+            if (this.scanTimer) {
+                clearTimeout(this.scanTimer);
+                this.scanTimer = null;
             }
-
-            try {
-                if (!this.scannerPaused) {
-                    await this.scannerInstance.stop();
-                }
-            } catch (err) {
-                console.warn('Nu s-a putut opri scannerul corect', err);
-            } finally {
-                this.scannerActive = false;
-                this.scannerPaused = false;
-                this.elements.scannerContainer.hidden = true;
-                this.updateStepUI();
-                if (!this.currentTask) {
-                    this.updateFunctionBar(true);
-                } else {
-                    this.updateFunctionBar();
-                }
+            this.scannerActive = false;
+            this.scannerPaused = false;
+            this.scanBuffer = '';
+            if (this.elements.scannerBuffer) {
+                this.elements.scannerBuffer.value = '';
+            }
+            this.updateStepUI();
+            if (!this.currentTask) {
+                this.updateFunctionBar(true);
+            } else {
+                this.updateFunctionBar();
             }
         }
 
         async pauseScanner() {
-            if (this.scannerInstance && this.scannerActive && !this.scannerPaused) {
-                try {
-                    await this.scannerInstance.pause(true);
-                    this.scannerPaused = true;
-                } catch (err) {
-                    console.warn('Nu s-a putut pune pe pauză scannerul', err);
-                }
+            if (!this.scannerActive || this.scannerPaused) {
+                return;
+            }
+            this.scannerPaused = true;
+            if (this.scanTimer) {
+                clearTimeout(this.scanTimer);
+                this.scanTimer = null;
             }
         }
 
         async resumeScanner() {
-            if (this.scannerInstance && this.scannerActive && this.scannerPaused) {
-                try {
-                    await this.scannerInstance.resume();
-                    this.scannerPaused = false;
-                } catch (err) {
-                    console.warn('Nu s-a putut relua scannerul', err);
-                }
+            if (!this.scannerActive || !this.scannerPaused) {
+                return;
             }
+            this.scannerPaused = false;
+            this.focusScannerBuffer();
         }
 
         handleCode(rawCode, isManual) {

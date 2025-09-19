@@ -70,8 +70,8 @@
                 product: false,
                 destination: false,
             };
-            this.scanBuffer = '';
-            this.scanTimer = null;
+            this.autoSubmitTimer = null;
+
             this.scannerPaused = false;
 
             this.elements = {
@@ -86,6 +86,8 @@
                 expectedValue: document.getElementById('expectedValue'),
                 scannerState: document.getElementById('scannerState'),
                 manualEntry: document.getElementById('manualEntry'),
+                manualLabel: document.getElementById('manualLabel'),
+
                 manualInput: document.getElementById('manualInput'),
                 manualConfirm: document.getElementById('manualConfirm'),
                 manualCancel: document.getElementById('manualCancel'),
@@ -95,7 +97,7 @@
                 f3Action: document.getElementById('f3Action'),
                 f4Action: document.getElementById('f4Action'),
                 f5Action: document.getElementById('f5Action'),
-                scannerBuffer: document.getElementById('scannerBuffer'),
+
             };
 
             this.stepConfig = [
@@ -144,10 +146,6 @@
                     return;
                 }
 
-                if (this.handleScannerKey(event)) {
-                    return;
-                }
-
                 if (event.repeat) {
                     return;
                 }
@@ -178,22 +176,40 @@
                 }
             });
 
-            this.elements.manualConfirm.addEventListener('click', () => {
-                const value = this.elements.manualInput.value.trim();
-                if (value) {
-                    this.handleCode(value, true);
-                }
-            });
-
-            this.elements.manualCancel.addEventListener('click', () => {
-                this.toggleManualMode(false);
-            });
-
-            if (this.elements.scannerBuffer) {
-                this.elements.scannerBuffer.addEventListener('blur', () => {
-                    if (this.scannerActive && !this.scannerPaused) {
-                        this.focusScannerBuffer();
+            if (this.elements.manualConfirm) {
+                this.elements.manualConfirm.addEventListener('click', () => {
+                    if (!this.elements.manualInput) {
+                        return;
                     }
+                    const value = this.elements.manualInput.value.trim();
+                    if (value) {
+                        this.handleCode(value, true);
+                    }
+                });
+            }
+
+            if (this.elements.manualCancel) {
+                this.elements.manualCancel.addEventListener('click', () => {
+                    this.toggleManualMode(false);
+                });
+            }
+
+            if (this.elements.manualInput) {
+                this.elements.manualInput.addEventListener('keydown', (event) => {
+                    if (!this.scannerActive || this.manualMode) {
+                        return;
+                    }
+                    if (event.key === 'Enter') {
+                        event.preventDefault();
+                        this.submitScannerInput();
+                    }
+                });
+
+                this.elements.manualInput.addEventListener('input', () => {
+                    if (!this.scannerActive || this.manualMode) {
+                        return;
+                    }
+                    this.scheduleAutoSubmit();
                 });
             }
         }
@@ -242,8 +258,13 @@
                 this.position = 0;
                 this.total = 0;
                 this.manualMode = false;
-                this.elements.manualEntry.hidden = true;
-                this.elements.manualInput.value = '';
+                if (this.elements.manualEntry) {
+                    this.elements.manualEntry.hidden = true;
+                }
+                if (this.elements.manualInput) {
+                    this.elements.manualInput.value = '';
+                    this.elements.manualInput.readOnly = true;
+                }
                 this.stopScanner();
                 this.resetForNoTask();
                 return;
@@ -254,8 +275,14 @@
             this.total = payload.total || 0;
             this.stepIndex = 0;
             this.manualMode = false;
-            this.elements.manualEntry.hidden = true;
-            this.elements.manualInput.value = '';
+            if (this.elements.manualEntry) {
+                this.elements.manualEntry.hidden = true;
+            }
+            if (this.elements.manualInput) {
+                this.elements.manualInput.value = '';
+                this.elements.manualInput.readOnly = true;
+            }
+
             this.stepCompletion = {
                 source: false,
                 product: false,
@@ -330,10 +357,47 @@
             }
 
             if (this.manualMode) {
-                this.elements.manualEntry.hidden = false;
-                this.elements.manualInput.focus({ preventScroll: true });
+                if (this.elements.manualEntry) {
+                    this.elements.manualEntry.hidden = false;
+                    this.elements.manualEntry.classList.add('mode-manual');
+                    this.elements.manualEntry.classList.remove('mode-scanner');
+                }
+                if (this.elements.manualInput) {
+                    this.elements.manualInput.readOnly = false;
+                    this.elements.manualInput.placeholder = 'Introduceți codul manual';
+                }
+                if (this.elements.manualLabel) {
+                    this.elements.manualLabel.textContent = 'Introduceți codul manual';
+                }
+                this.focusManualInput();
+            } else if (this.scannerActive) {
+                if (this.elements.manualEntry) {
+                    this.elements.manualEntry.hidden = false;
+                    this.elements.manualEntry.classList.add('mode-scanner');
+                    this.elements.manualEntry.classList.remove('mode-manual');
+                }
+                if (this.elements.manualInput) {
+                    this.elements.manualInput.readOnly = false;
+                    this.elements.manualInput.placeholder = 'Așteptăm codul scanat';
+                }
+                if (this.elements.manualLabel) {
+                    this.elements.manualLabel.textContent = 'Cod scanat automat';
+                }
+                this.focusManualInput();
             } else {
-                this.elements.manualEntry.hidden = true;
+                if (this.elements.manualEntry) {
+                    this.elements.manualEntry.hidden = true;
+                    this.elements.manualEntry.classList.remove('mode-manual');
+                    this.elements.manualEntry.classList.remove('mode-scanner');
+                }
+                if (this.elements.manualInput) {
+                    this.elements.manualInput.value = '';
+                    this.elements.manualInput.readOnly = true;
+                    this.elements.manualInput.placeholder = '';
+                }
+                if (this.elements.manualLabel) {
+                    this.elements.manualLabel.textContent = 'Introduceți codul';
+                }
             }
         }
 
@@ -413,6 +477,9 @@
             const step = this.stepConfig[this.stepIndex];
 
             if (this.manualMode) {
+                if (!this.elements.manualInput) {
+                    return;
+                }
                 const value = this.elements.manualInput.value.trim();
                 if (value) {
                     this.handleCode(value, true);
@@ -491,10 +558,13 @@
         toggleManualMode(force) {
             const newState = typeof force === 'boolean' ? force : !this.manualMode;
             this.manualMode = newState;
+            const input = this.elements.manualInput;
             if (!newState) {
-                this.elements.manualInput.value = '';
+                if (input) {
+                    input.value = '';
+                }
                 if (this.scannerActive && !this.scannerPaused) {
-                    this.focusScannerBuffer();
+                    this.focusManualInput();
                 }
             } else {
                 this.toggleScanner(false);
@@ -503,70 +573,52 @@
             this.updateFunctionBar();
         }
 
-        focusScannerBuffer() {
-            if (!this.elements.scannerBuffer) {
+        focusManualInput() {
+            if (!this.elements.manualInput) {
                 return;
             }
             try {
-                this.elements.scannerBuffer.focus({ preventScroll: true });
+                this.elements.manualInput.focus({ preventScroll: true });
             } catch (err) {
-                this.elements.scannerBuffer.focus();
+                this.elements.manualInput.focus();
             }
         }
 
-        resetScanTimer() {
-            if (this.scanTimer) {
-                clearTimeout(this.scanTimer);
-                this.scanTimer = null;
+        scheduleAutoSubmit() {
+            if (this.autoSubmitTimer) {
+                clearTimeout(this.autoSubmitTimer);
             }
-            if (!this.scannerActive || this.scannerPaused) {
+            if (!this.scannerActive || this.manualMode) {
                 return;
             }
-            this.scanTimer = window.setTimeout(() => {
-                if (!this.scanBuffer) {
-                    return;
-                }
-                const code = this.scanBuffer;
-                this.scanBuffer = '';
-                this.handleCode(code, false);
+            if (!this.elements.manualInput) {
+                return;
+            }
+            const value = this.elements.manualInput.value.trim();
+            if (!value) {
+                return;
+            }
+            this.autoSubmitTimer = window.setTimeout(() => {
+                this.submitScannerInput();
             }, 120);
         }
 
-        handleScannerKey(event) {
-            if (!this.scannerActive || this.scannerPaused || this.manualMode) {
-                return false;
+        submitScannerInput() {
+            if (!this.scannerActive || this.manualMode) {
+                return;
             }
-            const key = event.key;
-            if (['F1', 'F2', 'F3', 'F4', 'F5'].includes(key)) {
-                return false;
+            if (this.autoSubmitTimer) {
+                clearTimeout(this.autoSubmitTimer);
+                this.autoSubmitTimer = null;
             }
-            if (key === 'Enter') {
-                event.preventDefault();
-                const code = this.scanBuffer.trim();
-                this.scanBuffer = '';
-                if (code) {
-                    this.handleCode(code, false);
-                }
-                return true;
+            if (!this.elements.manualInput) {
+                return;
             }
-            if (key === 'Escape') {
-                event.preventDefault();
-                this.toggleScanner(false);
-                return true;
+            const value = this.elements.manualInput.value.trim();
+            if (!value) {
+                return;
             }
-            if (key === 'Backspace') {
-                event.preventDefault();
-                this.scanBuffer = this.scanBuffer.slice(0, -1);
-                this.resetScanTimer();
-                return true;
-            }
-            if (key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
-                event.preventDefault();
-                this.scanBuffer += key;
-                this.resetScanTimer();
-                return true;
-            }
-            return false;
+            this.handleCode(value, false);
         }
 
         toggleScanner(force) {
@@ -584,26 +636,29 @@
             }
             this.scannerActive = true;
             this.scannerPaused = false;
-            this.scanBuffer = '';
-            if (this.elements.scannerBuffer) {
-                this.elements.scannerBuffer.value = '';
-            }
             this.elements.scannerState.textContent = 'Scanner laser activ - scanați codul';
             this.elements.scannerState.classList.remove('error');
-            this.focusScannerBuffer();
+            if (this.elements.manualInput) {
+                this.elements.manualInput.value = '';
+                this.elements.manualInput.readOnly = false;
+            }
+            if (this.elements.manualEntry) {
+                this.elements.manualEntry.hidden = false;
+            }
+            this.updateStepUI();
+            this.focusManualInput();
             this.updateFunctionBar();
         }
 
         async stopScanner() {
-            if (this.scanTimer) {
-                clearTimeout(this.scanTimer);
-                this.scanTimer = null;
+            if (this.autoSubmitTimer) {
+                clearTimeout(this.autoSubmitTimer);
+                this.autoSubmitTimer = null;
             }
             this.scannerActive = false;
             this.scannerPaused = false;
-            this.scanBuffer = '';
-            if (this.elements.scannerBuffer) {
-                this.elements.scannerBuffer.value = '';
+            if (this.elements.manualInput) {
+                this.elements.manualInput.value = '';
             }
             this.updateStepUI();
             if (!this.currentTask) {
@@ -618,9 +673,10 @@
                 return;
             }
             this.scannerPaused = true;
-            if (this.scanTimer) {
-                clearTimeout(this.scanTimer);
-                this.scanTimer = null;
+            if (this.autoSubmitTimer) {
+                clearTimeout(this.autoSubmitTimer);
+                this.autoSubmitTimer = null;
+
             }
         }
 
@@ -629,7 +685,8 @@
                 return;
             }
             this.scannerPaused = false;
-            this.focusScannerBuffer();
+            this.focusManualInput();
+
         }
 
         handleCode(rawCode, isManual) {
@@ -640,6 +697,10 @@
             const code = rawCode.trim();
             if (!code) {
                 return;
+            }
+
+            if (!isManual && this.elements.manualInput && this.scannerActive) {
+                this.elements.manualInput.value = code;
             }
 
             const step = this.stepConfig[this.stepIndex];
@@ -663,9 +724,8 @@
                     this.elements.scannerState.classList.remove('error');
                     this.audio.play('success');
                     this.stepCompletion[step.id] = true;
-                    if (isManual) {
-                        this.toggleManualMode(false);
-                    }
+                    this.clearCodeInput(isManual);
+
                     this.pauseScanner().then(() => {
                         setTimeout(() => {
                             this.advanceStep();
@@ -676,15 +736,39 @@
                     this.audio.play('error');
                     this.elements.scannerState.textContent = `Cod invalid (${code}). Încearcă din nou.`;
                     this.elements.scannerState.classList.add('error');
-                    if (isManual) {
-                        this.elements.manualInput.select();
-                    }
+                    this.handleInvalidCode(isManual);
                 }
             } else {
                 // Steps without expected value
                 this.audio.play('navigate');
             }
             this.updateFunctionBar();
+        }
+
+        clearCodeInput(isManual) {
+            if (!this.elements.manualInput) {
+                return;
+            }
+            if (isManual) {
+                this.toggleManualMode(false);
+            } else if (this.scannerActive) {
+                this.elements.manualInput.value = '';
+            }
+        }
+
+        handleInvalidCode(isManual) {
+            if (!this.elements.manualInput) {
+                return;
+            }
+            if (isManual) {
+                this.elements.manualInput.select();
+            } else if (this.scannerActive) {
+                this.elements.manualInput.focus();
+                if (this.autoSubmitTimer) {
+                    clearTimeout(this.autoSubmitTimer);
+                    this.autoSubmitTimer = null;
+                }
+            }
         }
 
         async fetchTask(direction = 'current') {

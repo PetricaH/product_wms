@@ -232,6 +232,19 @@
   gap: 0.75rem;
 }
 
+.manual-entry.mode-scanner .manual-buttons {
+  display: none;
+}
+
+.manual-entry.mode-scanner input {
+  background: rgba(0, 209, 178, 0.08);
+  border-color: rgba(0, 209, 178, 0.3);
+}
+
+.manual-entry.mode-scanner label {
+  color: var(--mobile-accent);
+}
+
 .manual-buttons button {
   flex: 1;
   padding: 0.75rem 0.5rem;
@@ -303,17 +316,6 @@
   letter-spacing: 0.04em;
 }
 
-.scanner-buffer {
-  position: absolute;
-  left: -9999px;
-  top: auto;
-  width: 1px;
-  height: 1px;
-  opacity: 0;
-  border: 0;
-  padding: 0;
-  pointer-events: none;
-}
 
 .view-switcher-inline {
   margin-bottom: 0.75rem;

@@ -415,7 +415,8 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                             <div class="expected-value" id="expectedValue">--</div>
                             <div class="scanner-state" id="scannerState">Scanner inactiv</div>
                             <div class="manual-entry" id="manualEntry" hidden>
-                                <label for="manualInput">Introduceți codul:</label>
+                                <label for="manualInput" id="manualLabel">Introduceți codul:</label>
+
                                 <input type="text" id="manualInput" inputmode="text" autocomplete="off">
                                 <div class="manual-buttons">
                                     <button type="button" id="manualConfirm">Confirmă</button>
@@ -447,13 +448,6 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                             <span class="key-action" id="f5Action">Înapoi</span>
                         </div>
                     </footer>
-                    <input type="text"
-                           id="scannerBuffer"
-                           class="scanner-buffer"
-                           autocomplete="off"
-                           inputmode="text"
-                           aria-hidden="true"
-                           tabindex="-1">
                 </div>
             </div>
         <?php else: ?>

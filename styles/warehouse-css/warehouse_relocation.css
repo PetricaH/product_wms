@@ -74,6 +74,25 @@
   margin-bottom: var(--spacing-md);
 }
 
+.section-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.view-switcher,
+.view-switcher-inline {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.view-switcher a,
+.view-switcher-inline a {
+  white-space: nowrap;
+}
+
 .section-header h2 {
   margin: 0;
   font-size: var(--font-size-lg);

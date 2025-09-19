@@ -149,7 +149,18 @@ return [
         'password' => 'WTG7498&$%',
         'from_email' => 'comenzi@wartung.ro',
         'from_name' => 'Wartung - Departament Achizitii',
-        'reply_to' => 'comenzi@wartung.ro'
+        'reply_to' => 'comenzi@wartung.ro',
+        // Optional IMAP settings used for saving a copy of the email in the Sent folder
+        'imap_host' => 'mail.wartung.ro',
+        'imap_port' => 993,
+        // Accept both valid and self-signed certificates by default
+        'imap_flags' => [
+            '/imap/ssl/validate-cert',
+            '/imap/ssl/novalidate-cert',
+            '/imap/ssl'
+        ],
+        // Ordered list of folders to probe when appending the message
+        'imap_sent_folders' => ['INBOX.Sent', 'Sent', 'INBOX/Sent', 'Sent Items', 'Sent Messages']
     ],
 
     'label_left_offset_mm' => 4,   // 3–6 mm de obicei e suficient

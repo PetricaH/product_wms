@@ -245,68 +245,95 @@ function sendPurchaseOrderEmail(array $smtp, string $to, string $subject, string
 
 function saveEmailToSentFolder($smtp, $to, $subject, $body, $attachmentData = null, $attachmentName = null) {
     try {
-        // Check if IMAP extension is available
         if (!extension_loaded('imap')) {
             error_log("IMAP extension not available - cannot save to Sent folder");
             return false;
         }
-        
-        // IMAP connection settings
-        $imapHost = $smtp['smtp_host']; // Usually same as SMTP host
-        $imapPort = 993; // Standard IMAP SSL port
-        $imapFlags = '/imap/ssl/validate-cert';
-        
-        // Build IMAP connection string
-        $imapConnection = '{' . $imapHost . ':' . $imapPort . $imapFlags . '}';
-        
-        // Try different common Sent folder names
-        $sentFolders = ['INBOX.Sent', 'Sent', 'INBOX/Sent', 'Sent Items', 'Sent Messages'];
-        
-        $connection = false;
-        $sentFolder = '';
-        
-        foreach ($sentFolders as $folder) {
-            try {
-                $connection = imap_open($imapConnection . $folder, $smtp['smtp_user'], $smtp['smtp_pass']);
-                if ($connection) {
-                    $sentFolder = $folder;
-                    error_log("Successfully connected to IMAP Sent folder: $folder");
-                    break;
-                }
-            } catch (Exception $e) {
-                continue;
-            }
-        }
-        
-        if (!$connection) {
-            error_log("Could not connect to any IMAP Sent folder. IMAP error: " . imap_last_error());
+
+        $imapHost = $smtp['imap_host'] ?? $smtp['smtp_host'] ?? '';
+        if (empty($imapHost)) {
+            error_log("IMAP host is not configured - cannot save to Sent folder");
             return false;
         }
-        
-        // Build the email message for IMAP
+
+        $portCandidates = $smtp['imap_port'] ?? [993, 143];
+        if (!is_array($portCandidates)) {
+            $portCandidates = [$portCandidates];
+        }
+        $portCandidates = array_values(array_unique(array_filter(array_map('intval', $portCandidates), function ($port) {
+            return $port > 0;
+        })));
+        if (empty($portCandidates)) {
+            $portCandidates = [993, 143];
+        }
+
+        $flagCandidates = $smtp['imap_flags'] ?? ['/imap/ssl/validate-cert', '/imap/ssl/novalidate-cert', '/imap/ssl', '/imap/notls', '/imap'];
+        if (!is_array($flagCandidates)) {
+            $flagCandidates = [$flagCandidates];
+        }
+
+        $sentFolders = $smtp['imap_sent_folders'] ?? ['INBOX.Sent', 'Sent', 'INBOX/Sent', 'Sent Items', 'Sent Messages'];
+        if (!is_array($sentFolders)) {
+            $sentFolders = [$sentFolders];
+        }
+
+        $connection = false;
+        $selectedMailbox = '';
+        $selectedFolder = '';
+
+        foreach ($portCandidates as $port) {
+            foreach ($flagCandidates as $flags) {
+                $mailbox = sprintf('{%s:%d%s}', $imapHost, $port, $flags);
+                foreach ($sentFolders as $folder) {
+                    $connection = @imap_open($mailbox . $folder, $smtp['smtp_user'], $smtp['smtp_pass']);
+                    if ($connection) {
+                        $selectedMailbox = $mailbox;
+                        $selectedFolder = $folder;
+                        error_log("Successfully connected to IMAP Sent folder: {$mailbox}{$folder}");
+                        break 3;
+                    }
+
+                    $lastError = imap_last_error();
+                    if ($lastError) {
+                        error_log("IMAP connection attempt failed for {$mailbox}{$folder}: {$lastError}");
+                    }
+                    imap_errors();
+                }
+            }
+        }
+
+        if (!$connection) {
+            error_log("Could not connect to any IMAP Sent folder.");
+            return false;
+        }
+
         $fromEmail = $smtp['from_email'] ?? $smtp['smtp_user'];
         $fromName = $smtp['from_name'] ?? 'WMS - Comanda Achizitie';
-        $date = date('r'); // RFC 2822 formatted date
-        
+        $fromDomain = '';
+        if (strpos($fromEmail, '@') !== false) {
+            $fromDomain = substr(strrchr($fromEmail, '@'), 1);
+        }
+        if ($fromDomain === '') {
+            $fromDomain = 'localhost';
+        }
+
+        $date = date('r');
         $message = "Date: $date\r\n";
         $message .= "From: $fromName <$fromEmail>\r\n";
         $message .= "To: $to\r\n";
         $message .= "Subject: $subject\r\n";
-        $message .= "Message-ID: <" . uniqid() . "@" . parse_url('mailto:' . $fromEmail, PHP_URL_HOST) . ">\r\n";
+        $message .= "Message-ID: <" . uniqid('', true) . "@$fromDomain>\r\n";
         $message .= "MIME-Version: 1.0\r\n";
-        
+
         if ($attachmentData && $attachmentName) {
-            // Multipart message with attachment
-            $boundary = "----=_Part_" . md5(uniqid());
+            $boundary = "----=_Part_" . md5(uniqid('', true));
             $message .= "Content-Type: multipart/mixed; boundary=\"$boundary\"\r\n\r\n";
-            
-            // Text part
+
             $message .= "--$boundary\r\n";
             $message .= "Content-Type: text/plain; charset=UTF-8\r\n";
             $message .= "Content-Transfer-Encoding: 8bit\r\n\r\n";
             $message .= $body . "\r\n\r\n";
-            
-            // Attachment part
+
             $message .= "--$boundary\r\n";
             $message .= "Content-Type: application/pdf; name=\"$attachmentName\"\r\n";
             $message .= "Content-Transfer-Encoding: base64\r\n";
@@ -314,25 +341,28 @@ function saveEmailToSentFolder($smtp, $to, $subject, $body, $attachmentData = nu
             $message .= chunk_split(base64_encode($attachmentData)) . "\r\n";
             $message .= "--$boundary--\r\n";
         } else {
-            // Simple text message
             $message .= "Content-Type: text/plain; charset=UTF-8\r\n";
             $message .= "Content-Transfer-Encoding: 8bit\r\n\r\n";
             $message .= $body;
         }
-        
-        // Append the message to Sent folder with \Seen flag
-        $result = imap_append($connection, $imapConnection . $sentFolder, $message, "\\Seen");
-        
+
+        $result = imap_append($connection, $selectedMailbox . $selectedFolder, $message, "\Seen");
+
         if ($result) {
             error_log("Successfully saved email to Sent folder");
         } else {
-            error_log("Failed to save email to Sent folder: " . imap_last_error());
+            $lastError = imap_last_error();
+            if ($lastError) {
+                error_log("Failed to save email to Sent folder: $lastError");
+            } else {
+                error_log("Failed to save email to Sent folder: Unknown IMAP error");
+            }
         }
-        
+
         imap_close($connection);
         return $result;
-        
-    } catch (Exception $e) {
+
+    } catch (Throwable $e) {
         error_log("Error saving to Sent folder: " . $e->getMessage());
         return false;
     }
@@ -490,13 +520,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     
                     // Prepare SMTP settings using global configuration
                     $smtpSettings = [
-                        'smtp_host'   => $config['email']['host'] ?? '',
-                        'smtp_port'   => $config['email']['port'] ?? 587,
-                        'smtp_user'   => $config['email']['username'] ?? '',
-                        'smtp_pass'   => $config['email']['password'] ?? '',
-                        'smtp_secure' => $config['email']['encryption'] ?? 'ssl',
-                        'from_email'  => $config['email']['from_email'] ?? '',
-                        'from_name'   => $config['email']['from_name'] ?? ''
+                        'smtp_host'          => $config['email']['host'] ?? '',
+                        'smtp_port'          => $config['email']['port'] ?? 587,
+                        'smtp_user'          => $config['email']['username'] ?? '',
+                        'smtp_pass'          => $config['email']['password'] ?? '',
+                        'smtp_secure'        => $config['email']['encryption'] ?? 'ssl',
+                        'from_email'         => $config['email']['from_email'] ?? '',
+                        'from_name'          => $config['email']['from_name'] ?? '',
+                        'imap_host'          => $config['email']['imap_host'] ?? ($config['email']['host'] ?? ''),
+                        'imap_port'          => $config['email']['imap_port'] ?? null,
+                        'imap_flags'         => $config['email']['imap_flags'] ?? null,
+                        'imap_sent_folders'  => $config['email']['imap_sent_folders'] ?? null
                     ];
 
                     // Prepare email content
@@ -562,13 +596,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 
                 // Prepare SMTP settings using global configuration
                 $smtpSettings = [
-                    'smtp_host'   => $config['email']['host'] ?? '',
-                    'smtp_port'   => $config['email']['port'] ?? 587,
-                    'smtp_user'   => $config['email']['username'] ?? '',
-                    'smtp_pass'   => $config['email']['password'] ?? '',
-                    'smtp_secure' => $config['email']['encryption'] ?? 'ssl',
-                    'from_email'  => $config['email']['from_email'] ?? '',
-                    'from_name'   => $config['email']['from_name'] ?? ''
+                    'smtp_host'          => $config['email']['host'] ?? '',
+                    'smtp_port'          => $config['email']['port'] ?? 587,
+                    'smtp_user'          => $config['email']['username'] ?? '',
+                    'smtp_pass'          => $config['email']['password'] ?? '',
+                    'smtp_secure'        => $config['email']['encryption'] ?? 'ssl',
+                    'from_email'         => $config['email']['from_email'] ?? '',
+                    'from_name'          => $config['email']['from_name'] ?? '',
+                    'imap_host'          => $config['email']['imap_host'] ?? ($config['email']['host'] ?? ''),
+                    'imap_port'          => $config['email']['imap_port'] ?? null,
+                    'imap_flags'         => $config['email']['imap_flags'] ?? null,
+                    'imap_sent_folders'  => $config['email']['imap_sent_folders'] ?? null
                 ];
 
                 // Prepare email

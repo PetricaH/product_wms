@@ -120,4 +120,82 @@ class RelocationTask {
             return false;
         }
     }
+
+    /**
+     * Log inventory movements for a completed relocation task
+     */
+    public function logRelocationMovements(array $task, int $userId): void
+    {
+        $taskId = (int)($task['id'] ?? 0);
+        $productId = (int)($task['product_id'] ?? 0);
+        $fromLocationId = (int)($task['from_location_id'] ?? 0);
+        $toLocationId = (int)($task['to_location_id'] ?? 0);
+        $quantity = (int)($task['quantity'] ?? 0);
+
+        if ($taskId <= 0 || $productId <= 0 || $fromLocationId <= 0 || $toLocationId <= 0 || $quantity <= 0) {
+            return;
+        }
+
+        $locationCodes = $this->getLocationCodes([$fromLocationId, $toLocationId]);
+        $fromCode = $locationCodes[$fromLocationId] ?? 'N/A';
+        $toCode = $locationCodes[$toLocationId] ?? 'N/A';
+
+        $entries = [
+            [
+                'location_id' => $fromLocationId,
+                'quantity_change' => -$quantity,
+                'notes' => sprintf('Relocation OUT → %s', $toCode),
+            ],
+            [
+                'location_id' => $toLocationId,
+                'quantity_change' => $quantity,
+                'notes' => sprintf('Relocation IN ← %s', $fromCode),
+            ],
+        ];
+
+        $sql = "INSERT INTO inventory_movements (product_id, location_id, movement_type, quantity_change, reference_type, reference_id, user_id, notes, created_at, updated_at)
+                VALUES (:product_id, :location_id, :movement_type, :quantity_change, :reference_type, :reference_id, :user_id, :notes, NOW(), NOW())";
+
+        $stmt = $this->conn->prepare($sql);
+
+        foreach ($entries as $entry) {
+            $stmt->execute([
+                ':product_id' => $productId,
+                ':location_id' => $entry['location_id'],
+                ':movement_type' => 'relocation',
+                ':quantity_change' => $entry['quantity_change'],
+                ':reference_type' => 'relocation_task',
+                ':reference_id' => $taskId,
+                ':user_id' => $userId ?: null,
+                ':notes' => $entry['notes'],
+            ]);
+        }
+    }
+
+    private function getLocationCodes(array $locationIds): array
+    {
+        if (empty($locationIds)) {
+            return [];
+        }
+
+        $uniqueIds = array_values(array_unique(array_filter($locationIds, fn($id) => (int)$id > 0)));
+        if (empty($uniqueIds)) {
+            return [];
+        }
+
+        $placeholders = implode(',', array_fill(0, count($uniqueIds), '?'));
+        $query = "SELECT id, location_code FROM locations WHERE id IN ($placeholders)";
+        $stmt = $this->conn->prepare($query);
+        foreach ($uniqueIds as $index => $id) {
+            $stmt->bindValue($index + 1, $id, PDO::PARAM_INT);
+        }
+        $stmt->execute();
+
+        $codes = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $codes[(int)$row['id']] = $row['location_code'];
+        }
+
+        return $codes;
+    }
 }

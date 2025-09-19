@@ -13,6 +13,7 @@ class Inventory {
     private $productsTable = "products";
     private $locationsTable = "locations";
     private ?InventoryTransactionService $transactionService = null;
+    private ?bool $inventoryMovementsTableExists = null;
 
     public function __construct($db) {
         $this->conn = $db;
@@ -31,11 +32,27 @@ class Inventory {
 
     private function hasTransactionLogging(): bool {
         try {
-            return $this->getTransactionService() && 
+            return $this->getTransactionService() &&
                    $this->getTransactionService()->isTransactionSystemAvailable();
         } catch (Exception $e) {
             return false;
         }
+    }
+
+    private function hasInventoryMovements(): bool
+    {
+        if ($this->inventoryMovementsTableExists !== null) {
+            return $this->inventoryMovementsTableExists;
+        }
+
+        try {
+            $stmt = $this->conn->query("SHOW TABLES LIKE 'inventory_movements'");
+            $this->inventoryMovementsTableExists = $stmt && $stmt->fetchColumn() ? true : false;
+        } catch (PDOException $e) {
+            $this->inventoryMovementsTableExists = false;
+        }
+
+        return $this->inventoryMovementsTableExists;
     }
 
     /**
@@ -1175,23 +1192,118 @@ public function getCriticalStockAlerts(int $limit = 10): array {
                                       string $sort = 'created_at', string $direction = 'DESC'): array {
         $offset = ($page - 1) * $pageSize;
 
-        $allowedSort = ['created_at', 'transaction_type', 'quantity_change', 'product_name'];
-        if (!in_array($sort, $allowedSort)) {
+        $sortColumnMap = [
+            'created_at' => 'records.created_at',
+            'transaction_type' => 'records.transaction_type',
+            'quantity_change' => 'records.quantity_change',
+            'product_name' => 'p.name',
+        ];
+
+        if (!array_key_exists($sort, $sortColumnMap)) {
             $sort = 'created_at';
         }
+        $sortColumn = $sortColumnMap[$sort];
         $direction = strtoupper($direction) === 'ASC' ? 'ASC' : 'DESC';
+
+        $includeRelocations = $this->hasInventoryMovements();
+
+        $unionParts = [];
+        $unionParts[] = "SELECT
+                CAST(t.id AS CHAR) AS record_id,
+                'transaction' AS record_type,
+                t.transaction_type,
+                t.product_id,
+                t.location_id,
+                t.source_location_id,
+                t.quantity_change,
+                t.quantity_before,
+                t.quantity_after,
+                t.reason,
+                t.user_id,
+                t.duration_seconds,
+                t.reference_type,
+                t.reference_id,
+                t.created_at,
+                NULL AS relocation_target_location_id,
+                NULL AS movement_direction
+            FROM inventory_transactions t";
+
+        if ($includeRelocations) {
+            $unionParts[] = "SELECT
+                    CONCAT('reloc-in-', dest.id) AS record_id,
+                    'relocation' AS record_type,
+                    'relocation' AS transaction_type,
+                    dest.product_id,
+                    dest.location_id,
+                    source.location_id AS source_location_id,
+                    dest.quantity_change,
+                    NULL AS quantity_before,
+                    NULL AS quantity_after,
+                    dest.notes AS reason,
+                    dest.user_id,
+                    NULL AS duration_seconds,
+                    dest.reference_type,
+                    dest.reference_id,
+                    dest.created_at,
+                    dest.location_id AS relocation_target_location_id,
+                    'in' AS movement_direction
+                FROM inventory_movements dest
+                LEFT JOIN inventory_movements source
+                    ON source.reference_type = dest.reference_type
+                    AND source.reference_id = dest.reference_id
+                    AND source.movement_type = dest.movement_type
+                    AND source.quantity_change < 0
+                WHERE dest.movement_type = 'relocation' AND dest.quantity_change > 0";
+
+            $unionParts[] = "SELECT
+                    CONCAT('reloc-out-', source.id) AS record_id,
+                    'relocation' AS record_type,
+                    'relocation' AS transaction_type,
+                    source.product_id,
+                    source.location_id,
+                    source.location_id AS source_location_id,
+                    source.quantity_change,
+                    NULL AS quantity_before,
+                    NULL AS quantity_after,
+                    source.notes AS reason,
+                    source.user_id,
+                    NULL AS duration_seconds,
+                    source.reference_type,
+                    source.reference_id,
+                    source.created_at,
+                    dest.location_id AS relocation_target_location_id,
+                    'out' AS movement_direction
+                FROM inventory_movements source
+                LEFT JOIN inventory_movements dest
+                    ON dest.reference_type = source.reference_type
+                    AND dest.reference_id = source.reference_id
+                    AND dest.movement_type = source.movement_type
+                    AND dest.quantity_change > 0
+                WHERE source.movement_type = 'relocation' AND source.quantity_change < 0";
+        }
+
+        $recordsSql = implode("\nUNION ALL\n", $unionParts);
+
+        $baseQuery = "FROM (
+                $recordsSql
+            ) records
+            LEFT JOIN products p ON records.product_id = p.product_id
+            LEFT JOIN locations loc ON records.location_id = loc.id
+            LEFT JOIN locations source_loc ON records.source_location_id = source_loc.id
+            LEFT JOIN locations target_loc ON records.relocation_target_location_id = target_loc.id
+            LEFT JOIN users u ON records.user_id = u.id";
 
         $where = [];
         $params = [];
 
         $dateFrom = $filters['date_from'] ?? date('Y-m-d', strtotime('-30 days'));
         $dateTo   = $filters['date_to'] ?? date('Y-m-d');
-        $where[] = 't.created_at BETWEEN :date_from AND :date_to';
+        $where[] = 'records.created_at BETWEEN :date_from AND :date_to';
         $params[':date_from'] = $dateFrom . ' 00:00:00';
         $params[':date_to']   = $dateTo . ' 23:59:59';
 
         if (!empty($filters['transaction_type']) && $filters['transaction_type'] !== 'all') {
-            $where[] = 't.transaction_type = :type';
+            $where[] = 'records.transaction_type = :type';
             $params[':type'] = $filters['transaction_type'];
         }
 
@@ -1201,34 +1313,54 @@ public function getCriticalStockAlerts(int $limit = 10): array {
         }
 
         if (!empty($filters['location_id'])) {
-            $where[] = '(t.location_id = :loc OR t.source_location_id = :loc)';
+            $where[] = '(
+                records.location_id = :loc
+                OR records.source_location_id = :loc
+                OR records.relocation_target_location_id = :loc
+            )';
             $params[':loc'] = $filters['location_id'];
         }
 
         if (!empty($filters['user_id'])) {
-            $where[] = 't.user_id = :user_id';
+            $where[] = 'records.user_id = :user_id';
             $params[':user_id'] = $filters['user_id'];
         }
 
         $whereSql = $where ? 'WHERE ' . implode(' AND ', $where) : '';
 
-        $baseQuery = "FROM inventory_transactions t
-                       LEFT JOIN products p ON t.product_id = p.product_id
-                       LEFT JOIN locations l ON t.location_id = l.id
-                       LEFT JOIN locations sl ON t.source_location_id = sl.id
-                       LEFT JOIN users u ON t.user_id = u.id
-                       $whereSql";
-
-        $countStmt = $this->conn->prepare("SELECT COUNT(*) " . $baseQuery);
+        $countStmt = $this->conn->prepare("SELECT COUNT(*) $baseQuery $whereSql");
         $countStmt->execute($params);
         $total = (int)$countStmt->fetchColumn();
 
-        $sql = "SELECT t.*, p.name AS product_name, p.sku,
-               l.location_code, sl.location_code AS source_location_code,
-               u.username AS full_name, u.username
-        " . $baseQuery . "
-        ORDER BY $sort $direction
-        LIMIT :limit OFFSET :offset";
+        $sql = "SELECT
+                records.record_id,
+                records.record_type,
+                records.transaction_type,
+                records.product_id,
+                records.location_id,
+                records.source_location_id,
+                records.quantity_change,
+                records.quantity_before,
+                records.quantity_after,
+                records.reason,
+                records.user_id,
+                records.duration_seconds,
+                records.reference_type,
+                records.reference_id,
+                records.created_at,
+                records.relocation_target_location_id,
+                records.movement_direction,
+                p.name AS product_name,
+                p.sku,
+                loc.location_code,
+                source_loc.location_code AS source_location_code,
+                target_loc.location_code AS target_location_code,
+                u.username AS full_name,
+                u.username AS username
+            $baseQuery
+            $whereSql
+            ORDER BY $sortColumn $direction
+            LIMIT :limit OFFSET :offset";
 
         $stmt = $this->conn->prepare($sql);
         foreach ($params as $key => $value) {

@@ -68,7 +68,6 @@
             this.stepCompletion = {
                 source: false,
                 product: false,
-                destination: false,
             };
             this.autoSubmitTimer = null;
 
@@ -120,15 +119,9 @@
                     expectedKey: 'product_sku',
                 },
                 {
-                    id: 'destination',
-                    title: 'Pasul 3 - Scanare destinație',
-                    status: 'Scanați locația destinație (F3)',
-                    expectedKey: 'to_location',
-                },
-                {
-                    id: 'confirm',
-                    title: 'Pasul 4 - Confirmare relocare',
-                    status: 'Apăsați F1 pentru confirmare',
+                    id: 'quantity',
+                    title: 'Pasul 3 - Confirmare cantitate',
+                    status: 'Verificați cantitatea și apăsați F1',
                     expectedKey: null,
                 },
             ];
@@ -286,7 +279,6 @@
             this.stepCompletion = {
                 source: false,
                 product: false,
-                destination: false,
             };
             this.updateTaskSummary();
             this.updateProgress();
@@ -337,7 +329,9 @@
 
             this.elements.stepTitle.textContent = step.title;
             this.elements.stepStatus.textContent = step.status;
-            if (step.expectedKey && this.currentTask) {
+            if (step.id === 'quantity' && this.currentTask) {
+                this.elements.expectedValue.textContent = `Cantitate de mutat: ${this.currentTask.quantity ?? 0}`;
+            } else if (step.expectedKey && this.currentTask) {
                 const value = this.currentTask[step.expectedKey] || '--';
                 if (step.id === 'product') {
                     this.elements.expectedValue.textContent = `SKU așteptat: ${value}`;
@@ -348,7 +342,10 @@
                 this.elements.expectedValue.textContent = '--';
             }
 
-            if (this.scannerActive) {
+            if (step.id === 'quantity') {
+                this.elements.scannerState.textContent = 'Confirmați cantitatea și apăsați F1 pentru finalizare.';
+                this.elements.scannerState.classList.remove('error');
+            } else if (this.scannerActive) {
                 this.elements.scannerState.textContent = 'Scanner laser activ - scanați codul';
                 this.elements.scannerState.classList.remove('error');
             } else {
@@ -434,18 +431,11 @@
                     this.setFunctionKeyState('F4', this.manualMode ? 'Ascunde' : 'Manual', false);
                     this.setFunctionKeyState('F5', 'Înapoi', false);
                     break;
-                case 'destination':
-                    this.setFunctionKeyState('F1', this.manualMode ? 'Confirmă' : 'Confirmă', this.manualMode ? false : !this.stepCompletion.destination);
-                    this.setFunctionKeyState('F2', 'Următor', false);
-                    this.setFunctionKeyState('F3', this.scannerActive ? 'Oprește' : 'Scanează', false);
-                    this.setFunctionKeyState('F4', this.manualMode ? 'Ascunde' : 'Manual', false);
-                    this.setFunctionKeyState('F5', 'Înapoi', false);
-                    break;
-                case 'confirm':
+                case 'quantity':
                     this.setFunctionKeyState('F1', 'Finalizează', false);
                     this.setFunctionKeyState('F2', 'Următor', this.total <= 1);
-                    this.setFunctionKeyState('F3', this.scannerActive ? 'Oprește' : 'Scanează', true);
-                    this.setFunctionKeyState('F4', this.manualMode ? 'Ascunde' : 'Manual', true);
+                    this.setFunctionKeyState('F3', 'Scanează', true);
+                    this.setFunctionKeyState('F4', 'Manual', true);
                     this.setFunctionKeyState('F5', 'Înapoi', false);
                     break;
                 default:
@@ -467,6 +457,10 @@
             } else {
                 element.classList.remove('disabled');
             }
+        }
+
+        stepRequiresScanner(stepId) {
+            return ['source', 'product'].includes(stepId);
         }
 
         handleF1() {
@@ -492,7 +486,7 @@
                     this.audio.play('navigate');
                     this.setStep(1);
                     break;
-                case 'confirm':
+                case 'quantity':
                     this.completeTask();
                     break;
                 default:
@@ -514,10 +508,18 @@
         }
 
         handleF3() {
+            const step = this.stepConfig[this.stepIndex];
+            if (!this.currentTask || !this.stepRequiresScanner(step?.id)) {
+                return;
+            }
             this.toggleScanner();
         }
 
         handleF4() {
+            const step = this.stepConfig[this.stepIndex];
+            if (!this.currentTask || !this.stepRequiresScanner(step?.id)) {
+                return;
+            }
             this.toggleManualMode(!this.manualMode);
         }
 
@@ -547,6 +549,19 @@
                 index = this.stepConfig.length - 1;
             }
             this.stepIndex = index;
+            const step = this.stepConfig[this.stepIndex];
+            if (!this.stepRequiresScanner(step?.id)) {
+                this.manualMode = false;
+                this.scannerActive = false;
+                this.scannerPaused = false;
+                if (this.elements.manualEntry) {
+                    this.elements.manualEntry.hidden = true;
+                }
+                if (this.elements.manualInput) {
+                    this.elements.manualInput.value = '';
+                    this.elements.manualInput.readOnly = true;
+                }
+            }
             this.updateStepUI();
             this.updateFunctionBar();
         }
@@ -729,7 +744,10 @@
                     this.pauseScanner().then(() => {
                         setTimeout(() => {
                             this.advanceStep();
-                            this.resumeScanner();
+                            const nextStep = this.stepConfig[this.stepIndex];
+                            if (this.stepRequiresScanner(nextStep?.id)) {
+                                this.resumeScanner();
+                            }
                         }, 300);
                     });
                 } else {

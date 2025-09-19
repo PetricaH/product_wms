@@ -6,6 +6,7 @@ document.addEventListener('DOMContentLoaded', function() {
     initializeDateFields();
     initializeAmountCalculations();
     initializeStockPurchase();
+    initializeSellerSearch();
     attachFormValidation();
     if (typeof initializePurchaseOrdersExisting === 'function') {
         initializePurchaseOrdersExisting();
@@ -73,6 +74,68 @@ function initializeStockPurchase() {
             const index = this.closest('.product-item').getAttribute('data-index');
             selectExistingProduct(index, this);
         });
+    });
+}
+
+function initializeSellerSearch() {
+    const modal = document.getElementById('stockPurchaseModal');
+    if (!modal) {
+        console.warn('Stock purchase modal not found for seller search initialization');
+        return;
+    }
+
+    const searchInput = modal.querySelector('#seller_search_input');
+    const hiddenField = modal.querySelector('#seller_id_field');
+    if (!searchInput || !hiddenField) {
+        console.warn('Seller search inputs not found inside modal');
+        return;
+    }
+
+    const datalist = document.getElementById('seller-options');
+
+    const assignSeller = () => {
+        const rawValue = searchInput.value.trim();
+        let matchedSeller = null;
+
+        if (rawValue !== '') {
+            const normalizedValue = rawValue.toLowerCase();
+
+            if (Array.isArray(window.sellersList)) {
+                matchedSeller = window.sellersList.find(item => {
+                    const sellerName = (item.supplier_name || '').toLowerCase();
+                    return sellerName === normalizedValue;
+                }) || null;
+            }
+
+            if (!matchedSeller && datalist && datalist.options) {
+                const option = Array.from(datalist.options).find(opt => opt.value.trim().toLowerCase() === normalizedValue);
+                if (option) {
+                    matchedSeller = {
+                        id: option.dataset.id || '',
+                        email: option.dataset.email || '',
+                        contact_person: option.dataset.contact || '',
+                        phone: option.dataset.phone || '',
+                        supplier_name: option.value
+                    };
+                }
+            }
+        }
+
+        if (matchedSeller && matchedSeller.id) {
+            hiddenField.value = matchedSeller.id;
+            updateSellerContact(matchedSeller);
+        } else {
+            hiddenField.value = '';
+            updateSellerContact(null);
+        }
+    };
+
+    searchInput.addEventListener('input', assignSeller);
+    searchInput.addEventListener('change', assignSeller);
+    searchInput.addEventListener('blur', () => {
+        if (!hiddenField.value) {
+            searchInput.value = '';
+        }
     });
 }
 
@@ -146,47 +209,52 @@ function resetProductItems() {
     calculateOrderTotal();
 }
 
-// FIXED: updateSellerContact function with proper null checks
-// Debug the actual function execution
-function updateSellerContact() {
-    // Look specifically inside the modal, not the whole page
+// Update seller contact details when the supplier changes
+function updateSellerContact(sellerData = null) {
     const modal = document.getElementById('stockPurchaseModal');
     if (!modal) {
         console.error('Modal not found');
         return;
     }
-    
-    const sellerSelect = modal.querySelector('#seller_id');
+
     const emailField = modal.querySelector('#email_recipient');
-    
-    if (!sellerSelect) {
-        console.error('Seller select element not found in modal');
-        return;
-    }
-    
+    const hiddenField = modal.querySelector('#seller_id_field');
+
     if (!emailField) {
         console.error('Email recipient field not found in modal');
         return;
     }
-    
-    const selectedOption = sellerSelect.options[sellerSelect.selectedIndex];
-    
-    if (selectedOption && selectedOption.value && selectedOption.value !== '') {
-        const email = selectedOption.getAttribute('data-email');
-        const contact = selectedOption.getAttribute('data-contact');
-        const phone = selectedOption.getAttribute('data-phone');
-        
-        console.log('Setting email to:', email); // Debug log
-        
-        // Set the email field value
-        emailField.value = email || '';
-        
-        // Optional: Show contact info in console
+
+    if (!hiddenField) {
+        console.error('Hidden seller field not found in modal');
+        emailField.value = '';
+        return;
+    }
+
+    let seller = sellerData;
+
+    if (!seller) {
+        const sellerId = hiddenField.value;
+        if (!sellerId) {
+            emailField.value = '';
+            return;
+        }
+
+        if (Array.isArray(window.sellersList)) {
+            seller = window.sellersList.find(item => String(item.id) === String(sellerId)) || null;
+        }
+    }
+
+    if (seller) {
+        emailField.value = seller.email || '';
+
+        const contact = seller.contact_person || seller.contact || '';
+        const phone = seller.phone || '';
         if (contact || phone) {
-            let contactInfo = [];
-            if (contact) contactInfo.push(`Contact: ${contact}`);
-            if (phone) contactInfo.push(`Tel: ${phone}`);
-            console.log('Seller contact info:', contactInfo.join(', '));
+            const details = [];
+            if (contact) details.push(`Contact: ${contact}`);
+            if (phone) details.push(`Tel: ${phone}`);
+            console.log('Seller contact info:', details.join(', '));
         }
     } else {
         emailField.value = '';
@@ -450,11 +518,12 @@ function validateStockPurchaseForm() {
         return false;
     }
     
-    // Check if seller is selected
-    const sellerSelect = modal.querySelector('#seller_id');
-    if (!sellerSelect || !sellerSelect.value || sellerSelect.value === '') {
-        alert('Te rog selectează un furnizor.');
-        if (sellerSelect) sellerSelect.focus();
+    // Check if seller is selected via the hidden field populated by the search
+    const sellerHiddenField = modal.querySelector('#seller_id_field');
+    const sellerSearchInput = modal.querySelector('#seller_search_input');
+    if (!sellerHiddenField || !sellerHiddenField.value) {
+        alert('Te rog selectează un furnizor din lista de sugestii.');
+        if (sellerSearchInput) sellerSearchInput.focus();
         return false;
     }
 

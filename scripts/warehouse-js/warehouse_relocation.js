@@ -778,14 +778,16 @@
             if (!this.elements.manualInput) {
                 return;
             }
+            this.elements.manualInput.value = '';
+            if (this.autoSubmitTimer) {
+                clearTimeout(this.autoSubmitTimer);
+                this.autoSubmitTimer = null;
+            }
+
             if (isManual) {
-                this.elements.manualInput.select();
+                this.elements.manualInput.focus();
             } else if (this.scannerActive) {
                 this.elements.manualInput.focus();
-                if (this.autoSubmitTimer) {
-                    clearTimeout(this.autoSubmitTimer);
-                    this.autoSubmitTimer = null;
-                }
             }
         }
 

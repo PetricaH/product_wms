@@ -76,6 +76,26 @@ function formatTaskPayload(array $tasks, int $index): array
     ];
 }
 
+function getProductQuantityAtLocation(PDO $db, int $productId, int $locationId): int
+{
+    if ($productId <= 0 || $locationId <= 0) {
+        return 0;
+    }
+
+    try {
+        $stmt = $db->prepare('SELECT COALESCE(SUM(quantity), 0) FROM inventory WHERE product_id = :product_id AND location_id = :location_id');
+        $stmt->execute([
+            ':product_id' => $productId,
+            ':location_id' => $locationId,
+        ]);
+
+        return (int)$stmt->fetchColumn();
+    } catch (Exception $e) {
+        error_log('Unable to fetch inventory quantity snapshot: ' . $e->getMessage());
+        return 0;
+    }
+}
+
 /**
  * Găsește indexul unei sarcini în lista ordonată
  */
@@ -186,6 +206,11 @@ if ($isAjax) {
                     throw new Exception('Sarcina nu este disponibilă pentru actualizare.');
                 }
 
+                $quantitySnapshot = [
+                    'from_before' => getProductQuantityAtLocation($db, (int)$task['product_id'], (int)$task['from_location_id']),
+                    'to_before' => getProductQuantityAtLocation($db, (int)$task['product_id'], (int)$task['to_location_id']),
+                ];
+
                 $stmt = $db->prepare(
                     'UPDATE inventory SET location_id = :to_location
                      WHERE product_id = :product_id
@@ -207,7 +232,7 @@ if ($isAjax) {
                 $stmt = $db->prepare("UPDATE relocation_tasks SET status = 'completed', updated_at = NOW() WHERE id = :task_id");
                 $stmt->execute([':task_id' => $taskId]);
 
-                $relocationModel->logRelocationMovements($task, (int)($_SESSION['user_id'] ?? 0));
+                $relocationModel->logRelocationMovements($task, (int)($_SESSION['user_id'] ?? 0), $quantitySnapshot);
 
                 $db->commit();
 
@@ -260,6 +285,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     throw new Exception('Sarcina nu a fost găsită sau este deja finalizată.');
                 }
 
+                $quantitySnapshot = [
+                    'from_before' => getProductQuantityAtLocation($db, (int)$task['product_id'], (int)$task['from_location_id']),
+                    'to_before' => getProductQuantityAtLocation($db, (int)$task['product_id'], (int)$task['to_location_id']),
+                ];
+
                 $db->beginTransaction();
                 try {
                     $stmt = $db->prepare(
@@ -284,7 +314,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $stmt = $db->prepare("UPDATE relocation_tasks SET status = 'completed', updated_at = NOW() WHERE id = :task_id");
                     $stmt->execute([':task_id' => $taskId]);
 
-                    $relocationModel->logRelocationMovements($task, (int)($_SESSION['user_id'] ?? 0));
+                    $relocationModel->logRelocationMovements($task, (int)($_SESSION['user_id'] ?? 0), $quantitySnapshot);
 
                     $db->commit();
                     $message = 'Relocarea a fost finalizată cu succes.';

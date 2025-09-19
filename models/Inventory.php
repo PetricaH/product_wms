@@ -13,7 +13,7 @@ class Inventory {
     private $productsTable = "products";
     private $locationsTable = "locations";
     private ?InventoryTransactionService $transactionService = null;
-    private ?bool $inventoryMovementsTableExists = null;
+    private ?bool $inventoryTransactionsTableExists = null;
 
     public function __construct($db) {
         $this->conn = $db;
@@ -39,20 +39,20 @@ class Inventory {
         }
     }
 
-    private function hasInventoryMovements(): bool
+    private function hasInventoryTransactions(): bool
     {
-        if ($this->inventoryMovementsTableExists !== null) {
-            return $this->inventoryMovementsTableExists;
+        if ($this->inventoryTransactionsTableExists !== null) {
+            return $this->inventoryTransactionsTableExists;
         }
 
         try {
-            $stmt = $this->conn->query("SHOW TABLES LIKE 'inventory_movements'");
-            $this->inventoryMovementsTableExists = $stmt && $stmt->fetchColumn() ? true : false;
+            $stmt = $this->conn->query("SHOW TABLES LIKE 'inventory_transactions'");
+            $this->inventoryTransactionsTableExists = $stmt && $stmt->fetchColumn() ? true : false;
         } catch (PDOException $e) {
-            $this->inventoryMovementsTableExists = false;
+            $this->inventoryTransactionsTableExists = false;
         }
 
-        return $this->inventoryMovementsTableExists;
+        return $this->inventoryTransactionsTableExists;
     }
 
     /**
@@ -1205,13 +1205,17 @@ public function getCriticalStockAlerts(int $limit = 10): array {
         $sortColumn = $sortColumnMap[$sort];
         $direction = strtoupper($direction) === 'ASC' ? 'ASC' : 'DESC';
 
-        $includeRelocations = $this->hasInventoryMovements();
+        if (!$this->hasInventoryTransactions()) {
+            return [
+                'data' => [],
+                'total' => 0,
+            ];
+        }
 
-        $unionParts = [];
-        $unionParts[] = "SELECT
+        $recordsSql = "SELECT
                 CAST(t.id AS CHAR) AS record_id,
-                'transaction' AS record_type,
-                t.transaction_type,
+                CASE WHEN t.reason = 'Relocation' THEN 'relocation' ELSE 'transaction' END AS record_type,
+                CASE WHEN t.reason = 'Relocation' THEN 'relocation' ELSE t.transaction_type END AS transaction_type,
                 t.product_id,
                 t.location_id,
                 t.source_location_id,
@@ -1224,65 +1228,13 @@ public function getCriticalStockAlerts(int $limit = 10): array {
                 t.reference_type,
                 t.reference_id,
                 t.created_at,
-                NULL AS relocation_target_location_id,
-                NULL AS movement_direction
+                CASE WHEN t.reason = 'Relocation' THEN t.source_location_id ELSE NULL END AS relocation_target_location_id,
+                CASE
+                    WHEN t.reason = 'Relocation' AND t.quantity_change < 0 THEN 'out'
+                    WHEN t.reason = 'Relocation' AND t.quantity_change > 0 THEN 'in'
+                    ELSE NULL
+                END AS movement_direction
             FROM inventory_transactions t";
-
-        if ($includeRelocations) {
-            $unionParts[] = "SELECT
-                    CONCAT('reloc-in-', dest.id) AS record_id,
-                    'relocation' AS record_type,
-                    'relocation' AS transaction_type,
-                    dest.product_id,
-                    dest.location_id,
-                    source.location_id AS source_location_id,
-                    dest.quantity_change,
-                    NULL AS quantity_before,
-                    NULL AS quantity_after,
-                    dest.notes AS reason,
-                    dest.user_id,
-                    NULL AS duration_seconds,
-                    dest.reference_type,
-                    dest.reference_id,
-                    dest.created_at,
-                    dest.location_id AS relocation_target_location_id,
-                    'in' AS movement_direction
-                FROM inventory_movements dest
-                LEFT JOIN inventory_movements source
-                    ON source.reference_type = dest.reference_type
-                    AND source.reference_id = dest.reference_id
-                    AND source.movement_type = dest.movement_type
-                    AND source.quantity_change < 0
-                WHERE dest.movement_type = 'relocation' AND dest.quantity_change > 0";
-
-            $unionParts[] = "SELECT
-                    CONCAT('reloc-out-', source.id) AS record_id,
-                    'relocation' AS record_type,
-                    'relocation' AS transaction_type,
-                    source.product_id,
-                    source.location_id,
-                    source.location_id AS source_location_id,
-                    source.quantity_change,
-                    NULL AS quantity_before,
-                    NULL AS quantity_after,
-                    source.notes AS reason,
-                    source.user_id,
-                    NULL AS duration_seconds,
-                    source.reference_type,
-                    source.reference_id,
-                    source.created_at,
-                    dest.location_id AS relocation_target_location_id,
-                    'out' AS movement_direction
-                FROM inventory_movements source
-                LEFT JOIN inventory_movements dest
-                    ON dest.reference_type = source.reference_type
-                    AND dest.reference_id = source.reference_id
-                    AND dest.movement_type = source.movement_type
-                    AND dest.quantity_change > 0
-                WHERE source.movement_type = 'relocation' AND source.quantity_change < 0";
-        }
-
-        $recordsSql = implode("\nUNION ALL\n", $unionParts);
 
         $baseQuery = "FROM (
                 $recordsSql

@@ -188,9 +188,11 @@ function sendPurchaseOrderEmail(array $smtp, string $to, string $subject, string
         $fromName = $smtp['from_name'] ?? 'WMS - Comanda Achizitie';
         $mail->setFrom($fromEmail, $fromName);
         $mail->addAddress($to);
+        $mail->addBCC($fromEmail);
         $mail->Subject = $subject;
         $mail->Body = $body;
         $mail->isHTML(false);
+        $mail->CharSet = 'UTF-8';
         
         // Add attachment if provided and exists
         $attachmentData = null;

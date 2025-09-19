@@ -13,6 +13,7 @@ if (!defined('BASE_PATH')) {
 
 require_once BASE_PATH . '/bootstrap.php';
 $config = require BASE_PATH . '/config/config.php';
+require_once BASE_PATH . '/models/RelocationTask.php';
 
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
@@ -29,6 +30,7 @@ if (!isset($_SESSION['user_id']) || !in_array($_SESSION['role'], ['warehouse', '
 
 $dbFactory = $config['connection_factory'];
 $db = $dbFactory();
+$relocationModel = new RelocationTask($db);
 
 /**
  * Returnează lista de sarcini deschise (pending sau ready)
@@ -205,6 +207,8 @@ if ($isAjax) {
                 $stmt = $db->prepare("UPDATE relocation_tasks SET status = 'completed', updated_at = NOW() WHERE id = :task_id");
                 $stmt->execute([':task_id' => $taskId]);
 
+                $relocationModel->logRelocationMovements($task, (int)($_SESSION['user_id'] ?? 0));
+
                 $db->commit();
 
                 echo json_encode([
@@ -279,6 +283,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     $stmt = $db->prepare("UPDATE relocation_tasks SET status = 'completed', updated_at = NOW() WHERE id = :task_id");
                     $stmt->execute([':task_id' => $taskId]);
+
+                    $relocationModel->logRelocationMovements($task, (int)($_SESSION['user_id'] ?? 0));
 
                     $db->commit();
                     $message = 'Relocarea a fost finalizată cu succes.';

@@ -53,7 +53,8 @@ $transactionTypes = [
     'expire' => ['label' => 'Expirare', 'color' => 'dark', 'icon' => '⏰'],
     'damage' => ['label' => 'Deteriorare', 'color' => 'danger', 'icon' => '💥'],
     'return' => ['label' => 'Retur', 'color' => 'info', 'icon' => '↩️'],
-    'correction' => ['label' => 'Corecție', 'color' => 'warning', 'icon' => '🔧']
+    'correction' => ['label' => 'Corecție', 'color' => 'warning', 'icon' => '🔧'],
+    'relocation' => ['label' => 'Relocare', 'color' => 'primary', 'icon' => '🔁']
 ];
 
 // Handle operations
@@ -243,15 +244,30 @@ switch ($view) {
             $out = fopen('php://output', 'w');
             fputcsv($out, ['Data/Ora','Tip','Produs','SKU','Locație','Cantitate','Înainte','După','Operator','Motiv']);
             foreach ($movements as $mv) {
+                $locationDisplay = $mv['location_code'] ?? '';
+                if (($mv['transaction_type'] ?? '') === 'move') {
+                    $locationDisplay = ($mv['source_location_code'] ?? '-') . '->' . ($mv['location_code'] ?? '-');
+                } elseif (($mv['transaction_type'] ?? '') === 'relocation') {
+                    $direction = $mv['movement_direction'] ?? '';
+                    if ($direction === 'out') {
+                        $locationDisplay = ($mv['location_code'] ?? '-') . '->' . ($mv['target_location_code'] ?? '-');
+                    } else {
+                        $locationDisplay = ($mv['source_location_code'] ?? '-') . '->' . (($mv['location_code'] ?? '') ?: ($mv['target_location_code'] ?? '-'));
+                    }
+                }
+
+                $quantityBefore = $mv['quantity_before'] ?? null;
+                $quantityAfter = $mv['quantity_after'] ?? null;
+
                 fputcsv($out, [
                     $mv['created_at'],
                     $mv['transaction_type'],
                     $mv['product_name'],
                     $mv['sku'],
-                    $mv['transaction_type']==='move' ? ($mv['source_location_code'] . '->' . $mv['location_code']) : $mv['location_code'],
+                    $locationDisplay,
                     $mv['quantity_change'],
-                    $mv['quantity_before'],
-                    $mv['quantity_after'],
+                    $quantityBefore !== null ? $quantityBefore : '-',
+                    $quantityAfter !== null ? $quantityAfter : '-',
                     $mv['full_name'] ?: $mv['username'],
                     $mv['reason']
                 ]);
@@ -479,14 +495,37 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                     <td><span class="badge status-badge bg-<?= $transactionTypes[$mv['transaction_type']]['color'] ?? 'secondary' ?>"><?= $transactionTypes[$mv['transaction_type']]['label'] ?? $mv['transaction_type'] ?></span></td>
                                                     <td><?= htmlspecialchars($mv['product_name']) ?> <small class="text-muted"><?= htmlspecialchars($mv['sku']) ?></small></td>
                                                     <td>
-                                                        <?php if ($mv['transaction_type'] === 'move'): ?>
-                                                            <?= htmlspecialchars($mv['source_location_code']) ?> → <?= htmlspecialchars($mv['location_code']) ?>
+                                                        <?php if (($mv['transaction_type'] ?? '') === 'move'): ?>
+                                                            <?= htmlspecialchars($mv['source_location_code'] ?? '-') ?> → <?= htmlspecialchars($mv['location_code'] ?? '-') ?>
+                                                        <?php elseif (($mv['transaction_type'] ?? '') === 'relocation'): ?>
+                                                            <?php
+                                                                $direction = $mv['movement_direction'] ?? '';
+                                                                $badgeClass = $direction === 'out' ? 'bg-danger' : 'bg-success';
+                                                                $badgeLabel = strtoupper($direction ?: '');
+                                                                if ($direction === 'out') {
+                                                                    $fromLocation = $mv['location_code'] ?? '-';
+                                                                    $toLocation = $mv['target_location_code'] ?? '-';
+                                                                } else {
+                                                                    $fromLocation = $mv['source_location_code'] ?? '-';
+                                                                    $toLocation = ($mv['location_code'] ?? '') ?: ($mv['target_location_code'] ?? '-');
+                                                                }
+                                                            ?>
+                                                            <?php if ($badgeLabel): ?>
+                                                                <span class="badge status-badge <?= $badgeClass ?>"><?= $badgeLabel ?></span>
+                                                            <?php endif; ?>
+                                                            <?= htmlspecialchars($fromLocation) ?> → <?= htmlspecialchars($toLocation) ?>
                                                         <?php else: ?>
-                                                            <?= htmlspecialchars($mv['location_code'] ?: '-') ?>
+                                                            <?= htmlspecialchars(($mv['location_code'] ?? '') ?: '-') ?>
                                                         <?php endif; ?>
                                                     </td>
                                                     <td><span class="<?= $mv['quantity_change'] >= 0 ? 'text-success' : 'text-danger' ?>"><?= ($mv['quantity_change'] >= 0 ? '+' : '') . $mv['quantity_change'] ?></span></td>
-                                                    <td><?= $mv['quantity_before'] ?> → <?= $mv['quantity_after'] ?></td>
+                                                    <td>
+                                                        <?php if ($mv['quantity_before'] !== null && $mv['quantity_after'] !== null): ?>
+                                                            <?= $mv['quantity_before'] ?> → <?= $mv['quantity_after'] ?>
+                                                        <?php else: ?>
+                                                            -
+                                                        <?php endif; ?>
+                                                    </td>
                                                     <td><?= htmlspecialchars($mv['full_name'] ?: $mv['username'] ?: '-') ?></td>
                                                     <td><?= htmlspecialchars($mv['reason'] ?? '-') ?></td>
                                                     <td><?= $mv['duration_seconds'] ? gmdate('H:i:s', $mv['duration_seconds']) : '-' ?></td>

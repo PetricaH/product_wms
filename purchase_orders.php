@@ -193,6 +193,8 @@ function sendPurchaseOrderEmail(array $smtp, string $to, string $subject, string
         $mail->isHTML(false);
         
         // Add attachment if provided and exists
+        $attachmentData = null;
+        $attachmentName = null;
         if (!empty($attachmentPath)) {
             // Check multiple possible paths
             $possiblePaths = [
@@ -207,6 +209,9 @@ function sendPurchaseOrderEmail(array $smtp, string $to, string $subject, string
                 if (is_file($path)) {
                     $mail->addAttachment($path);
                     $attachmentFound = true;
+                    // Store attachment data for IMAP copy
+                    $attachmentData = file_get_contents($path);
+                    $attachmentName = basename($path);
                     error_log("PDF attachment added: $path");
                     break;
                 }
@@ -217,13 +222,119 @@ function sendPurchaseOrderEmail(array $smtp, string $to, string $subject, string
             }
         }
         
+        // Send the email first
         $mail->send();
+        
+        // Now save a copy to Sent folder using IMAP
+        $sentFolderResult = saveEmailToSentFolder($smtp, $to, $subject, $body, $attachmentData, $attachmentName);
+        
+        if (!$sentFolderResult) {
+            error_log("Email sent successfully but failed to save copy to Sent folder");
+        } else {
+            error_log("Email sent and saved to Sent folder successfully");
+        }
+        
         return ['success' => true, 'message' => 'Email trimis cu succes'];
         
     } catch (Exception $e) {
         $errorMsg = 'Eroare email: ' . $e->getMessage();
         error_log($errorMsg);
         return ['success' => false, 'message' => $errorMsg];
+    }
+}
+
+function saveEmailToSentFolder($smtp, $to, $subject, $body, $attachmentData = null, $attachmentName = null) {
+    try {
+        // Check if IMAP extension is available
+        if (!extension_loaded('imap')) {
+            error_log("IMAP extension not available - cannot save to Sent folder");
+            return false;
+        }
+        
+        // IMAP connection settings
+        $imapHost = $smtp['smtp_host']; // Usually same as SMTP host
+        $imapPort = 993; // Standard IMAP SSL port
+        $imapFlags = '/imap/ssl/validate-cert';
+        
+        // Build IMAP connection string
+        $imapConnection = '{' . $imapHost . ':' . $imapPort . $imapFlags . '}';
+        
+        // Try different common Sent folder names
+        $sentFolders = ['INBOX.Sent', 'Sent', 'INBOX/Sent', 'Sent Items', 'Sent Messages'];
+        
+        $connection = false;
+        $sentFolder = '';
+        
+        foreach ($sentFolders as $folder) {
+            try {
+                $connection = imap_open($imapConnection . $folder, $smtp['smtp_user'], $smtp['smtp_pass']);
+                if ($connection) {
+                    $sentFolder = $folder;
+                    error_log("Successfully connected to IMAP Sent folder: $folder");
+                    break;
+                }
+            } catch (Exception $e) {
+                continue;
+            }
+        }
+        
+        if (!$connection) {
+            error_log("Could not connect to any IMAP Sent folder. IMAP error: " . imap_last_error());
+            return false;
+        }
+        
+        // Build the email message for IMAP
+        $fromEmail = $smtp['from_email'] ?? $smtp['smtp_user'];
+        $fromName = $smtp['from_name'] ?? 'WMS - Comanda Achizitie';
+        $date = date('r'); // RFC 2822 formatted date
+        
+        $message = "Date: $date\r\n";
+        $message .= "From: $fromName <$fromEmail>\r\n";
+        $message .= "To: $to\r\n";
+        $message .= "Subject: $subject\r\n";
+        $message .= "Message-ID: <" . uniqid() . "@" . parse_url('mailto:' . $fromEmail, PHP_URL_HOST) . ">\r\n";
+        $message .= "MIME-Version: 1.0\r\n";
+        
+        if ($attachmentData && $attachmentName) {
+            // Multipart message with attachment
+            $boundary = "----=_Part_" . md5(uniqid());
+            $message .= "Content-Type: multipart/mixed; boundary=\"$boundary\"\r\n\r\n";
+            
+            // Text part
+            $message .= "--$boundary\r\n";
+            $message .= "Content-Type: text/plain; charset=UTF-8\r\n";
+            $message .= "Content-Transfer-Encoding: 8bit\r\n\r\n";
+            $message .= $body . "\r\n\r\n";
+            
+            // Attachment part
+            $message .= "--$boundary\r\n";
+            $message .= "Content-Type: application/pdf; name=\"$attachmentName\"\r\n";
+            $message .= "Content-Transfer-Encoding: base64\r\n";
+            $message .= "Content-Disposition: attachment; filename=\"$attachmentName\"\r\n\r\n";
+            $message .= chunk_split(base64_encode($attachmentData)) . "\r\n";
+            $message .= "--$boundary--\r\n";
+        } else {
+            // Simple text message
+            $message .= "Content-Type: text/plain; charset=UTF-8\r\n";
+            $message .= "Content-Transfer-Encoding: 8bit\r\n\r\n";
+            $message .= $body;
+        }
+        
+        // Append the message to Sent folder with \Seen flag
+        $result = imap_append($connection, $imapConnection . $sentFolder, $message, "\\Seen");
+        
+        if ($result) {
+            error_log("Successfully saved email to Sent folder");
+        } else {
+            error_log("Failed to save email to Sent folder: " . imap_last_error());
+        }
+        
+        imap_close($connection);
+        return $result;
+        
+    } catch (Exception $e) {
+        error_log("Error saving to Sent folder: " . $e->getMessage());
+        return false;
     }
 }
 

@@ -35,6 +35,8 @@ try {
     $statusFilter = $_GET['status'] ?? '';
     $sellerFilter = intval($_GET['seller_id'] ?? 0);
     $receivingStatusFilter = $_GET['receiving_status'] ?? '';
+    $orderTypeFilter = $_GET['order_type'] ?? '';
+    $sortOption = $_GET['sort'] ?? 'created_desc';
     $limit = min(intval($_GET['limit'] ?? 100), 500);
 
     // Updated query to include invoice information
@@ -54,6 +56,8 @@ try {
             po.invoiced,
             po.invoice_file_path,
             po.invoiced_at,
+            po.email_sent_at,
+            po.notes,
             
             -- Supplier info
             s.supplier_name,
@@ -130,7 +134,7 @@ try {
     // Fixed: Corrected column name (was total_ammount)
     $sql .= " GROUP BY po.id, po.order_number, po.status, po.total_amount, po.currency,
                      po.expected_delivery_date, po.actual_delivery_date, po.created_at, po.updated_at,
-                     po.invoiced, po.invoice_file_path, po.invoiced_at,
+                     po.invoiced, po.invoice_file_path, po.invoiced_at, po.email_sent_at, po.notes,
                      s.supplier_name, s.id, u.username";
     
     // apply receiving status filter after grouping
@@ -156,6 +160,27 @@ try {
     // format orders for response with invoice information
     $formattedOrders = [];
     foreach ($orders as $order) {
+        $notes = (string)($order['notes'] ?? '');
+        $normalizedNotes = mb_strtolower($notes, 'UTF-8');
+        $isAutoOrder = strpos($normalizedNotes, 'autocomandă') !== false
+            || strpos($normalizedNotes, 'auto-generată') !== false
+            || strpos($normalizedNotes, 'autocomanda') !== false;
+
+        $orderType = $isAutoOrder ? 'auto' : 'manual';
+        $emailSent = !empty($order['email_sent_at']);
+        $poStatus = $order['po_status'];
+        $autoStatus = $isAutoOrder ? 'pending' : 'manual';
+
+        if ($isAutoOrder) {
+            if ($poStatus === 'cancelled') {
+                $autoStatus = 'failed';
+            } elseif ($emailSent || in_array($poStatus, ['sent', 'confirmed', 'delivered', 'invoiced', 'completed'], true)) {
+                $autoStatus = 'success';
+            } elseif ($poStatus !== 'draft') {
+                $autoStatus = 'processing';
+            }
+        }
+
         $formattedOrders[] = [
             'id' => (int)$order['id'],
             'order_number' => $order['order_number'],
@@ -166,7 +191,11 @@ try {
             'actual_delivery_date' => $order['actual_delivery_date'],
             'created_at' => $order['created_at'],
             'updated_at' => $order['updated_at'],
-            
+            'notes' => $notes,
+            'email_sent_at' => $order['email_sent_at'],
+            'order_type' => $orderType,
+            'auto_order_status' => $autoStatus,
+
             // NEW: Invoice information
             'invoiced' => (bool)$order['invoiced'],
             'invoice_file_path' => $order['invoice_file_path'],
@@ -207,6 +236,34 @@ try {
         ];
     }
     
+    if ($orderTypeFilter === 'auto') {
+        $formattedOrders = array_values(array_filter($formattedOrders, static function ($order) {
+            return $order['order_type'] === 'auto';
+        }));
+    } elseif ($orderTypeFilter === 'manual') {
+        $formattedOrders = array_values(array_filter($formattedOrders, static function ($order) {
+            return $order['order_type'] === 'manual';
+        }));
+    }
+
+    if ($sortOption === 'created_asc') {
+        usort($formattedOrders, static function ($a, $b) {
+            return strcmp($a['created_at'], $b['created_at']);
+        });
+    } elseif ($sortOption === 'type_asc' || $sortOption === 'type_desc') {
+        usort($formattedOrders, static function ($a, $b) use ($sortOption) {
+            if ($a['order_type'] === $b['order_type']) {
+                return strcmp($b['created_at'], $a['created_at']);
+            }
+
+            if ($sortOption === 'type_asc') {
+                return strcmp($a['order_type'], $b['order_type']);
+            }
+
+            return strcmp($b['order_type'], $a['order_type']);
+        });
+    }
+
     // get summary statistics including invoice stats
     $statsStmt = $db->prepare("
         SELECT 

@@ -12,6 +12,20 @@ document.addEventListener('DOMContentLoaded', function() {
         initializePurchaseOrdersExisting();
     }
     initializeReceivingFunctionality();
+
+    const filterIds = ['status', 'seller_id', 'receiving-status-filter', 'order_type_filter', 'order_sort'];
+    filterIds.forEach((id) => {
+        const element = document.getElementById(id);
+        if (!element) {
+            return;
+        }
+        element.addEventListener('change', (event) => {
+            event.preventDefault();
+            if (purchaseOrdersManager && typeof purchaseOrdersManager.handleFilterChange === 'function') {
+                purchaseOrdersManager.handleFilterChange();
+            }
+        });
+    });
 });
 
 // Global variables for stock purchase
@@ -22,15 +36,118 @@ let ordersData = [];
 let currentFilters = {
     status: '',
     seller_id: '',
-    receiving_status: ''
+    receiving_status: '',
+    order_type: '',
+    sort: 'created_desc'
 };
+
+const AUTO_ORDER_TEXTS = {
+    badges: {
+        autoOrder: 'Autocomandă',
+        manual: 'Manuală',
+        success: 'Succes',
+        failed: 'Eșuat',
+        pending: 'În așteptare',
+        processing: 'În procesare'
+    },
+    statuses: {
+        enabled: 'Autocomandă activă',
+        disabled: 'Autocomandă dezactivată',
+        belowMinimum: 'Stoc sub pragul minim',
+        willTrigger: 'Va declanșa autocomanda',
+        noSupplier: 'Fără furnizor',
+        noPrice: 'Fără preț definit'
+    },
+    actions: {
+        test: 'Test autocomandă',
+        configure: 'Configurează',
+        history: 'Istoric',
+        retry: 'Reîncearcă'
+    }
+};
+
+class AutoOrderNotifications {
+    static showNotification(message, type = 'info', icon = '') {
+        const container = document.getElementById('autoOrderNotifications') || AutoOrderNotifications.createContainer();
+        const notification = document.createElement('div');
+        notification.className = `auto-order-notification ${type}`;
+        if (icon) {
+            const iconSpan = document.createElement('span');
+            iconSpan.className = 'notification-icon material-symbols-outlined';
+            iconSpan.textContent = icon;
+            notification.appendChild(iconSpan);
+        }
+        const textSpan = document.createElement('span');
+        textSpan.className = 'notification-text';
+        textSpan.textContent = message;
+        notification.appendChild(textSpan);
+        container.appendChild(notification);
+
+        setTimeout(() => {
+            notification.classList.add('visible');
+        }, 50);
+
+        setTimeout(() => {
+            notification.classList.remove('visible');
+            setTimeout(() => notification.remove(), 300);
+        }, 4000);
+    }
+
+    static createContainer() {
+        const container = document.createElement('div');
+        container.id = 'autoOrderNotifications';
+        container.className = 'auto-order-notifications';
+        document.body.appendChild(container);
+        return container;
+    }
+
+    static showSuccess(message) {
+        this.showNotification(message, 'success', 'check_circle');
+    }
+
+    static showWarning(message) {
+        this.showNotification(message, 'warning', 'warning');
+    }
+
+    static showError(message) {
+        this.showNotification(message, 'error', 'error');
+    }
+
+    static showAutoOrderCreated(orderNumber, productName) {
+        const label = productName ? `${orderNumber} - ${productName}` : orderNumber;
+        this.showNotification(`Autocomandă creată: ${label}`, 'success', 'smart_toy');
+    }
+
+    static showStockLow(productName, currentStock, minStock) {
+        this.showNotification(
+            `Stoc scăzut pentru ${productName}: ${currentStock}/${minStock}`,
+            'warning',
+            'inventory_2'
+        );
+    }
+}
 
 function initializeReceivingFunctionality() {
     purchaseOrdersManager = new PurchaseOrdersReceivingManager();
-    console.log('🚛 Purchase Orders Receiving functionality initialized');
-    // Load the purchase orders table immediately
-    if (purchaseOrdersManager && typeof purchaseOrdersManager.loadPurchaseOrdersWithReceiving === 'function') {
+    console.log('Purchase Orders Receiving functionality initialized');
+    if (!purchaseOrdersManager) {
+        return;
+    }
+
+    if (typeof purchaseOrdersManager.handleFilterChange === 'function') {
+        purchaseOrdersManager.handleFilterChange(false);
+    }
+
+    if (typeof purchaseOrdersManager.loadPurchaseOrdersWithReceiving === 'function') {
         purchaseOrdersManager.loadPurchaseOrdersWithReceiving();
+    }
+
+    if (typeof purchaseOrdersManager.refreshAutoOrderStats === 'function') {
+        purchaseOrdersManager.refreshAutoOrderStats();
+    }
+
+    if (typeof purchaseOrdersManager.loadAutoOrderHistory === 'function') {
+        purchaseOrdersManager.loadAutoOrderHistory();
     }
 }
 
@@ -801,7 +918,6 @@ class PurchaseOrdersReceivingManager {
         }
     }
 
-    // NEW: Updated renderOrderRow with invoice functionality
     renderOrderRow(order) {
         const progressPercent = order.receiving_summary.quantity_progress_percent;
         const hasDiscrepancies = order.discrepancies_summary.has_pending_discrepancies;
@@ -815,7 +931,31 @@ class PurchaseOrdersReceivingManager {
         } else if (qtyDiscrepancy === 'quantity_over' && pendingOver) {
             discrepancyCount = `+${pendingOver}`;
         }
-        
+
+        const isAutoOrder = order.order_type === 'auto';
+        const orderBadges = [];
+        if (isAutoOrder) {
+            orderBadges.push(`<span class="badge badge-auto">${AUTO_ORDER_TEXTS.badges.autoOrder}</span>`);
+            orderBadges.push(`
+                <span class="badge badge-status status-${order.auto_order_status || 'pending'}">
+                    ${this.getAutoOrderStatusLabel(order.auto_order_status)}
+                </span>
+            `);
+        } else {
+            orderBadges.push(`<span class="badge badge-manual">${AUTO_ORDER_TEXTS.badges.manual}</span>`);
+        }
+
+        const autoIndicator = isAutoOrder
+            ? `
+                <div class="auto-order-status-indicator status-${order.auto_order_status || 'pending'}">
+                    <span class="status-dot"></span>
+                    <span class="status-text">${this.getAutoOrderStatusLabel(order.auto_order_status)}</span>
+                </div>
+            `
+            : '';
+
+        const rowClass = isAutoOrder ? 'auto-order-row' : '';
+
         // Updated invoice display logic - show button for all statuses except 'draft'
         let invoiceDisplay = '-';
         if (order.invoiced) {
@@ -843,17 +983,23 @@ class PurchaseOrdersReceivingManager {
                 </button>
             `;
         }
-        
+
         return `
-            <tr data-order-id="${order.id}">
+            <tr data-order-id="${order.id}" class="${rowClass}">
                 <td>
                     <button class="expand-btn" onclick="purchaseOrdersManager.toggleRowExpansion(${order.id})">
                         <span class="material-symbols-outlined">expand_more</span>
                     </button>
                 </td>
                 <td>
-                    <strong>${this.escapeHtml(order.order_number)}</strong>
-                    ${order.invoiced ? '<span class="invoiced-badge">Facturat</span>' : ''}
+                    <div class="order-number-cell">
+                        <div class="order-number-header">
+                            <strong>${this.escapeHtml(order.order_number)}</strong>
+                            ${order.invoiced ? '<span class="invoiced-badge">Facturat</span>' : ''}
+                        </div>
+                        <div class="order-badges">${orderBadges.join('')}</div>
+                        ${autoIndicator}
+                    </div>
                 </td>
                 <td>${this.escapeHtml(order.supplier_name)}</td>
                 <td>${order.total_amount} ${order.currency}</td>
@@ -903,6 +1049,17 @@ class PurchaseOrdersReceivingManager {
                 </td>
             </tr>
         `;
+    }
+
+    getAutoOrderStatusLabel(status) {
+        const map = {
+            success: AUTO_ORDER_TEXTS.badges.success,
+            failed: AUTO_ORDER_TEXTS.badges.failed,
+            pending: AUTO_ORDER_TEXTS.badges.pending,
+            processing: AUTO_ORDER_TEXTS.badges.processing,
+            manual: AUTO_ORDER_TEXTS.badges.manual
+        };
+        return map[status] || AUTO_ORDER_TEXTS.badges.pending;
     }
     // NEW: Updated summary stats to include invoice information
     updateSummaryStats(stats) {
@@ -1014,6 +1171,8 @@ class PurchaseOrdersReceivingManager {
             if (currentFilters.status) params.append('status', currentFilters.status);
             if (currentFilters.seller_id) params.append('seller_id', currentFilters.seller_id);
             if (currentFilters.receiving_status) params.append('receiving_status', currentFilters.receiving_status);
+            if (currentFilters.order_type) params.append('order_type', currentFilters.order_type);
+            if (currentFilters.sort) params.append('sort', currentFilters.sort);
             params.append('limit', '100');
             
             const response = await fetch(`api/receiving/purchase_order_summary.php?${params.toString()}`);
@@ -1174,7 +1333,7 @@ class PurchaseOrdersReceivingManager {
     renderOrdersTable(orders) {
         const tbody = document.getElementById('orders-tbody');
         if (!tbody) return;
-        
+
         if (orders.length === 0) {
             tbody.innerHTML = `
                 <tr>
@@ -1188,16 +1347,168 @@ class PurchaseOrdersReceivingManager {
             `;
             return;
         }
-        
+
         tbody.innerHTML = orders.map(order => this.renderOrderRow(order)).join('');
     }
 
-    handleFilterChange() {
+    async refreshAutoOrderStats() {
+        try {
+            const response = await fetch('api/auto_orders/dashboard.php');
+            const payload = await response.json();
+            if (!payload.success) {
+                throw new Error(payload.message || 'Nu s-au putut încărca statisticile.');
+            }
+            this.renderAutoOrderDashboard(payload.data || {});
+        } catch (error) {
+            console.error('Auto-order dashboard error:', error);
+            AutoOrderNotifications.showWarning('Nu s-au putut încărca statisticile autocomenzii.');
+        }
+    }
+
+    renderAutoOrderDashboard(data) {
+        if (!data) return;
+        const stats = data.statistics || {};
+        const mapping = {
+            totalAutoOrders: stats.totalAutoOrders ?? 0,
+            autoOrdersToday: stats.autoOrdersToday ?? 0,
+            productsAtMinimum: stats.productsAtMinimum ?? 0,
+            failedAutoOrders: stats.failedAutoOrders ?? 0
+        };
+
+        Object.entries(mapping).forEach(([id, value]) => {
+            const element = document.getElementById(id);
+            if (element) {
+                element.textContent = value;
+            }
+        });
+
+        const timelineContainer = document.getElementById('recentAutoOrdersList');
+        if (timelineContainer) {
+            const recentOrders = Array.isArray(data.recentOrders) ? data.recentOrders : [];
+            if (!recentOrders.length) {
+                timelineContainer.innerHTML = '<div class="empty-auto-orders">Nu există autocomenzi în ultimele 7 zile.</div>';
+            } else {
+                timelineContainer.innerHTML = recentOrders.map(item => this.renderRecentAutoOrder(item)).join('');
+            }
+        }
+
+        const attentionContainer = document.getElementById('attentionProductsList');
+        if (attentionContainer) {
+            const products = Array.isArray(data.attentionProducts) ? data.attentionProducts : [];
+            if (!products.length) {
+                attentionContainer.innerHTML = '<div class="empty-auto-orders">Nu există produse care să necesite atenție.</div>';
+            } else {
+                attentionContainer.innerHTML = products.map(item => this.renderAttentionProduct(item)).join('');
+            }
+        }
+    }
+
+    renderRecentAutoOrder(order) {
+        const statusClass = `status-${order.status?.toLowerCase() || 'pending'}`;
+        const autoStatus = order.email_sent_at ? AUTO_ORDER_TEXTS.badges.success : AUTO_ORDER_TEXTS.badges.pending;
+        const createdAt = order.created_at ? new Date(order.created_at).toLocaleString('ro-RO') : '-';
+        const supplier = order.supplier_name ? this.escapeHtml(order.supplier_name) : 'Furnizor necunoscut';
+        const products = order.product_names ? this.escapeHtml(order.product_names) : 'Produs necunoscut';
+        return `
+            <div class="timeline-item ${statusClass}">
+                <div class="timeline-header">
+                    <span class="order-number">${this.escapeHtml(order.order_number || '')}</span>
+                    <span class="timeline-status">${autoStatus}</span>
+                </div>
+                <div class="timeline-meta">
+                    <span>${createdAt}</span>
+                    <span>${supplier}</span>
+                </div>
+                <div class="timeline-products">${products}</div>
+            </div>
+        `;
+    }
+
+    renderAttentionProduct(product) {
+        const productName = this.escapeHtml(product.name || 'Produs necunoscut');
+        const sku = this.escapeHtml(product.sku || 'N/A');
+        const supplier = this.escapeHtml(product.supplier_name || 'Fără furnizor');
+        const stock = Number(product.quantity ?? 0);
+        const minimum = Number(product.min_stock_level ?? 0);
+        return `
+            <div class="attention-item">
+                <div class="attention-details">
+                    <strong>${productName}</strong>
+                    <span class="attention-meta">SKU: ${sku}</span>
+                    <span class="attention-meta">${supplier}</span>
+                </div>
+                <div class="attention-stock">${stock} / ${minimum}</div>
+            </div>
+        `;
+    }
+
+    async loadAutoOrderHistory() {
+        const fromInput = document.getElementById('historyDateFrom');
+        const toInput = document.getElementById('historyDateTo');
+        const statusInput = document.getElementById('historyStatus');
+
+        const params = new URLSearchParams();
+        if (fromInput?.value) params.append('date_from', fromInput.value);
+        if (toInput?.value) params.append('date_to', toInput.value);
+        if (statusInput?.value) params.append('status', statusInput.value);
+
+        try {
+            const response = await fetch(`api/auto_orders/history.php?${params.toString()}`);
+            const payload = await response.json();
+            if (!payload.success) {
+                throw new Error(payload.message || 'Nu s-a putut încărca istoricul.');
+            }
+            this.renderAutoOrderHistory(payload.data || []);
+        } catch (error) {
+            console.error('Auto-order history error:', error);
+            const container = document.getElementById('autoOrderHistoryList');
+            if (container) {
+                container.innerHTML = '<div class="history-error">Istoricul autocomenzilor nu poate fi afișat momentan.</div>';
+            }
+        }
+    }
+
+    renderAutoOrderHistory(entries) {
+        const container = document.getElementById('autoOrderHistoryList');
+        if (!container) return;
+
+        if (!entries.length) {
+            container.innerHTML = '<div class="history-empty">Nu există înregistrări în intervalul selectat.</div>';
+            return;
+        }
+
+        container.innerHTML = entries.map((entry) => {
+            const statusClass = `status-${entry.auto_order_status || 'pending'}`;
+            const createdAt = entry.created_at ? new Date(entry.created_at).toLocaleString('ro-RO') : '-';
+            const total = entry.total_amount ? Number(entry.total_amount).toFixed(2) : '0.00';
+            const products = this.escapeHtml(entry.products || '');
+            return `
+                <div class="history-item ${statusClass}">
+                    <div class="history-item-header">
+                        <span class="history-order">${this.escapeHtml(entry.order_number || '')}</span>
+                        <span class="history-status">${this.getAutoOrderStatusLabel(entry.auto_order_status)}</span>
+                    </div>
+                    <div class="history-meta">
+                        <span>${createdAt}</span>
+                        <span>${this.escapeHtml(entry.supplier_name || 'Furnizor necunoscut')}</span>
+                        <span>Total: ${total} ${this.escapeHtml(entry.currency || 'RON')}</span>
+                    </div>
+                    <div class="history-products">${products}</div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    handleFilterChange(shouldReload = true) {
         currentFilters.status = document.getElementById('status')?.value || '';
         currentFilters.seller_id = document.getElementById('seller_id')?.value || '';
         currentFilters.receiving_status = document.getElementById('receiving-status-filter')?.value || '';
-        
-        this.loadPurchaseOrdersWithReceiving();
+        currentFilters.order_type = document.getElementById('order_type_filter')?.value || '';
+        currentFilters.sort = document.getElementById('order_sort')?.value || 'created_desc';
+
+        if (shouldReload) {
+            this.loadPurchaseOrdersWithReceiving();
+        }
     }
 
     async toggleRowExpansion(orderId) {
@@ -1395,7 +1706,15 @@ function clearAllFilters() {
     document.getElementById('status').value = '';
     document.getElementById('seller_id').value = '';
     document.getElementById('receiving-status-filter').value = '';
-    
+    const orderType = document.getElementById('order_type_filter');
+    const orderSort = document.getElementById('order_sort');
+    if (orderType) {
+        orderType.value = '';
+    }
+    if (orderSort) {
+        orderSort.value = 'created_desc';
+    }
+
     if (purchaseOrdersManager) {
         purchaseOrdersManager.handleFilterChange();
     }

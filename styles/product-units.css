@@ -550,6 +550,104 @@
     max-width: 1200px;
 }
 
+.test-results-container {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 16px;
+}
+
+.validation-section,
+.email-preview-section,
+.simulation-section {
+    background: var(--container-background);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.validation-list,
+.simulation-details {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.validation-item {
+    padding: 10px;
+    border-radius: 8px;
+    background: #f5f9ff;
+    font-size: 0.9rem;
+}
+
+.validation-item.validation-success {
+    background: #e8f5e9;
+    color: #1b5e20;
+}
+
+.validation-item.validation-error {
+    background: #ffebee;
+    color: #b71c1c;
+}
+
+.validation-item.validation-warning {
+    background: #fff8e1;
+    color: #bf360c;
+}
+
+.validation-item.validation-info {
+    background: #ede7f6;
+    color: #4527a0;
+}
+
+.email-preview-container {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    font-size: 0.9rem;
+}
+
+.email-content {
+    padding: 10px;
+    border-radius: 6px;
+    background: rgba(0, 0, 0, 0.04);
+    max-height: 220px;
+    overflow-y: auto;
+}
+
+.simulation-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 6px 0;
+    border-bottom: 1px dashed rgba(0, 0, 0, 0.1);
+    font-size: 0.9rem;
+}
+
+.simulation-row:last-child {
+    border-bottom: none;
+}
+
+.simulation-label {
+    font-weight: 600;
+}
+
+.simulation-value {
+    color: var(--text-secondary);
+}
+
+.btn.btn-warning {
+    background: #f9a825;
+    color: #fff;
+    border: none;
+}
+
+.btn.btn-warning:hover {
+    background: #f57f17;
+}
+
 .email-template-modal {
     display: flex;
     flex-direction: column;
@@ -1499,4 +1597,134 @@ option {
 .seller-item-details {
     font-size: 0.8rem;
     color: var(--text-secondary);
+}
+
+.stock-row {
+    background: rgba(33, 150, 243, 0.05);
+    border-left: 3px solid rgba(33, 150, 243, 0.7);
+}
+
+.stock-row td {
+    vertical-align: top;
+}
+
+.stock-product-info {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.stock-product-info small {
+    color: var(--text-secondary);
+}
+
+.auto-order-status {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.status-indicator {
+    font-size: 0.75rem;
+    padding: 4px 8px;
+    border-radius: 999px;
+    background: #e3f2fd;
+    color: #0d47a1;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.status-indicator.status-enabled {
+    background: #e8f5e9;
+    color: #1b5e20;
+}
+
+.status-indicator.status-disabled {
+    background: #eceff1;
+    color: #37474f;
+}
+
+.status-indicator.status-warning {
+    background: #fff8e1;
+    color: #bf360c;
+}
+
+.status-indicator.status-ready {
+    background: #ede7f6;
+    color: #4527a0;
+}
+
+.status-indicator.status-error {
+    background: #ffebee;
+    color: #b71c1c;
+}
+
+.status-indicator.status-last-order {
+    background: #f5f5f5;
+    color: #424242;
+}
+
+.stock-level-warning {
+    color: #b71c1c;
+    font-weight: 600;
+}
+
+.btn-test-auto-order {
+    background: #2196f3;
+    color: #fff;
+    border: none;
+}
+
+.btn-test-auto-order:hover {
+    background: #1976d2;
+}
+
+.action-group {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.action-group .btn span + span {
+    margin-left: 4px;
+}
+
+[data-theme="dark"] .stock-row {
+    background: rgba(13, 71, 161, 0.2);
+    border-color: rgba(144, 202, 249, 0.4);
+}
+
+[data-theme="dark"] .auto-order-status .status-indicator {
+    background: rgba(144, 202, 249, 0.12);
+    color: #90caf9;
+}
+
+[data-theme="dark"] .status-indicator.status-enabled {
+    background: rgba(102, 187, 106, 0.2);
+    color: #a5d6a7;
+}
+
+[data-theme="dark"] .status-indicator.status-disabled {
+    background: rgba(176, 190, 197, 0.2);
+    color: #cfd8dc;
+}
+
+[data-theme="dark"] .status-indicator.status-warning {
+    background: rgba(255, 183, 77, 0.18);
+    color: #ffcc80;
+}
+
+[data-theme="dark"] .status-indicator.status-ready {
+    background: rgba(206, 147, 216, 0.18);
+    color: #ce93d8;
+}
+
+[data-theme="dark"] .status-indicator.status-error {
+    background: rgba(239, 83, 80, 0.18);
+    color: #ef9a9a;
+}
+
+[data-theme="dark"] .status-indicator.status-last-order {
+    background: rgba(224, 224, 224, 0.08);
+    color: #e0e0e0;
 }

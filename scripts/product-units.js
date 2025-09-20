@@ -10,6 +10,18 @@
 
 const baseUrl = window.APP_CONFIG?.baseUrl || '';
 
+const MESSAGES = {
+    templateSaved: 'Template salvat cu succes',
+    templateLoadError: 'Eroare la încărcarea template-ului',
+    testEmailSent: 'Email test trimis cu succes',
+    validationFailed: 'Template conține erori de validare',
+    autoSaved: 'Salvare automată completă',
+    unsavedChanges: 'Aveți modificări nesalvate'
+};
+
+const EMAIL_TEMPLATE_REQUIRED_VARIABLES = ['COMPANY_NAME', 'SUPPLIER_NAME', 'SUPPLIER_EMAIL', 'ORDER_NUMBER', 'PRODUCT_NAME', 'ORDER_QUANTITY'];
+const EMAIL_TEMPLATE_RECOMMENDED_VARIABLES = ['COMPANY_ADDRESS', 'COMPANY_PHONE', 'COMPANY_EMAIL', 'DELIVERY_DATE', 'ORDER_TOTAL', 'UNIT_PRICE', 'TOTAL_PRICE', 'UNIT_MEASURE', 'CURRENT_DATE', 'CURRENT_TIME', 'SUPPLIER_PHONE', 'PRODUCT_CODE'];
+
 // ===== GLOBAL VARIABLES AND CONFIGURATION =====
 const ProductUnitsApp = {
     // Configuration
@@ -22,13 +34,14 @@ const ProductUnitsApp = {
             recalculateWeight: `${baseUrl}/api/recalculate_weight.php`,
             stockSettings: `${baseUrl}/api/inventory_settings.php`,
             barrelDimensions: `${baseUrl}/api/barrel_dimensions.php`,
-            labelTemplates: `${baseUrl}/api/label_templates.php`
+            labelTemplates: `${baseUrl}/api/label_templates.php`,
+            emailTemplates: `${baseUrl}/api/email_templates.php`
         },
         debounceDelay: 300,
         refreshInterval: 30000, // 30 seconds
         maxRetries: 3,
         localStorageKeys: {
-            autoOrderEmailTemplate: 'wmsAutoOrderEmailTemplate'
+            autoOrderEmailDraft: 'wmsAutoOrderEmailDraft'
         }
     },
 
@@ -58,8 +71,35 @@ const ProductUnitsApp = {
         labelStats: { total: 0, with_label: 0, without_label: 0 },
         labelPagination: { limit: 50, offset: 0, total: 0, has_next: false },
         emailTemplate: {
+            templateId: null,
+            templateName: 'Șablon autocomandă personalizat',
             subject: '',
-            body: ''
+            body: '',
+            isActive: true,
+            isDefault: false,
+            updatedAt: null,
+            createdAt: null,
+            createdBy: null,
+            updatedByName: '',
+            variablesUsed: [],
+            missingRequired: [],
+            missingRecommended: [],
+            validation: { errors: [], warnings: [], success: [] },
+            sampleData: {},
+            availableVariables: {},
+            history: [],
+            autoSaveStatus: 'idle',
+            unsavedChanges: false,
+            draftSavedAt: null
+        },
+        autoOrderTest: {
+            isOpen: false,
+            productId: null,
+            productName: '',
+            validations: [],
+            emailPreview: { subject: '', body: '', missingVariables: [] },
+            simulation: {},
+            lastRun: null
         }
     },
 
@@ -69,13 +109,9 @@ const ProductUnitsApp = {
     // Initialize the application
     init() {
         this.cacheElements();
+        this.enhanceEmailTemplateBuilderUI();
+        this.setupBeforeUnloadHandler();
         this.bindEvents();
-        const savedTemplate = this.getSavedEmailTemplate();
-        if (savedTemplate) {
-            this.populateEmailTemplateFields(savedTemplate);
-        } else {
-            this.populateEmailTemplateFields(this.state.emailTemplate);
-        }
         this.initializeTabs();
         this.loadInitialData();
         this.setupPeriodicRefresh();
@@ -198,6 +234,217 @@ const ProductUnitsApp = {
         this.elements.productResults = this.elements.productSearchResults;
     },
 
+    enhanceEmailTemplateBuilderUI() {
+        if (!this.elements.emailTemplateForm) {
+            return;
+        }
+
+        const form = this.elements.emailTemplateForm;
+
+        // Template name field
+        if (!form.querySelector('#autoOrderTemplateName')) {
+            const subjectGroup = form.querySelector('.form-group');
+            if (subjectGroup) {
+                const nameGroup = document.createElement('div');
+                nameGroup.className = 'form-group';
+                nameGroup.innerHTML = `
+                    <label for="autoOrderTemplateName">Nume Template</label>
+                    <input type="text" id="autoOrderTemplateName" name="auto_order_template_name" placeholder="Șablon autocomandă personalizat" autocomplete="off">
+                    <small class="form-text" id="templateNameHint">Acest nume este utilizat pentru identificarea șabloanelor salvate.</small>
+                `;
+                form.insertBefore(nameGroup, subjectGroup);
+            }
+        }
+
+        this.elements.emailTemplateName = document.getElementById('autoOrderTemplateName');
+
+        // Metadata bar
+        if (!document.getElementById('emailTemplateMetadata')) {
+            const metadata = document.createElement('div');
+            metadata.id = 'emailTemplateMetadata';
+            metadata.className = 'template-metadata';
+            metadata.innerHTML = `
+                <div class="metadata-item" id="templateUpdatedAt">Ultima actualizare: -</div>
+                <div class="metadata-item" id="templateUpdatedBy">Actualizat de: -</div>
+                <div class="metadata-item" id="templateCreatedAt">Creat: -</div>
+            `;
+            form.prepend(metadata);
+        }
+
+        this.elements.templateUpdatedAt = document.getElementById('templateUpdatedAt');
+        this.elements.templateUpdatedBy = document.getElementById('templateUpdatedBy');
+        this.elements.templateCreatedAt = document.getElementById('templateCreatedAt');
+
+        // Subject char count
+        if (!document.getElementById('subjectCharCount') && this.elements.emailTemplateSubject) {
+            const counter = document.createElement('div');
+            counter.id = 'subjectCharCount';
+            counter.className = 'char-count';
+            counter.textContent = '0 caractere';
+            this.elements.emailTemplateSubject.parentElement?.appendChild(counter);
+        }
+        this.elements.subjectCharCount = document.getElementById('subjectCharCount');
+
+        // Unsaved indicator in header
+        if (this.elements.emailTemplateModal) {
+            const header = this.elements.emailTemplateModal.querySelector('.modal-header');
+            if (header && !document.getElementById('unsavedChangesBadge')) {
+                const badge = document.createElement('span');
+                badge.id = 'unsavedChangesBadge';
+                badge.className = 'unsaved-indicator';
+                badge.textContent = MESSAGES.unsavedChanges;
+                badge.style.display = 'none';
+                header.appendChild(badge);
+            }
+        }
+        this.elements.unsavedChangesBadge = document.getElementById('unsavedChangesBadge');
+
+        // Auto save status indicator
+        const actionsRight = form.querySelector('.template-actions-right');
+        if (actionsRight && !document.getElementById('autoSaveStatus')) {
+            const status = document.createElement('span');
+            status.id = 'autoSaveStatus';
+            status.className = 'autosave-status';
+            status.textContent = '';
+            actionsRight.insertBefore(status, actionsRight.firstChild);
+        }
+        this.elements.autoSaveStatus = document.getElementById('autoSaveStatus');
+
+        // Test template button
+        if (actionsRight && !document.getElementById('testEmailTemplate')) {
+            const testButton = document.createElement('button');
+            testButton.type = 'button';
+            testButton.className = 'btn btn-secondary';
+            testButton.id = 'testEmailTemplate';
+            testButton.innerHTML = '<span class="material-symbols-outlined">send</span>Testează Template';
+            actionsRight.appendChild(testButton);
+        }
+        this.elements.testEmailTemplateBtn = document.getElementById('testEmailTemplate');
+
+        // Duplicate and delete buttons
+        if (actionsRight && !document.getElementById('duplicateTemplate')) {
+            const duplicateBtn = document.createElement('button');
+            duplicateBtn.type = 'button';
+            duplicateBtn.className = 'btn btn-ghost';
+            duplicateBtn.id = 'duplicateTemplate';
+            duplicateBtn.innerHTML = '<span class="material-symbols-outlined">content_copy</span>Duplică';
+            actionsRight.appendChild(duplicateBtn);
+        }
+        if (actionsRight && !document.getElementById('deleteTemplate')) {
+            const deleteBtn = document.createElement('button');
+            deleteBtn.type = 'button';
+            deleteBtn.className = 'btn btn-danger';
+            deleteBtn.id = 'deleteTemplate';
+            deleteBtn.innerHTML = '<span class="material-symbols-outlined">delete</span>Șterge';
+            actionsRight.appendChild(deleteBtn);
+        }
+        this.elements.duplicateTemplateBtn = document.getElementById('duplicateTemplate');
+        this.elements.deleteTemplateBtn = document.getElementById('deleteTemplate');
+
+        // Saved template dropdown container
+        if (this.elements.loadEmailTemplateBtn && !document.getElementById('savedTemplatesDropdown')) {
+            const dropdownWrapper = document.createElement('div');
+            dropdownWrapper.className = 'template-dropdown-wrapper';
+            const dropdown = document.createElement('select');
+            dropdown.id = 'savedTemplatesDropdown';
+            dropdown.className = 'template-dropdown';
+            dropdown.innerHTML = '<option value="">Selectează un template salvat</option>';
+            dropdownWrapper.appendChild(dropdown);
+            this.elements.loadEmailTemplateBtn.replaceWith(dropdownWrapper);
+        }
+        this.elements.loadTemplateDropdown = document.getElementById('savedTemplatesDropdown');
+
+        // Validation list container
+        if (!document.getElementById('templateValidationList')) {
+            const previewSection = form.querySelector('.preview-section');
+            if (previewSection) {
+                const validationBox = document.createElement('div');
+                validationBox.className = 'template-validation';
+                validationBox.innerHTML = `
+                    <div class="validation-header">Validări template</div>
+                    <ul id="templateValidationList" class="validation-list"></ul>
+                `;
+                previewSection.appendChild(validationBox);
+            }
+        }
+        this.elements.templateValidationList = document.getElementById('templateValidationList');
+
+        // Missing variables preview area
+        if (!document.getElementById('templatePreviewMissing')) {
+            const preview = this.elements.emailTemplatePreview;
+            if (preview) {
+                const missing = document.createElement('div');
+                missing.id = 'templatePreviewMissing';
+                missing.className = 'preview-missing';
+                preview.parentElement?.appendChild(missing);
+            }
+        }
+        this.elements.templatePreviewMissing = document.getElementById('templatePreviewMissing');
+
+        // History sidebar
+        if (!document.getElementById('templateHistoryPanel')) {
+            const modalBody = this.elements.emailTemplateModal?.querySelector('.email-template-body');
+            if (modalBody) {
+                const historyPanel = document.createElement('aside');
+                historyPanel.id = 'templateHistoryPanel';
+                historyPanel.className = 'template-history-panel';
+                historyPanel.innerHTML = `
+                    <h3>Istoric șabloane</h3>
+                    <div id="templateHistoryEmpty" class="history-empty">Nu există alte șabloane salvate.</div>
+                    <ul id="templateHistoryList" class="history-list"></ul>
+                `;
+                modalBody.appendChild(historyPanel);
+            }
+        }
+        this.elements.templateHistoryPanel = document.getElementById('templateHistoryPanel');
+        this.elements.templateHistoryList = document.getElementById('templateHistoryList');
+        this.elements.templateHistoryEmpty = document.getElementById('templateHistoryEmpty');
+
+        // Auto order test modal
+        if (!document.getElementById('autoOrderTestModal')) {
+            const modal = document.createElement('div');
+            modal.id = 'autoOrderTestModal';
+            modal.className = 'modal';
+            modal.innerHTML = `
+                <div class="modal-content auto-order-test">
+                    <div class="modal-header">
+                        <h2 id="autoOrderTestTitle">Test Autocomandă</h2>
+                        <button type="button" class="modal-close" data-role="auto-order-close">
+                            <span class="material-symbols-outlined">close</span>
+                        </button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="test-results">
+                            <div class="validation-checks">
+                                <h3>Verificări validare</h3>
+                                <ul id="autoOrderValidationList" class="validation-check-list"></ul>
+                            </div>
+                            <div class="email-preview">
+                                <h3>Previzualizare email</h3>
+                                <div id="autoOrderEmailPreview" class="auto-order-email-preview"></div>
+                            </div>
+                            <div class="simulation-summary">
+                                <h3>Rezumat simulare</h3>
+                                <div id="autoOrderSimulationSummary" class="simulation-summary-content"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-role="auto-order-close">Închide</button>
+                        <button type="button" class="btn btn-primary" id="sendAutoOrderTestEmail">Trimite email test</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+        }
+        this.elements.autoOrderTestModal = document.getElementById('autoOrderTestModal');
+        this.elements.autoOrderValidationList = document.getElementById('autoOrderValidationList');
+        this.elements.autoOrderEmailPreview = document.getElementById('autoOrderEmailPreview');
+        this.elements.autoOrderSimulationSummary = document.getElementById('autoOrderSimulationSummary');
+        this.elements.autoOrderTestTitle = document.getElementById('autoOrderTestTitle');
+        this.elements.sendAutoOrderTestEmail = document.getElementById('sendAutoOrderTestEmail');
+    },
+
     // Bind all event listeners
     bindEvents() {
         // Tab switching
@@ -277,8 +524,24 @@ const ProductUnitsApp = {
             this.elements.emailTemplateBody.addEventListener('drop', (e) => this.handleVariableDrop(e, this.elements.emailTemplateBody));
         }
 
-        if (this.elements.loadEmailTemplateBtn) {
-            this.elements.loadEmailTemplateBtn.addEventListener('click', () => this.restoreSavedEmailTemplate());
+        if (this.elements.emailTemplateName) {
+            this.elements.emailTemplateName.addEventListener('input', () => this.handleEmailTemplateInput());
+        }
+
+        if (this.elements.loadTemplateDropdown) {
+            this.elements.loadTemplateDropdown.addEventListener('change', (e) => this.handleSavedTemplateSelection(e));
+        }
+
+        if (this.elements.testEmailTemplateBtn) {
+            this.elements.testEmailTemplateBtn.addEventListener('click', () => this.testEmailTemplate());
+        }
+
+        if (this.elements.duplicateTemplateBtn) {
+            this.elements.duplicateTemplateBtn.addEventListener('click', () => this.duplicateEmailTemplate());
+        }
+
+        if (this.elements.deleteTemplateBtn) {
+            this.elements.deleteTemplateBtn.addEventListener('click', () => this.deleteEmailTemplate());
         }
 
         if (this.elements.barrelDimensionSelect) {
@@ -307,6 +570,32 @@ const ProductUnitsApp = {
                 }
             }
         });
+
+        if (this.elements.templateHistoryList) {
+            this.elements.templateHistoryList.addEventListener('click', (event) => {
+                const item = event.target.closest('[data-template-id]');
+                if (!item) return;
+                const templateId = parseInt(item.dataset.templateId, 10);
+                if (Number.isNaN(templateId)) return;
+                this.loadTemplateFromHistory(templateId);
+            });
+        }
+
+        if (this.elements.autoOrderTestModal) {
+            this.elements.autoOrderTestModal.addEventListener('click', (event) => {
+                if (event.target === this.elements.autoOrderTestModal || event.target?.dataset?.role === 'auto-order-close' || event.target.closest?.('[data-role="auto-order-close"]')) {
+                    this.closeAutoOrderTestModal();
+                }
+            });
+        }
+
+        if (this.elements.sendAutoOrderTestEmail) {
+            this.elements.sendAutoOrderTestEmail.addEventListener('click', () => {
+                if (this.state.autoOrderTest.productId) {
+                    this.sendAutoOrderTestEmail(this.state.autoOrderTest.productId);
+                }
+            });
+        }
 
         // Filter events
         if (this.elements.productFilter) {
@@ -360,6 +649,20 @@ const ProductUnitsApp = {
             this.elements.stockSettingsForm.addEventListener('submit', (e) => {
                 e.preventDefault();
                 this.saveStockSettings();
+            });
+        }
+
+        if (this.elements.stockSettingsBody) {
+            this.elements.stockSettingsBody.addEventListener('click', (event) => {
+                const testButton = event.target.closest('[data-action="test-auto-order"]');
+                if (testButton) {
+                    const productId = parseInt(testButton.dataset.productId, 10);
+                    const productName = testButton.dataset.productName || '';
+                    if (!Number.isNaN(productId)) {
+                        this.testAutoOrderForProduct(productId, productName);
+                    }
+                    return;
+                }
             });
         }
 
@@ -569,6 +872,8 @@ const ProductUnitsApp = {
             if (e.key === 'Escape') {
                 if (this.elements.emailTemplateModal && this.elements.emailTemplateModal.style.display === 'block') {
                     this.closeEmailTemplateBuilder();
+                } else if (this.elements.autoOrderTestModal && this.elements.autoOrderTestModal.style.display === 'block') {
+                    this.closeAutoOrderTestModal();
                 } else if (this.elements.stockSettingsModal && this.elements.stockSettingsModal.style.display === 'block') {
                     this.closeStockModal();
                 } else {
@@ -645,10 +950,18 @@ const ProductUnitsApp = {
 
     openEmailTemplateBuilder() {
         if (!this.elements.emailTemplateModal) return;
+
         this.clearEmailTemplateValidation();
+        this.updateUnsavedChangesIndicator(false);
+        this.updateAutoSaveStatus('idle');
         this.populateEmailTemplateFields(this.state.emailTemplate);
+
         this.elements.emailTemplateModal.style.display = 'block';
         document.body.style.overflow = 'hidden';
+
+        this.startTemplateAutoSaveInterval();
+        this.loadEmailTemplateFromServer();
+
         requestAnimationFrame(() => {
             if (this.elements.emailTemplateSubject) {
                 this.elements.emailTemplateSubject.focus();
@@ -658,23 +971,46 @@ const ProductUnitsApp = {
 
     closeEmailTemplateBuilder() {
         if (!this.elements.emailTemplateModal) return;
+
         this.elements.emailTemplateModal.style.display = 'none';
         document.body.style.overflow = '';
+        if (this.hasUnsavedEmailChanges()) {
+            this.saveTemplateDraft();
+        }
         this.clearEmailTemplateValidation();
+        this.stopTemplateAutoSaveInterval();
     },
 
-    populateEmailTemplateFields(template = { subject: '', body: '' }) {
-        const subject = template.subject || '';
-        const body = template.body || '';
+    populateEmailTemplateFields(template = {}) {
+        const subject = template.subject ?? template.subject_template ?? '';
+        const body = template.body ?? template.body_template ?? '';
+        const templateName = template.templateName ?? template.template_name ?? 'Șablon autocomandă personalizat';
+
+        if (this.elements.emailTemplateName) {
+            this.elements.emailTemplateName.value = templateName;
+        }
+
         if (this.elements.emailTemplateSubject) {
             this.elements.emailTemplateSubject.value = subject;
         }
+
         if (this.elements.emailTemplateBody) {
             this.elements.emailTemplateBody.value = body;
         }
+
+        this.state.emailTemplate.templateName = templateName;
         this.state.emailTemplate.subject = subject;
         this.state.emailTemplate.body = body;
+        this.state.emailTemplate.templateId = template.templateId ?? template.template_id ?? this.state.emailTemplate.templateId;
+        this.state.emailTemplate.isActive = template.isActive ?? template.is_active ?? true;
+        this.state.emailTemplate.isDefault = template.isDefault ?? template.is_default ?? false;
+        this.state.emailTemplate.updatedAt = template.updatedAt ?? template.updated_at ?? null;
+        this.state.emailTemplate.createdAt = template.createdAt ?? template.created_at ?? null;
+        this.state.emailTemplate.variablesUsed = template.variablesUsed ?? template.variables_used ?? [];
+
+        this.updateSubjectCharCount();
         this.updateEmailPreview();
+        this.validateEmailTemplate();
     },
 
     handleEmailTemplateInput() {
@@ -684,73 +1020,444 @@ const ProductUnitsApp = {
                 this.setFieldError(this.elements.emailTemplateSubject, this.elements.emailSubjectError);
             }
         }
+
         if (this.elements.emailTemplateBody) {
             this.state.emailTemplate.body = this.elements.emailTemplateBody.value;
             if (this.elements.emailTemplateBody.value.trim()) {
                 this.setFieldError(this.elements.emailTemplateBody, this.elements.emailBodyError);
             }
         }
+
+        if (this.elements.emailTemplateName) {
+            this.state.emailTemplate.templateName = this.elements.emailTemplateName.value;
+        }
+
+        this.state.emailTemplate.unsavedChanges = true;
+        this.updateUnsavedChangesIndicator(true);
+        this.updateAutoSaveStatus('pending');
+        this.startTemplateAutoSaveInterval();
+        this.updateSubjectCharCount();
         this.updateEmailPreview();
+        this.validateEmailTemplate();
     },
 
     updateEmailPreview() {
         if (!this.elements.emailTemplatePreview) return;
-        const { subject, body } = this.state.emailTemplate;
+
+        const { subject, body, sampleData } = this.state.emailTemplate;
 
         if (!subject && !body) {
             this.elements.emailTemplatePreview.innerHTML = '<p class="preview-empty">Completează subiectul și conținutul pentru a vedea previzualizarea.</p>';
+            if (this.elements.templatePreviewMissing) {
+                this.elements.templatePreviewMissing.textContent = '';
+            }
             return;
         }
 
-        const highlightVariables = (text) => {
-            if (!text) return '';
-            const escaped = this.escapeHtml(text);
-            return escaped
-                .replace(/(\{\{[^}]+\}\})/g, '<span class="preview-variable">$1</span>')
-                .replace(/\n/g, '<br>');
+        const renderText = (text) => {
+            if (!text) {
+                return '';
+            }
+            const replaced = this.replaceTemplateVariables(text, sampleData);
+            return this.escapeHtml(replaced).replace(/\n/g, '<br>');
         };
 
-        const formattedSubject = subject ? highlightVariables(subject) : '<em>Fără subiect</em>';
-        const formattedBody = body ? highlightVariables(body) : '<em>Fără conținut</em>';
+        const previewSubject = subject ? renderText(subject) : '<em>Fără subiect</em>';
+        const previewBody = body ? renderText(body) : '<em>Fără conținut</em>';
 
         this.elements.emailTemplatePreview.innerHTML = `
-            <div class="preview-subject"><strong>Subiect:</strong> ${formattedSubject}</div>
-            <div class="preview-body">${formattedBody}</div>
+            <div class="preview-subject"><strong>Subiect:</strong> ${previewSubject}</div>
+            <div class="preview-body">${previewBody}</div>
         `;
+
+        const missing = this.detectUnreplacedVariables(`${previewSubject} ${previewBody}`);
+        if (this.elements.templatePreviewMissing) {
+            if (missing.length) {
+                this.elements.templatePreviewMissing.innerHTML = `Variabile nerecunoscute: ${missing.map(v => `<span class="missing-variable">${this.escapeHtml(v)}</span>`).join(', ')}`;
+            } else {
+                this.elements.templatePreviewMissing.textContent = '';
+            }
+        }
     },
 
-    getSavedEmailTemplate() {
-        try {
-            if (typeof localStorage === 'undefined') {
-                return null;
+    replaceTemplateVariables(text, sampleData = {}) {
+        if (!text) {
+            return '';
+        }
+        return text.replace(/\{\{\s*([A-Z0-9_]+)\s*\}\}/gi, (match, variable) => {
+            const key = (variable || '').trim().toUpperCase();
+            if (key && Object.prototype.hasOwnProperty.call(sampleData, key)) {
+                const value = sampleData[key];
+                return value !== null && value !== undefined ? String(value) : '';
             }
-            const key = this.config.localStorageKeys.autoOrderEmailTemplate;
-            const saved = localStorage.getItem(key);
-            if (!saved) return null;
-            const parsed = JSON.parse(saved);
-            return {
-                subject: parsed.subject || '',
-                body: parsed.body || ''
-            };
+            return `{{${key}}}`;
+        });
+    },
+
+    detectUnreplacedVariables(text) {
+        if (!text) {
+            return [];
+        }
+        const matches = text.match(/\{\{\s*[A-Z0-9_]+\s*\}\}/gi);
+        return matches ? Array.from(new Set(matches.map((token) => token.replace(/\s+/g, '').toUpperCase()))) : [];
+    },
+
+    updateSubjectCharCount() {
+        if (!this.elements.subjectCharCount || !this.elements.emailTemplateSubject) {
+            return;
+        }
+        const count = this.elements.emailTemplateSubject.value.length;
+        this.elements.subjectCharCount.textContent = `${count} caractere`;
+    },
+
+    updateUnsavedChangesIndicator(visible) {
+        if (!this.elements.unsavedChangesBadge) return;
+        this.elements.unsavedChangesBadge.style.display = visible ? 'inline-flex' : 'none';
+    },
+
+    updateAutoSaveStatus(status) {
+        this.state.emailTemplate.autoSaveStatus = status;
+        if (!this.elements.autoSaveStatus) {
+            return;
+        }
+
+        const labels = {
+            idle: '',
+            pending: 'Modificări în curs...',
+            saving: 'Se salvează template-ul...',
+            saved: MESSAGES.autoSaved,
+            error: 'Eroare la salvarea template-ului',
+            loaded: 'Template încărcat'
+        };
+        this.elements.autoSaveStatus.textContent = labels[status] || '';
+    },
+
+    startTemplateAutoSaveInterval() {
+        if (this.templateAutoSaveInterval) {
+            return;
+        }
+        this.templateAutoSaveInterval = setInterval(() => {
+            if (this.hasUnsavedEmailChanges()) {
+                this.saveTemplateDraft();
+            }
+        }, 30000);
+    },
+
+    stopTemplateAutoSaveInterval() {
+        if (this.templateAutoSaveInterval) {
+            clearInterval(this.templateAutoSaveInterval);
+            this.templateAutoSaveInterval = null;
+        }
+    },
+
+    hasUnsavedEmailChanges() {
+        return !!this.state.emailTemplate.unsavedChanges;
+    },
+
+    saveTemplateDraft({ clear = false } = {}) {
+        if (typeof localStorage === 'undefined') {
+            return;
+        }
+        const key = this.config.localStorageKeys.autoOrderEmailDraft;
+        if (clear) {
+            localStorage.removeItem(key);
+            return;
+        }
+        const payload = {
+            templateName: this.state.emailTemplate.templateName,
+            subject: this.state.emailTemplate.subject,
+            body: this.state.emailTemplate.body,
+            savedAt: new Date().toISOString()
+        };
+        try {
+            localStorage.setItem(key, JSON.stringify(payload));
+            this.state.emailTemplate.draftSavedAt = payload.savedAt;
+            this.updateAutoSaveStatus('saved');
         } catch (error) {
-            console.error('getSavedEmailTemplate error', error);
+            console.error('saveTemplateDraft error', error);
+        }
+    },
+
+    getTemplateDraft() {
+        if (typeof localStorage === 'undefined') {
             return null;
         }
+        const key = this.config.localStorageKeys.autoOrderEmailDraft;
+        const raw = localStorage.getItem(key);
+        if (!raw) {
+            return null;
+        }
+        try {
+            const parsed = JSON.parse(raw);
+            if (parsed && typeof parsed === 'object') {
+                return parsed;
+            }
+        } catch (error) {
+            console.warn('Draft parse error', error);
+        }
+        return null;
     },
 
-    restoreSavedEmailTemplate() {
-        const saved = this.getSavedEmailTemplate();
-        if (saved) {
-            this.populateEmailTemplateFields(saved);
-            this.showSuccess('Template-ul salvat a fost încărcat.');
-        } else {
-            this.showNotification('Nu există un template salvat încă.', 'info');
+    loadDraftIfAvailable() {
+        const draft = this.getTemplateDraft();
+        if (!draft) {
+            return;
+        }
+
+        const draftTime = draft.savedAt ? Date.parse(draft.savedAt) : 0;
+        const templateTime = this.state.emailTemplate.updatedAt ? Date.parse(this.state.emailTemplate.updatedAt) : 0;
+
+        if (draftTime > templateTime) {
+            this.populateEmailTemplateFields({
+                templateName: draft.templateName,
+                subject: draft.subject,
+                body: draft.body
+            });
+            this.state.emailTemplate.unsavedChanges = true;
+            this.updateUnsavedChangesIndicator(true);
+            this.updateAutoSaveStatus('pending');
+            this.showInfo('A fost încărcată versiunea draft salvată automat.');
         }
     },
 
-    saveEmailTemplate() {
-        const subject = this.elements.emailTemplateSubject?.value.trim() || '';
-        const body = this.elements.emailTemplateBody?.value.trim() || '';
+    setupBeforeUnloadHandler() {
+        window.addEventListener('beforeunload', (event) => {
+            if (!this.hasUnsavedEmailChanges()) {
+                return;
+            }
+            event.preventDefault();
+            event.returnValue = MESSAGES.unsavedChanges;
+            return MESSAGES.unsavedChanges;
+        });
+    },
+
+    async loadEmailTemplateFromServer() {
+        try {
+            this.setEmailTemplateLoading(true);
+            const url = `${this.config.apiEndpoints.emailTemplates}?action=load&type=auto_order`;
+            const response = await this.apiCall('GET', url);
+            const data = response.data || {};
+            const template = data.template || null;
+
+            this.state.emailTemplate.sampleData = data.sample_data || {};
+            this.state.emailTemplate.availableVariables = data.available_variables || {};
+
+            if (template) {
+                this.populateEmailTemplateFields({
+                    templateId: template.template_id ?? template.id,
+                    templateName: template.template_name,
+                    subject: template.subject_template,
+                    body: template.body_template,
+                    isActive: template.is_active,
+                    isDefault: template.is_default,
+                    updatedAt: template.updated_at,
+                    createdAt: template.created_at,
+                    variablesUsed: template.variables_used || []
+                });
+                this.populateEmailTemplateMetadata(template);
+            } else {
+                this.populateEmailTemplateFields({ templateName: 'Șablon autocomandă personalizat', subject: '', body: '' });
+                this.populateEmailTemplateMetadata(null);
+            }
+
+            this.state.emailTemplate.unsavedChanges = false;
+            this.updateUnsavedChangesIndicator(false);
+            this.updateAutoSaveStatus('loaded');
+            this.saveTemplateDraft({ clear: true });
+            this.highlightTemplateVariables();
+            await this.loadTemplateHistory();
+            this.loadDraftIfAvailable();
+        } catch (error) {
+            console.error('loadEmailTemplateFromServer error', error);
+            this.showError(MESSAGES.templateLoadError);
+            this.updateAutoSaveStatus('error');
+        } finally {
+            this.setEmailTemplateLoading(false);
+        }
+    },
+
+    setEmailTemplateLoading(isLoading) {
+        if (!this.elements.emailTemplateModal) {
+            return;
+        }
+        this.elements.emailTemplateModal.classList.toggle('is-loading', Boolean(isLoading));
+    },
+
+    populateEmailTemplateMetadata(template) {
+        const updatedText = template?.updated_at ? new Date(template.updated_at).toLocaleString('ro-RO') : '-';
+        const createdText = template?.created_at ? new Date(template.created_at).toLocaleString('ro-RO') : '-';
+        const updatedBy = template?.updated_by_name || template?.updated_by || '-';
+
+        if (this.elements.templateUpdatedAt) {
+            this.elements.templateUpdatedAt.textContent = `Ultima actualizare: ${updatedText}`;
+        }
+        if (this.elements.templateUpdatedBy) {
+            this.elements.templateUpdatedBy.textContent = `Actualizat de: ${updatedBy}`;
+        }
+        if (this.elements.templateCreatedAt) {
+            this.elements.templateCreatedAt.textContent = `Creat: ${createdText}`;
+        }
+    },
+
+    async loadTemplateHistory() {
+        try {
+            const url = `${this.config.apiEndpoints.emailTemplates}?action=history&type=auto_order`;
+            const response = await this.apiCall('GET', url);
+            const history = response.data?.history || response.history || [];
+            this.state.emailTemplate.history = history;
+            this.renderTemplateHistory();
+            this.populateTemplateHistoryDropdown();
+        } catch (error) {
+            console.error('loadTemplateHistory error', error);
+        }
+    },
+
+    renderTemplateHistory() {
+        if (!this.elements.templateHistoryList || !this.elements.templateHistoryEmpty) {
+            return;
+        }
+        const history = this.state.emailTemplate.history.filter((item) => item.template_id !== this.state.emailTemplate.templateId);
+        if (!history.length) {
+            this.elements.templateHistoryList.innerHTML = '';
+            this.elements.templateHistoryEmpty.style.display = 'block';
+            return;
+        }
+
+        this.elements.templateHistoryEmpty.style.display = 'none';
+        this.elements.templateHistoryList.innerHTML = history.map((item) => {
+            const updated = item.updated_at ? new Date(item.updated_at).toLocaleString('ro-RO') : '-';
+            return `
+                <li data-template-id="${item.template_id}">
+                    <div class="history-name">${this.escapeHtml(item.template_name || 'Template fără nume')}</div>
+                    <div class="history-meta">${updated}</div>
+                </li>
+            `;
+        }).join('');
+    },
+
+    populateTemplateHistoryDropdown() {
+        if (!this.elements.loadTemplateDropdown) {
+            return;
+        }
+        const options = ['<option value="">Selectează un template salvat</option>'];
+        this.state.emailTemplate.history.forEach((item) => {
+            options.push(`<option value="${item.template_id}">${this.escapeHtml(item.template_name || 'Template fără nume')}</option>`);
+        });
+        this.elements.loadTemplateDropdown.innerHTML = options.join('');
+    },
+
+    handleSavedTemplateSelection(event) {
+        const value = parseInt(event.target.value, 10);
+        if (Number.isNaN(value)) {
+            return;
+        }
+        this.loadTemplateFromHistory(value);
+        event.target.value = '';
+    },
+
+    loadTemplateFromHistory(templateId) {
+        const template = this.state.emailTemplate.history.find((item) => item.template_id === templateId);
+        if (!template) {
+            this.showError('Template-ul selectat nu a fost găsit în istoric.');
+            return;
+        }
+        this.populateEmailTemplateFields({
+            templateId: template.template_id,
+            templateName: template.template_name,
+            subject: template.subject_template,
+            body: template.body_template,
+            isActive: template.is_active,
+            isDefault: template.is_default,
+            updatedAt: template.updated_at,
+            createdAt: template.created_at
+        });
+        this.populateEmailTemplateMetadata(template);
+        this.state.emailTemplate.unsavedChanges = true;
+        this.updateUnsavedChangesIndicator(true);
+        this.updateAutoSaveStatus('pending');
+        this.highlightTemplateVariables();
+    },
+
+    highlightTemplateVariables() {
+        if (!this.elements.templateVariables || !this.elements.templateVariables.length) {
+            return;
+        }
+        const usedVariables = new Set(this.getTemplateVariables());
+        this.elements.templateVariables.forEach((button) => {
+            const code = button.dataset.variable ? button.dataset.variable.replace(/[{}]/g, '').trim().toUpperCase() : '';
+            if (!code) return;
+            button.classList.toggle('variable-used', usedVariables.has(code));
+            button.classList.toggle('variable-unused', !usedVariables.has(code));
+        });
+    },
+
+    getTemplateVariables() {
+        const subject = this.state.emailTemplate.subject || '';
+        const body = this.state.emailTemplate.body || '';
+        const combined = `${subject}\n${body}`;
+        const matches = combined.match(/\{\{\s*([A-Z0-9_]+)\s*\}\}/gi);
+        if (!matches) {
+            return [];
+        }
+        return Array.from(new Set(matches.map((token) => token.replace(/[{}]/g, '').trim().toUpperCase())));
+    },
+
+    validateEmailTemplate() {
+        const variables = this.getTemplateVariables();
+        const missingRequired = EMAIL_TEMPLATE_REQUIRED_VARIABLES.filter((key) => !variables.includes(key));
+        const missingRecommended = EMAIL_TEMPLATE_RECOMMENDED_VARIABLES.filter((key) => !variables.includes(key));
+
+        this.state.emailTemplate.missingRequired = missingRequired;
+        this.state.emailTemplate.missingRecommended = missingRecommended;
+
+        if (this.elements.templateValidationList) {
+            const items = [];
+            if (missingRequired.length) {
+                items.push(`<li class="validation-error">Lipsesc variabile obligatorii: ${missingRequired.map((key) => `{{${key}}}`).join(', ')}</li>`);
+            } else {
+                items.push('<li class="validation-success">Toate variabilele obligatorii sunt prezente.</li>');
+            }
+            if (missingRecommended.length) {
+                items.push(`<li class="validation-warning">Recomandare: adaugă ${missingRecommended.map((key) => `{{${key}}}`).join(', ')}</li>`);
+            } else {
+                items.push('<li class="validation-success">Variabilele recomandate sunt completate.</li>');
+            }
+            this.elements.templateValidationList.innerHTML = items.join('');
+        }
+
+        this.highlightTemplateVariables();
+        return { hasErrors: missingRequired.length > 0, missingRequired, missingRecommended };
+    },
+
+    async saveEmailTemplate() {
+        await this.persistEmailTemplate();
+    },
+
+    async duplicateEmailTemplate() {
+        const baseName = this.state.emailTemplate.templateName || 'Șablon autocomandă';
+        const copyName = `${baseName} - copie`;
+        await this.persistEmailTemplate({ templateId: null, templateName: copyName });
+    },
+
+    async deleteEmailTemplate() {
+        if (!this.state.emailTemplate.templateId) {
+            this.showError('Nu există un template activ care să poată fi șters.');
+            return;
+        }
+        if (!confirm('Sigur doriți să dezactivați acest template?')) {
+            return;
+        }
+        await this.persistEmailTemplate({ isActive: false });
+    },
+
+    async persistEmailTemplate(overrides = {}) {
+        const subject = (overrides.subject ?? this.elements.emailTemplateSubject?.value || '').trim();
+        const body = (overrides.body ?? this.elements.emailTemplateBody?.value || '').trim();
+        const templateName = (overrides.templateName ?? this.elements.emailTemplateName?.value || '').trim() || 'Șablon autocomandă personalizat';
+        const templateId = overrides.templateId !== undefined ? overrides.templateId : this.state.emailTemplate.templateId;
+        const isActive = overrides.isActive !== undefined ? overrides.isActive : this.state.emailTemplate.isActive;
+        const isDefault = overrides.isDefault !== undefined ? overrides.isDefault : this.state.emailTemplate.isDefault;
+
         let hasError = false;
 
         if (!subject) {
@@ -767,30 +1474,219 @@ const ProductUnitsApp = {
             this.setFieldError(this.elements.emailTemplateBody, this.elements.emailBodyError);
         }
 
+        const validation = this.validateEmailTemplate();
+        if (validation.hasErrors) {
+            hasError = true;
+            this.showError(MESSAGES.validationFailed);
+        }
+
         if (hasError) {
-            this.showError('Completează câmpurile obligatorii înainte de a salva template-ul.');
             return;
         }
 
-        const template = { subject, body };
-        this.state.emailTemplate = template;
+        const payload = {
+            template_id: templateId,
+            template_type: 'auto_order',
+            template_name: templateName,
+            subject_template: subject,
+            body_template: body,
+            is_active: isActive ? 1 : 0,
+            is_default: isDefault ? 1 : 0
+        };
 
         try {
-            if (typeof localStorage !== 'undefined') {
-                const key = this.config.localStorageKeys.autoOrderEmailTemplate;
-                localStorage.setItem(key, JSON.stringify(template));
+            this.updateAutoSaveStatus('saving');
+            const url = `${this.config.apiEndpoints.emailTemplates}?action=save`;
+            const response = await this.apiCall('POST', url, payload);
+            if (response && response.success === false) {
+                throw new Error(response.message || 'Nu s-a putut salva template-ul.');
             }
-            this.showSuccess('Template-ul de email a fost salvat.');
-            this.closeEmailTemplateBuilder();
+            const data = response.data || {};
+            const template = data.template || payload;
+
+            this.populateEmailTemplateFields({
+                templateId: template.template_id ?? template.id ?? templateId,
+                templateName: template.template_name ?? templateName,
+                subject: template.subject_template ?? subject,
+                body: template.body_template ?? body,
+                isActive: template.is_active ?? isActive,
+                isDefault: template.is_default ?? isDefault,
+                updatedAt: template.updated_at ?? new Date().toISOString(),
+                createdAt: template.created_at ?? this.state.emailTemplate.createdAt,
+                variablesUsed: template.variables_used || this.getTemplateVariables()
+            });
+            this.populateEmailTemplateMetadata(template);
+            this.state.emailTemplate.unsavedChanges = false;
+            this.updateUnsavedChangesIndicator(false);
+            this.updateAutoSaveStatus('saved');
+            this.saveTemplateDraft({ clear: true });
+            await this.loadTemplateHistory();
+            this.highlightTemplateVariables();
+            this.showSuccess(MESSAGES.templateSaved);
         } catch (error) {
-            console.error('saveEmailTemplate error', error);
-            this.showError('Nu s-a putut salva template-ul local. Verifică spațiul disponibil.');
+            console.error('persistEmailTemplate error', error);
+            this.updateAutoSaveStatus('error');
+            this.showError(error.message || 'Nu s-a putut salva template-ul.');
+        }
+    },
+
+    async testEmailTemplate() {
+        const subject = (this.elements.emailTemplateSubject?.value || '').trim();
+        const body = (this.elements.emailTemplateBody?.value || '').trim();
+        if (!subject || !body) {
+            this.showError('Completează subiectul și conținutul pentru a trimite un email de test.');
+            return;
+        }
+
+        const validation = this.validateEmailTemplate();
+        if (validation.hasErrors) {
+            this.showError(MESSAGES.validationFailed);
+            return;
+        }
+
+        const payload = {
+            template_id: this.state.emailTemplate.templateId,
+            template_type: 'auto_order',
+            subject_template: subject,
+            body_template: body
+        };
+
+        try {
+            const url = `${this.config.apiEndpoints.emailTemplates}?action=test`;
+            const response = await this.apiCall('POST', url, payload);
+            if (response && response.success === false) {
+                throw new Error(response.message || 'Trimiterea emailului de test a eșuat.');
+            }
+            const data = response.data || {};
+            if (data.preview) {
+                this.state.emailTemplate.preview = data.preview;
+                this.updateEmailPreview();
+            }
+            this.showSuccess(MESSAGES.testEmailSent);
+        } catch (error) {
+            console.error('testEmailTemplate error', error);
+            this.showError(error.message || 'Trimiterea emailului de test a eșuat.');
         }
     },
 
     clearEmailTemplateValidation() {
         this.setFieldError(this.elements.emailTemplateSubject, this.elements.emailSubjectError);
         this.setFieldError(this.elements.emailTemplateBody, this.elements.emailBodyError);
+        if (this.elements.templateValidationList) {
+            this.elements.templateValidationList.innerHTML = '';
+        }
+        this.updateAutoSaveStatus('idle');
+    },
+
+    openAutoOrderTestModal(productName = '') {
+        if (!this.elements.autoOrderTestModal) return;
+        this.elements.autoOrderTestTitle.textContent = productName ? `Test Autocomandă - ${productName}` : 'Test Autocomandă';
+        this.elements.autoOrderValidationList.innerHTML = '<li class="validation-warning">Se încarcă simularea...</li>';
+        this.elements.autoOrderEmailPreview.innerHTML = '';
+        this.elements.autoOrderSimulationSummary.innerHTML = '';
+        this.elements.autoOrderTestModal.style.display = 'block';
+        document.body.style.overflow = 'hidden';
+        this.state.autoOrderTest.isOpen = true;
+    },
+
+    closeAutoOrderTestModal() {
+        if (!this.elements.autoOrderTestModal) return;
+        this.elements.autoOrderTestModal.style.display = 'none';
+        document.body.style.overflow = '';
+        this.state.autoOrderTest = {
+            isOpen: false,
+            productId: null,
+            productName: '',
+            validations: [],
+            emailPreview: { subject: '', body: '', missingVariables: [] },
+            simulation: {},
+            lastRun: null
+        };
+    },
+
+    async testAutoOrderForProduct(productId, productName = '') {
+        if (!productId) {
+            return;
+        }
+        this.state.autoOrderTest.productId = productId;
+        this.state.autoOrderTest.productName = productName;
+        this.openAutoOrderTestModal(productName);
+
+        try {
+            const payload = { action: 'test_auto_order', product_id: productId };
+            const response = await this.apiCall('POST', this.config.apiEndpoints.stockSettings, payload);
+            if (response && response.success === false) {
+                throw new Error(response.message || 'Simularea autocomenzii a eșuat.');
+            }
+            const data = response.data || response;
+            this.renderAutoOrderTestResults(data.data || data);
+        } catch (error) {
+            console.error('testAutoOrderForProduct error', error);
+            this.showError(error.message || 'Eroare la simularea autocomenzii.');
+            this.elements.autoOrderValidationList.innerHTML = '<li class="validation-error">Nu s-a putut rula simularea.</li>';
+        }
+    },
+
+    renderAutoOrderTestResults(data = {}) {
+        const validations = data.validations || data.validari || [];
+        const preview = data.email_preview || data.previzualizare || {};
+        const simulation = data.simulation || data.simulare || {};
+
+        if (this.elements.autoOrderValidationList) {
+            if (!validations.length) {
+                this.elements.autoOrderValidationList.innerHTML = '<li>Nu au fost raportate validări.</li>';
+            } else {
+                this.elements.autoOrderValidationList.innerHTML = validations.map((item) => {
+                    const status = item.result || item.rezultat || 'info';
+                    const label = item.condition || item.conditie || 'Condiție';
+                    const details = item.details || item.detalii || '';
+                    const typeClass = status === 'ok' ? 'validation-success' : status === 'eroare' ? 'validation-error' : 'validation-warning';
+                    return `<li class="${typeClass}"><strong>${this.escapeHtml(label)}:</strong> ${this.escapeHtml(details)}</li>`;
+                }).join('');
+            }
+        }
+
+        if (this.elements.autoOrderEmailPreview) {
+            const subject = preview.subject || 'Nu a fost generat subiectul.';
+            const body = preview.body || 'Nu a fost generat conținutul emailului.';
+            this.elements.autoOrderEmailPreview.innerHTML = `
+                <div class="preview-subject"><strong>Subiect:</strong> ${this.escapeHtml(subject)}</div>
+                <div class="preview-body">${this.escapeHtml(body).replace(/\n/g, '<br>')}</div>
+            `;
+        }
+
+        if (this.elements.autoOrderSimulationSummary) {
+            const entries = Object.entries(simulation);
+            if (!entries.length) {
+                this.elements.autoOrderSimulationSummary.innerHTML = '<p>Nu există informații suplimentare pentru simulare.</p>';
+            } else {
+                this.elements.autoOrderSimulationSummary.innerHTML = entries.map(([key, value]) => {
+                    return `<div class="simulation-row"><span class="simulation-label">${this.escapeHtml(key)}:</span> <span class="simulation-value">${this.escapeHtml(String(value))}</span></div>`;
+                }).join('');
+            }
+        }
+
+        this.state.autoOrderTest.validations = validations;
+        this.state.autoOrderTest.emailPreview = preview;
+        this.state.autoOrderTest.simulation = simulation;
+        this.state.autoOrderTest.lastRun = new Date().toISOString();
+    },
+
+    async sendAutoOrderTestEmail(productId) {
+        if (!productId) {
+            return;
+        }
+        try {
+            const payload = { action: 'send_auto_order_test', product_id: productId };
+            const response = await this.apiCall('POST', this.config.apiEndpoints.stockSettings, payload);
+            if (response && response.success === false) {
+                throw new Error(response.message || 'Trimiterea emailului de test a eșuat.');
+            }
+            this.showSuccess('Emailul de test pentru autocomandă a fost trimis.');
+        } catch (error) {
+            console.error('sendAutoOrderTestEmail error', error);
+            this.showError(error.message || 'Trimiterea emailului de test a eșuat.');
+        }
     },
 
     setFieldError(field, errorElement, message = '') {
@@ -1464,17 +2360,16 @@ const ProductUnitsApp = {
 
         try {
             const response = await this.apiCall('GET', this.config.apiEndpoints.testCargus);
-            
+
             if (response.success) {
-                const message = `✅ Conexiunea la Cargus este funcțională!\n\nToken valabil până: ${response.token_expiry || 'N/A'}`;
-                alert(message);
+                const expiry = response.token_expiry ? `Token valabil până: ${response.token_expiry}` : 'Token valabil nelimitat';
+                this.showSuccess(`Conexiunea la Cargus este funcțională. ${expiry}`);
             } else {
-                const message = `❌ Eroare la conexiunea cu Cargus:\n${response.error}`;
-                alert(message);
+                this.showError(response.error || 'Eroare la conexiunea cu Cargus.');
             }
         } catch (error) {
             console.error('Error testing Cargus connection:', error);
-            alert(`❌ Eroare la testarea conexiunii:\n${error.message}`);
+            this.showError(`Eroare la testarea conexiunii: ${error.message}`);
         } finally {
             this.hideLoading();
         }
@@ -1567,16 +2462,52 @@ const ProductUnitsApp = {
     },
 
     showSuccess(message) {
-        // Use existing notification system or simple alert
-        alert(`✅ ${message}`);
+        this.showNotification(message, 'success');
     },
 
     showError(message) {
-        alert(`❌ ${message}`);
+        this.showNotification(message, 'error');
     },
 
     showInfo(message) {
-        alert(`ℹ️ ${message}`);
+        this.showNotification(message, 'info');
+    },
+
+    showNotification(message, type = 'info') {
+        if (!message) {
+            return;
+        }
+        const notification = document.createElement('div');
+        notification.className = `notification notification-${type}`;
+        notification.innerHTML = `
+            <span class="material-symbols-outlined">
+                ${type === 'success' ? 'check_circle' : type === 'error' ? 'error' : 'info'}
+            </span>
+            <span>${this.escapeHtml(String(message))}</span>
+            <button class="notification-close" type="button" aria-label="Închide notificarea">
+                <span class="material-symbols-outlined">close</span>
+            </button>
+        `;
+
+        let container = document.getElementById('notificationContainer');
+        if (!container) {
+            container = document.createElement('div');
+            container.id = 'notificationContainer';
+            container.className = 'notification-container';
+            document.body.appendChild(container);
+        }
+
+        notification.querySelector('.notification-close')?.addEventListener('click', () => {
+            notification.remove();
+        });
+
+        container.appendChild(notification);
+
+        setTimeout(() => {
+            if (notification.parentElement) {
+                notification.remove();
+            }
+        }, 5000);
     },
 
     setupPeriodicRefresh() {
@@ -2097,92 +3028,6 @@ async deletePackagingRule(id, ruleName) {
     }
 },
 
-// ===== UTILITY FUNCTIONS TO ADD =====
-async apiCall(method, url, data = null) {
-    const options = {
-        method: method,
-        headers: {
-            'Content-Type': 'application/json',
-            'X-Requested-With': 'XMLHttpRequest'
-        }
-    };
-
-    if (data && (method === 'POST' || method === 'PUT')) {
-        options.body = JSON.stringify(data);
-    }
-
-    const response = await fetch(url, options);
-    
-    if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    return await response.json();
-},
-
-showLoading() {
-    // Add loading indicator if it doesn't exist
-    if (!document.getElementById('loadingIndicator')) {
-        const loadingHtml = `
-            <div id="loadingIndicator" class="loading-overlay" style="display: none;">
-                <div class="loading-content">
-                    <div class="loading-spinner"></div>
-                    <p>Se încarcă...</p>
-                </div>
-            </div>
-        `;
-        document.body.insertAdjacentHTML('beforeend', loadingHtml);
-    }
-    
-    document.getElementById('loadingIndicator').style.display = 'flex';
-},
-
-hideLoading() {
-    const loading = document.getElementById('loadingIndicator');
-    if (loading) {
-        loading.style.display = 'none';
-    }
-},
-
-showSuccess(message) {
-    this.showNotification(message, 'success');
-},
-
-showError(message) {
-    this.showNotification(message, 'error');
-},
-
-    showNotification(message, type = 'info') {
-        const notification = document.createElement('div');
-    notification.className = `notification notification-${type}`;
-    notification.innerHTML = `
-        <span class="material-symbols-outlined">
-            ${type === 'success' ? 'check_circle' : 
-              type === 'error' ? 'error' : 'info'}
-        </span>
-        <span>${message}</span>
-        <button class="notification-close" onclick="this.parentElement.remove()">
-            <span class="material-symbols-outlined">close</span>
-        </button>
-    `;
-
-    if (!document.getElementById('notificationContainer')) {
-        const container = document.createElement('div');
-        container.id = 'notificationContainer';
-        container.className = 'notification-container';
-        document.body.appendChild(container);
-    }
-
-    document.getElementById('notificationContainer').appendChild(notification);
-
-    // Auto-remove after 5 seconds
-    setTimeout(() => {
-        if (notification.parentElement) {
-            notification.remove();
-        }
-    }, 5000);
-    },
-
     // ===== LABEL MANAGEMENT FUNCTIONS =====
     async loadLabelTemplates() {
         if (!this.elements.labelTableBody) return;
@@ -2365,18 +3210,34 @@ showError(message) {
             tbody.innerHTML = '<tr><td colspan="8" class="text-center">Nu există setări</td></tr>';
             return;
         }
-        tbody.innerHTML = this.state.stockSettings.map(s => `
-            <tr>
-                <td><strong>${this.escapeHtml(s.product_name)}</strong><br><small>${this.escapeHtml(s.sku)}</small></td>
-                <td>${this.escapeHtml(s.supplier_name || 'Neasignat')}</td>
-                <td>${s.current_stock}</td>
-                <td>${s.min_stock_level}</td>
-                <td>${s.min_order_quantity}</td>
-                <td>${s.auto_order_enabled ? '<span class="badge badge-success">Activă</span>' : '<span class="badge badge-secondary">Inactivă</span>'}</td>
-                <td>${s.last_auto_order_date || '-'}</td>
-                <td><button class="btn btn-sm btn-secondary" onclick="ProductUnitsApp.editStockSetting(${s.product_id})"><span class="material-symbols-outlined">edit</span></button></td>
-            </tr>
-        `).join('');
+        tbody.innerHTML = this.state.stockSettings.map((s) => {
+            const statusClass = s.auto_order_enabled ? 'badge-success' : 'badge-secondary';
+            const statusLabel = s.auto_order_enabled ? 'Activă' : 'Inactivă';
+            const lastOrder = s.last_auto_order_date ? new Date(s.last_auto_order_date).toLocaleString('ro-RO') : '-';
+            return `
+                <tr>
+                    <td>
+                        <div class="stock-product-name"><strong>${this.escapeHtml(s.product_name)}</strong></div>
+                        <div class="stock-product-meta">${this.escapeHtml(s.sku)}</div>
+                    </td>
+                    <td>${this.escapeHtml(s.supplier_name || 'Neasignat')}</td>
+                    <td>${s.current_stock}</td>
+                    <td>${s.min_stock_level}</td>
+                    <td>${s.min_order_quantity}</td>
+                    <td>
+                        <span class="badge ${statusClass}">${statusLabel}</span>
+                        <div class="auto-order-info">${s.auto_order_enabled ? 'Autocomandă activată' : 'Autocomandă dezactivată'}</div>
+                    </td>
+                    <td>${lastOrder}</td>
+                    <td>
+                        <div class="action-group">
+                            <button class="btn btn-sm btn-primary" data-action="test-auto-order" data-product-id="${s.product_id}" data-product-name="${this.escapeHtml(s.product_name)}">Testează Autocomanda</button>
+                            <button class="btn btn-sm btn-secondary" onclick="ProductUnitsApp.editStockSetting(${s.product_id})"><span class="material-symbols-outlined">edit</span></button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }).join('');
     },
 
     renderStockPagination() {

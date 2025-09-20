@@ -1485,9 +1485,9 @@ const ProductUnitsApp = {
     },
 
     async persistEmailTemplate(overrides = {}) {
-        const subject = (overrides.subject ?? this.elements.emailTemplateSubject?.value || '').trim();
-        const body = (overrides.body ?? this.elements.emailTemplateBody?.value || '').trim();
-        const templateName = (overrides.templateName ?? this.elements.emailTemplateName?.value || '').trim() || 'Șablon autocomandă personalizat';
+        const subject = (overrides.subject ?? (this.elements.emailTemplateSubject?.value || '')).trim();
+        const body = (overrides.body ?? (this.elements.emailTemplateBody?.value || '')).trim();
+        const templateName = (overrides.templateName ?? (this.elements.emailTemplateName?.value || '').trim()) || 'Șablon autocomandă personalizat';
         const templateId = overrides.templateId !== undefined ? overrides.templateId : this.state.emailTemplate.templateId;
         const isActive = overrides.isActive !== undefined ? overrides.isActive : this.state.emailTemplate.isActive;
         const isDefault = overrides.isDefault !== undefined ? overrides.isDefault : this.state.emailTemplate.isDefault;
@@ -1539,14 +1539,14 @@ const ProductUnitsApp = {
             const template = data.template || payload;
 
             this.populateEmailTemplateFields({
-                templateId: template.template_id ?? template.id ?? templateId,
-                templateName: template.template_name ?? templateName,
-                subject: template.subject_template ?? subject,
-                body: template.body_template ?? body,
-                isActive: template.is_active ?? isActive,
-                isDefault: template.is_default ?? isDefault,
-                updatedAt: template.updated_at ?? new Date().toISOString(),
-                createdAt: template.created_at ?? this.state.emailTemplate.createdAt,
+                templateId: (template.template_id ?? template.id) ?? templateId,
+                templateName: (template.template_name ?? templateName),
+                subject: (template.subject_template ?? subject),
+                body: (template.body_template ?? body),
+                isActive: (template.is_active ?? isActive),
+                isDefault: (template.is_default ?? isDefault),
+                updatedAt: (template.updated_at ?? new Date().toISOString()),
+                createdAt: (template.created_at ?? this.state.emailTemplate.createdAt),
                 variablesUsed: template.variables_used || this.getTemplateVariables()
             });
             this.populateEmailTemplateMetadata(template);

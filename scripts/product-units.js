@@ -19,6 +19,22 @@ const MESSAGES = {
     unsavedChanges: 'Aveți modificări nesalvate'
 };
 
+const AUTO_ORDER_UI_TEXT = {
+    statuses: {
+        enabled: 'Autocomandă activă',
+        disabled: 'Autocomandă dezactivată',
+        belowMinimum: 'Stoc sub pragul minim',
+        ready: 'Pregătit pentru autocomandă',
+        lastOrder: (value) => `Ultima autocomandă: ${value}`,
+        noSupplier: 'Fără furnizor asignat',
+        noPrice: 'Preț lipsă pentru articol'
+    },
+    actions: {
+        test: 'Testează autocomanda',
+        configure: 'Configurează'
+    }
+};
+
 const EMAIL_TEMPLATE_REQUIRED_VARIABLES = ['COMPANY_NAME', 'SUPPLIER_NAME', 'SUPPLIER_EMAIL', 'ORDER_NUMBER', 'PRODUCT_NAME', 'ORDER_QUANTITY'];
 const EMAIL_TEMPLATE_RECOMMENDED_VARIABLES = ['COMPANY_ADDRESS', 'COMPANY_PHONE', 'COMPANY_EMAIL', 'DELIVERY_DATE', 'ORDER_TOTAL', 'UNIT_PRICE', 'TOTAL_PRICE', 'UNIT_MEASURE', 'CURRENT_DATE', 'CURRENT_TIME', 'SUPPLIER_PHONE', 'PRODUCT_CODE'];
 
@@ -33,6 +49,9 @@ const ProductUnitsApp = {
             testCargus: `${baseUrl}/api/test_cargus.php`,
             recalculateWeight: `${baseUrl}/api/recalculate_weight.php`,
             stockSettings: `${baseUrl}/api/inventory_settings.php`,
+            autoOrderTest: `${baseUrl}/api/auto_order_test.php`,
+            autoOrderDashboard: `${baseUrl}/api/auto_orders/dashboard.php`,
+            autoOrderHistory: `${baseUrl}/api/auto_orders/history.php`,
             barrelDimensions: `${baseUrl}/api/barrel_dimensions.php`,
             labelTemplates: `${baseUrl}/api/label_templates.php`,
             emailTemplates: `${baseUrl}/api/email_templates.php`
@@ -401,48 +420,55 @@ const ProductUnitsApp = {
         this.elements.templateHistoryEmpty = document.getElementById('templateHistoryEmpty');
 
         // Auto order test modal
-        if (!document.getElementById('autoOrderTestModal')) {
+        if (!document.getElementById('autoOrderTestResultsModal')) {
             const modal = document.createElement('div');
-            modal.id = 'autoOrderTestModal';
-            modal.className = 'modal';
+            modal.id = 'autoOrderTestResultsModal';
+            modal.className = 'modal modal-large';
             modal.innerHTML = `
-                <div class="modal-content auto-order-test">
+                <div class="modal-content">
                     <div class="modal-header">
-                        <h2 id="autoOrderTestTitle">Test Autocomandă</h2>
-                        <button type="button" class="modal-close" data-role="auto-order-close">
-                            <span class="material-symbols-outlined">close</span>
-                        </button>
+                        <h2 id="autoOrderTestTitle">Rezultat Test Autocomandă</h2>
+                        <button type="button" class="modal-close" data-role="auto-order-close">&times;</button>
                     </div>
                     <div class="modal-body">
-                        <div class="test-results">
-                            <div class="validation-checks">
-                                <h3>Verificări validare</h3>
-                                <ul id="autoOrderValidationList" class="validation-check-list"></ul>
+                        <div class="test-results-container">
+                            <div class="validation-section">
+                                <h3>Verificări Validare</h3>
+                                <div class="validation-list" id="validationResults"></div>
                             </div>
-                            <div class="email-preview">
-                                <h3>Previzualizare email</h3>
-                                <div id="autoOrderEmailPreview" class="auto-order-email-preview"></div>
+                            <div class="email-preview-section">
+                                <h3>Previzualizare Email</h3>
+                                <div class="email-preview-container">
+                                    <div class="email-subject"><strong>Subiect:</strong> <span id="emailSubjectPreview"></span></div>
+                                    <div class="email-body">
+                                        <strong>Conținut:</strong>
+                                        <div class="email-content" id="emailBodyPreview"></div>
+                                    </div>
+                                </div>
                             </div>
-                            <div class="simulation-summary">
-                                <h3>Rezumat simulare</h3>
-                                <div id="autoOrderSimulationSummary" class="simulation-summary-content"></div>
+                            <div class="simulation-section">
+                                <h3>Rezumat Simulare</h3>
+                                <div class="simulation-details" id="simulationSummary"></div>
                             </div>
                         </div>
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" data-role="auto-order-close">Închide</button>
-                        <button type="button" class="btn btn-primary" id="sendAutoOrderTestEmail">Trimite email test</button>
+                        <button type="button" class="btn btn-warning" id="sendAutoOrderTestEmail">Trimite email test</button>
+                        <button type="button" class="btn btn-success" id="executeAutoOrderButton" style="display: none;">Execută autocomandă reală</button>
                     </div>
                 </div>
             `;
             document.body.appendChild(modal);
         }
-        this.elements.autoOrderTestModal = document.getElementById('autoOrderTestModal');
-        this.elements.autoOrderValidationList = document.getElementById('autoOrderValidationList');
-        this.elements.autoOrderEmailPreview = document.getElementById('autoOrderEmailPreview');
-        this.elements.autoOrderSimulationSummary = document.getElementById('autoOrderSimulationSummary');
+        this.elements.autoOrderTestModal = document.getElementById('autoOrderTestResultsModal');
+        this.elements.autoOrderValidationList = document.getElementById('validationResults');
+        this.elements.autoOrderEmailSubject = document.getElementById('emailSubjectPreview');
+        this.elements.autoOrderEmailBody = document.getElementById('emailBodyPreview');
+        this.elements.autoOrderSimulationSummary = document.getElementById('simulationSummary');
         this.elements.autoOrderTestTitle = document.getElementById('autoOrderTestTitle');
         this.elements.sendAutoOrderTestEmail = document.getElementById('sendAutoOrderTestEmail');
+        this.elements.executeAutoOrderButton = document.getElementById('executeAutoOrderButton');
     },
 
     // Bind all event listeners
@@ -593,6 +619,14 @@ const ProductUnitsApp = {
             this.elements.sendAutoOrderTestEmail.addEventListener('click', () => {
                 if (this.state.autoOrderTest.productId) {
                     this.sendAutoOrderTestEmail(this.state.autoOrderTest.productId);
+                }
+            });
+        }
+
+        if (this.elements.executeAutoOrderButton) {
+            this.elements.executeAutoOrderButton.addEventListener('click', () => {
+                if (this.state.autoOrderTest.productId) {
+                    this.executeAutoOrder(this.state.autoOrderTest.productId);
                 }
             });
         }
@@ -1581,9 +1615,21 @@ const ProductUnitsApp = {
     openAutoOrderTestModal(productName = '') {
         if (!this.elements.autoOrderTestModal) return;
         this.elements.autoOrderTestTitle.textContent = productName ? `Test Autocomandă - ${productName}` : 'Test Autocomandă';
-        this.elements.autoOrderValidationList.innerHTML = '<li class="validation-warning">Se încarcă simularea...</li>';
-        this.elements.autoOrderEmailPreview.innerHTML = '';
-        this.elements.autoOrderSimulationSummary.innerHTML = '';
+        if (this.elements.autoOrderValidationList) {
+            this.elements.autoOrderValidationList.innerHTML = '<div class="validation-item validation-warning">Se încarcă simularea...</div>';
+        }
+        if (this.elements.autoOrderEmailSubject) {
+            this.elements.autoOrderEmailSubject.textContent = '';
+        }
+        if (this.elements.autoOrderEmailBody) {
+            this.elements.autoOrderEmailBody.innerHTML = '';
+        }
+        if (this.elements.autoOrderSimulationSummary) {
+            this.elements.autoOrderSimulationSummary.innerHTML = '';
+        }
+        if (this.elements.executeAutoOrderButton) {
+            this.elements.executeAutoOrderButton.style.display = 'none';
+        }
         this.elements.autoOrderTestModal.style.display = 'block';
         document.body.style.overflow = 'hidden';
         this.state.autoOrderTest.isOpen = true;
@@ -1593,6 +1639,9 @@ const ProductUnitsApp = {
         if (!this.elements.autoOrderTestModal) return;
         this.elements.autoOrderTestModal.style.display = 'none';
         document.body.style.overflow = '';
+        if (this.elements.executeAutoOrderButton) {
+            this.elements.executeAutoOrderButton.style.display = 'none';
+        }
         this.state.autoOrderTest = {
             isOpen: false,
             productId: null,
@@ -1613,46 +1662,55 @@ const ProductUnitsApp = {
         this.openAutoOrderTestModal(productName);
 
         try {
-            const payload = { action: 'test_auto_order', product_id: productId };
-            const response = await this.apiCall('POST', this.config.apiEndpoints.stockSettings, payload);
-            if (response && response.success === false) {
-                throw new Error(response.message || 'Simularea autocomenzii a eșuat.');
+            const response = await fetch(`${this.config.apiEndpoints.autoOrderTest}?product_id=${productId}`);
+            const payload = await response.json();
+            if (!payload.success) {
+                throw new Error(payload.message || 'Simularea autocomenzii a eșuat.');
             }
-            const data = response.data || response;
-            this.renderAutoOrderTestResults(data.data || data);
+            this.renderAutoOrderTestResults(payload.data || {});
         } catch (error) {
             console.error('testAutoOrderForProduct error', error);
             this.showError(error.message || 'Eroare la simularea autocomenzii.');
-            this.elements.autoOrderValidationList.innerHTML = '<li class="validation-error">Nu s-a putut rula simularea.</li>';
+            if (this.elements.autoOrderValidationList) {
+                this.elements.autoOrderValidationList.innerHTML = '<div class="validation-item validation-error">Nu s-a putut rula simularea.</div>';
+            }
         }
     },
 
     renderAutoOrderTestResults(data = {}) {
         const validations = data.validations || data.validari || [];
-        const preview = data.email_preview || data.previzualizare || {};
-        const simulation = data.simulation || data.simulare || {};
+        const preview = data.template || {};
+        const simulation = data.simulation || {};
 
         if (this.elements.autoOrderValidationList) {
             if (!validations.length) {
-                this.elements.autoOrderValidationList.innerHTML = '<li>Nu au fost raportate validări.</li>';
+                this.elements.autoOrderValidationList.innerHTML = '<div class="validation-item">Nu au fost raportate validări.</div>';
             } else {
                 this.elements.autoOrderValidationList.innerHTML = validations.map((item) => {
-                    const status = item.result || item.rezultat || 'info';
+                    const status = (item.result || item.rezultat || '').toLowerCase();
                     const label = item.condition || item.conditie || 'Condiție';
                     const details = item.details || item.detalii || '';
-                    const typeClass = status === 'ok' ? 'validation-success' : status === 'eroare' ? 'validation-error' : 'validation-warning';
-                    return `<li class="${typeClass}"><strong>${this.escapeHtml(label)}:</strong> ${this.escapeHtml(details)}</li>`;
+                    let typeClass = 'validation-info';
+                    if (status === 'ok') {
+                        typeClass = 'validation-success';
+                    } else if (status === 'eroare' || status === 'error') {
+                        typeClass = 'validation-error';
+                    } else if (status === 'avertisment' || status === 'warning') {
+                        typeClass = 'validation-warning';
+                    }
+                    return `<div class="validation-item ${typeClass}"><strong>${this.escapeHtml(label)}:</strong> ${this.escapeHtml(details)}</div>`;
                 }).join('');
             }
         }
 
-        if (this.elements.autoOrderEmailPreview) {
-            const subject = preview.subject || 'Nu a fost generat subiectul.';
-            const body = preview.body || 'Nu a fost generat conținutul emailului.';
-            this.elements.autoOrderEmailPreview.innerHTML = `
-                <div class="preview-subject"><strong>Subiect:</strong> ${this.escapeHtml(subject)}</div>
-                <div class="preview-body">${this.escapeHtml(body).replace(/\n/g, '<br>')}</div>
-            `;
+        if (this.elements.autoOrderEmailSubject) {
+            const subject = preview.subject_preview || preview.subject || 'Subiect indisponibil';
+            this.elements.autoOrderEmailSubject.textContent = subject;
+        }
+
+        if (this.elements.autoOrderEmailBody) {
+            const body = preview.body_preview || preview.body || 'Conținut indisponibil';
+            this.elements.autoOrderEmailBody.innerHTML = this.escapeHtml(body).replace(/\n/g, '<br>');
         }
 
         if (this.elements.autoOrderSimulationSummary) {
@@ -1666,6 +1724,11 @@ const ProductUnitsApp = {
             }
         }
 
+        const canExecute = Boolean(simulation.poate_comanda);
+        if (this.elements.executeAutoOrderButton) {
+            this.elements.executeAutoOrderButton.style.display = canExecute ? 'inline-flex' : 'none';
+        }
+
         this.state.autoOrderTest.validations = validations;
         this.state.autoOrderTest.emailPreview = preview;
         this.state.autoOrderTest.simulation = simulation;
@@ -1677,15 +1740,45 @@ const ProductUnitsApp = {
             return;
         }
         try {
-            const payload = { action: 'send_auto_order_test', product_id: productId };
-            const response = await this.apiCall('POST', this.config.apiEndpoints.stockSettings, payload);
-            if (response && response.success === false) {
-                throw new Error(response.message || 'Trimiterea emailului de test a eșuat.');
+            const response = await fetch(this.config.apiEndpoints.autoOrderTest, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'send_test_email', product_id: productId })
+            });
+            const payload = await response.json();
+            if (!payload.success) {
+                throw new Error(payload.message || 'Trimiterea emailului de test a eșuat.');
             }
-            this.showSuccess('Emailul de test pentru autocomandă a fost trimis.');
+            this.showSuccess(payload.message || 'Emailul de test pentru autocomandă a fost trimis.');
         } catch (error) {
             console.error('sendAutoOrderTestEmail error', error);
             this.showError(error.message || 'Trimiterea emailului de test a eșuat.');
+        }
+    },
+
+    async executeAutoOrder(productId) {
+        if (!productId) {
+            return;
+        }
+        try {
+            const response = await fetch(this.config.apiEndpoints.autoOrderTest, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'execute_auto_order', product_id: productId })
+            });
+            const payload = await response.json();
+            if (!payload.success) {
+                throw new Error(payload.message || 'Autocomanda nu a putut fi executată.');
+            }
+            this.showSuccess(payload.message || 'Autocomanda a fost trimisă.');
+            if (payload.order_number && typeof AutoOrderNotifications !== 'undefined') {
+                AutoOrderNotifications.showAutoOrderCreated(payload.order_number, this.state.autoOrderTest.productName || '');
+            }
+            this.closeAutoOrderTestModal();
+            this.loadStockSettings();
+        } catch (error) {
+            console.error('executeAutoOrder error', error);
+            this.showError(error.message || 'Autocomanda nu a putut fi executată.');
         }
     },
 
@@ -3211,33 +3304,56 @@ async deletePackagingRule(id, ruleName) {
             return;
         }
         tbody.innerHTML = this.state.stockSettings.map((s) => {
-            const statusClass = s.auto_order_enabled ? 'badge-success' : 'badge-secondary';
-            const statusLabel = s.auto_order_enabled ? 'Activă' : 'Inactivă';
-            const lastOrder = s.last_auto_order_date ? new Date(s.last_auto_order_date).toLocaleString('ro-RO') : '-';
+            const indicators = this.buildStockStatusIndicators(s);
+            const lastOrder = s.last_auto_order_date ? new Date(s.last_auto_order_date).toLocaleString('ro-RO') : null;
+            const stockWarning = s.min_stock_level > 0 && s.current_stock <= s.min_stock_level;
             return `
-                <tr>
+                <tr class="stock-row" data-product-id="${s.product_id}">
                     <td>
-                        <div class="stock-product-name"><strong>${this.escapeHtml(s.product_name)}</strong></div>
-                        <div class="stock-product-meta">${this.escapeHtml(s.sku)}</div>
+                        <div class="stock-product-info">
+                            <strong>${this.escapeHtml(s.product_name)}</strong>
+                            <small>${this.escapeHtml(s.sku)}</small>
+                            <div class="auto-order-status">${indicators.join('')}</div>
+                        </div>
                     </td>
                     <td>${this.escapeHtml(s.supplier_name || 'Neasignat')}</td>
-                    <td>${s.current_stock}</td>
-                    <td>${s.min_stock_level}</td>
+                    <td class="${stockWarning ? 'stock-level-warning' : ''}">${s.current_stock} (Min: ${s.min_stock_level})</td>
                     <td>${s.min_order_quantity}</td>
-                    <td>
-                        <span class="badge ${statusClass}">${statusLabel}</span>
-                        <div class="auto-order-info">${s.auto_order_enabled ? 'Autocomandă activată' : 'Autocomandă dezactivată'}</div>
-                    </td>
-                    <td>${lastOrder}</td>
+                    <td>${lastOrder ? this.escapeHtml(lastOrder) : '-'}</td>
                     <td>
                         <div class="action-group">
-                            <button class="btn btn-sm btn-primary" data-action="test-auto-order" data-product-id="${s.product_id}" data-product-name="${this.escapeHtml(s.product_name)}">Testează Autocomanda</button>
-                            <button class="btn btn-sm btn-secondary" onclick="ProductUnitsApp.editStockSetting(${s.product_id})"><span class="material-symbols-outlined">edit</span></button>
+                            <button class="btn btn-sm btn-test-auto-order" data-action="test-auto-order" data-product-id="${s.product_id}" data-product-name="${this.escapeHtml(s.product_name)}">${AUTO_ORDER_UI_TEXT.actions.test}</button>
+                            <button class="btn btn-sm btn-secondary" onclick="ProductUnitsApp.editStockSetting(${s.product_id})"><span class="material-symbols-outlined">edit</span><span>${AUTO_ORDER_UI_TEXT.actions.configure}</span></button>
                         </div>
                     </td>
                 </tr>
             `;
         }).join('');
+    },
+
+    buildStockStatusIndicators(setting) {
+        const indicators = [];
+        if (setting.auto_order_enabled) {
+            indicators.push(`<span class="status-indicator status-enabled">${AUTO_ORDER_UI_TEXT.statuses.enabled}</span>`);
+            if (setting.min_stock_level > 0 && setting.current_stock <= setting.min_stock_level) {
+                indicators.push(`<span class="status-indicator status-warning">${AUTO_ORDER_UI_TEXT.statuses.belowMinimum}</span>`);
+            } else {
+                indicators.push(`<span class="status-indicator status-ready">${AUTO_ORDER_UI_TEXT.statuses.ready}</span>`);
+            }
+        } else {
+            indicators.push(`<span class="status-indicator status-disabled">${AUTO_ORDER_UI_TEXT.statuses.disabled}</span>`);
+        }
+
+        if (!setting.supplier_name) {
+            indicators.push(`<span class="status-indicator status-error">${AUTO_ORDER_UI_TEXT.statuses.noSupplier}</span>`);
+        }
+
+        if (setting.last_auto_order_date) {
+            const formatted = new Date(setting.last_auto_order_date).toLocaleString('ro-RO');
+            indicators.push(`<span class="status-indicator status-last-order">${AUTO_ORDER_UI_TEXT.statuses.lastOrder(formatted)}</span>`);
+        }
+
+        return indicators;
     },
 
     renderStockPagination() {

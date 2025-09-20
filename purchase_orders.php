@@ -677,6 +677,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 // Get filter parameters
 $statusFilter = $_GET['status'] ?? '';
 $sellerFilter = intval($_GET['seller_id'] ?? 0);
+$receivingStatusFilter = $_GET['receiving_status'] ?? '';
+$orderTypeFilter = $_GET['order_type'] ?? '';
+$sortOption = $_GET['sort'] ?? 'created_desc';
 
 // Get purchase orders
 $filters = [];
@@ -760,11 +763,30 @@ require_once __DIR__ . '/includes/header.php';
                     <div class="filter-group">
                         <label for="receiving_status">Status Primire:</label>
                         <select name="receiving_status" id="receiving-status-filter">
-                            <option value="">Toate</option>
-                            <option value="not_received">Neprimite</option>
-                            <option value="partial">Parțial Primite</option>
-                            <option value="complete">Complet Primite</option>
-                            <option value="with_discrepancies">Cu Discrepanțe</option>
+                            <option value="" <?= $receivingStatusFilter === '' ? 'selected' : '' ?>>Toate</option>
+                            <option value="not_received" <?= $receivingStatusFilter === 'not_received' ? 'selected' : '' ?>>Neprimite</option>
+                            <option value="partial" <?= $receivingStatusFilter === 'partial' ? 'selected' : '' ?>>Parțial Primite</option>
+                            <option value="complete" <?= $receivingStatusFilter === 'complete' ? 'selected' : '' ?>>Complet Primite</option>
+                            <option value="with_discrepancies" <?= $receivingStatusFilter === 'with_discrepancies' ? 'selected' : '' ?>>Cu Discrepanțe</option>
+                        </select>
+                    </div>
+
+                    <div class="filter-group">
+                        <label for="order_type_filter">Tip Comandă:</label>
+                        <select name="order_type" id="order_type_filter">
+                            <option value="" <?= $orderTypeFilter === '' ? 'selected' : '' ?>>Toate</option>
+                            <option value="manual" <?= $orderTypeFilter === 'manual' ? 'selected' : '' ?>>Manuale</option>
+                            <option value="auto" <?= $orderTypeFilter === 'auto' ? 'selected' : '' ?>>Autocomandă</option>
+                        </select>
+                    </div>
+
+                    <div class="filter-group">
+                        <label for="order_sort">Sortare:</label>
+                        <select name="sort" id="order_sort">
+                            <option value="created_desc" <?= $sortOption === 'created_desc' ? 'selected' : '' ?>>Cele mai noi</option>
+                            <option value="created_asc" <?= $sortOption === 'created_asc' ? 'selected' : '' ?>>Cele mai vechi</option>
+                            <option value="type_asc" <?= $sortOption === 'type_asc' ? 'selected' : '' ?>>Tip comandă (manual → auto)</option>
+                            <option value="type_desc" <?= $sortOption === 'type_desc' ? 'selected' : '' ?>>Tip comandă (auto → manual)</option>
                         </select>
                     </div>
                     
@@ -779,6 +801,47 @@ require_once __DIR__ . '/includes/header.php';
             </div>
 
             <!-- Purchase Orders Table -->
+            <div class="dashboard-row">
+                <div class="dashboard-widget auto-order-dashboard">
+                    <div class="widget-header">
+                        <h3>Monitorizare Autocomandă</h3>
+                        <button class="btn btn-sm btn-refresh" type="button" onclick="purchaseOrdersManager?.refreshAutoOrderStats?.()">
+                            <span class="material-symbols-outlined">refresh</span>
+                        </button>
+                    </div>
+                    <div class="widget-content">
+                        <div class="stats-grid">
+                            <div class="stat-card">
+                                <div class="stat-value" id="totalAutoOrders">0</div>
+                                <div class="stat-label">Total Autocomenzi</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-value" id="autoOrdersToday">0</div>
+                                <div class="stat-label">Generat Astăzi</div>
+                            </div>
+                            <div class="stat-card warning">
+                                <div class="stat-value" id="productsAtMinimum">0</div>
+                                <div class="stat-label">Produse Sub Prag</div>
+                            </div>
+                            <div class="stat-card error">
+                                <div class="stat-value" id="failedAutoOrders">0</div>
+                                <div class="stat-label">Autocomenzi Neprocesate</div>
+                            </div>
+                        </div>
+
+                        <div class="recent-auto-orders">
+                            <h4>Autocomenzi Recente (7 zile)</h4>
+                            <div class="auto-order-timeline" id="recentAutoOrdersList"></div>
+                        </div>
+
+                        <div class="products-needing-attention">
+                            <h4>Produse Ce Necesită Atenție</h4>
+                            <div class="attention-list" id="attentionProductsList"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <div class="table-container">
                 <table class="data-table" id="purchase-orders-table">
                     <thead>
@@ -809,6 +872,23 @@ require_once __DIR__ . '/includes/header.php';
                         </tr>
                     </tbody>
                 </table>
+            </div>
+
+            <div class="auto-order-history-panel">
+                <div class="history-filters">
+                    <input type="date" id="historyDateFrom" value="<?= htmlspecialchars($_GET['date_from'] ?? '') ?>" placeholder="De la">
+                    <input type="date" id="historyDateTo" value="<?= htmlspecialchars($_GET['date_to'] ?? '') ?>" placeholder="Până la">
+                    <select id="historyStatus">
+                        <option value="">Toate Statusurile</option>
+                        <option value="success">Succes</option>
+                        <option value="failed">Eșuat</option>
+                        <option value="pending">În Așteptare</option>
+                        <option value="processing">În Procesare</option>
+                    </select>
+                    <button class="btn btn-primary" type="button" onclick="purchaseOrdersManager?.loadAutoOrderHistory?.()">Filtrează</button>
+                </div>
+
+                <div class="history-timeline" id="autoOrderHistoryList"></div>
             </div>
         </div>
     </div>

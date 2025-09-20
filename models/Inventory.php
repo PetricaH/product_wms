@@ -1360,53 +1360,481 @@ public function getCriticalStockAlerts(int $limit = 10): array {
     }
 
     /**
-     * Trigger automatic purchase order if stock below minimum
+     * Rulează o simulare completă a procesului de autocomandă fără a crea documente reale.
      */
-    private function triggerAutoOrder(int $productId): void {
+    public function testAutoOrder(int $productId): array
+    {
+        $rezultat = $this->evaluateAutoOrderScenario($productId);
+        $rezultat['mod_simulare'] = true;
+
+        if ($rezultat['poate_comanda']) {
+            try {
+                require_once __DIR__ . '/PurchaseOrder.php';
+                $po = new PurchaseOrder($this->conn);
+                $numarEstimativ = $po->generateOrderNumber();
+                $rezultat['comanda']['numar_estimativ'] = $numarEstimativ;
+
+                $email = $this->buildAutoOrderEmail($numarEstimativ, $rezultat);
+                $rezultat['email'] = $email;
+                $rezultat['payload_simulat'] = $rezultat['payload'];
+                $rezultat['payload_simulat']['email_subject'] = $email['subiect'];
+                $rezultat['payload_simulat']['custom_message'] = $email['corp'];
+            } catch (Exception $e) {
+                $rezultat['email'] = null;
+                $rezultat['validari'][] = [
+                    'conditie' => 'Generare număr comandă',
+                    'rezultat' => 'eroare',
+                    'tip' => 'informativ',
+                    'detalii' => 'Nu s-a putut genera un număr estimativ: ' . $e->getMessage()
+                ];
+            }
+        } else {
+            $rezultat['email'] = null;
+        }
+
+        return $rezultat;
+    }
+
+    /**
+     * Analizează condițiile de autocomandă și pregătește detaliile necesare.
+     */
+    private function evaluateAutoOrderScenario(int $productId): array
+    {
+        $detalii = [
+            'poate_comanda' => false,
+            'validari' => [],
+            'produs' => null,
+            'furnizor' => null,
+            'articol' => null,
+            'comanda' => null,
+            'payload' => null
+        ];
+
         try {
-            $query = "SELECT p.product_id, p.quantity, p.min_stock_level,
-                             p.min_order_quantity, p.auto_order_enabled,
-                             p.seller_id,
-                             pp.id AS purchasable_product_id
-                      FROM {$this->productsTable} p
-                      LEFT JOIN purchasable_products pp
+            $query = "SELECT
+                        p.product_id,
+                        p.sku,
+                        p.name,
+                        p.quantity,
+                        p.min_stock_level,
+                        p.min_order_quantity,
+                        p.auto_order_enabled,
+                        p.seller_id,
+                        p.last_auto_order_date,
+                        pp.id AS purchasable_product_id,
+                        pp.supplier_product_name,
+                        pp.supplier_product_code,
+                        pp.last_purchase_price,
+                        pp.preferred_seller_id,
+                        s.supplier_name,
+                        s.email AS seller_email
+                    FROM {$this->productsTable} p
+                    LEFT JOIN purchasable_products pp
                         ON pp.internal_product_id = p.product_id
-                        AND pp.preferred_seller_id = p.seller_id
-                      WHERE p.product_id = :id";
+                    LEFT JOIN sellers s ON s.id = p.seller_id
+                    WHERE p.product_id = :id
+                    ORDER BY
+                        CASE WHEN pp.preferred_seller_id = p.seller_id THEN 0 ELSE 1 END,
+                        CASE WHEN pp.last_purchase_price IS NULL OR pp.last_purchase_price <= 0 THEN 1 ELSE 0 END,
+                        pp.id ASC";
 
             $stmt = $this->conn->prepare($query);
             $stmt->bindValue(':id', $productId, PDO::PARAM_INT);
             $stmt->execute();
-            $product = $stmt->fetch(PDO::FETCH_ASSOC);
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-            if (!$product || !$product['auto_order_enabled'] || empty($product['seller_id'])) {
-                return;
+            if (!$rows) {
+                $detalii['validari'][] = [
+                    'conditie' => 'Identificare produs',
+                    'rezultat' => 'eroare',
+                    'tip' => 'critic',
+                    'detalii' => 'Produsul solicitat nu există în baza de date.'
+                ];
+                return $detalii;
             }
 
-            if ((int)$product['quantity'] > (int)$product['min_stock_level']) {
-                return;
-            }
+            $primaLinie = $rows[0];
+            $cantitateCurenta = (float)($primaLinie['quantity'] ?? 0);
+            $pragMinim = (float)($primaLinie['min_stock_level'] ?? 0);
+            $cantitateMinimaComanda = (int)($primaLinie['min_order_quantity'] ?? 0);
+            $ultimaAutocomanda = $primaLinie['last_auto_order_date'] ?? null;
 
-            require_once __DIR__ . '/PurchaseOrder.php';
-            $po = new PurchaseOrder($this->conn);
-
-            $orderData = [
-                'seller_id' => (int)$product['seller_id'],
-                'status' => 'draft',
-                'notes' => 'Auto-generated order for low stock',
-                'items' => [[
-                    'purchasable_product_id' => (int)($product['purchasable_product_id'] ?? 0),
-                    'quantity' => max(1, (int)($product['min_order_quantity'] ?? 1)),
-                    'unit_price' => 0
-                ]]
+            $detalii['produs'] = [
+                'id' => (int)$primaLinie['product_id'],
+                'sku' => $primaLinie['sku'] ?? null,
+                'nume' => $primaLinie['name'] ?? null,
+                'cantitate_curenta' => $cantitateCurenta,
+                'prag_minim' => $pragMinim,
+                'cantitate_minima_comanda' => $cantitateMinimaComanda,
+                'ultima_autocomanda' => $ultimaAutocomanda
             ];
-            $po->createPurchaseOrder($orderData);
 
-            $upd = $this->conn->prepare("UPDATE {$this->productsTable} SET last_auto_order_date = NOW() WHERE product_id = :id");
-            $upd->execute([':id' => $productId]);
+            $detalii['validari'][] = [
+                'conditie' => 'Produs disponibil',
+                'rezultat' => 'ok',
+                'tip' => 'critic',
+                'detalii' => 'Produsul a fost găsit și poate fi procesat.'
+            ];
 
+            $autoActiv = (int)($primaLinie['auto_order_enabled'] ?? 0) === 1;
+            $detalii['validari'][] = [
+                'conditie' => 'Autocomandă activă',
+                'rezultat' => $autoActiv ? 'ok' : 'eroare',
+                'tip' => 'critic',
+                'detalii' => $autoActiv ? 'Autocomanda este activată pentru produs.' : 'Autocomanda este dezactivată pentru acest produs.'
+            ];
+
+            $sellerId = (int)($primaLinie['seller_id'] ?? 0);
+            $numeFurnizor = $primaLinie['supplier_name'] ?? null;
+            $emailFurnizor = trim($primaLinie['seller_email'] ?? '');
+
+            $detalii['furnizor'] = [
+                'id' => $sellerId,
+                'nume' => $numeFurnizor,
+                'email' => $emailFurnizor
+            ];
+
+            $areFurnizor = $sellerId > 0;
+            $detalii['validari'][] = [
+                'conditie' => 'Furnizor configurat',
+                'rezultat' => $areFurnizor ? 'ok' : 'eroare',
+                'tip' => 'critic',
+                'detalii' => $areFurnizor ? 'Produsul are asociat un furnizor preferat.' : 'Produsul nu are un furnizor preferat definit.'
+            ];
+
+            $emailValid = $emailFurnizor !== '' && filter_var($emailFurnizor, FILTER_VALIDATE_EMAIL);
+            $detalii['validari'][] = [
+                'conditie' => 'Email furnizor valid',
+                'rezultat' => $emailValid ? 'ok' : 'eroare',
+                'tip' => 'critic',
+                'detalii' => $emailValid ? 'Emailul furnizorului este valid.' : 'Emailul furnizorului lipsește sau nu este valid.'
+            ];
+
+            $subPrag = $pragMinim > 0 ? $cantitateCurenta <= $pragMinim : $cantitateCurenta <= 0;
+            $detalii['validari'][] = [
+                'conditie' => 'Nivel de stoc critic',
+                'rezultat' => $subPrag ? 'ok' : 'eroare',
+                'tip' => 'critic',
+                'detalii' => $subPrag
+                    ? 'Stocul curent a atins pragul minim și necesită reaprovizionare.'
+                    : 'Stocul curent nu a atins încă pragul minim configurat.'
+            ];
+
+            $piesaSelectata = null;
+            $scorSelectat = -1;
+            foreach ($rows as $row) {
+                if (empty($row['purchasable_product_id'])) {
+                    continue;
+                }
+
+                $pret = (float)($row['last_purchase_price'] ?? 0);
+                $scor = 1;
+                if ((int)($row['preferred_seller_id'] ?? 0) === $sellerId) {
+                    $scor += 4;
+                }
+                if ($pret > 0) {
+                    $scor += 3;
+                }
+
+                if ($piesaSelectata === null || $scor > $scorSelectat || ($scor === $scorSelectat && $pret > (float)$piesaSelectata['last_purchase_price'])) {
+                    $piesaSelectata = $row;
+                    $scorSelectat = $scor;
+                }
+            }
+
+            if ($piesaSelectata) {
+                $detalii['articol'] = [
+                    'id' => (int)$piesaSelectata['purchasable_product_id'],
+                    'nume' => $piesaSelectata['supplier_product_name'] ?? null,
+                    'cod' => $piesaSelectata['supplier_product_code'] ?? null,
+                    'pret' => (float)($piesaSelectata['last_purchase_price'] ?? 0)
+                ];
+            }
+
+            $pretValid = $detalii['articol'] && (float)$detalii['articol']['pret'] > 0;
+            $detalii['validari'][] = [
+                'conditie' => 'Preț de achiziție disponibil',
+                'rezultat' => $pretValid ? 'ok' : 'eroare',
+                'tip' => 'critic',
+                'detalii' => $pretValid ? 'Există un preț de achiziție valid pentru produs.' : 'Nu există un preț de achiziție valid pentru produs.'
+            ];
+
+            $intervalRespectat = true;
+            if ($ultimaAutocomanda) {
+                try {
+                    $ultima = new DateTimeImmutable($ultimaAutocomanda);
+                    $intervalRespectat = $ultima->modify('+24 hours') <= new DateTimeImmutable('now');
+                } catch (Exception $e) {
+                    $detalii['validari'][] = [
+                        'conditie' => 'Verificare interval 24h',
+                        'rezultat' => 'eroare',
+                        'tip' => 'informativ',
+                        'detalii' => 'Nu s-a putut valida data ultimei autocomenzi: ' . $e->getMessage()
+                    ];
+                }
+            }
+
+            $detalii['validari'][] = [
+                'conditie' => 'Interval minim între autocomenzi',
+                'rezultat' => $intervalRespectat ? 'ok' : 'eroare',
+                'tip' => 'critic',
+                'detalii' => $intervalRespectat ? 'Au trecut cel puțin 24 de ore de la ultima autocomandă.' : 'Există deja o autocomandă generată în ultimele 24 de ore.'
+            ];
+
+            $cantitateMinimaComanda = $cantitateMinimaComanda > 0 ? $cantitateMinimaComanda : 1;
+            $deficit = max(0, $pragMinim - $cantitateCurenta);
+            $cantitateComandata = max($cantitateMinimaComanda, (int)ceil($deficit));
+            if ($cantitateComandata <= 0) {
+                $cantitateComandata = $cantitateMinimaComanda;
+            }
+
+            $detalii['comanda'] = [
+                'cantitate' => $cantitateComandata,
+                'deficit_estimat' => $deficit,
+                'pret_unitar' => $detalii['articol']['pret'] ?? 0.0,
+                'valoare_totala' => ($detalii['articol']['pret'] ?? 0.0) * $cantitateComandata
+            ];
+
+            $detalii['validari'][] = [
+                'conditie' => 'Cantitate minimă de comandă',
+                'rezultat' => 'ok',
+                'tip' => 'informativ',
+                'detalii' => 'Cantitatea comandată va fi de ' . $cantitateComandata . ' bucăți.'
+            ];
+
+            $poateComanda = true;
+            foreach ($detalii['validari'] as $validare) {
+                if ($validare['tip'] === 'critic' && $validare['rezultat'] !== 'ok') {
+                    $poateComanda = false;
+                    break;
+                }
+            }
+
+            if ($poateComanda) {
+                $detalii['payload'] = [
+                    'seller_id' => $sellerId,
+                    'status' => 'sent',
+                    'notes' => 'Autocomandă generată automat pe baza pragului minim de stoc.',
+                    'custom_message' => null,
+                    'email_subject' => null,
+                    'email_recipient' => $emailFurnizor,
+                    'total_amount' => $detalii['comanda']['valoare_totala'],
+                    'items' => [[
+                        'purchasable_product_id' => $detalii['articol']['id'],
+                        'quantity' => $cantitateComandata,
+                        'unit_price' => $detalii['articol']['pret'],
+                        'notes' => 'Autocomandă generată automat de sistemul WMS.'
+                    ]]
+                ];
+            }
+
+            $detalii['poate_comanda'] = $poateComanda;
         } catch (Exception $e) {
-            error_log('Auto order error: ' . $e->getMessage());
+            $detalii['validari'][] = [
+                'conditie' => 'Procesare autocomandă',
+                'rezultat' => 'eroare',
+                'tip' => 'critic',
+                'detalii' => 'A apărut o eroare neașteptată: ' . $e->getMessage()
+            ];
+        }
+
+        return $detalii;
+    }
+
+    /**
+     * Construiește datele emailului de autocomandă.
+     */
+    private function buildAutoOrderEmail(string $orderNumber, array $context): array
+    {
+        $numeProdus = $context['produs']['nume'] ?? '';
+        $sku = $context['produs']['sku'] ?? '';
+        $cantitate = $context['comanda']['cantitate'] ?? 0;
+        $pret = $context['comanda']['pret_unitar'] ?? 0.0;
+        $total = $context['comanda']['valoare_totala'] ?? 0.0;
+        $dataGenerarii = date('d.m.Y H:i');
+
+        $pretFormatat = number_format((float)$pret, 2, ',', '.');
+        $totalFormatat = number_format((float)$total, 2, ',', '.');
+
+        $subiect = sprintf('🤖 Autocomandă Urgentă - %s - %s', $numeProdus, $orderNumber);
+
+        $corp = "Bună ziua,\n";
+        $corp .= "Sistemul nostru automat de gestiune a identificat că produsul \"{$numeProdus}\" a atins nivelul minim de stoc și necesită reaprovizionare urgentă.\n";
+        $corp .= "DETALII COMANDĂ:\n\n";
+        $corp .= "Număr comandă: {$orderNumber}\n";
+        $corp .= "Data generării: {$dataGenerarii}\n";
+        $corp .= "Tip comandă: AUTOCOMANDĂ (generată automat)\n";
+        $corp .= "Prioritate: URGENTĂ\n";
+        $corp .= "PRODUS COMANDAT:\n\n";
+        $corp .= "Nume: {$numeProdus}\n";
+        $corp .= "Cod: {$sku}\n";
+        $corp .= "Cantitate: {$cantitate} bucăți\n";
+        $corp .= "Preț unitar: {$pretFormatat} RON\n";
+        $corp .= "Total: {$totalFormatat} RON\n";
+        $corp .= "Această comandă a fost generată automat de sistemul nostru.\n";
+        $corp .= "Cu stimă,\n";
+        $corp .= "Sistem WMS - Autocomandă";
+
+        return [
+            'subiect' => $subiect,
+            'corp' => $corp,
+            'data_generare' => $dataGenerarii
+        ];
+    }
+
+    /**
+     * Trimite emailul de autocomandă folosind infrastructura existentă.
+     */
+    private function dispatchAutoOrderEmail(array $smtpConfig, string $toEmail, ?string $toName, string $subject, string $body): array
+    {
+        if (empty($smtpConfig['host']) || empty($smtpConfig['port']) || empty($smtpConfig['username']) || empty($smtpConfig['password'])) {
+            return [
+                'success' => false,
+                'message' => 'Configurația SMTP este incompletă.'
+            ];
+        }
+
+        $basePath = defined('BASE_PATH') ? BASE_PATH : dirname(__DIR__);
+        require_once $basePath . '/lib/PHPMailer/PHPMailer.php';
+        require_once $basePath . '/lib/PHPMailer/SMTP.php';
+        require_once $basePath . '/lib/PHPMailer/Exception.php';
+
+        try {
+            $mailer = new \PHPMailer\PHPMailer\PHPMailer(true);
+            $mailer->isSMTP();
+            $mailer->Host = $smtpConfig['host'];
+            $mailer->Port = (int)$smtpConfig['port'];
+            $mailer->SMTPAuth = true;
+            $mailer->Username = $smtpConfig['username'];
+            $mailer->Password = $smtpConfig['password'];
+            if (!empty($smtpConfig['encryption'])) {
+                $mailer->SMTPSecure = $smtpConfig['encryption'];
+            }
+            $mailer->CharSet = 'UTF-8';
+
+            $fromEmail = $smtpConfig['from_email'] ?? $smtpConfig['username'];
+            $fromName = $smtpConfig['from_name'] ?? 'Sistem WMS';
+            $mailer->setFrom($fromEmail, $fromName);
+            if (!empty($smtpConfig['reply_to'])) {
+                $mailer->addReplyTo($smtpConfig['reply_to']);
+            }
+
+            $mailer->addAddress($toEmail, $toName ?? '');
+            $mailer->Subject = $subject;
+            $mailer->Body = $body;
+            $mailer->AltBody = $body;
+            $mailer->isHTML(false);
+
+            $mailer->send();
+
+            return [
+                'success' => true,
+                'message' => 'Email trimis cu succes.'
+            ];
+        } catch (\PHPMailer\PHPMailer\Exception $mailException) {
+            return [
+                'success' => false,
+                'message' => 'Trimiterea emailului a eșuat: ' . $mailException->getMessage()
+            ];
+        } catch (Exception $e) {
+            return [
+                'success' => false,
+                'message' => 'Eroare neașteptată la trimiterea emailului: ' . $e->getMessage()
+            ];
+        }
+    }
+
+    /**
+     * Trigger automatic purchase order if stock below minimum
+     */
+    private function triggerAutoOrder(int $productId): void {
+        $context = $this->evaluateAutoOrderScenario($productId);
+
+        if (!$context['poate_comanda'] || empty($context['payload'])) {
+            foreach ($context['validari'] as $validare) {
+                if ($validare['tip'] === 'critic' && $validare['rezultat'] !== 'ok') {
+                    error_log(sprintf(
+                        'Autocomandă blocată pentru produsul #%d: %s - %s',
+                        $productId,
+                        $validare['conditie'],
+                        $validare['detalii']
+                    ));
+                }
+            }
+            return;
+        }
+
+        try {
+            require_once __DIR__ . '/PurchaseOrder.php';
+            $purchaseOrder = new PurchaseOrder($this->conn);
+
+            $orderId = $purchaseOrder->createPurchaseOrder($context['payload']);
+            if (!$orderId) {
+                error_log(sprintf('Autocomandă eșuată pentru produsul #%d: nu s-a putut crea comanda de achiziție.', $productId));
+                return;
+            }
+
+            $orderNumberStmt = $this->conn->prepare('SELECT order_number FROM purchase_orders WHERE id = :id');
+            $orderNumberStmt->bindValue(':id', $orderId, PDO::PARAM_INT);
+            $orderNumberStmt->execute();
+            $orderNumber = $orderNumberStmt->fetchColumn();
+            if (!$orderNumber) {
+                $orderNumber = 'PO-' . date('Y') . '-NEDEFINIT';
+            }
+
+            $email = $this->buildAutoOrderEmail($orderNumber, $context);
+
+            $updateEmailStmt = $this->conn->prepare('UPDATE purchase_orders SET email_subject = :subject, custom_message = :message WHERE id = :id');
+            $updateEmailStmt->execute([
+                ':subject' => $email['subiect'],
+                ':message' => $email['corp'],
+                ':id' => $orderId
+            ]);
+
+            $basePath = defined('BASE_PATH') ? BASE_PATH : dirname(__DIR__);
+            $configGlobal = $GLOBALS['config'] ?? require $basePath . '/config/config.php';
+            $smtpConfig = $configGlobal['email'] ?? [];
+
+            $emailResult = $this->dispatchAutoOrderEmail(
+                $smtpConfig,
+                $context['furnizor']['email'],
+                $context['furnizor']['nume'],
+                $email['subiect'],
+                $email['corp']
+            );
+
+            if ($emailResult['success']) {
+                $purchaseOrder->markAsSent($orderId, $context['furnizor']['email']);
+                error_log(sprintf(
+                    'Autocomandă finalizată pentru produsul #%d: comanda %s a fost transmisă către %s.',
+                    $productId,
+                    $orderNumber,
+                    $context['furnizor']['email']
+                ));
+            } else {
+                error_log(sprintf(
+                    'Autocomandă produs #%d: emailul nu a putut fi trimis (%s).',
+                    $productId,
+                    $emailResult['message']
+                ));
+            }
+
+            $actualizareData = $this->conn->prepare("UPDATE {$this->productsTable} SET last_auto_order_date = NOW() WHERE product_id = :id");
+            $actualizareData->bindValue(':id', $productId, PDO::PARAM_INT);
+            $actualizareData->execute();
+
+            if (function_exists('logActivity')) {
+                $descriere = sprintf('Autocomandă generată automat (%s)', $orderNumber);
+                logActivity(
+                    $_SESSION['user_id'] ?? 0,
+                    'create',
+                    'purchase_order',
+                    $orderId,
+                    $descriere
+                );
+            }
+        } catch (Exception $e) {
+            error_log('Autocomandă - eroare neașteptată: ' . $e->getMessage());
         }
     }
 }

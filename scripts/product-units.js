@@ -3306,20 +3306,26 @@ async deletePackagingRule(id, ruleName) {
         tbody.innerHTML = this.state.stockSettings.map((s) => {
             const indicators = this.buildStockStatusIndicators(s);
             const lastOrder = s.last_auto_order_date ? new Date(s.last_auto_order_date).toLocaleString('ro-RO') : null;
-            const stockWarning = s.min_stock_level > 0 && s.current_stock <= s.min_stock_level;
+            const hasMinStockLevel = s.min_stock_level !== null && s.min_stock_level !== undefined;
+            const stockWarning = hasMinStockLevel && s.min_stock_level > 0 && s.current_stock <= s.min_stock_level;
+            const currentStockDisplay = (s.current_stock !== null && s.current_stock !== undefined) ? s.current_stock : '-';
+            const minStockDisplay = hasMinStockLevel ? s.min_stock_level : '-';
+            const minOrderDisplay = (s.min_order_quantity !== null && s.min_order_quantity !== undefined) ? s.min_order_quantity : '-';
+            const lastOrderDisplay = lastOrder ? this.escapeHtml(lastOrder) : '-';
             return `
                 <tr class="stock-row" data-product-id="${s.product_id}">
                     <td>
                         <div class="stock-product-info">
                             <strong>${this.escapeHtml(s.product_name)}</strong>
                             <small>${this.escapeHtml(s.sku)}</small>
-                            <div class="auto-order-status">${indicators.join('')}</div>
                         </div>
                     </td>
                     <td>${this.escapeHtml(s.supplier_name || 'Neasignat')}</td>
-                    <td class="${stockWarning ? 'stock-level-warning' : ''}">${s.current_stock} (Min: ${s.min_stock_level})</td>
-                    <td>${s.min_order_quantity}</td>
-                    <td>${lastOrder ? this.escapeHtml(lastOrder) : '-'}</td>
+                    <td class="${stockWarning ? 'stock-level-warning' : ''}">${currentStockDisplay}</td>
+                    <td>${minStockDisplay}</td>
+                    <td>${minOrderDisplay}</td>
+                    <td><div class="auto-order-status">${indicators.join('')}</div></td>
+                    <td>${lastOrderDisplay}</td>
                     <td>
                         <div class="action-group">
                             <button class="btn btn-sm btn-test-auto-order" data-action="test-auto-order" data-product-id="${s.product_id}" data-product-name="${this.escapeHtml(s.product_name)}">${AUTO_ORDER_UI_TEXT.actions.test}</button>
@@ -3346,11 +3352,6 @@ async deletePackagingRule(id, ruleName) {
 
         if (!setting.supplier_name) {
             indicators.push(`<span class="status-indicator status-error">${AUTO_ORDER_UI_TEXT.statuses.noSupplier}</span>`);
-        }
-
-        if (setting.last_auto_order_date) {
-            const formatted = new Date(setting.last_auto_order_date).toLocaleString('ro-RO');
-            indicators.push(`<span class="status-indicator status-last-order">${AUTO_ORDER_UI_TEXT.statuses.lastOrder(formatted)}</span>`);
         }
 
         return indicators;

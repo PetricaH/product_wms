@@ -26,7 +26,10 @@ const ProductUnitsApp = {
         },
         debounceDelay: 300,
         refreshInterval: 30000, // 30 seconds
-        maxRetries: 3
+        maxRetries: 3,
+        localStorageKeys: {
+            autoOrderEmailTemplate: 'wmsAutoOrderEmailTemplate'
+        }
     },
 
     // State management
@@ -53,7 +56,11 @@ const ProductUnitsApp = {
         labelTemplates: [],
         labelFilters: { search: '', status: '' },
         labelStats: { total: 0, with_label: 0, without_label: 0 },
-        labelPagination: { limit: 50, offset: 0, total: 0, has_next: false }
+        labelPagination: { limit: 50, offset: 0, total: 0, has_next: false },
+        emailTemplate: {
+            subject: '',
+            body: ''
+        }
     },
 
     // DOM elements cache
@@ -63,10 +70,16 @@ const ProductUnitsApp = {
     init() {
         this.cacheElements();
         this.bindEvents();
+        const savedTemplate = this.getSavedEmailTemplate();
+        if (savedTemplate) {
+            this.populateEmailTemplateFields(savedTemplate);
+        } else {
+            this.populateEmailTemplateFields(this.state.emailTemplate);
+        }
         this.initializeTabs();
         this.loadInitialData();
         this.setupPeriodicRefresh();
-        
+
         console.log('ProductUnitsApp initialized successfully');
     },
 
@@ -161,9 +174,22 @@ const ProductUnitsApp = {
             configAlert: document.getElementById('configAlert'),
             testCargusConnection: document.getElementById('testCargusConnection'),
             saveCargusConfig: document.getElementById('saveCargusConfig'),
-            
+
             // Loading
-            loadingOverlay: document.getElementById('loadingOverlay')
+            loadingOverlay: document.getElementById('loadingOverlay'),
+
+            // Email template builder
+            openEmailTemplateBuilder: document.getElementById('openEmailTemplateBuilder'),
+            emailTemplateModal: document.getElementById('emailTemplateBuilderModal'),
+            emailTemplateClose: document.querySelector('#emailTemplateBuilderModal .modal-close'),
+            emailTemplateForm: document.getElementById('emailTemplateForm'),
+            emailTemplateSubject: document.getElementById('autoOrderEmailSubject'),
+            emailTemplateBody: document.getElementById('autoOrderEmailBody'),
+            emailTemplatePreview: document.getElementById('emailTemplatePreview'),
+            loadEmailTemplateBtn: document.getElementById('loadEmailTemplate'),
+            emailSubjectError: document.getElementById('emailSubjectError'),
+            emailBodyError: document.getElementById('emailBodyError'),
+            templateVariables: document.querySelectorAll('.template-variable')
         };
 
         // Aliases for generic handlers
@@ -199,11 +225,27 @@ const ProductUnitsApp = {
             this.elements.stockModalClose.addEventListener('click', () => this.closeStockModal());
         }
 
+        if (this.elements.openEmailTemplateBuilder) {
+            this.elements.openEmailTemplateBuilder.addEventListener('click', () => this.openEmailTemplateBuilder());
+        }
+
+        if (this.elements.emailTemplateClose) {
+            this.elements.emailTemplateClose.addEventListener('click', () => this.closeEmailTemplateBuilder());
+        }
+
         // Close modal when clicking outside
         if (this.elements.modal) {
             this.elements.modal.addEventListener('click', (e) => {
                 if (e.target === this.elements.modal) {
                     this.closeModal();
+                }
+            });
+        }
+
+        if (this.elements.emailTemplateModal) {
+            this.elements.emailTemplateModal.addEventListener('click', (e) => {
+                if (e.target === this.elements.emailTemplateModal) {
+                    this.closeEmailTemplateBuilder();
                 }
             });
         }
@@ -214,6 +256,29 @@ const ProductUnitsApp = {
                 e.preventDefault();
                 this.handleProductUnitSubmit(e);
             });
+        }
+
+        if (this.elements.emailTemplateForm) {
+            this.elements.emailTemplateForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                this.saveEmailTemplate();
+            });
+        }
+
+        if (this.elements.emailTemplateSubject) {
+            this.elements.emailTemplateSubject.addEventListener('input', () => this.handleEmailTemplateInput());
+            this.elements.emailTemplateSubject.addEventListener('dragover', (e) => this.handleVariableDragOver(e));
+            this.elements.emailTemplateSubject.addEventListener('drop', (e) => this.handleVariableDrop(e, this.elements.emailTemplateSubject));
+        }
+
+        if (this.elements.emailTemplateBody) {
+            this.elements.emailTemplateBody.addEventListener('input', () => this.handleEmailTemplateInput());
+            this.elements.emailTemplateBody.addEventListener('dragover', (e) => this.handleVariableDragOver(e));
+            this.elements.emailTemplateBody.addEventListener('drop', (e) => this.handleVariableDrop(e, this.elements.emailTemplateBody));
+        }
+
+        if (this.elements.loadEmailTemplateBtn) {
+            this.elements.loadEmailTemplateBtn.addEventListener('click', () => this.restoreSavedEmailTemplate());
         }
 
         if (this.elements.barrelDimensionSelect) {
@@ -235,6 +300,8 @@ const ProductUnitsApp = {
                     this.closeStockModal();
                 } else if (e.target.closest('#pendingProductsModal')) {
                     this.closePendingProductsModal();
+                } else if (e.target.closest('#emailTemplateBuilderModal')) {
+                    this.closeEmailTemplateBuilder();
                 } else {
                     this.closeModal();
                 }
@@ -486,6 +553,8 @@ const ProductUnitsApp = {
             });
         }
 
+        this.setupVariableDragAndDrop();
+
         // Cargus config events
         if (this.elements.testCargusConnection) {
             this.elements.testCargusConnection.addEventListener('click', () => this.testCargusConnection());
@@ -498,13 +567,248 @@ const ProductUnitsApp = {
         // Keyboard shortcuts
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') {
-                if (this.elements.stockSettingsModal && this.elements.stockSettingsModal.style.display === 'block') {
+                if (this.elements.emailTemplateModal && this.elements.emailTemplateModal.style.display === 'block') {
+                    this.closeEmailTemplateBuilder();
+                } else if (this.elements.stockSettingsModal && this.elements.stockSettingsModal.style.display === 'block') {
                     this.closeStockModal();
                 } else {
                     this.closeModal();
                 }
             }
         });
+    },
+
+    // ===== EMAIL TEMPLATE BUILDER =====
+    setupVariableDragAndDrop() {
+        if (!this.elements.templateVariables || !this.elements.templateVariables.length) {
+            return;
+        }
+
+        this.elements.templateVariables.forEach(variable => {
+            variable.addEventListener('dragstart', (event) => this.handleVariableDragStart(event));
+            variable.addEventListener('dragend', (event) => this.handleVariableDragEnd(event));
+            variable.addEventListener('click', () => this.insertVariable(variable.dataset.variable));
+        });
+    },
+
+    handleVariableDragStart(event) {
+        const variable = event.currentTarget?.dataset?.variable;
+        if (!variable) return;
+        event.dataTransfer.effectAllowed = 'copy';
+        event.dataTransfer.setData('text/plain', variable);
+        event.currentTarget.classList.add('dragging');
+    },
+
+    handleVariableDragEnd(event) {
+        event.currentTarget?.classList.remove('dragging');
+    },
+
+    handleVariableDragOver(event) {
+        event.preventDefault();
+        if (event.dataTransfer) {
+            event.dataTransfer.dropEffect = 'copy';
+        }
+    },
+
+    handleVariableDrop(event, field) {
+        event.preventDefault();
+        const variable = event.dataTransfer?.getData('text/plain');
+        if (!variable) return;
+        const targetField = field || event.target;
+        if (targetField === this.elements.emailTemplateSubject || targetField === this.elements.emailTemplateBody) {
+            this.insertVariableAtCursor(targetField, variable);
+        }
+    },
+
+    insertVariable(variableCode) {
+        if (!variableCode) return;
+        const activeElement = document.activeElement;
+        const targetField = [this.elements.emailTemplateBody, this.elements.emailTemplateSubject].includes(activeElement)
+            ? activeElement
+            : this.elements.emailTemplateBody;
+        this.insertVariableAtCursor(targetField, variableCode);
+    },
+
+    insertVariableAtCursor(field, variable) {
+        if (!field || typeof field.value === 'undefined') return;
+        const start = field.selectionStart ?? field.value.length;
+        const end = field.selectionEnd ?? field.value.length;
+        const before = field.value.substring(0, start);
+        const after = field.value.substring(end);
+        field.value = `${before}${variable}${after}`;
+        const newPosition = start + variable.length;
+        field.selectionStart = newPosition;
+        field.selectionEnd = newPosition;
+        field.focus();
+        this.handleEmailTemplateInput();
+    },
+
+    openEmailTemplateBuilder() {
+        if (!this.elements.emailTemplateModal) return;
+        this.clearEmailTemplateValidation();
+        this.populateEmailTemplateFields(this.state.emailTemplate);
+        this.elements.emailTemplateModal.style.display = 'block';
+        document.body.style.overflow = 'hidden';
+        requestAnimationFrame(() => {
+            if (this.elements.emailTemplateSubject) {
+                this.elements.emailTemplateSubject.focus();
+            }
+        });
+    },
+
+    closeEmailTemplateBuilder() {
+        if (!this.elements.emailTemplateModal) return;
+        this.elements.emailTemplateModal.style.display = 'none';
+        document.body.style.overflow = '';
+        this.clearEmailTemplateValidation();
+    },
+
+    populateEmailTemplateFields(template = { subject: '', body: '' }) {
+        const subject = template.subject || '';
+        const body = template.body || '';
+        if (this.elements.emailTemplateSubject) {
+            this.elements.emailTemplateSubject.value = subject;
+        }
+        if (this.elements.emailTemplateBody) {
+            this.elements.emailTemplateBody.value = body;
+        }
+        this.state.emailTemplate.subject = subject;
+        this.state.emailTemplate.body = body;
+        this.updateEmailPreview();
+    },
+
+    handleEmailTemplateInput() {
+        if (this.elements.emailTemplateSubject) {
+            this.state.emailTemplate.subject = this.elements.emailTemplateSubject.value;
+            if (this.elements.emailTemplateSubject.value.trim()) {
+                this.setFieldError(this.elements.emailTemplateSubject, this.elements.emailSubjectError);
+            }
+        }
+        if (this.elements.emailTemplateBody) {
+            this.state.emailTemplate.body = this.elements.emailTemplateBody.value;
+            if (this.elements.emailTemplateBody.value.trim()) {
+                this.setFieldError(this.elements.emailTemplateBody, this.elements.emailBodyError);
+            }
+        }
+        this.updateEmailPreview();
+    },
+
+    updateEmailPreview() {
+        if (!this.elements.emailTemplatePreview) return;
+        const { subject, body } = this.state.emailTemplate;
+
+        if (!subject && !body) {
+            this.elements.emailTemplatePreview.innerHTML = '<p class="preview-empty">Completează subiectul și conținutul pentru a vedea previzualizarea.</p>';
+            return;
+        }
+
+        const highlightVariables = (text) => {
+            if (!text) return '';
+            const escaped = this.escapeHtml(text);
+            return escaped
+                .replace(/(\{\{[^}]+\}\})/g, '<span class="preview-variable">$1</span>')
+                .replace(/\n/g, '<br>');
+        };
+
+        const formattedSubject = subject ? highlightVariables(subject) : '<em>Fără subiect</em>';
+        const formattedBody = body ? highlightVariables(body) : '<em>Fără conținut</em>';
+
+        this.elements.emailTemplatePreview.innerHTML = `
+            <div class="preview-subject"><strong>Subiect:</strong> ${formattedSubject}</div>
+            <div class="preview-body">${formattedBody}</div>
+        `;
+    },
+
+    getSavedEmailTemplate() {
+        try {
+            if (typeof localStorage === 'undefined') {
+                return null;
+            }
+            const key = this.config.localStorageKeys.autoOrderEmailTemplate;
+            const saved = localStorage.getItem(key);
+            if (!saved) return null;
+            const parsed = JSON.parse(saved);
+            return {
+                subject: parsed.subject || '',
+                body: parsed.body || ''
+            };
+        } catch (error) {
+            console.error('getSavedEmailTemplate error', error);
+            return null;
+        }
+    },
+
+    restoreSavedEmailTemplate() {
+        const saved = this.getSavedEmailTemplate();
+        if (saved) {
+            this.populateEmailTemplateFields(saved);
+            this.showSuccess('Template-ul salvat a fost încărcat.');
+        } else {
+            this.showNotification('Nu există un template salvat încă.', 'info');
+        }
+    },
+
+    saveEmailTemplate() {
+        const subject = this.elements.emailTemplateSubject?.value.trim() || '';
+        const body = this.elements.emailTemplateBody?.value.trim() || '';
+        let hasError = false;
+
+        if (!subject) {
+            this.setFieldError(this.elements.emailTemplateSubject, this.elements.emailSubjectError, 'Subiectul emailului este obligatoriu.');
+            hasError = true;
+        } else {
+            this.setFieldError(this.elements.emailTemplateSubject, this.elements.emailSubjectError);
+        }
+
+        if (!body) {
+            this.setFieldError(this.elements.emailTemplateBody, this.elements.emailBodyError, 'Conținutul emailului este obligatoriu.');
+            hasError = true;
+        } else {
+            this.setFieldError(this.elements.emailTemplateBody, this.elements.emailBodyError);
+        }
+
+        if (hasError) {
+            this.showError('Completează câmpurile obligatorii înainte de a salva template-ul.');
+            return;
+        }
+
+        const template = { subject, body };
+        this.state.emailTemplate = template;
+
+        try {
+            if (typeof localStorage !== 'undefined') {
+                const key = this.config.localStorageKeys.autoOrderEmailTemplate;
+                localStorage.setItem(key, JSON.stringify(template));
+            }
+            this.showSuccess('Template-ul de email a fost salvat.');
+            this.closeEmailTemplateBuilder();
+        } catch (error) {
+            console.error('saveEmailTemplate error', error);
+            this.showError('Nu s-a putut salva template-ul local. Verifică spațiul disponibil.');
+        }
+    },
+
+    clearEmailTemplateValidation() {
+        this.setFieldError(this.elements.emailTemplateSubject, this.elements.emailSubjectError);
+        this.setFieldError(this.elements.emailTemplateBody, this.elements.emailBodyError);
+    },
+
+    setFieldError(field, errorElement, message = '') {
+        if (!field) return;
+        if (message) {
+            field.classList.add('input-error');
+            field.setAttribute('aria-invalid', 'true');
+            if (errorElement) {
+                errorElement.textContent = message;
+                errorElement.style.display = 'block';
+            }
+        } else {
+            field.classList.remove('input-error');
+            field.removeAttribute('aria-invalid');
+            if (errorElement) {
+                errorElement.style.display = 'none';
+            }
+        }
     },
 
     // ===== TAB MANAGEMENT =====

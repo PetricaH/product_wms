@@ -529,6 +529,10 @@ $currentPage = 'product-units';
                         <div class="tab-header">
                             <h2>Gestiune Stocuri</h2>
                             <div class="tab-actions">
+                                <button class="btn btn-ghost" id="openEmailTemplateBuilder">
+                                    <span class="button-emoji" aria-hidden="true">📧</span>
+                                    Configurează Template Email Autocomandă
+                                </button>
                                 <button class="btn btn-primary" id="addStockSetting">
                                     <span class="material-symbols-outlined">add</span>
                                     Adaugă Setări
@@ -830,6 +834,283 @@ $currentPage = 'product-units';
                     </button>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <!-- Auto Order Email Template Modal -->
+    <div id="emailTemplateBuilderModal" class="modal modal-large">
+        <div class="modal-content email-template-modal">
+            <div class="modal-header">
+                <h2>
+                    <span class="material-symbols-outlined">mail</span>
+                    Configurator Template Email Autocomandă
+                </h2>
+                <button class="modal-close" type="button">
+                    <span class="material-symbols-outlined">close</span>
+                </button>
+            </div>
+            <div class="modal-body email-template-body">
+                <form id="emailTemplateForm" class="template-editor" novalidate>
+                    <div class="form-group">
+                        <label for="autoOrderEmailSubject">Subiect Email <span class="required">*</span></label>
+                        <input type="text"
+                               id="autoOrderEmailSubject"
+                               name="auto_order_email_subject"
+                               placeholder="Ex: Autocomandă pentru {{SUPPLIER_NAME}}"
+                               autocomplete="off"
+                               required>
+                        <small class="field-error" id="emailSubjectError">Subiectul emailului este obligatoriu.</small>
+                    </div>
+                    <div class="form-group form-group-textarea">
+                        <label for="autoOrderEmailBody">Conținut Email <span class="required">*</span></label>
+                        <textarea id="autoOrderEmailBody"
+                                  name="auto_order_email_body"
+                                  rows="14"
+                                  placeholder="Salut {{SUPPLIER_NAME}},&#10;&#10;Avem nevoie de reaprovizionare pentru {{PRODUCT_NAME}}.&#10;Cantitate: {{ORDER_QUANTITY}} {{UNIT_MEASURE}}.&#10;&#10;Mulțumim,&#10;{{COMPANY_NAME}}"
+                                  required></textarea>
+                        <small class="field-error" id="emailBodyError">Conținutul emailului este obligatoriu.</small>
+                    </div>
+                    <div class="preview-section">
+                        <div class="preview-header">
+                            <span class="material-symbols-outlined">visibility</span>
+                            Previzualizare Live
+                        </div>
+                        <div class="email-preview" id="emailTemplatePreview" aria-live="polite">
+                            <p class="preview-empty">Completează subiectul și conținutul pentru a vedea previzualizarea.</p>
+                        </div>
+                    </div>
+                    <div class="template-actions">
+                        <button type="button" class="btn btn-secondary" data-action="cancel">
+                            <span class="material-symbols-outlined">close</span>
+                            Anulează
+                        </button>
+                        <div class="template-actions-right">
+                            <button type="button" class="btn btn-ghost" id="loadEmailTemplate">
+                                <span class="material-symbols-outlined">history</span>
+                                Încarcă Template Salvat
+                            </button>
+                            <button type="submit" class="btn btn-success" id="saveEmailTemplate">
+                                <span class="material-symbols-outlined">save</span>
+                                Salvează Template
+                            </button>
+                        </div>
+                    </div>
+                </form>
+                <aside class="variables-panel" aria-label="Variabile disponibile">
+                    <div class="variables-header">
+                        <span class="material-symbols-outlined">category</span>
+                        Variabile Disponibile
+                    </div>
+                    <p class="variables-hint">Trage și plasează variabilele în email sau fă clic pentru a le insera la cursor.</p>
+
+                    <div class="variable-category">
+                        <h3>🏢 Companie</h3>
+                        <div class="variable-list">
+                            <button type="button"
+                                    class="template-variable"
+                                    draggable="true"
+                                    data-variable="{{COMPANY_NAME}}"
+                                    title="Numele oficial al companiei tale">
+                                <span class="material-symbols-outlined">domain</span>
+                                <div class="variable-details">
+                                    <span class="variable-name">Nume Companie</span>
+                                    <span class="variable-code">{{COMPANY_NAME}}</span>
+                                </div>
+                            </button>
+                            <button type="button"
+                                    class="template-variable"
+                                    draggable="true"
+                                    data-variable="{{COMPANY_ADDRESS}}"
+                                    title="Adresa completă a companiei">
+                                <span class="material-symbols-outlined">location_on</span>
+                                <div class="variable-details">
+                                    <span class="variable-name">Adresa Companie</span>
+                                    <span class="variable-code">{{COMPANY_ADDRESS}}</span>
+                                </div>
+                            </button>
+                            <button type="button"
+                                    class="template-variable"
+                                    draggable="true"
+                                    data-variable="{{COMPANY_PHONE}}"
+                                    title="Numărul de telefon al companiei">
+                                <span class="material-symbols-outlined">call</span>
+                                <div class="variable-details">
+                                    <span class="variable-name">Telefon Companie</span>
+                                    <span class="variable-code">{{COMPANY_PHONE}}</span>
+                                </div>
+                            </button>
+                            <button type="button"
+                                    class="template-variable"
+                                    draggable="true"
+                                    data-variable="{{COMPANY_EMAIL}}"
+                                    title="Adresa de email a companiei">
+                                <span class="material-symbols-outlined">mail</span>
+                                <div class="variable-details">
+                                    <span class="variable-name">Email Companie</span>
+                                    <span class="variable-code">{{COMPANY_EMAIL}}</span>
+                                </div>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="variable-category">
+                        <h3>📋 Comandă</h3>
+                        <div class="variable-list">
+                            <button type="button" class="template-variable" draggable="true" data-variable="{{ORDER_NUMBER}}" title="Numărul unic al comenzii">
+                                <span class="material-symbols-outlined">receipt_long</span>
+                                <div class="variable-details">
+                                    <span class="variable-name">Numărul Comenzii</span>
+                                    <span class="variable-code">{{ORDER_NUMBER}}</span>
+                                </div>
+                            </button>
+                            <button type="button" class="template-variable" draggable="true" data-variable="{{ORDER_DATE}}" title="Data plasării comenzii">
+                                <span class="material-symbols-outlined">event</span>
+                                <div class="variable-details">
+                                    <span class="variable-name">Data Comenzii</span>
+                                    <span class="variable-code">{{ORDER_DATE}}</span>
+                                </div>
+                            </button>
+                            <button type="button" class="template-variable" draggable="true" data-variable="{{ORDER_TIME}}" title="Ora plasării comenzii">
+                                <span class="material-symbols-outlined">schedule</span>
+                                <div class="variable-details">
+                                    <span class="variable-name">Ora Comenzii</span>
+                                    <span class="variable-code">{{ORDER_TIME}}</span>
+                                </div>
+                            </button>
+                            <button type="button" class="template-variable" draggable="true" data-variable="{{DELIVERY_DATE}}" title="Data estimată a livrării">
+                                <span class="material-symbols-outlined">calendar_month</span>
+                                <div class="variable-details">
+                                    <span class="variable-name">Data Livrării</span>
+                                    <span class="variable-code">{{DELIVERY_DATE}}</span>
+                                </div>
+                            </button>
+                            <button type="button" class="template-variable" draggable="true" data-variable="{{ORDER_TOTAL}}" title="Valoarea totală a comenzii">
+                                <span class="material-symbols-outlined">payments</span>
+                                <div class="variable-details">
+                                    <span class="variable-name">Total Comandă</span>
+                                    <span class="variable-code">{{ORDER_TOTAL}}</span>
+                                </div>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="variable-category">
+                        <h3>📦 Produs</h3>
+                        <div class="variable-list">
+                            <button type="button" class="template-variable" draggable="true" data-variable="{{PRODUCT_NAME}}" title="Numele produsului comandat">
+                                <span class="material-symbols-outlined">inventory_2</span>
+                                <div class="variable-details">
+                                    <span class="variable-name">Nume Produs</span>
+                                    <span class="variable-code">{{PRODUCT_NAME}}</span>
+                                </div>
+                            </button>
+                            <button type="button" class="template-variable" draggable="true" data-variable="{{PRODUCT_CODE}}" title="Codul intern al produsului">
+                                <span class="material-symbols-outlined">qr_code_2</span>
+                                <div class="variable-details">
+                                    <span class="variable-name">Cod Produs</span>
+                                    <span class="variable-code">{{PRODUCT_CODE}}</span>
+                                </div>
+                            </button>
+                            <button type="button" class="template-variable" draggable="true" data-variable="{{PRODUCT_SKU}}" title="SKU-ul produsului">
+                                <span class="material-symbols-outlined">label</span>
+                                <div class="variable-details">
+                                    <span class="variable-name">SKU Produs</span>
+                                    <span class="variable-code">{{PRODUCT_SKU}}</span>
+                                </div>
+                            </button>
+                            <button type="button" class="template-variable" draggable="true" data-variable="{{ORDER_QUANTITY}}" title="Cantitatea comandată pentru autocomandă">
+                                <span class="material-symbols-outlined">format_list_numbered</span>
+                                <div class="variable-details">
+                                    <span class="variable-name">Cantitatea Comandată</span>
+                                    <span class="variable-code">{{ORDER_QUANTITY}}</span>
+                                </div>
+                            </button>
+                            <button type="button" class="template-variable" draggable="true" data-variable="{{UNIT_PRICE}}" title="Prețul unitar pentru produs">
+                                <span class="material-symbols-outlined">attach_money</span>
+                                <div class="variable-details">
+                                    <span class="variable-name">Preț Unitar</span>
+                                    <span class="variable-code">{{UNIT_PRICE}}</span>
+                                </div>
+                            </button>
+                            <button type="button" class="template-variable" draggable="true" data-variable="{{TOTAL_PRICE}}" title="Valoarea totală pentru produs">
+                                <span class="material-symbols-outlined">functions</span>
+                                <div class="variable-details">
+                                    <span class="variable-name">Preț Total</span>
+                                    <span class="variable-code">{{TOTAL_PRICE}}</span>
+                                </div>
+                            </button>
+                            <button type="button" class="template-variable" draggable="true" data-variable="{{UNIT_MEASURE}}" title="Unitatea de măsură pentru produs">
+                                <span class="material-symbols-outlined">straighten</span>
+                                <div class="variable-details">
+                                    <span class="variable-name">Unitatea de Măsură</span>
+                                    <span class="variable-code">{{UNIT_MEASURE}}</span>
+                                </div>
+                            </button>
+                            <button type="button" class="template-variable" draggable="true" data-variable="{{MIN_STOCK_LEVEL}}" title="Nivelul minim de stoc setat">
+                                <span class="material-symbols-outlined">trending_down</span>
+                                <div class="variable-details">
+                                    <span class="variable-name">Stoc Minim</span>
+                                    <span class="variable-code">{{MIN_STOCK_LEVEL}}</span>
+                                </div>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="variable-category">
+                        <h3>👤 Furnizor</h3>
+                        <div class="variable-list">
+                            <button type="button" class="template-variable" draggable="true" data-variable="{{SUPPLIER_NAME}}" title="Numele furnizorului">
+                                <span class="material-symbols-outlined">store</span>
+                                <div class="variable-details">
+                                    <span class="variable-name">Nume Furnizor</span>
+                                    <span class="variable-code">{{SUPPLIER_NAME}}</span>
+                                </div>
+                            </button>
+                            <button type="button" class="template-variable" draggable="true" data-variable="{{SUPPLIER_EMAIL}}" title="Adresa de email a furnizorului">
+                                <span class="material-symbols-outlined">alternate_email</span>
+                                <div class="variable-details">
+                                    <span class="variable-name">Email Furnizor</span>
+                                    <span class="variable-code">{{SUPPLIER_EMAIL}}</span>
+                                </div>
+                            </button>
+                            <button type="button" class="template-variable" draggable="true" data-variable="{{SUPPLIER_PHONE}}" title="Telefonul furnizorului">
+                                <span class="material-symbols-outlined">call</span>
+                                <div class="variable-details">
+                                    <span class="variable-name">Telefon Furnizor</span>
+                                    <span class="variable-code">{{SUPPLIER_PHONE}}</span>
+                                </div>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="variable-category">
+                        <h3>📅 Date/Timp</h3>
+                        <div class="variable-list">
+                            <button type="button" class="template-variable" draggable="true" data-variable="{{CURRENT_DATE}}" title="Data curentă">
+                                <span class="material-symbols-outlined">today</span>
+                                <div class="variable-details">
+                                    <span class="variable-name">Data Curentă</span>
+                                    <span class="variable-code">{{CURRENT_DATE}}</span>
+                                </div>
+                            </button>
+                            <button type="button" class="template-variable" draggable="true" data-variable="{{CURRENT_TIME}}" title="Ora curentă">
+                                <span class="material-symbols-outlined">schedule</span>
+                                <div class="variable-details">
+                                    <span class="variable-name">Ora Curentă</span>
+                                    <span class="variable-code">{{CURRENT_TIME}}</span>
+                                </div>
+                            </button>
+                            <button type="button" class="template-variable" draggable="true" data-variable="{{CURRENT_DATETIME}}" title="Data și ora curentă">
+                                <span class="material-symbols-outlined">history</span>
+                                <div class="variable-details">
+                                    <span class="variable-name">Data și Ora</span>
+                                    <span class="variable-code">{{CURRENT_DATETIME}}</span>
+                                </div>
+                            </button>
+                        </div>
+                    </div>
+                </aside>
+            </div>
         </div>
     </div>
 

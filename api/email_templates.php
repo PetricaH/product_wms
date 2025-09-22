@@ -311,7 +311,8 @@ function handleTestTemplate(EmailTemplate $emailTemplateModel, Setting $settings
         throw new RuntimeException('Nu a fost găsită o adresă de email pentru trimiterea testului. Configurează adresa de notificare.');
     }
 
-    $sendResult = sendTestEmail($emailConfig, $recipient, $subjectPreview, $bodyPreview);
+    $attachmentInfo = generateAutoOrderTestPdf($sampleData);
+    $sendResult = sendTestEmail($emailConfig, $recipient, $subjectPreview, $bodyPreview, $attachmentInfo);
     if (!$sendResult['success']) {
         throw new RuntimeException($sendResult['message'] ?? 'Trimiterea emailului de test a eșuat din motive necunoscute.');
     }
@@ -338,6 +339,7 @@ function handleTestTemplate(EmailTemplate $emailTemplateModel, Setting $settings
             'body' => $bodyPreview,
             'missing_variables' => array_values(array_map(static fn(string $variable): string => '{{' . $variable . '}}', $missingVariables)),
         ],
+        'attachment' => $attachmentInfo ? ['filename' => $attachmentInfo['name']] : null,
     ];
 
     sendJsonResponse(true, 'Emailul de test a fost trimis cu succes.', $data);
@@ -540,6 +542,91 @@ function getRecommendedVariables(string $type): array
     return $recommendedByType[$type] ?? [];
 }
 
+/**
+ * @return array{path:string,name:string}|null
+ */
+function generateAutoOrderTestPdf(array $sampleData): ?array
+{
+    $basePath = defined('BASE_PATH') ? BASE_PATH : dirname(__DIR__);
+
+    if (!class_exists('FPDF')) {
+        $autoload = $basePath . '/vendor/autoload.php';
+        if (file_exists($autoload)) {
+            require_once $autoload;
+        }
+    }
+
+    if (!class_exists('FPDF')) {
+        $fallback = $basePath . '/lib/fpdf.php';
+        if (file_exists($fallback)) {
+            require_once $fallback;
+        }
+    }
+
+    if (!class_exists('FPDF')) {
+        error_log('[EMAIL_TEMPLATE_API][PDF] Biblioteca FPDF nu este disponibilă pentru generarea fișierului de test.');
+        return null;
+    }
+
+    $storageDir = rtrim($basePath . '/storage/purchase_order_pdfs/', DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
+    if (!is_dir($storageDir) && !@mkdir($storageDir, 0777, true) && !is_dir($storageDir)) {
+        error_log('[EMAIL_TEMPLATE_API][PDF] Directorul pentru fișiere PDF nu poate fi creat: ' . $storageDir);
+        return null;
+    }
+
+    try {
+        $pdf = new FPDF();
+        $pdf->AddPage();
+
+        $pdf->SetFont('Arial', 'B', 14);
+        $pdf->Cell(0, 10, 'Comandă achiziție - test autocomandă', 0, 1, 'C');
+        $pdf->Ln(4);
+
+        $pdf->SetFont('Arial', '', 11);
+        $pdf->Cell(0, 8, 'Număr comandă: ' . (string)($sampleData['ORDER_NUMBER'] ?? 'PO-TEST'), 0, 1);
+        $pdf->Cell(0, 8, 'Furnizor: ' . (string)($sampleData['SUPPLIER_NAME'] ?? '-'), 0, 1);
+        $pdf->Cell(0, 8, 'Email furnizor: ' . (string)($sampleData['SUPPLIER_EMAIL'] ?? '-'), 0, 1);
+        $pdf->Cell(0, 8, 'Data livrării estimată: ' . (string)($sampleData['DELIVERY_DATE'] ?? '-'), 0, 1);
+        $pdf->Ln(6);
+
+        $pdf->SetFont('Arial', 'B', 10);
+        $pdf->Cell(80, 8, 'Produs', 1, 0, 'C');
+        $pdf->Cell(30, 8, 'Cantitate', 1, 0, 'C');
+        $pdf->Cell(30, 8, 'U.M.', 1, 0, 'C');
+        $pdf->Cell(25, 8, 'Preț', 1, 0, 'C');
+        $pdf->Cell(25, 8, 'Total', 1, 1, 'C');
+
+        $pdf->SetFont('Arial', '', 9);
+        $productName = (string)($sampleData['PRODUCT_NAME'] ?? '-');
+        if (mb_strlen($productName) > 50) {
+            $productName = mb_substr($productName, 0, 47) . '...';
+        }
+
+        $pdf->Cell(80, 8, $productName, 1);
+        $pdf->Cell(30, 8, (string)($sampleData['ORDER_QUANTITY'] ?? '-'), 1, 0, 'R');
+        $pdf->Cell(30, 8, (string)($sampleData['UNIT_MEASURE'] ?? '-'), 1, 0, 'C');
+        $pdf->Cell(25, 8, (string)($sampleData['UNIT_PRICE'] ?? '-'), 1, 0, 'R');
+        $pdf->Cell(25, 8, (string)($sampleData['TOTAL_PRICE'] ?? '-'), 1, 1, 'R');
+
+        $pdf->Ln(6);
+        $pdf->SetFont('Arial', '', 10);
+        $pdf->MultiCell(0, 6, 'Acest PDF a fost generat automat pentru testarea configuratorului de template email autocomandă din WMS.');
+
+        $fileName = sprintf('auto_order_template_%s.pdf', date('Ymd_His'));
+        $fullPath = $storageDir . $fileName;
+        $pdf->Output('F', $fullPath);
+
+        if (!is_file($fullPath)) {
+            throw new RuntimeException('PDF-ul de test nu a putut fi generat.');
+        }
+
+        return ['path' => $fullPath, 'name' => $fileName];
+    } catch (Throwable $exception) {
+        error_log('[EMAIL_TEMPLATE_API][PDF] ' . $exception->getMessage());
+        return null;
+    }
+}
+
 function determineTestRecipient(array $input, AutoOrderManager $autoOrderManager, array $emailConfig, array $sampleData): ?string
 {
     $explicitRecipient = $input['recipient_email'] ?? $input['test_email'] ?? null;
@@ -572,7 +659,10 @@ function determineTestRecipient(array $input, AutoOrderManager $autoOrderManager
     return null;
 }
 
-function sendTestEmail(array $emailConfig, string $recipient, string $subject, string $body): array
+/**
+ * @param array{path?:string,name?:string}|null $attachment
+ */
+function sendTestEmail(array $emailConfig, string $recipient, string $subject, string $body, ?array $attachment = null): array
 {
     if (empty($emailConfig['host']) || empty($emailConfig['port']) || empty($emailConfig['username']) || empty($emailConfig['password'])) {
         return [
@@ -612,6 +702,11 @@ function sendTestEmail(array $emailConfig, string $recipient, string $subject, s
         $mailer->Body = $body;
         $mailer->isHTML(stripos($body, '<') !== false && stripos($body, '>') !== false);
         $mailer->AltBody = strip_tags(str_replace(['<br>', '<br/>', '<br />'], "\n", $body));
+
+        if ($attachment && !empty($attachment['path']) && is_file($attachment['path'])) {
+            $attachmentName = $attachment['name'] ?? basename($attachment['path']);
+            $mailer->addAttachment($attachment['path'], $attachmentName);
+        }
 
         $mailer->send();
 

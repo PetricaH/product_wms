@@ -861,6 +861,15 @@ $currentPage = 'product-units';
                                required>
                         <small class="field-error" id="emailSubjectError">Subiectul emailului este obligatoriu.</small>
                     </div>
+                    <div class="form-group">
+                        <label for="autoOrderTestRecipient">Email furnizor pentru test</label>
+                        <input type="email"
+                               id="autoOrderTestRecipient"
+                               name="auto_order_test_recipient"
+                               placeholder="ex: furnizor@example.com"
+                               autocomplete="off">
+                        <small class="form-text">Adresa folosită la trimiterea emailului de test. Dacă este lăsată goală se va folosi configurația sistemului.</small>
+                    </div>
                     <div class="form-group form-group-textarea">
                         <label for="autoOrderEmailBody">Conținut Email <span class="required">*</span></label>
                         <textarea id="autoOrderEmailBody"

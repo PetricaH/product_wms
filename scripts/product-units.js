@@ -109,7 +109,8 @@ const ProductUnitsApp = {
             history: [],
             autoSaveStatus: 'idle',
             unsavedChanges: false,
-            draftSavedAt: null
+            draftSavedAt: null,
+            testRecipient: ''
         },
         autoOrderTest: {
             isOpen: false,
@@ -240,6 +241,7 @@ const ProductUnitsApp = {
             emailTemplateForm: document.getElementById('emailTemplateForm'),
             emailTemplateSubject: document.getElementById('autoOrderEmailSubject'),
             emailTemplateBody: document.getElementById('autoOrderEmailBody'),
+            emailTemplateTestRecipient: document.getElementById('autoOrderTestRecipient'),
             emailTemplatePreview: document.getElementById('emailTemplatePreview'),
             loadEmailTemplateBtn: document.getElementById('loadEmailTemplate'),
             emailSubjectError: document.getElementById('emailSubjectError'),
@@ -552,6 +554,14 @@ const ProductUnitsApp = {
 
         if (this.elements.emailTemplateName) {
             this.elements.emailTemplateName.addEventListener('input', () => this.handleEmailTemplateInput());
+        }
+
+        if (this.elements.emailTemplateTestRecipient) {
+            this.elements.emailTemplateTestRecipient.addEventListener('input', (event) => {
+                const value = (event.target.value || '').trim();
+                this.state.emailTemplate.testRecipient = value;
+                event.target.classList.remove('input-error');
+            });
         }
 
         if (this.elements.loadTemplateDropdown) {
@@ -1035,6 +1045,11 @@ const ProductUnitsApp = {
         this.state.emailTemplate.templateName = templateName;
         this.state.emailTemplate.subject = subject;
         this.state.emailTemplate.body = body;
+        const testRecipient = (template.testRecipient ?? this.state.emailTemplate.testRecipient ?? '').trim();
+        this.state.emailTemplate.testRecipient = testRecipient;
+        if (this.elements.emailTemplateTestRecipient && document.activeElement !== this.elements.emailTemplateTestRecipient) {
+            this.elements.emailTemplateTestRecipient.value = testRecipient;
+        }
         this.state.emailTemplate.templateId = template.templateId ?? template.template_id ?? this.state.emailTemplate.templateId;
         this.state.emailTemplate.isActive = template.isActive ?? template.is_active ?? true;
         this.state.emailTemplate.isDefault = template.isDefault ?? template.is_default ?? false;
@@ -1111,6 +1126,43 @@ const ProductUnitsApp = {
             } else {
                 this.elements.templatePreviewMissing.textContent = '';
             }
+        }
+    },
+
+    normalizeTemplateSampleData(sampleData = {}) {
+        if (!sampleData || typeof sampleData !== 'object') {
+            return {};
+        }
+        const normalized = {};
+        Object.entries(sampleData).forEach(([key, value]) => {
+            if (typeof key !== 'string') {
+                return;
+            }
+            const cleanedKey = key.replace(/^[{\s]+|[}\s]+$/g, '').trim().toUpperCase();
+            if (cleanedKey) {
+                normalized[cleanedKey] = value;
+            }
+        });
+        return normalized;
+    },
+
+    applyDefaultTestRecipient() {
+        if (!this.elements.emailTemplateTestRecipient) {
+            return;
+        }
+        const currentValue = (this.elements.emailTemplateTestRecipient.value || '').trim();
+        if (currentValue) {
+            this.state.emailTemplate.testRecipient = currentValue;
+            return;
+        }
+
+        const fallback = (this.state.emailTemplate.testRecipient || '').trim()
+            || (this.state.emailTemplate.sampleData?.SUPPLIER_EMAIL || '').trim()
+            || (this.state.emailTemplate.sampleData?.COMPANY_EMAIL || '').trim();
+
+        if (fallback) {
+            this.elements.emailTemplateTestRecipient.value = fallback;
+            this.state.emailTemplate.testRecipient = fallback;
         }
     },
 
@@ -1273,8 +1325,9 @@ const ProductUnitsApp = {
             const data = response.data || {};
             const template = data.template || null;
 
-            this.state.emailTemplate.sampleData = data.sample_data || {};
+            this.state.emailTemplate.sampleData = this.normalizeTemplateSampleData(data.sample_data);
             this.state.emailTemplate.availableVariables = data.available_variables || {};
+            this.applyDefaultTestRecipient();
 
             if (template) {
                 this.populateEmailTemplateFields({
@@ -1572,17 +1625,41 @@ const ProductUnitsApp = {
             return;
         }
 
+        const recipient = (this.state.emailTemplate.testRecipient
+            || this.elements.emailTemplateTestRecipient?.value
+            || '').trim();
+
+        if (!recipient) {
+            this.showError('Introdu adresa de email a furnizorului pentru test.');
+            if (this.elements.emailTemplateTestRecipient) {
+                this.elements.emailTemplateTestRecipient.classList.add('input-error');
+                this.elements.emailTemplateTestRecipient.focus();
+            }
+            return;
+        }
+
+        if (!this.isValidEmail(recipient)) {
+            this.showError('Adresa de email a furnizorului nu este validă.');
+            if (this.elements.emailTemplateTestRecipient) {
+                this.elements.emailTemplateTestRecipient.classList.add('input-error');
+                this.elements.emailTemplateTestRecipient.focus();
+            }
+            return;
+        }
+
         const validation = this.validateEmailTemplate();
         if (validation.hasErrors) {
             this.showError(MESSAGES.validationFailed);
             return;
         }
 
+        this.state.emailTemplate.testRecipient = recipient;
         const payload = {
             template_id: this.state.emailTemplate.templateId,
             template_type: 'auto_order',
             subject_template: subject,
-            body_template: body
+            body_template: body,
+            recipient_email: recipient
         };
 
         try {
@@ -1608,6 +1685,12 @@ const ProductUnitsApp = {
         this.setFieldError(this.elements.emailTemplateBody, this.elements.emailBodyError);
         if (this.elements.templateValidationList) {
             this.elements.templateValidationList.innerHTML = '';
+        }
+        if (this.elements.templatePreviewMissing) {
+            this.elements.templatePreviewMissing.textContent = '';
+        }
+        if (this.elements.emailTemplateTestRecipient) {
+            this.elements.emailTemplateTestRecipient.classList.remove('input-error');
         }
         this.updateAutoSaveStatus('idle');
     },
@@ -2529,6 +2612,14 @@ const ProductUnitsApp = {
             clearTimeout(timeout);
             timeout = setTimeout(later, wait);
         };
+    },
+
+    isValidEmail(email) {
+        if (typeof email !== 'string') {
+            return false;
+        }
+        const pattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        return pattern.test(email.trim());
     },
 
     escapeHtml(text) {

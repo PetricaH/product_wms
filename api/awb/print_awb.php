@@ -104,8 +104,9 @@ try {
         respond(['success' => false, 'error' => 'No suitable printer found'], 404);
     }
     
-    if (!$printer['server_active']) {
-        respond(['success' => false, 'error' => 'Print server is not active'], 503);
+    $printServerUrl = resolvePrintServerUrl($printer, $config);
+    if (!$printServerUrl) {
+        respond(['success' => false, 'error' => 'Print server is not available'], 503);
     }
     
     // Get or create AWB PDF using Cargus API
@@ -119,7 +120,6 @@ try {
     $jobId = createPrintJob($db, $orderId, $printer['id'], $printer['print_server_id'] ?? null, $awbPdfUrl);
     
     // Send to print server - EXACT SAME METHOD AS TEST PRINT
-    $printServerUrl = "http://{$printer['ip_address']}:{$printer['port']}/print_server.php";
     $printResult = sendToPrintServerSimple($printServerUrl, $awbPdfUrl, $printer['network_identifier']);
     
     // Update print job status
@@ -150,6 +150,35 @@ try {
 }
 
 // SIMPLE PRINT FUNCTION - SAME AS TEST PRINT
+function resolvePrintServerUrl(array $printer, array $config): ?string {
+    $ip = trim((string)($printer['ip_address'] ?? ''));
+    $port = trim((string)($printer['port'] ?? ''));
+    $activeRaw = $printer['server_active'] ?? null;
+
+    $isActive = true;
+    if ($activeRaw !== null) {
+        $isActive = filter_var($activeRaw, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+        if ($isActive === null) {
+            $isActive = ((string)$activeRaw === '1' || (int)$activeRaw === 1);
+        }
+    }
+
+    if ($ip !== '' && $port !== '' && $isActive) {
+        return "http://{$ip}:{$port}/print_server.php";
+    }
+
+    $fallback = $config['print_server_url'] ?? '';
+    if ($fallback !== '') {
+        $fallback = rtrim($fallback, '/');
+        if (!preg_match('/print_server\.php(\?|$)/', $fallback)) {
+            $fallback .= '/print_server.php';
+        }
+        return $fallback;
+    }
+
+    return null;
+}
+
 function sendToPrintServerSimple(string $printServerUrl, string $pdfUrl, string $printerName): array {
     // Build URL with parameters - EXACT SAME AS WORKING TEST PRINT
     $url = $printServerUrl . '?' . http_build_query([

@@ -84,7 +84,8 @@ try {
     }
 
     // Check if print server is available
-    if (!$printer['ip_address'] || !$printer['server_active']) {
+    $printServerUrl = resolvePrintServerUrl($printer, $config);
+    if (!$printServerUrl) {
         respond(['status' => 'error', 'message' => 'Print server is not available'], 503);
     }
 
@@ -98,7 +99,6 @@ try {
     $jobId = createPrintJob($db, $orderId, $printer['id'], $printer['print_server_id'] ?? null, $invoiceUrl);
 
     // Send to print server - using same method as successful test print
-    $printServerUrl = "http://{$printer['ip_address']}:{$printer['port']}/print_server.php";
     $printResult = sendToPrintServer($printServerUrl, $invoiceUrl, $printer['network_identifier']);
     // Update print job status
     updatePrintJobStatus($db, $jobId, $printResult['success'], $printResult['error'] ?? null);
@@ -191,28 +191,57 @@ function createAccessiblePdfUrl(string $originalPdfPath, string $fileName): ?str
         if (!is_dir($publicTempDir)) {
             @mkdir($publicTempDir, 0755, true);
         }
-        
+
         $publicTempPath = $publicTempDir . '/' . $fileName;
-        
+
         // Copy existing PDF file to public location
         if (!copy($originalPdfPath, $publicTempPath)) {
             error_log("Failed to copy PDF to temp location: " . $originalPdfPath . " -> " . $publicTempPath);
             return null;
         }
-        
+
         // Return external IP URL instead of localhost
         $externalUrl = getExternalBaseUrl() . '/temp/' . $fileName;
         error_log("Created accessible PDF URL: " . $externalUrl);
-        
+
         return $externalUrl;
-        
+
     } catch (Exception $e) {
         error_log("Failed to create accessible PDF URL: " . $e->getMessage());
         return null;
     }
 }
 
-function sendToPrintServer(string $printServerUrl, string $pdfUrl, string $printerName = null): array {
+function resolvePrintServerUrl(array $printer, array $config): ?string {
+    $ip = trim((string)($printer['ip_address'] ?? ''));
+    $port = trim((string)($printer['port'] ?? ''));
+    $activeRaw = $printer['server_active'] ?? null;
+
+    $isActive = true;
+    if ($activeRaw !== null) {
+        $isActive = filter_var($activeRaw, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+        if ($isActive === null) {
+            $isActive = ((string)$activeRaw === '1' || (int)$activeRaw === 1);
+        }
+    }
+
+    if ($ip !== '' && $port !== '' && $isActive) {
+        return "http://{$ip}:{$port}/print_server.php";
+    }
+
+    $fallback = $config['print_server_url'] ?? '';
+    if ($fallback !== '') {
+        $fallback = rtrim($fallback, '/');
+        if (!preg_match('/print_server\.php(\?|$)/', $fallback)) {
+            $fallback .= '/print_server.php';
+        }
+        return $fallback;
+    }
+
+    return null;
+}
+
+function sendToPrintServer(string $printServerUrl, string $pdfUrl, ?string $printerName = null): array {
     // Build URL with printer parameter - this was missing!
     $params = ['url' => $pdfUrl];
     if ($printerName) {

@@ -105,7 +105,10 @@ try {
             ), 0) AS remaining_items
         FROM orders o
         WHERE (
-            o.status IN ('Pending', 'Processing', 'assigned', 'pending', 'processing', 'ready_to_ship')
+            o.status IN (
+                'Pending', 'Processing', 'Picked',
+                'assigned', 'pending', 'processing', 'picked', 'ready_to_ship'
+            )
             OR (LOWER(o.status) = 'completed' AND DATE(o.updated_at) = CURDATE())
         )
         ORDER BY

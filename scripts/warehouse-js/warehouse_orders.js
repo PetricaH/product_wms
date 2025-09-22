@@ -112,7 +112,7 @@ function applyFilters() {
             return order.status === 'processing' || order.status === 'assigned';
         }
         if (activeStatusFilter === 'completed') {
-            return order.status === 'completed' || order.status === 'ready';
+            return ['completed', 'ready', 'picked'].includes(order.status);
         }
         return !activeStatusFilter || order.status === activeStatusFilter;
     });

@@ -771,6 +771,30 @@ function updateRemoveButtons() {
     });
 }
 
+function parseNumberInput(value) {
+    if (typeof value === 'number') {
+        return value;
+    }
+
+    if (value === null || value === undefined) {
+        return 0;
+    }
+
+    let normalized = value
+        .toString()
+        .trim()
+        .replace(/\s+/g, '');
+
+    if (normalized.includes(',') && normalized.includes('.')) {
+        normalized = normalized.replace(/\./g, '').replace(/,/g, '.');
+    } else if (normalized.includes(',')) {
+        normalized = normalized.replace(/,/g, '.');
+    }
+
+    const parsed = parseFloat(normalized);
+    return Number.isNaN(parsed) ? 0 : parsed;
+}
+
 function calculateItemTotal(index) {
     let item = document.querySelector(`[data-index="${index}"]`);
     
@@ -789,10 +813,10 @@ function calculateItemTotal(index) {
     const itemTotalField = item.querySelector('.item-total');
     
     if (quantityField && unitPriceField && itemTotalField) {
-        const quantity = parseFloat(quantityField.value) || 0;
-        const unitPrice = parseFloat(unitPriceField.value) || 0;
+        const quantity = parseNumberInput(quantityField.value);
+        const unitPrice = parseNumberInput(unitPriceField.value);
         const total = quantity * unitPrice;
-        
+
         itemTotalField.value = total.toFixed(2) + ' RON';
     }
     
@@ -809,8 +833,8 @@ function calculateOrderTotal() {
         const unitPriceField = item.querySelector('.unit-price');
         
         if (quantityField && unitPriceField) {
-            const quantity = parseFloat(quantityField.value) || 0;
-            const unitPrice = parseFloat(unitPriceField.value) || 0;
+            const quantity = parseNumberInput(quantityField.value);
+            const unitPrice = parseNumberInput(unitPriceField.value);
             orderTotal += quantity * unitPrice;
         }
     });
@@ -879,8 +903,8 @@ function validateStockPurchaseForm() {
         const internalProductSearch = item.querySelector('.internal-product-search');
 
         const productName = ((productNameField && productNameField.value) ?? '').toString().trim();
-        const quantity = quantityField ? parseFloat(quantityField.value) || 0 : 0;
-        const unitPrice = unitPriceField ? parseFloat(unitPriceField.value) || 0 : 0;
+        const quantity = quantityField ? parseNumberInput(quantityField.value) : 0;
+        const unitPrice = unitPriceField ? parseNumberInput(unitPriceField.value) : 0;
 
         if (productName && quantity > 0 && unitPrice > 0) {
             if (!internalProductHidden || !internalProductHidden.value) {

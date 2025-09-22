@@ -857,7 +857,6 @@ function submitStockPurchase(status) {
     document.getElementById('stockPurchaseForm').submit();
 }
 
-// FIXED: Form validation with proper checks
 function validateStockPurchaseForm() {
     const modal = document.getElementById('stockPurchaseModal');
     if (!modal) {
@@ -891,20 +890,23 @@ function validateStockPurchaseForm() {
         return false;
     }
     
-    // Check for valid products
+    // FIXED: Check for valid products using more specific selectors
     const productItems = document.querySelectorAll('.product-item');
     let hasValidItems = false;
 
     for (const item of productItems) {
-        const productNameField = item.querySelector('.product-name');
-        const quantityField = item.querySelector('.quantity');
-        const unitPriceField = item.querySelector('.unit-price');
+        // FIXED: Use more specific selectors to target INPUT elements
+        const productNameField = item.querySelector('input.product-name'); // Target INPUT with class
+        const quantityField = item.querySelector('input.quantity'); // Target INPUT with class  
+        const unitPriceField = item.querySelector('input.unit-price'); // Target INPUT with class
         const internalProductHidden = item.querySelector('.internal-product-id');
         const internalProductSearch = item.querySelector('.internal-product-search');
 
         const productName = ((productNameField && productNameField.value) ?? '').toString().trim();
         const quantity = quantityField ? parseNumberInput(quantityField.value) : 0;
         const unitPrice = unitPriceField ? parseNumberInput(unitPriceField.value) : 0;
+
+        console.log('✅ Fixed validation check:', { productName, quantity, unitPrice }); // Debug log
 
         if (productName && quantity > 0 && unitPrice > 0) {
             if (!internalProductHidden || !internalProductHidden.value) {

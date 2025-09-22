@@ -20,7 +20,7 @@ class Inventory {
     }
 
     // init transaction servie
-    private function getTransactionService(): InventoryTransactionService {
+    private function getTransactionService(): ?InventoryTransactionService {
         if ($this->transactionService === null) {
             if (file_exists(BASE_PATH . '/services/InventoryTransactionService.php')) {
                 require_once BASE_PATH . '/services/InventoryTransactionService.php';

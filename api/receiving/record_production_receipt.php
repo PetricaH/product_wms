@@ -24,6 +24,14 @@ function addRotatedQRAndTextToPDF($pdf, string $sku, string $productName, int $q
     // Add text content at bottom edge location
     $currentY = $textY;
     
+    // SKU
+    if ($sku) {
+        $pdf->SetFont('Arial', 'B', 8);
+        $pdf->SetXY($textX, $currentY);
+        $pdf->Cell(0, 5, "SKU: " . $sku, 0, 1, 'L');
+        $currentY += 6;
+    }
+
     // Batch
     if ($batch) {
         $pdf->SetFont('Arial', 'B', 8);
@@ -570,6 +578,14 @@ function addTextContentToPDF($pdf, string $sku, string $productName, int $qty, s
     $pdf->SetTextColor(0, 0, 0);
     $currentY = $textY;
     
+    // SKU
+    if ($sku) {
+        $pdf->SetFont('Arial', 'B', 8);
+        $pdf->SetXY($textX, $currentY);
+        $pdf->Cell(0, 5, "SKU: " . $sku, 0, 1, 'L');
+        $currentY += 4;
+    }
+
     // Batch
     if ($batch) {
         $pdf->SetFont('Arial', 'B', 8);
@@ -601,6 +617,14 @@ function addRotatedTextContentToPDF($pdf, string $sku, string $productName, int 
     
     $currentY = $textY;
     
+    // SKU
+    if ($sku) {
+        $pdf->SetFont('Arial', 'B', 8);
+        $pdf->SetXY($textX, $currentY);
+        $pdf->Cell(0, 5, "SKU: " . $sku, 0, 1, 'L');
+        $currentY -= 4;  // Move up for rotation
+    }
+
     // Batch
     if ($batch) {
         $pdf->SetFont('Arial', 'B', 8);

@@ -1200,6 +1200,8 @@ if ($envelopeTypeCount !== $awbData['Envelopes']) {
         CURLOPT_URL => $url,
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_TIMEOUT => 30,
+        CURLOPT_CONNECTTIMEOUT => 10,
+        CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
         CURLOPT_CUSTOMREQUEST => $method,
         CURLOPT_HTTPHEADER => $headers,
         CURLOPT_SSL_VERIFYPEER => false,

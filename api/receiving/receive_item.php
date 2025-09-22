@@ -21,14 +21,14 @@ require_once BASE_PATH . '/models/ShelfLevelResolver.php';
 
 if (!isset($_SESSION['user_id'])) {
     http_response_code(401);
-    echo json_encode(['success' => false, 'message' => 'Unauthorized']);
+    echo json_encode(['success' => false, 'message' => 'Acces neautorizat']);
     exit;
 }
 
 // Only allow POST
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
-    echo json_encode(['success' => false, 'message' => 'Method not allowed']);
+    echo json_encode(['success' => false, 'message' => 'Metodă nepermisă']);
     exit;
 }
 
@@ -39,6 +39,17 @@ $db = $dbFactory();
 require_once BASE_PATH . '/models/Product.php';
 require_once BASE_PATH . '/models/PurchasableProduct.php';
 require_once BASE_PATH . '/models/BarcodeCaptureTask.php';
+
+$transactionService = null;
+if (file_exists(BASE_PATH . '/services/InventoryTransactionService.php')) {
+    require_once BASE_PATH . '/services/InventoryTransactionService.php';
+    try {
+        $transactionService = new InventoryTransactionService($db);
+    } catch (Throwable $e) {
+        error_log('Nu s-a putut inițializa serviciul de tranzacții de inventar: ' . $e->getMessage());
+        $transactionService = null;
+    }
+}
 
 function getDefaultLocationId(PDO $db, string $type): ?int {
     $stmt = $db->prepare("SELECT id FROM locations WHERE type = :type LIMIT 1");
@@ -280,15 +291,15 @@ try {
     }
     
     if (!$sessionId || !$itemId || $receivedQuantity <= 0) {
-        throw new Exception('Session ID, item ID and received quantity (>0) are required');
+        throw new Exception('ID-ul sesiunii, ID-ul produsului și cantitatea recepționată (>0) sunt obligatorii');
     }
     
     // Validate session exists and is active
     $stmt = $db->prepare("
-        SELECT rs.*, po.id as purchase_order_id
+        SELECT rs.*, po.id as purchase_order_id, po.order_number
         FROM receiving_sessions rs
         JOIN purchase_orders po ON rs.purchase_order_id = po.id
-        WHERE rs.id = :session_id 
+        WHERE rs.id = :session_id
         AND rs.status = 'in_progress'
         AND rs.received_by = :user_id
     ");
@@ -299,7 +310,7 @@ try {
     $session = $stmt->fetch(PDO::FETCH_ASSOC);
     
     if (!$session) {
-        throw new Exception('Receiving session not found or not accessible');
+        throw new Exception('Sesiunea de recepție nu a fost găsită sau nu este accesibilă');
     }
     
     // Validate purchase order item exists and get product mapping
@@ -319,7 +330,7 @@ try {
     $orderItem = $stmt->fetch(PDO::FETCH_ASSOC);
     
     if (!$orderItem) {
-        throw new Exception('Purchase order item not found');
+        throw new Exception('Produsul din comanda de achiziție nu a fost găsit');
     }
     
     if (!$orderItem['main_product_id']) {
@@ -337,7 +348,7 @@ try {
             'price' => $orderItem['unit_price'] ?? 0
         ]);
         if (!$newProductId) {
-            throw new Exception('Failed to auto-create main product');
+            throw new Exception('Nu s-a putut crea automat produsul principal');
         }
         // Update purchasable product mapping
         $purchasableModel->updateProduct((int)$orderItem['purchasable_product_id'], ['internal_product_id' => $newProductId]);
@@ -348,7 +359,7 @@ try {
     if ($locationCode !== '') {
         $requestedLocation = fetchLocationByCode($db, $locationCode);
         if (!$requestedLocation) {
-            throw new Exception('Location not found or inactive');
+            throw new Exception('Locația nu a fost găsită sau este inactivă');
         }
     }
 
@@ -365,7 +376,7 @@ try {
         } else {
             $fallback = getFirstActiveLocation($db);
             if (!$fallback) {
-                throw new Exception('Location is required');
+                throw new Exception('Selectarea unei locații este obligatorie');
             }
             $resolvedLocation = [
                 'id' => (int)$fallback['id'],
@@ -638,6 +649,37 @@ try {
                 ':expiry_date' => $expiryDate ?: null
             ]);
         }
+
+        if ($transactionService && $receivedQuantity > 0) {
+            $motiv = 'Recepție marfă';
+            if (!empty($session['order_number'])) {
+                $motiv .= ' - PO ' . $session['order_number'];
+            } elseif (!empty($session['purchase_order_id'])) {
+                $motiv .= ' - PO ID ' . $session['purchase_order_id'];
+            }
+
+            try {
+                $transactionService->logReceive(
+                    (int)$orderItem['main_product_id'],
+                    (int)$location['id'],
+                    (int)round($receivedQuantity),
+                    [
+                        'batch_number' => $batchNumber ?: null,
+                        'expiry_date' => $expiryDate ?: null,
+                        'shelf_level' => $resolvedShelfLevel,
+                        'subdivision_number' => $resolvedSubdivision,
+                        'reference_type' => 'receiving_session',
+                        'reference_id' => $sessionId,
+                        'reason' => $motiv,
+                        'notes' => $notes !== '' ? $notes : null,
+                        'user_id' => (int)($_SESSION['user_id'] ?? 0),
+                        'operator_notes' => null
+                    ]
+                );
+            } catch (Throwable $e) {
+                error_log('Înregistrarea mișcării în inventar a eșuat: ' . $e->getMessage());
+            }
+        }
     }
 
     if ($trackingMethod === 'individual' && !$barcodeTask) {
@@ -653,7 +695,7 @@ try {
         $discrepancyQuantity = abs($receivedQuantity - $expectedQuantity);
 
         // Create description for the discrepancy
-        $description = $notes ?: "Quantity discrepancy: Expected {$expectedQuantity}, received {$receivedQuantity}";
+        $description = $notes ?: "Diferență de cantitate: așteptat {$expectedQuantity}, recepționat {$receivedQuantity}";
 
         // Check if discrepancy already exists for this session and product
         $stmt = $db->prepare("
@@ -736,7 +778,7 @@ try {
     // Return success response
     echo json_encode([
         'success' => true,
-        'message' => 'Item received successfully',
+        'message' => 'Produsul a fost recepționat cu succes',
         'receiving_item_id' => $receivingItemId,
         'status' => $status,
         'tracking_method' => $trackingMethod,

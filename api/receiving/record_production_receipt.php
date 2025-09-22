@@ -278,7 +278,11 @@ try {
             'location_id'  => (int)$locationId,
             'quantity'     => (int)$quantity,
             'batch_number' => $batchNumber ?: null,
-            'received_at'  => $producedAt
+            'received_at'  => $producedAt,
+            'reference_type' => 'production_receipt',
+            'reason'         => 'Recepție producție',
+            'notes'          => $photoDescription !== '' ? $photoDescription : null,
+            'user_id'        => (int)($_SESSION['user_id'] ?? 0)
         ];
         error_log("Production Receipt Debug - Inventory data: " . json_encode($inventoryData));
         if ($batchNumber) {
@@ -286,10 +290,17 @@ try {
             $stmt->execute([$productId, $locationId, $batchNumber]);
             $existing = $stmt->fetch(PDO::FETCH_ASSOC);
             if ($existing) {
-                $stmt = $db->prepare("UPDATE inventory SET quantity = quantity + ?, received_at = ?, updated_at = NOW() WHERE id = ?");
-                $result = $stmt->execute([$quantity, $producedAt, $existing['id']]);
+                $increaseOptions = [
+                    'received_at' => $producedAt,
+                    'batch_number' => $batchNumber,
+                    'reference_type' => 'production_receipt',
+                    'reason' => 'Recepție producție - completare lot',
+                    'notes' => $photoDescription !== '' ? $photoDescription : null,
+                    'user_id' => (int)($_SESSION['user_id'] ?? 0)
+                ];
+                $result = $inventoryModel->increaseInventoryQuantity((int)$existing['id'], (int)$quantity, $increaseOptions);
                 if (!$result) { throw new Exception('Failed to update existing inventory record'); }
-                $invId = $existing['id'];
+                $invId = (int)$existing['id'];
                 error_log("Production Receipt Debug - Updated existing inventory record: $invId");
             } else {
                 $invId = $inventoryModel->addStock($inventoryData);

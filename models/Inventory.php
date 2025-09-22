@@ -361,7 +361,8 @@ class Inventory {
                         'reference_type' => $data['reference_type'] ?? 'manual',
                         'reference_id' => $data['reference_id'] ?? null,
                         'reason' => $data['reason'] ?? 'Stock added to inventory',
-                        'notes' => $data['notes'] ?? null
+                        'notes' => $data['notes'] ?? null,
+                        'user_id' => $data['user_id'] ?? ($_SESSION['user_id'] ?? 0)
                     ]
                 );
             } catch (Exception $e) {
@@ -377,6 +378,113 @@ class Inventory {
                 $this->conn->rollBack();
             }
             error_log("Add stock failed: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Increase quantity on an existing inventory record while keeping audit logs
+     *
+     * @param int   $inventoryId    Inventory record ID
+     * @param int   $quantity       Quantity to add
+     * @param array $options        Additional metadata (received_at, reason, notes, etc.)
+     * @param bool  $useTransaction Wrap the operation in a database transaction
+     */
+    public function increaseInventoryQuantity(int $inventoryId, int $quantity, array $options = [], bool $useTransaction = true): bool
+    {
+        $startTime = microtime(true);
+
+        if ($quantity <= 0) {
+            error_log('Increase inventory failed: quantity must be positive');
+            return false;
+        }
+
+        try {
+            if ($useTransaction) {
+                $this->conn->beginTransaction();
+            }
+
+            $selectQuery = "SELECT id, product_id, location_id, quantity, shelf_level, subdivision_number, batch_number, lot_number, expiry_date
+                             FROM {$this->inventoryTable}
+                             WHERE id = :id
+                             FOR UPDATE";
+            $selectStmt = $this->conn->prepare($selectQuery);
+            $selectStmt->bindParam(':id', $inventoryId, PDO::PARAM_INT);
+            $selectStmt->execute();
+            $record = $selectStmt->fetch(PDO::FETCH_ASSOC);
+
+            if (!$record) {
+                if ($useTransaction && $this->conn->inTransaction()) {
+                    $this->conn->rollBack();
+                }
+                error_log('Increase inventory failed: record not found');
+                return false;
+            }
+
+            $receivedAt = $options['received_at'] ?? date('Y-m-d H:i:s');
+
+            $updateQuery = "UPDATE {$this->inventoryTable}
+                            SET quantity = quantity + :quantity,
+                                received_at = :received_at,
+                                updated_at = NOW()
+                            WHERE id = :id";
+            $updateStmt = $this->conn->prepare($updateQuery);
+            $updateStmt->bindParam(':quantity', $quantity, PDO::PARAM_INT);
+            $updateStmt->bindParam(':received_at', $receivedAt, PDO::PARAM_STR);
+            $updateStmt->bindParam(':id', $inventoryId, PDO::PARAM_INT);
+            $updateStmt->execute();
+
+            $this->updateProductTotalQuantity((int)$record['product_id']);
+            $this->updateLocationOccupancy((int)$record['location_id']);
+
+            if ($useTransaction) {
+                $this->conn->commit();
+            }
+
+            $userId = $_SESSION['user_id'] ?? 0;
+            logActivity(
+                $userId,
+                'add',
+                'inventory',
+                $inventoryId,
+                'Stock increased',
+                ['quantity_before' => (int)$record['quantity']],
+                ['quantity_after' => (int)$record['quantity'] + $quantity]
+            );
+
+            if ($this->hasTransactionLogging()) {
+                try {
+                    $duration = round((microtime(true) - $startTime), 2);
+                    $this->getTransactionService()->logReceive(
+                        (int)$record['product_id'],
+                        (int)$record['location_id'],
+                        $quantity,
+                        [
+                            'batch_number' => $options['batch_number'] ?? $record['batch_number'] ?? null,
+                            'lot_number' => $options['lot_number'] ?? $record['lot_number'] ?? null,
+                            'expiry_date' => $options['expiry_date'] ?? $record['expiry_date'] ?? null,
+                            'shelf_level' => $options['shelf_level'] ?? $record['shelf_level'] ?? null,
+                            'subdivision_number' => $options['subdivision_number'] ?? $record['subdivision_number'] ?? null,
+                            'reference_type' => $options['reference_type'] ?? 'manual',
+                            'reference_id' => $options['reference_id'] ?? null,
+                            'reason' => $options['reason'] ?? 'Stock increased in inventory',
+                            'notes' => $options['notes'] ?? null,
+                            'user_id' => $options['user_id'] ?? ($_SESSION['user_id'] ?? 0),
+                            'duration_seconds' => $duration
+                        ]
+                    );
+                } catch (Exception $e) {
+                    error_log('Transaction logging failed: ' . $e->getMessage());
+                }
+            }
+
+            return true;
+
+        } catch (PDOException $e) {
+            if ($useTransaction && $this->conn->inTransaction()) {
+                $this->conn->rollBack();
+            }
+            error_log('Increase inventory failed: ' . $e->getMessage());
             return false;
         }
     }

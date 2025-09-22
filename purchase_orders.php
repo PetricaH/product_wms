@@ -899,7 +899,7 @@ require_once __DIR__ . '/includes/header.php';
             <div class="modal-content">
                 <div class="modal-header">
                     <h3 id="modal-title">Detalii Primire Comandă</h3>
-                    <button type="button" class="close-btn" onclick="closeReceivingModal()">
+                    <button type="button" class="modal-close" aria-label="Închide" onclick="closeReceivingModal()">
                         <span class="material-symbols-outlined">close</span>
                     </button>
                 </div>

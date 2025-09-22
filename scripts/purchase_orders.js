@@ -1130,7 +1130,8 @@ class PurchaseOrdersReceivingManager {
         `;
         
         // Show modal
-        modal.style.display = 'flex';
+        modal.classList.add('show');
+        modal.style.display = '';
         
         try {
             const response = await fetch(`api/receiving/purchase_order_details.php?order_id=${orderId}`);
@@ -1269,7 +1270,7 @@ class PurchaseOrdersReceivingManager {
                 <div class="modal-content">
                     <div class="modal-header">
                         <h3 id="modal-title">Detalii Primire Comandă</h3>
-                        <button type="button" class="close-btn" onclick="closeReceivingModal()" style="background: none; border: none; font-size: 24px; cursor: pointer;">
+                        <button type="button" class="modal-close" aria-label="Închide" onclick="closeReceivingModal()">
                             <span class="material-symbols-outlined">close</span>
                         </button>
                     </div>
@@ -1292,6 +1293,7 @@ class PurchaseOrdersReceivingManager {
     closeReceivingModal() {
         const modal = document.getElementById('receiving-details-modal');
         if (modal) {
+            modal.classList.remove('show');
             modal.style.display = 'none';
         }
     }
@@ -1721,8 +1723,16 @@ function clearAllFilters() {
 }
 
 function closeReceivingModal() {
-    if (window.purchaseOrdersManager) {
+    if (window.purchaseOrdersManager &&
+        typeof window.purchaseOrdersManager.closeReceivingModal === 'function') {
         window.purchaseOrdersManager.closeReceivingModal();
+        return;
+    }
+
+    const fallbackModal = document.getElementById('receiving-details-modal');
+    if (fallbackModal) {
+        fallbackModal.classList.remove('show');
+        fallbackModal.style.display = 'none';
     }
 }
 
@@ -1732,6 +1742,8 @@ document.addEventListener('click', function(e) {
         const modalId = e.target.id;
         if (modalId === 'stockPurchaseModal') {
             closeStockPurchaseModal();
+        } else if (modalId === 'receiving-details-modal') {
+            closeReceivingModal();
         } else {
             closeModal(modalId);
         }

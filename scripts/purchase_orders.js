@@ -853,12 +853,15 @@ function validateStockPurchaseForm() {
     // Email subject and body required
     const subjectField = modal.querySelector('#email_subject');
     const messageField = modal.querySelector('#custom_message');
-    if (subjectField && subjectField.value.trim() === '') {
+    const subjectValue = ((subjectField && subjectField.value) ?? '').toString().trim();
+    const messageValue = ((messageField && messageField.value) ?? '').toString().trim();
+
+    if (subjectField && subjectValue === '') {
         alert('Subiectul emailului este obligatoriu.');
         subjectField.focus();
         return false;
     }
-    if (messageField && messageField.value.trim() === '') {
+    if (messageField && messageValue === '') {
         alert('Mesajul emailului este obligatoriu.');
         messageField.focus();
         return false;
@@ -875,7 +878,7 @@ function validateStockPurchaseForm() {
         const internalProductHidden = item.querySelector('.internal-product-id');
         const internalProductSearch = item.querySelector('.internal-product-search');
 
-        const productName = productNameField ? productNameField.value.trim() : '';
+        const productName = ((productNameField && productNameField.value) ?? '').toString().trim();
         const quantity = quantityField ? parseFloat(quantityField.value) || 0 : 0;
         const unitPrice = unitPriceField ? parseFloat(unitPriceField.value) || 0 : 0;
 

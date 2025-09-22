@@ -380,25 +380,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         switch ($action) {
             case 'create_stock_purchase':
+                error_log('[PurchaseOrders] Starting stock purchase creation flow');
                 $sellerId = intval($_POST['seller_id'] ?? 0);
                 $customMessage = trim($_POST['custom_message'] ?? '');
                 $emailSubject = trim($_POST['email_subject'] ?? '');
                 $expectedDeliveryDate = $_POST['expected_delivery_date'] ?? null;
                 $items = $_POST['items'] ?? [];
-                
+
                 if ($sellerId <= 0) {
                     throw new Exception('Trebuie să selectezi un furnizor.');
                 }
-                
+
+                $seller = $sellerModel->getSellerById($sellerId);
+                if (!$seller) {
+                    throw new Exception('Furnizorul selectat nu există sau este inactiv.');
+                }
+
                 if (empty($items)) {
                     throw new Exception('Trebuie să adaugi cel puțin un produs.');
                 }
-                
+
                 // Process items and calculate total
                 $processedItems = [];
                 $totalAmount = 0;
                 
-                foreach ($items as $item) {
+                foreach ($items as $index => $item) {
+                    error_log('[PurchaseOrders] Processing item index ' . $index . ': ' . json_encode($item));
                     $purchasableProductId = intval($item['purchasable_product_id'] ?? 0);
                     $internalProductId = intval($item['internal_product_id'] ?? 0);
 
@@ -435,23 +442,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 ];
                                 
                                 $purchasableProductId = $purchasableProductModel->createProduct($newProductData);
-                                
+
                                 if ($purchasableProductId) {
                                     error_log("Successfully created new product: {$productName} with ID: {$purchasableProductId}");
                                 } else {
-                                    throw new Exception("Nu s-a putut crea produsul nou: {$productName}");
+                                    $productError = $purchasableProductModel->getLastError();
+                                    throw new Exception("Nu s-a putut crea produsul nou: {$productName}. Motiv: " . ($productError ?? 'eroare necunoscută.'));
                                 }
                             }
                         } else {
                             throw new Exception('Numele produsului este obligatoriu.');
                         }
                     } else {
-                        $purchasableProductModel->updateProduct($purchasableProductId, ['internal_product_id' => $internalProductId]);
+                        if (!$purchasableProductModel->updateProduct($purchasableProductId, ['internal_product_id' => $internalProductId])) {
+                            $updateError = $purchasableProductModel->getLastError();
+                            throw new Exception('Nu s-a putut actualiza produsul selectat. Motiv: ' . ($updateError ?? 'eroare necunoscută.'));
+                        }
                     }
 
                     $quantity = floatval($item['quantity']);
                     $unitPrice = floatval($item['unit_price']);
-                    
+
                     if ($quantity <= 0 || $unitPrice <= 0) {
                         throw new Exception('Cantitatea și prețul trebuie să fie mai mari decât 0.');
                     }
@@ -473,9 +484,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 
                 // Get seller details
-                $seller = $sellerModel->getSellerById($sellerId);
                 $emailRecipient = $_POST['email_recipient'] ?? $seller['email'] ?? '';
-                
+
                 // Create purchase order
                 $orderData = [
                     'seller_id' => $sellerId,
@@ -487,8 +497,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'items' => $processedItems
                 ];
                 
+                error_log('[PurchaseOrders] Prepared order data: ' . json_encode($orderData));
+
                 $orderId = $purchaseOrderModel->createPurchaseOrder($orderData);
-                
+
                 if ($orderId) {
                     // Create transaction record
                     $transactionData = [
@@ -503,8 +515,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'status' => 'pending',
                         'created_by' => $_SESSION['user_id']
                     ];
-                    
-                    $transactionModel->createTransaction($transactionData);
+
+                    if (!$transactionModel->createTransaction($transactionData)) {
+                        $transactionError = $transactionModel->getLastError();
+                        error_log('[PurchaseOrders] Failed to create transaction for order ' . $orderId . ': ' . ($transactionError ?? 'Unknown error'));
+                    }
 
                     // Get order info for PDF generation
                     $orderInfo = $purchaseOrderModel->getPurchaseOrderById($orderId);
@@ -558,7 +573,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $messageType = 'warning';
                     }
                 } else {
-                    throw new Exception('Eroare la crearea comenzii de stoc.');
+                    $orderError = $purchaseOrderModel->getLastError();
+                    throw new Exception('Eroare la crearea comenzii de stoc. ' . ($orderError ?? 'Detalii suplimentare indisponibile.'));
                 }
                 break;
                 
@@ -670,7 +686,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } catch (Exception $e) {
         $message = $e->getMessage();
         $messageType = 'error';
-        error_log("Purchase order error: " . $e->getMessage());
+        error_log("Purchase order error: " . $e->getMessage() . ' | Payload: ' . json_encode($_POST));
     }
 }
 

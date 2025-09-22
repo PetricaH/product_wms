@@ -7,9 +7,21 @@
 class Transaction {
     private PDO $conn;
     private string $table = "transactions";
-    
+    private ?string $lastError = null;
+
     public function __construct(PDO $database) {
         $this->conn = $database;
+    }
+
+    public function getLastError(): ?string {
+        return $this->lastError;
+    }
+
+    private function rememberError(?string $message = null): void {
+        $this->lastError = $message;
+        if ($message) {
+            error_log('[Transaction] ' . $message);
+        }
     }
     
     /**
@@ -18,9 +30,10 @@ class Transaction {
      * @return bool Success status
      */
     public function createTransaction(array $transactionData): bool {
+        $this->rememberError(null);
         $query = "INSERT INTO {$this->table} (
-            transaction_type, amount, tax_amount, currency, description, 
-            reference_type, reference_id, purchase_order_id, customer_name, 
+            transaction_type, amount, tax_amount, currency, description,
+            reference_type, reference_id, purchase_order_id, customer_name,
             supplier_name, status, created_by, created_at
         ) VALUES (
             :transaction_type, :amount, :tax_amount, :currency, :description, 
@@ -45,8 +58,14 @@ class Transaction {
             $stmt->bindValue(':created_by', $transactionData['created_by'], PDO::PARAM_INT);
             
             $result = $stmt->execute();
-            
-            if ($result && function_exists('logActivity')) {
+
+            if (!$result) {
+                $errorInfo = $stmt->errorInfo();
+                $this->rememberError('Failed to create transaction: ' . ($errorInfo[2] ?? 'Unknown database error'));
+                return false;
+            }
+
+            if (function_exists('logActivity')) {
                 logActivity(
                     $transactionData['created_by'],
                     'create',
@@ -56,9 +75,9 @@ class Transaction {
                 );
             }
             
-            return $result;
+            return true;
         } catch (PDOException $e) {
-            error_log("Error creating transaction: " . $e->getMessage());
+            $this->rememberError('Error creating transaction: ' . $e->getMessage());
             return false;
         }
     }

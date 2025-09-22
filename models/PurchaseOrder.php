@@ -7,6 +7,7 @@
 class PurchaseOrder {
     private PDO $conn;
     private string $table = 'purchase_orders';
+    private ?string $lastError = null;
 
     public function __construct(PDO $database) {
         $this->conn = $database;
@@ -116,9 +117,21 @@ class PurchaseOrder {
         }
     }
 
+    public function getLastError(): ?string {
+        return $this->lastError;
+    }
+
+    private function rememberError(?string $message = null): void {
+        $this->lastError = $message;
+        if ($message) {
+            error_log('[PurchaseOrder] ' . $message);
+        }
+    }
+
     public function createPurchaseOrder(array $orderData): int|false {
+        $this->rememberError(null);
         $this->conn->beginTransaction();
-        
+
         try {
             // Generate order number
             $orderNumber = $this->generateOrderNumber();
@@ -157,21 +170,29 @@ class PurchaseOrder {
             $stmt->bindValue(':created_by', $_SESSION['user_id'], PDO::PARAM_INT);
             
             if (!$stmt->execute()) {
-                throw new Exception("Failed to create purchase order");
+                $errorInfo = $stmt->errorInfo();
+                $this->rememberError('Failed to create purchase order: ' . ($errorInfo[2] ?? 'Unknown database error'));
+                throw new Exception($this->lastError);
             }
-            
+
             $orderId = (int)$this->conn->lastInsertId();
-            
+
             // Add purchase order items if provided
             if (!empty($orderData['items'])) {
                 foreach ($orderData['items'] as $item) {
-                    $this->addOrderItem($orderId, $item);
+                    if (!$this->addOrderItem($orderId, $item)) {
+                        $errorMessage = $this->lastError ?? 'Failed to add purchase order item';
+                        throw new Exception($errorMessage);
+                    }
                 }
-                
+
                 // Update total amount
-                $this->updateOrderTotal($orderId);
+                if (!$this->updateOrderTotal($orderId)) {
+                    $errorMessage = $this->lastError ?? 'Failed to update purchase order total';
+                    throw new Exception($errorMessage);
+                }
             }
-            
+
             $this->conn->commit();
             
             // Log activity
@@ -189,7 +210,7 @@ class PurchaseOrder {
             
         } catch (Exception $e) {
             $this->conn->rollBack();
-            error_log("Error creating purchase order: " . $e->getMessage());
+            $this->rememberError($e->getMessage());
             return false;
         }
     }
@@ -206,7 +227,7 @@ class PurchaseOrder {
         ) VALUES (
             :purchase_order_id, :purchasable_product_id, :quantity, :unit_price, :total_price, :notes
         )";
-        
+
         try {
             $stmt = $this->conn->prepare($query);
             $stmt->bindValue(':purchase_order_id', $orderId, PDO::PARAM_INT);
@@ -215,10 +236,16 @@ class PurchaseOrder {
             $stmt->bindValue(':unit_price', $itemData['unit_price']);
             $stmt->bindValue(':total_price', $itemData['quantity'] * $itemData['unit_price']);
             $stmt->bindValue(':notes', $itemData['notes'] ?? null);
-            
-            return $stmt->execute();
+
+            if (!$stmt->execute()) {
+                $errorInfo = $stmt->errorInfo();
+                $this->rememberError('Failed to insert purchase order item: ' . ($errorInfo[2] ?? 'Unknown database error'));
+                return false;
+            }
+
+            return true;
         } catch (PDOException $e) {
-            error_log("Error adding order item: " . $e->getMessage());
+            $this->rememberError('Error adding order item: ' . $e->getMessage());
             return false;
         }
     }
@@ -240,9 +267,15 @@ class PurchaseOrder {
         try {
             $stmt = $this->conn->prepare($query);
             $stmt->bindValue(':order_id', $orderId, PDO::PARAM_INT);
-            return $stmt->execute();
+            if (!$stmt->execute()) {
+                $errorInfo = $stmt->errorInfo();
+                $this->rememberError('Failed to update purchase order total: ' . ($errorInfo[2] ?? 'Unknown database error'));
+                return false;
+            }
+
+            return true;
         } catch (PDOException $e) {
-            error_log("Error updating order total: " . $e->getMessage());
+            $this->rememberError('Error updating order total: ' . $e->getMessage());
             return false;
         }
     }

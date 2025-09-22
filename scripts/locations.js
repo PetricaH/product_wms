@@ -2658,22 +2658,48 @@ class EnhancedWarehouseVisualization {
     showEnhancedTooltip(shelfElement, shelf) {
         if (!this.tooltip) return;
         this.currentShelfElement = shelfElement;
-
+    
         const render = (data) => {
             const cap = data.capacity_details || {};
             const percent = Math.round(cap.utilization_percentage || 0);
             const statusClass = this.getCapacityStatus(percent);
-            const productsHtml = (data.products || [])
-                .map(p => `<li>${p.name} (${p.quantity} buc)</li>`)
+            
+            // NEW: Aggregate products by name/SKU to show total quantities instead of individual entries
+            const aggregatedProducts = {};
+            
+            (data.products || []).forEach(product => {
+                const key = product.sku || product.name; // Use SKU as primary key, fallback to name
+                
+                if (!aggregatedProducts[key]) {
+                    aggregatedProducts[key] = {
+                        name: product.name,
+                        sku: product.sku,
+                        totalQuantity: 0,
+                        entries: 0 // Track number of individual entries
+                    };
+                }
+                
+                aggregatedProducts[key].totalQuantity += parseInt(product.quantity) || 0;
+                aggregatedProducts[key].entries += 1;
+            });
+            
+            // Convert aggregated products to HTML
+            const productsHtml = Object.values(aggregatedProducts)
+                .sort((a, b) => b.totalQuantity - a.totalQuantity) // Sort by quantity descending
+                .map(p => {
+                    const displayName = p.sku ? `${p.name} (${p.sku})` : p.name;
+                    return `<li>${displayName} (${p.totalQuantity} buc)</li>`;
+                })
                 .join('');
+                
             const levelsHtml = (data.levels || [])
                 .map(l => `<div class="level-row"><span>${l.name}:</span><span>${Math.round(l.occupancy_percentage || 0)}% (${l.current_stock || 0}${l.capacity ? '/' + l.capacity : ''} articole)</span></div>`)
-
                 .join('');
+                
             const alertsHtml = (data.alerts || [])
                 .map(a => `<div class="alert ${a.type}">${a.message}</div>`)
                 .join('');
-
+    
             this.tooltip.innerHTML = `
                 <div class="tooltip-header">
                     <strong>${shelf.location_code}</strong>
@@ -2694,10 +2720,10 @@ class EnhancedWarehouseVisualization {
                     <button data-action="details">Vezi detalii</button>
                 </div>
             `;
-
+    
             this.attachQuickActions(shelf.id);
         };
-
+    
         const cached = this.tooltipCache[shelf.id];
         if (cached) {
             render(cached);
@@ -2711,10 +2737,9 @@ class EnhancedWarehouseVisualization {
                 })
                 .catch(() => {
                     this.tooltip.innerHTML = '<div class="tooltip-error">Eroare la încărcare</div>';
-
                 });
         }
-
+    
         this.tooltip.style.opacity = '1';
         this.tooltip.style.transform = 'translateY(0)';
         this.updateTooltipPosition();

@@ -323,11 +323,16 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                     $attempts = (int)($order['awb_generation_attempts'] ?? 0);
                                                     $awbBarcode = trim($order['awb_barcode'] ?? '');
                                                     $hasValidAwb = ($awbBarcode !== '' && preg_match('/^\\d+$/', $awbBarcode));
-                                                    $attemptClass = ($attempts >= 3 && !$hasValidAwb) ? 'text-danger' : '';
+                                                    $attemptMessage = '';
+                                                    if (!$hasValidAwb && $attempts > 0) {
+                                                        $attemptMessage = $attempts === 1
+                                                            ? '1 încercare efectuată'
+                                                            : $attempts . ' încercări efectuate';
+                                                    }
                                                     ?>
-                                                    <?php if (!$hasValidAwb): ?>
-                                                        <div class="awb-attempts <?= $attemptClass ?>">
-                                                            <?= max(0, 3 - $attempts) ?> încercări rămase
+                                                    <?php if ($attemptMessage !== ''): ?>
+                                                        <div class="awb-attempts">
+                                                            <?= htmlspecialchars($attemptMessage) ?>
                                                         </div>
                                                     <?php endif; ?>
                                                     <?php if ($hasValidAwb): ?>

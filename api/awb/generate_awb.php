@@ -97,20 +97,6 @@ try {
                 }
             }
 
-            // Block if attempts exceeded and no valid AWB
-            if (!$awbValid && $attempts >= 3) {
-                error_log("AWB generation blocked for order {$orderId}: attempts {$attempts}");
-                respond([
-                    'success' => false,
-                    'error' => 'Max AWB generation attempts reached; please reset attempts or fix order data.',
-                    'data' => [
-                        'order_id' => $orderId,
-                        'awb_generation_attempts' => $attempts
-                    ]
-                ], 429);
-            }
-            // To reset attempts manually: UPDATE orders SET awb_generation_attempts = 0, awb_generation_last_attempt_at = NULL WHERE id = :order_id
-
             // Check if AWB already exists and is valid
             if ($awbValid) {
                 respond([

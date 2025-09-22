@@ -993,32 +993,27 @@ require_once __DIR__ . '/includes/header.php';
                                     <div class="row">
                                         <div class="form-group">
                                             <label>Selectează Produs Existent</label>
-                                            <select class="form-control existing-product-select" onchange="selectExistingProduct(0, this)">
-                                                <option value="">Sau creează produs nou...</option>
-                                            <?php foreach ($purchasableProducts as $product): ?>
-                                                    <option value="<?= $product['id'] ?>"
-                                                            data-name="<?= htmlspecialchars($product['supplier_product_name']) ?>"
-                                                            data-code="<?= htmlspecialchars($product['supplier_product_code']) ?>"
-                                                            data-price="<?= $product['last_purchase_price'] ?>"
-                                                            data-internal-id="<?= $product['internal_product_id'] ?>">
-                                                        <?= htmlspecialchars($product['supplier_product_name']) ?>
-                                                        <?= $product['supplier_product_code'] ? ' (' . htmlspecialchars($product['supplier_product_code']) . ')' : '' ?>
-                                                    </option>
-                                            <?php endforeach; ?>
-                                            </select>
+                                            <div class="product-search-container">
+                                                <input type="text"
+                                                       class="form-control product-search-input existing-product-search"
+                                                       placeholder="Caută produs furnizor..."
+                                                       autocomplete="off">
+                                                <div class="product-search-results existing-product-results"></div>
+                                            </div>
                                         </div>
                                     </div>
                                     <div class="row">
                                         <div class="form-group">
                                             <label>Produs Intern *</label>
-                                            <select class="form-control internal-product-select" name="items[0][internal_product_id]" required>
-                                                <option value="">-- Produs intern --</option>
-                                                <?php foreach ($allProducts as $prod): ?>
-                                                    <option value="<?= $prod['product_id'] ?>">
-                                                        <?= htmlspecialchars($prod['name']) ?> (<?= htmlspecialchars($prod['sku']) ?>)
-                                                    </option>
-                                                <?php endforeach; ?>
-                                            </select>
+                                            <div class="product-search-container">
+                                                <input type="hidden" name="items[0][internal_product_id]" class="internal-product-id">
+                                                <input type="text"
+                                                       class="form-control product-search-input internal-product-search"
+                                                       placeholder="Caută produs intern..."
+                                                       autocomplete="off"
+                                                       required>
+                                                <div class="product-search-results internal-product-results"></div>
+                                            </div>
                                         </div>
                                     </div>
                                     <div class="row">

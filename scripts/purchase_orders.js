@@ -33,6 +33,8 @@ let productItemIndex = 1;
 let purchaseOrdersManager = null;
 let expandedRows = new Set();
 let ordersData = [];
+let purchasableProductSearchData = [];
+let internalProductSearchData = [];
 let currentFilters = {
     status: '',
     seller_id: '',
@@ -184,14 +186,15 @@ function initializeAmountCalculations() {
 
 // Stock Purchase functionality
 function initializeStockPurchase() {
-    // Initialize existing product selectors if they exist
-    const selectors = document.querySelectorAll('.existing-product-select');
-    selectors.forEach(selector => {
-        selector.addEventListener('change', function() {
-            const index = this.closest('.product-item').getAttribute('data-index');
-            selectExistingProduct(index, this);
-        });
-    });
+    buildProductSearchData();
+
+    const container = document.getElementById('product-items');
+    if (!container) {
+        return;
+    }
+
+    const items = container.querySelectorAll('.product-item');
+    items.forEach(item => setupProductItemSearch(item));
 }
 
 function initializeSellerSearch() {
@@ -256,6 +259,261 @@ function initializeSellerSearch() {
     });
 }
 
+function buildProductSearchData() {
+    purchasableProductSearchData = Array.isArray(window.purchasableProducts)
+        ? window.purchasableProducts.map(product => ({
+            data: product,
+            searchText: [
+                product.supplier_product_name || '',
+                product.supplier_product_code || '',
+                product.barcode || ''
+            ].join(' ').toLowerCase()
+        }))
+        : [];
+
+    internalProductSearchData = Array.isArray(window.allProducts)
+        ? window.allProducts.map(product => ({
+            data: product,
+            searchText: [
+                product.name || '',
+                product.sku || '',
+                product.barcode || ''
+            ].join(' ').toLowerCase()
+        }))
+        : [];
+}
+
+function setupProductItemSearch(item) {
+    setupExistingProductSearch(item);
+    setupInternalProductSearch(item);
+}
+
+function setupExistingProductSearch(item) {
+    const searchInput = item.querySelector('.existing-product-search');
+    const resultsContainer = item.querySelector('.existing-product-results');
+    const purchasableField = item.querySelector('.purchasable-product-id');
+
+    if (!searchInput || !resultsContainer) {
+        return;
+    }
+
+    const showResults = () => {
+        const query = searchInput.value.trim().toLowerCase();
+        resultsContainer.innerHTML = '';
+
+        if (!query) {
+            resultsContainer.classList.remove('show');
+            if (purchasableField) {
+                purchasableField.value = '';
+            }
+            return;
+        }
+
+        const matches = purchasableProductSearchData
+            .filter(entry => entry.searchText.includes(query))
+            .slice(0, 15);
+
+        if (matches.length === 0) {
+            const noResult = document.createElement('div');
+            noResult.className = 'search-result-item no-results';
+            noResult.textContent = 'Nu s-au găsit produse';
+            resultsContainer.appendChild(noResult);
+            resultsContainer.classList.add('show');
+            if (purchasableField) {
+                purchasableField.value = '';
+            }
+            return;
+        }
+
+        matches.forEach(entry => {
+            const product = entry.data;
+            const option = document.createElement('div');
+            option.className = 'search-result-item';
+            option.innerHTML = `
+                <div class="product-name">${escapeHtml(product.supplier_product_name || '')}</div>
+                <div class="product-details">
+                    ${(product.supplier_product_code || '').trim() ? `Cod: ${escapeHtml(product.supplier_product_code)}` : 'Fără cod'}
+                </div>`;
+            option.addEventListener('mousedown', event => {
+                event.preventDefault();
+                applyExistingProductSelection(item, product);
+                resultsContainer.classList.remove('show');
+            });
+            resultsContainer.appendChild(option);
+        });
+
+        resultsContainer.classList.add('show');
+    };
+
+    searchInput.addEventListener('input', () => {
+        if (purchasableField) {
+            purchasableField.value = '';
+        }
+        showResults();
+    });
+
+    searchInput.addEventListener('focus', showResults);
+
+    searchInput.addEventListener('blur', () => {
+        setTimeout(() => {
+            resultsContainer.classList.remove('show');
+            if (purchasableField && !purchasableField.value) {
+                searchInput.value = '';
+            }
+        }, 150);
+    });
+}
+
+function setupInternalProductSearch(item) {
+    const searchInput = item.querySelector('.internal-product-search');
+    const resultsContainer = item.querySelector('.internal-product-results');
+    const hiddenField = item.querySelector('.internal-product-id');
+
+    if (!searchInput || !resultsContainer || !hiddenField) {
+        return;
+    }
+
+    const showResults = () => {
+        const query = searchInput.value.trim().toLowerCase();
+        resultsContainer.innerHTML = '';
+
+        if (!query) {
+            hiddenField.value = '';
+            resultsContainer.classList.remove('show');
+            return;
+        }
+
+        const matches = internalProductSearchData
+            .filter(entry => entry.searchText.includes(query))
+            .slice(0, 15);
+
+        if (matches.length === 0) {
+            const noResult = document.createElement('div');
+            noResult.className = 'search-result-item no-results';
+            noResult.textContent = 'Nu s-au găsit produse interne';
+            resultsContainer.appendChild(noResult);
+            resultsContainer.classList.add('show');
+            hiddenField.value = '';
+            return;
+        }
+
+        matches.forEach(entry => {
+            const product = entry.data;
+            const option = document.createElement('div');
+            option.className = 'search-result-item';
+            option.innerHTML = `
+                <div class="product-name">${escapeHtml(product.name || '')}</div>
+                <div class="product-details">
+                    SKU: ${escapeHtml(product.sku || 'N/A')}
+                </div>`;
+            option.addEventListener('mousedown', event => {
+                event.preventDefault();
+                applyInternalProductSelection(item, product);
+                resultsContainer.classList.remove('show');
+            });
+            resultsContainer.appendChild(option);
+        });
+
+        resultsContainer.classList.add('show');
+    };
+
+    searchInput.addEventListener('input', () => {
+        hiddenField.value = '';
+        showResults();
+    });
+
+    searchInput.addEventListener('focus', showResults);
+
+    searchInput.addEventListener('blur', () => {
+        setTimeout(() => {
+            resultsContainer.classList.remove('show');
+            if (!hiddenField.value) {
+                searchInput.value = '';
+            }
+        }, 150);
+    });
+}
+
+function applyExistingProductSelection(item, product) {
+    const displayInput = item.querySelector('.existing-product-search');
+    const purchasableField = item.querySelector('.purchasable-product-id');
+    const productNameField = item.querySelector('.product-name');
+    const productCodeField = item.querySelector('.product-code');
+    const unitPriceField = item.querySelector('.unit-price');
+    const internalHiddenField = item.querySelector('.internal-product-id');
+    const internalSearchInput = item.querySelector('.internal-product-search');
+
+    const label = formatExistingProductLabel(product);
+    if (displayInput) {
+        displayInput.value = label;
+    }
+
+    if (purchasableField) {
+        purchasableField.value = product.id || '';
+    }
+
+    if (productNameField) {
+        productNameField.value = product.supplier_product_name || '';
+    }
+
+    if (productCodeField) {
+        productCodeField.value = product.supplier_product_code || '';
+    }
+
+    if (unitPriceField) {
+        unitPriceField.value = product.last_purchase_price || '';
+    }
+
+    if (internalHiddenField) {
+        internalHiddenField.value = product.internal_product_id || '';
+    }
+
+    if (internalSearchInput) {
+        if (product.internal_product_id) {
+            const internalProduct = findInternalProductById(product.internal_product_id);
+            if (internalProduct) {
+                internalSearchInput.value = `${internalProduct.name || ''} (${internalProduct.sku || 'N/A'})`;
+            } else {
+                internalSearchInput.value = '';
+            }
+        } else {
+            internalSearchInput.value = '';
+        }
+    }
+
+    const index = item.getAttribute('data-index');
+    if (index !== null) {
+        calculateItemTotal(index);
+    }
+}
+
+function applyInternalProductSelection(item, product) {
+    const searchInput = item.querySelector('.internal-product-search');
+    const hiddenField = item.querySelector('.internal-product-id');
+
+    if (searchInput) {
+        searchInput.value = `${product.name || ''} (${product.sku || 'N/A'})`;
+    }
+
+    if (hiddenField) {
+        hiddenField.value = product.product_id || '';
+    }
+}
+
+function formatExistingProductLabel(product) {
+    const name = product.supplier_product_name || '';
+    const code = product.supplier_product_code ? ` (${product.supplier_product_code})` : '';
+    return `${name}${code}`.trim();
+}
+
+function findInternalProductById(id) {
+    if (!id || !Array.isArray(window.allProducts)) {
+        return null;
+    }
+
+    return window.allProducts.find(product => String(product.product_id) === String(id)) || null;
+}
+
 // Attach form validation
 function attachFormValidation() {
     const stockPurchaseForm = document.getElementById('stockPurchaseForm');
@@ -309,16 +567,30 @@ function resetProductItems() {
         const unitPrice = firstItem.querySelector('.unit-price');
         const itemTotal = firstItem.querySelector('.item-total');
         const purchasableProductId = firstItem.querySelector('.purchasable-product-id');
-        const existingProductSelect = firstItem.querySelector('.existing-product-select');
+        const existingProductInput = firstItem.querySelector('.existing-product-search');
+        const existingProductResults = firstItem.querySelector('.existing-product-results');
+        const internalProductInput = firstItem.querySelector('.internal-product-search');
+        const internalProductHidden = firstItem.querySelector('.internal-product-id');
+        const internalProductResults = firstItem.querySelector('.internal-product-results');
         const removeButton = firstItem.querySelector('button[onclick*="removeProductItem"]');
-        
+
         if (productName) productName.value = '';
         if (productCode) productCode.value = '';
         if (quantity) quantity.value = '';
         if (unitPrice) unitPrice.value = '';
         if (itemTotal) itemTotal.value = '';
         if (purchasableProductId) purchasableProductId.value = '';
-        if (existingProductSelect) existingProductSelect.value = '';
+        if (existingProductInput) existingProductInput.value = '';
+        if (existingProductResults) {
+            existingProductResults.innerHTML = '';
+            existingProductResults.classList.remove('show');
+        }
+        if (internalProductInput) internalProductInput.value = '';
+        if (internalProductHidden) internalProductHidden.value = '';
+        if (internalProductResults) {
+            internalProductResults.innerHTML = '';
+            internalProductResults.classList.remove('show');
+        }
         if (removeButton) removeButton.style.display = 'none';
     }
     
@@ -382,10 +654,12 @@ function addProductItem() {
     const container = document.getElementById('product-items');
     const newItem = createProductItem(productItemIndex);
     container.appendChild(newItem);
-    
+
+    setupProductItemSearch(newItem);
+
     // Show remove button on all items when there's more than one
     updateRemoveButtons();
-    
+
     productItemIndex++;
 }
 
@@ -401,18 +675,27 @@ function createProductItem(index) {
             <div class="row">
                 <div class="form-group">
                     <label>Selectează Produs Existent</label>
-                    <select class="form-control existing-product-select" onchange="selectExistingProduct(${index}, this)">
-                        <option value="">Sau creează produs nou...</option>
-                        ${generateProductOptions()}
-                    </select>
+                    <div class="product-search-container">
+                        <input type="text"
+                               class="form-control product-search-input existing-product-search"
+                               placeholder="Caută produs furnizor..."
+                               autocomplete="off">
+                        <div class="product-search-results existing-product-results"></div>
+                    </div>
                 </div>
             </div>
             <div class="row">
                 <div class="form-group">
                     <label>Produs Intern *</label>
-                    <select class="form-control internal-product-select" name="items[${index}][internal_product_id]" required>
-                        ${generateInternalProductOptions()}
-                    </select>
+                    <div class="product-search-container">
+                        <input type="hidden" name="items[${index}][internal_product_id]" class="internal-product-id">
+                        <input type="text"
+                               class="form-control product-search-input internal-product-search"
+                               placeholder="Caută produs intern..."
+                               autocomplete="off"
+                               required>
+                        <div class="product-search-results internal-product-results"></div>
+                    </div>
                 </div>
             </div>
             <div class="row">
@@ -457,36 +740,6 @@ function createProductItem(index) {
     return div.firstElementChild;
 }
 
-function generateProductOptions() {
-    // Get the purchasable products from the page data
-    if (typeof window.purchasableProducts !== 'undefined') {
-        let options = '';
-        window.purchasableProducts.forEach(product => {
-            options += `<option value="${product.id}"
-                                data-name="${escapeHtml(product.supplier_product_name)}"
-                                data-code="${escapeHtml(product.supplier_product_code || '')}"
-                                data-price="${product.last_purchase_price || ''}"
-                                data-internal-id="${product.internal_product_id || ''}">
-                            ${escapeHtml(product.supplier_product_name)}
-                            ${product.supplier_product_code ? `(${escapeHtml(product.supplier_product_code)})` : ''}
-                        </option>`;
-        });
-        return options;
-    }
-    return '';
-}
-
-function generateInternalProductOptions() {
-    if (typeof window.allProducts !== 'undefined') {
-        let options = '<option value="">-- Produs intern --</option>';
-        window.allProducts.forEach(p => {
-            options += `<option value="${p.product_id}">${escapeHtml(p.name)} (${escapeHtml(p.sku)})</option>`;
-        });
-        return options;
-    }
-    return '<option value="">-- Produs intern --</option>';
-}
-
 function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
@@ -516,53 +769,6 @@ function updateRemoveButtons() {
             header.textContent = `Produs ${index + 1}`;
         }
     });
-}
-
-function selectExistingProduct(index, selectElement) {
-    const selectedOption = selectElement.options[selectElement.selectedIndex];
-    const item = selectElement.closest('.product-item');
-    
-    if (selectedOption.value && item) {
-        const productName = selectedOption.getAttribute('data-name');
-        const productCode = selectedOption.getAttribute('data-code');
-        const lastPrice = selectedOption.getAttribute('data-price');
-        
-        // Fill in the form fields
-        const productNameField = item.querySelector('.product-name');
-        const productCodeField = item.querySelector('.product-code');
-        const unitPriceField = item.querySelector('.unit-price');
-        const purchasableProductIdField = item.querySelector('.purchasable-product-id');
-        const internalSelect = item.querySelector('.internal-product-select');
-        
-        if (productNameField) productNameField.value = productName || '';
-        if (productCodeField) productCodeField.value = productCode || '';
-        if (unitPriceField) unitPriceField.value = lastPrice || '';
-        if (purchasableProductIdField) purchasableProductIdField.value = selectedOption.value;
-        if (internalSelect) internalSelect.value = selectedOption.getAttribute('data-internal-id') || '';
-        
-        // Calculate total if quantity is set
-        const quantityField = item.querySelector('.quantity');
-        if (quantityField && quantityField.value) {
-            calculateItemTotal(index);
-        }
-    } else if (item) {
-        // Clear fields if "create new" is selected
-        const productNameField = item.querySelector('.product-name');
-        const productCodeField = item.querySelector('.product-code');
-        const unitPriceField = item.querySelector('.unit-price');
-        const purchasableProductIdField = item.querySelector('.purchasable-product-id');
-        const internalSelect = item.querySelector('.internal-product-select');
-        const itemTotalField = item.querySelector('.item-total');
-        
-        if (productNameField) productNameField.value = '';
-        if (productCodeField) productCodeField.value = '';
-        if (unitPriceField) unitPriceField.value = '';
-        if (purchasableProductIdField) purchasableProductIdField.value = '';
-        if (internalSelect) internalSelect.value = '';
-        if (itemTotalField) itemTotalField.value = '';
-        
-        calculateOrderTotal();
-    }
 }
 
 function calculateItemTotal(index) {
@@ -661,17 +867,30 @@ function validateStockPurchaseForm() {
     // Check for valid products
     const productItems = document.querySelectorAll('.product-item');
     let hasValidItems = false;
-    
-    productItems.forEach(item => {
-        const productName = item.querySelector('.product-name').value.trim();
-        const quantity = parseFloat(item.querySelector('.quantity').value) || 0;
-        const unitPrice = parseFloat(item.querySelector('.unit-price').value) || 0;
-        
+
+    for (const item of productItems) {
+        const productNameField = item.querySelector('.product-name');
+        const quantityField = item.querySelector('.quantity');
+        const unitPriceField = item.querySelector('.unit-price');
+        const internalProductHidden = item.querySelector('.internal-product-id');
+        const internalProductSearch = item.querySelector('.internal-product-search');
+
+        const productName = productNameField ? productNameField.value.trim() : '';
+        const quantity = quantityField ? parseFloat(quantityField.value) || 0 : 0;
+        const unitPrice = unitPriceField ? parseFloat(unitPriceField.value) || 0 : 0;
+
         if (productName && quantity > 0 && unitPrice > 0) {
+            if (!internalProductHidden || !internalProductHidden.value) {
+                alert('Te rog selectează produsul intern din lista de sugestii.');
+                if (internalProductSearch) {
+                    internalProductSearch.focus();
+                }
+                return false;
+            }
             hasValidItems = true;
         }
-    });
-    
+    }
+
     if (!hasValidItems) {
         alert('Te rog adaugă cel puțin un produs valid cu cantitate și preț.');
         return false;
@@ -1777,7 +1996,6 @@ window.openStockPurchaseModal = openStockPurchaseModal;
 window.closeStockPurchaseModal = closeStockPurchaseModal;
 window.addProductItem = addProductItem;
 window.removeProductItem = removeProductItem;
-window.selectExistingProduct = selectExistingProduct;
 window.calculateItemTotal = calculateItemTotal;
 window.validateStockPurchaseForm = validateStockPurchaseForm;
 window.openModal = openModal;

@@ -7,9 +7,21 @@
 class PurchasableProduct {
     private PDO $conn;
     private string $table = 'purchasable_products';
+    private ?string $lastError = null;
 
     public function __construct(PDO $database) {
         $this->conn = $database;
+    }
+
+    public function getLastError(): ?string {
+        return $this->lastError;
+    }
+
+    private function rememberError(?string $message = null): void {
+        $this->lastError = $message;
+        if ($message) {
+            error_log('[PurchasableProduct] ' . $message);
+        }
     }
 
     /**
@@ -63,9 +75,10 @@ class PurchasableProduct {
      * @return int|false Product ID on success, false on failure
      */
     public function createProduct(array $productData): int|false {
+        $this->rememberError(null);
         $query = "INSERT INTO {$this->table} (
-            supplier_product_name, supplier_product_code, description, 
-            unit_measure, last_purchase_price, currency, internal_product_id, 
+            supplier_product_name, supplier_product_code, description,
+            unit_measure, last_purchase_price, currency, internal_product_id,
             preferred_seller_id, notes, status
         ) VALUES (
             :supplier_product_name, :supplier_product_code, :description,
@@ -89,7 +102,7 @@ class PurchasableProduct {
             
             if ($stmt->execute()) {
                 $productId = (int)$this->conn->lastInsertId();
-                
+
                 // Log activity
                 if (isset($_SESSION['user_id']) && function_exists('logActivity')) {
                     logActivity(
@@ -100,12 +113,15 @@ class PurchasableProduct {
                         'Purchasable product created: ' . $productData['supplier_product_name']
                     );
                 }
-                
+
                 return $productId;
             }
+
+            $errorInfo = $stmt->errorInfo();
+            $this->rememberError('Failed to create purchasable product: ' . ($errorInfo[2] ?? 'Unknown database error'));
             return false;
         } catch (PDOException $e) {
-            error_log("Error creating purchasable product: " . $e->getMessage());
+            $this->rememberError('Error creating purchasable product: ' . $e->getMessage());
             return false;
         }
     }
@@ -134,6 +150,7 @@ class PurchasableProduct {
         }
         
         if (empty($fields)) {
+            $this->rememberError('No fields provided for product update.');
             return false;
         }
         
@@ -142,8 +159,14 @@ class PurchasableProduct {
         try {
             $stmt = $this->conn->prepare($query);
             $result = $stmt->execute($params);
-            
-            if ($result && isset($_SESSION['user_id']) && function_exists('logActivity')) {
+
+            if (!$result) {
+                $errorInfo = $stmt->errorInfo();
+                $this->rememberError('Failed to update purchasable product: ' . ($errorInfo[2] ?? 'Unknown database error'));
+                return false;
+            }
+
+            if (isset($_SESSION['user_id']) && function_exists('logActivity')) {
                 logActivity(
                     $_SESSION['user_id'],
                     'update',
@@ -152,10 +175,10 @@ class PurchasableProduct {
                     'Purchasable product updated'
                 );
             }
-            
-            return $result;
+
+            return true;
         } catch (PDOException $e) {
-            error_log("Error updating purchasable product: " . $e->getMessage());
+            $this->rememberError('Error updating purchasable product: ' . $e->getMessage());
             return false;
         }
     }

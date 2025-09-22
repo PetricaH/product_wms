@@ -81,11 +81,20 @@
     padding: 0.5rem;
     border-radius: 4px;
     transition: var(--transition);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
 }
 
 .modal-close:hover {
     background-color: var(--button-hover);
     color: var(--text-primary);
+}
+
+.modal-close .material-symbols-outlined {
+    font-size: 1.25rem;
 }
 
 .modal-body {

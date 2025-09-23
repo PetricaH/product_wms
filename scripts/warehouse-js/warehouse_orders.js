@@ -6,6 +6,7 @@ let filteredOrders = [];
 let currentOrderId = null;
 let currentOrderDetails = null;
 let activeStatusFilter = '';
+let modalKeyboardShortcutsInitialized = false;
 
 // Use PHP-provided configuration
 const API_BASE = window.WMS_CONFIG?.apiBase || '/api';
@@ -73,7 +74,74 @@ function initializeEventListeners() {
 
     resetModalActions();
 
+    setupModalKeyboardShortcuts();
+
     console.log('Event listeners initialized');
+}
+
+function setupModalKeyboardShortcuts() {
+    if (modalKeyboardShortcutsInitialized) {
+        return;
+    }
+
+    document.addEventListener('keydown', handleModalFunctionKeys);
+    modalKeyboardShortcutsInitialized = true;
+}
+
+function handleModalFunctionKeys(event) {
+    if (!isOrderDetailsModalVisible()) {
+        return;
+    }
+
+    const activeElement = document.activeElement;
+    if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA' || activeElement.isContentEditable)) {
+        return;
+    }
+
+    if (event.key === 'F1') {
+        const printInvoiceBtn = document.getElementById('modal-print-invoice-btn');
+        if (isModalActionButtonVisible(printInvoiceBtn)) {
+            event.preventDefault();
+            printInvoiceBtn.click();
+        }
+    } else if (event.key === 'F2') {
+        const printAwbBtn = document.getElementById('modal-print-awb-btn');
+        const generateAwbBtn = document.getElementById('modal-generate-awb-btn');
+
+        if (isModalActionButtonVisible(printAwbBtn)) {
+            event.preventDefault();
+            printAwbBtn.click();
+        } else if (isModalActionButtonVisible(generateAwbBtn)) {
+            event.preventDefault();
+            generateAwbBtn.click();
+        } else {
+            const orderHasDetails = Boolean(currentOrderDetails && currentOrderDetails.id);
+            if (orderHasDetails) {
+                event.preventDefault();
+                showMessage('AWB lipsă pentru această comandă.', 'error');
+            }
+        }
+    }
+}
+
+function isOrderDetailsModalVisible() {
+    const modal = document.getElementById('order-details-modal');
+    if (!modal) {
+        return false;
+    }
+    const isDisplayed = modal.style.display !== 'none';
+    return modal.classList.contains('show') && isDisplayed;
+}
+
+function isModalActionButtonVisible(button) {
+    if (!button || button.disabled) {
+        return false;
+    }
+    if (button.classList.contains('hidden')) {
+        return false;
+    }
+
+    return button.offsetParent !== null;
 }
 
 /**

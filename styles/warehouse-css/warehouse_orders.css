@@ -303,6 +303,8 @@ body {
     max-height: 90vh;
     overflow: hidden;
     border: 1px solid rgba(255, 255, 255, 0.1);
+    display: flex;
+    flex-direction: column;
 }
 
 .modal-header {
@@ -338,7 +340,7 @@ body {
 
 .modal-body {
     padding: 1.5rem;
-    max-height: 60vh;
+    flex: 1 1 auto;
     overflow-y: auto;
 }
 
@@ -357,6 +359,11 @@ body {
     display: flex;
     align-items: center;
     gap: 0.75rem;
+}
+
+.modal-footer-right {
+    flex-wrap: wrap;
+    justify-content: flex-end;
 }
 
 .modal-footer-right .btn {
@@ -415,7 +422,7 @@ body {
     .main-container {
         padding: .3rem;
     }
-    
+
     .page-title {
         font-size: 2rem;
     }
@@ -456,9 +463,40 @@ body {
         flex-direction: column;
         gap: 0.5rem;
     }
-    
+
+    .modal {
+        align-items: flex-start;
+        padding: 1rem;
+    }
+
     .modal-content {
-        width: 95%;
-        margin: 1rem;
+        width: 100%;
+        margin: 0;
+        max-height: calc(100vh - 2rem);
+        border-radius: 4px;
+    }
+
+    .modal-footer {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.75rem;
+    }
+
+    .modal-footer-left,
+    .modal-footer-right {
+        width: 100%;
+        justify-content: flex-start;
+    }
+
+    .modal-footer-right {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.5rem;
+    }
+
+    .modal-footer-right .btn,
+    .modal-footer-left .btn {
+        width: 100%;
+        justify-content: center;
     }
 }

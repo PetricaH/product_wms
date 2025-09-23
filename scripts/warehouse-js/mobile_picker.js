@@ -132,6 +132,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     return false;
                 }
 
+                const upperValue = loc.trim().toUpperCase();
+                if (upperValue === 'N/A' || upperValue === 'NA' || upperValue === 'NEATRIBUIT') {
+                    return false;
+                }
+
                 const normalized = normalizeLocationCode(loc);
                 if (seen.has(normalized)) {
                     return false;
@@ -786,6 +791,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Workflow Management Functions
     async function startPickingWorkflow(item, index) {
+        const hasLocation = getLocationList(item).length > 0;
+
+        if (!hasLocation) {
+            showMessage('Produsul selectat nu are o locație atribuită. Contactează un administrator înainte de a continua colectarea.', 'warning');
+            return;
+        }
+
         currentItem = { ...item, index };
         scannedLocation = null;
         scannedProduct = null;

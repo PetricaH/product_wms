@@ -822,9 +822,6 @@ document.addEventListener('DOMContentLoaded', () => {
             console.warn('⚠️ Timing error (non-blocking):', error);
         }
 
-        // Show location step only if a location code exists
-        const hasLocation = getLocationList(item).length > 0;
-
         if (hasLocation) {
             showStep('location');
         } else {

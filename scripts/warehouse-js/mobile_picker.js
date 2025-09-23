@@ -756,7 +756,17 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const card = document.createElement('div');
         card.className = `item-card ${status}`;
-        card.onclick = () => startPickingWorkflow(item, index);
+        card.onclick = () => {
+            const quantityOrdered = parseInt(item.quantity_ordered) || 0;
+            const quantityPicked = parseInt(item.picked_quantity) || 0;
+
+            if (quantityPicked >= quantityOrdered && quantityOrdered > 0) {
+                showMessage('Produsul a fost deja colectat complet. Nu puteți relua procesul de picking.', 'info');
+                return;
+            }
+
+            startPickingWorkflow(item, index);
+        };
 
         const locationDisplay = getLocationDisplay(item);
 
@@ -792,6 +802,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Workflow Management Functions
     async function startPickingWorkflow(item, index) {
+        const quantityOrdered = parseInt(item.quantity_ordered) || 0;
+        const quantityPicked = parseInt(item.picked_quantity) || 0;
+
+        if (quantityPicked >= quantityOrdered && quantityOrdered > 0) {
+            showMessage('Produsul a fost deja colectat complet. Nu puteți relua procesul de picking.', 'info');
+            return;
+        }
+
         const hasLocation = getLocationList(item).length > 0;
 
         if (!hasLocation) {

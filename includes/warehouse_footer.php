@@ -23,7 +23,8 @@ if (file_exists($universalJsPath)) {
 // Include orders_awb.js for the orders page (stored in /scripts/)
 $specialPageScripts = [
     'mobile_picker' => 'orders_awb.js',
-    'mobile_returns' => 'mobile_returns.js'
+    'mobile_returns' => 'mobile_returns.js',
+    'warehouse_orders' => 'orders_awb.js'
 ];
 if (isset($specialPageScripts[$currentPage])) {
     $jsFileName = $specialPageScripts[$currentPage];

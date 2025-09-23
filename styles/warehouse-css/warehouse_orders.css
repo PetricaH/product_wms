@@ -344,10 +344,50 @@ body {
 
 .modal-footer {
     display: flex;
-    justify-content: flex-end;
+    justify-content: space-between;
+    align-items: center;
     gap: 1rem;
+    flex-wrap: wrap;
     padding: 1.5rem;
     border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.modal-footer-left,
+.modal-footer-right {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.modal-footer-right .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.modal-footer-right .material-symbols-outlined,
+.modal-footer-left .material-symbols-outlined {
+    font-size: 1.2rem;
+}
+
+.order-awb-info {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.order-awb-info .awb-code {
+    font-weight: 600;
+    letter-spacing: 0.05em;
+}
+
+.hidden {
+    display: none !important;
+}
+
+.spinning {
+    display: inline-block;
+    animation: spin 1s linear infinite;
 }
 
 /* ===== ALERTS ===== */

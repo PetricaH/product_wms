@@ -2050,6 +2050,32 @@ const ProductUnitsApp = {
         });
     },
 
+    populateStockCategoryFilter() {
+        if (!this.elements.stockCategoryFilter) return;
+        const select = this.elements.stockCategoryFilter;
+        const categories = [...new Set(this.state.products.map(p => p.category).filter(Boolean))].sort();
+        
+        // Start with the "All categories" option
+        select.innerHTML = '<option value="">Toate categoriile</option>';
+        
+        // Add all categories
+        categories.forEach(cat => {
+            const opt = document.createElement('option');
+            opt.value = cat;
+            opt.textContent = cat;
+            select.appendChild(opt);
+        });
+        
+        // Preselect "Marfa" if it exists in the categories
+        if (categories.includes('Marfa')) {
+            select.value = 'Marfa';
+            this.state.stockCategory = 'Marfa'; // Update the state
+            
+            // Trigger the filtering to show only Marfa products
+            this.applyStockFilters();
+        }
+    },
+
     async loadProductUnits() {
         if (this.state.isLoading) return;
 

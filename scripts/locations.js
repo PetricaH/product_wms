@@ -2626,13 +2626,15 @@ class EnhancedWarehouseVisualization {
             const bottom = levelsData['1']?.percentage || 0;
             const middle = levelsData['2']?.percentage || 0;
             const top = levelsData['3']?.percentage || 0;
-            const safeCode = JSON.stringify(location.location_code || '');
+            const safeCode = escapeHtml(location.location_code || '');
+            const safeZone = escapeHtml(location.zone || '');
+            const safeType = escapeHtml(location.type || '');
 
             return `
                     <tr>
-                        <td><strong>${location.location_code}</strong></td>
-                        <td>Zona ${location.zone}</td>
-                        <td>${location.type}</td>
+                        <td><strong>${safeCode}</strong></td>
+                        <td>Zona ${safeZone}</td>
+                        <td>${safeType}</td>
                         <td><span class="occupancy-badge ${occupancyClass}">${Math.round(location.occupancy?.total || 0)}%</span></td>
                         <td>${isShelf ? Math.round(bottom) + '%' : '-'}</td>
                         <td>${isShelf ? Math.round(middle) + '%' : '-'}</td>
@@ -2643,7 +2645,7 @@ class EnhancedWarehouseVisualization {
                             <button class="btn btn-sm btn-outline" onclick="openEditModalById(${location.id})" title="Editează">
                                 <span class="material-symbols-outlined">edit</span>
                             </button>
-                            <button class="btn btn-sm btn-outline" onclick="printLocationQr(${safeCode}, this)" data-location-code=${safeCode} data-location-name=${safeCode} title="Printează QR">
+                            <button class="btn btn-sm btn-outline" onclick="printLocationQr(this.dataset.locationCode, this)" data-location-code="${safeCode}" data-location-name="${safeCode}" title="Printează QR">
                                 <span class="material-symbols-outlined">qr_code_2</span>
                             </button>
                             <button class="btn btn-sm btn-outline-danger" onclick="openDeleteModal(${location.id}, '${location.location_code}')" title="Șterge">

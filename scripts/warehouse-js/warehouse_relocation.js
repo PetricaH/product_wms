@@ -335,6 +335,9 @@
                 const value = this.currentTask[step.expectedKey] || '--';
                 if (step.id === 'product') {
                     this.elements.expectedValue.textContent = `SKU așteptat: ${value}`;
+                } else if (step.id === 'source') {
+                    const sku = this.currentTask.product_sku || '--';
+                    this.elements.expectedValue.textContent = `Locație așteptată: ${value} • SKU: ${sku}`;
                 } else {
                     this.elements.expectedValue.textContent = value;
                 }

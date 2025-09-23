@@ -1770,7 +1770,7 @@ input[type="file"]:hover {
     font-size: 0.85rem;
     text-transform: uppercase;
     letter-spacing: 0.08em;
-    color: rgba(0, 0, 0, 0.6);
+    color: var(--text-secondary, #6c757d);
 }
 
 .recent-auto-orders,

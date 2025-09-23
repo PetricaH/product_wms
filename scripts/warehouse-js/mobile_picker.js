@@ -70,6 +70,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Location Step
         targetLocation: document.getElementById('target-location'),
+        locationProductSku: document.getElementById('location-product-sku'),
         locationManualSection: document.getElementById('location-manual-section'),
         locationInput: document.getElementById('location-input'),
         verifyLocationBtn: document.getElementById('verify-location-btn'),
@@ -858,6 +859,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (stepName === 'location' && currentItem) {
                 const locationDisplay = getLocationDisplay(currentItem);
                 if (elements.targetLocation) elements.targetLocation.textContent = locationDisplay;
+                if (elements.locationProductSku) elements.locationProductSku.textContent = currentItem.sku || 'N/A';
                 startPhysicalScanning('location');
             } else if (stepName === 'product' && currentItem) {
                 if (elements.targetProductName) elements.targetProductName.textContent = currentItem.product_name || 'Produs necunoscut';

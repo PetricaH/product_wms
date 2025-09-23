@@ -97,7 +97,10 @@ $hasOrderFromUrl = !empty($orderNumber);
                     <h3>Pas 1: Verificare Locație</h3>
                     <div class="step-info">
                         <span class="material-symbols-outlined">pin_drop</span>
-                        <span>Locația necesară: <strong id="target-location">A1-01</strong></span>
+                        <div>
+                            <div>Locația necesară: <strong id="target-location">A1-01</strong></div>
+                            <div>SKU Produs: <strong id="location-product-sku">SKU123</strong></div>
+                        </div>
                     </div>
                 </div>
                 

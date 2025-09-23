@@ -2626,7 +2626,8 @@ class EnhancedWarehouseVisualization {
             const bottom = levelsData['1']?.percentage || 0;
             const middle = levelsData['2']?.percentage || 0;
             const top = levelsData['3']?.percentage || 0;
-            const safeCode = JSON.stringify(location.location_code || '');
+            const safeCodeJs = JSON.stringify(location.location_code || '');
+            const safeCodeAttr = escapeHtml(location.location_code || '');
 
             return `
                     <tr>
@@ -2643,7 +2644,7 @@ class EnhancedWarehouseVisualization {
                             <button class="btn btn-sm btn-outline" onclick="openEditModalById(${location.id})" title="Editează">
                                 <span class="material-symbols-outlined">edit</span>
                             </button>
-                            <button class="btn btn-sm btn-outline" onclick="printLocationQr(${safeCode}, this)" data-location-code=${safeCode} data-location-name=${safeCode} title="Printează QR">
+                            <button class="btn btn-sm btn-outline" onclick='printLocationQr(${safeCodeJs}, this)' data-location-code="${safeCodeAttr}" data-location-name="${safeCodeAttr}" title="Printează QR">
                                 <span class="material-symbols-outlined">qr_code_2</span>
                             </button>
                             <button class="btn btn-sm btn-outline-danger" onclick="openDeleteModal(${location.id}, '${location.location_code}')" title="Șterge">

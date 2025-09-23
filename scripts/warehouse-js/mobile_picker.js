@@ -27,6 +27,10 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentScannerType = null; // track which scanner context is active
     let productScanTimeout = null; // timeout handler for auto product verification
     let locationScanTimeout = null; // timeout handler for auto location verification
+    const historySupported = typeof window !== 'undefined' && typeof window.history !== 'undefined' &&
+        typeof window.history.pushState === 'function' && typeof window.history.replaceState === 'function';
+    let workflowHistoryActive = false;
+    let isHandlingPopState = false;
 
     // DOM Elements
     const elements = {
@@ -172,6 +176,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function init() {
         setupEventListeners();
         setupKeyboardShortcuts();
+        setupHistoryManagement();
         updateAwbButtons();
         loadAvailablePrinters();
 
@@ -819,6 +824,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function showStep(stepName) {
         currentStep = stepName;
+
+        if (stepName !== 'list') {
+            activateWorkflowHistory(stepName);
+        }
         
         // Hide all workflow steps
         const allSteps = ['location', 'product', 'quantity'];
@@ -1082,16 +1091,82 @@ document.addEventListener('DOMContentLoaded', () => {
         currentItem = null;
         scannedLocation = null;
         scannedProduct = null;
-        
+        workflowHistoryActive = false;
+
+        if (historySupported) {
+            try {
+                window.history.replaceState({ pickerView: 'list', ts: Date.now() }, document.title, window.location.href);
+            } catch (error) {
+                console.warn('⚠️ Unable to update history state for list view:', error);
+            }
+        }
+
         // Hide all workflow steps
         const allSteps = ['location', 'product', 'quantity'];
         allSteps.forEach(step => {
             const stepElement = elements[`${step}Step`];
             if (stepElement) stepElement.classList.add('hidden');
         });
-        
+
         // Show picking list
         elements.pickingListSection?.classList.remove('hidden');
+        elements.progressSection?.classList.remove('hidden');
+    }
+
+    function activateWorkflowHistory(stepName) {
+        if (!historySupported || workflowHistoryActive) {
+            return;
+        }
+
+        try {
+            window.history.pushState({ pickerView: 'workflow', step: stepName, ts: Date.now() }, document.title, window.location.href);
+            workflowHistoryActive = true;
+        } catch (error) {
+            console.warn('⚠️ Unable to push workflow history state:', error);
+        }
+    }
+
+    function setupHistoryManagement() {
+        if (!historySupported) {
+            return;
+        }
+
+        try {
+            window.history.replaceState({ pickerView: 'list', ts: Date.now() }, document.title, window.location.href);
+        } catch (error) {
+            console.warn('⚠️ Unable to initialize history state:', error);
+        }
+
+        window.addEventListener('popstate', handlePopState);
+    }
+
+    function handlePopState(event) {
+        if (!historySupported) {
+            return;
+        }
+
+        if (isHandlingPopState) {
+            isHandlingPopState = false;
+            return;
+        }
+
+        const state = event.state || {};
+
+        if (currentStep !== 'list') {
+            isHandlingPopState = true;
+            returnToList();
+
+            if (historySupported) {
+                try {
+                    window.history.replaceState({ pickerView: 'list', ts: Date.now() }, document.title, window.location.href);
+                } catch (error) {
+                    console.warn('⚠️ Unable to reset history state after back navigation:', error);
+                }
+            }
+        } else if (state.pickerView === 'workflow') {
+            // Ensure we remain on the picking list if workflow state surfaces unexpectedly
+            returnToList();
+        }
     }
 
     function adjustQuantity(delta) {

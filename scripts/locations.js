@@ -2627,6 +2627,8 @@ class EnhancedWarehouseVisualization {
             const middle = levelsData['2']?.percentage || 0;
             const top = levelsData['3']?.percentage || 0;
             const safeCode = JSON.stringify(location.location_code || '');
+            const locationCode = (location.location_code || '').replace(/'/g, "\\'");
+            const locationName = (location.location_code || '').replace(/'/g, "\\'");
 
             return `
                     <tr>

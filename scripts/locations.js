@@ -2008,18 +2008,28 @@ function downloadLocationQr() {
     }
 }
 
-function printLocationQr(labelText, buttonElement) {
+function printLocationQr(labelOrCode = null, buttonElement = null) {
     const codeInput = document.getElementById('location_code');
-    const code = codeInput ? codeInput.value.trim() : '';
-    
+    let code = '';
+
+    if (typeof labelOrCode === 'string' && labelOrCode.trim()) {
+        code = labelOrCode.trim();
+    } else if (buttonElement && buttonElement.dataset.locationCode) {
+        code = buttonElement.dataset.locationCode.trim();
+    } else if (codeInput) {
+        code = codeInput.value.trim();
+    }
+
     // Ensure we have a proper location name - avoid any potential WMS_API_KEY issues
     let locationName = '';
-    if (labelText && labelText.trim() && !labelText.includes('WMS_API_KEY')) {
-        locationName = labelText.trim();
+    if (buttonElement && buttonElement.dataset.locationName) {
+        locationName = buttonElement.dataset.locationName.trim();
+    } else if (typeof labelOrCode === 'string' && labelOrCode.trim() && labelOrCode.trim() !== code) {
+        locationName = labelOrCode.trim();
     } else if (code) {
-        locationName = code; // Use location code as fallback
+        locationName = code;
     }
-    
+
     if (!code) {
         alert('Cod locație invalid');
         return;
@@ -2027,9 +2037,9 @@ function printLocationQr(labelText, buttonElement) {
 
     // Debug logging
     console.log('Print QR Debug:', {
-        code: code,
-        locationName: locationName,
-        labelText: labelText,
+        code,
+        locationName,
+        labelOrCode,
         codeInput: codeInput ? codeInput.value : 'null'
     });
 
@@ -2616,6 +2626,7 @@ class EnhancedWarehouseVisualization {
             const bottom = levelsData['1']?.percentage || 0;
             const middle = levelsData['2']?.percentage || 0;
             const top = levelsData['3']?.percentage || 0;
+            const safeCode = JSON.stringify(location.location_code || '');
 
             return `
                     <tr>
@@ -2631,6 +2642,9 @@ class EnhancedWarehouseVisualization {
                         <td>
                             <button class="btn btn-sm btn-outline" onclick="openEditModalById(${location.id})" title="Editează">
                                 <span class="material-symbols-outlined">edit</span>
+                            </button>
+                            <button class="btn btn-sm btn-outline" onclick="printLocationQr(${safeCode}, this)" data-location-code=${safeCode} data-location-name=${safeCode} title="Printează QR">
+                                <span class="material-symbols-outlined">qr_code_2</span>
                             </button>
                             <button class="btn btn-sm btn-outline-danger" onclick="openDeleteModal(${location.id}, '${location.location_code}')" title="Șterge">
                                 <span class="material-symbols-outlined">delete</span>

@@ -4,10 +4,16 @@
 let allOrders = [];
 let filteredOrders = [];
 let currentOrderId = null;
+let currentOrderDetails = null;
 let activeStatusFilter = '';
 
 // Use PHP-provided configuration
 const API_BASE = window.WMS_CONFIG?.apiBase || '/api';
+
+// Reuse picking AWB workflow helpers for modal actions
+if (typeof window !== 'undefined') {
+    window.IS_PICKING_INTERFACE = true;
+}
 
 console.log('Warehouse Orders JS loaded, API_BASE:', API_BASE);
 
@@ -47,6 +53,25 @@ function initializeEventListeners() {
             applyFilters();
         });
     });
+
+    const printInvoiceBtn = document.getElementById('modal-print-invoice-btn');
+    if (printInvoiceBtn) {
+        printInvoiceBtn.dataset.originalHtml = printInvoiceBtn.innerHTML;
+        printInvoiceBtn.addEventListener('click', handleModalInvoicePrint);
+    }
+
+    const printAwbBtn = document.getElementById('modal-print-awb-btn');
+    if (printAwbBtn) {
+        printAwbBtn.dataset.originalHtml = printAwbBtn.innerHTML;
+        printAwbBtn.addEventListener('click', handleModalAwbPrint);
+    }
+
+    const generateAwbBtn = document.getElementById('modal-generate-awb-btn');
+    if (generateAwbBtn) {
+        generateAwbBtn.dataset.originalHtml = generateAwbBtn.innerHTML;
+    }
+
+    resetModalActions();
 
     console.log('Event listeners initialized');
 }
@@ -292,20 +317,22 @@ function getPriorityText(priority) {
 function openOrderDetails(orderId) {
     currentOrderId = orderId;
     const order = allOrders.find(o => o.id === orderId);
-    
+
     if (!order) {
         console.error('Order not found:', orderId);
         return;
     }
-    
+
+    currentOrderDetails = order;
+
     const modal = document.getElementById('order-details-modal');
     const content = document.getElementById('order-details-content');
-    
+
     if (!modal || !content) {
         console.error('Modal elements not found');
         return;
     }
-    
+
     content.innerHTML = `
         <div class="order-details-info">
             <h3>Comandă ${escapeHtml(order.order_number)}</h3>
@@ -317,6 +344,9 @@ function openOrderDetails(orderId) {
             </div>
             <div class="detail-row">
                 <strong>Status:</strong> ${getStatusText(order.status)}
+            </div>
+            <div class="detail-row order-awb-info ${getAwbCode(order) ? '' : 'hidden'}" id="modal-awb-row">
+                <strong>AWB:</strong> <span class="awb-code" id="modal-awb-code">${escapeHtml(getAwbCode(order))}</span>
             </div>
             <div class="detail-row">
                 <strong>Prioritate:</strong> ${getPriorityText(order.priority)}
@@ -333,7 +363,9 @@ function openOrderDetails(orderId) {
             ${order.notes ? `<div class="detail-row"><strong>Note:</strong> ${escapeHtml(order.notes)}</div>` : ''}
         </div>
     `;
-    
+
+    updateModalActions(order);
+
     modal.style.display = 'flex';
     modal.classList.add('show');
 }
@@ -348,6 +380,139 @@ function closeOrderDetails() {
         modal.classList.remove('show');
     }
     currentOrderId = null;
+    currentOrderDetails = null;
+    resetModalActions();
+}
+
+function updateModalActions(order) {
+    resetModalActions();
+
+    if (!order) {
+        return;
+    }
+
+    const processBtn = document.getElementById('process-order-btn');
+    const printInvoiceBtn = document.getElementById('modal-print-invoice-btn');
+    const generateAwbBtn = document.getElementById('modal-generate-awb-btn');
+    const printAwbBtn = document.getElementById('modal-print-awb-btn');
+    const awbRow = document.getElementById('modal-awb-row');
+    const awbCodeEl = document.getElementById('modal-awb-code');
+
+    const completed = isCompletedOrder(order);
+
+    if (processBtn) {
+        processBtn.classList.toggle('hidden', completed);
+    }
+
+    if (!completed) {
+        return;
+    }
+
+    if (printInvoiceBtn) {
+        printInvoiceBtn.classList.remove('hidden');
+    }
+
+    const awbCode = getAwbCode(order);
+
+    if (generateAwbBtn) {
+        if (order.id) {
+            generateAwbBtn.setAttribute('data-order-id', order.id);
+        }
+        generateAwbBtn.classList.toggle('hidden', Boolean(awbCode));
+    }
+
+    if (printAwbBtn) {
+        if (awbCode) {
+            printAwbBtn.classList.remove('hidden');
+            printAwbBtn.dataset.awbCode = awbCode;
+        } else {
+            printAwbBtn.classList.add('hidden');
+            delete printAwbBtn.dataset.awbCode;
+        }
+    }
+
+    if (awbRow && awbCodeEl) {
+        if (awbCode) {
+            awbCodeEl.textContent = awbCode;
+            awbRow.classList.remove('hidden');
+        } else {
+            awbCodeEl.textContent = '';
+            awbRow.classList.add('hidden');
+        }
+    }
+}
+
+function resetModalActions() {
+    const processBtn = document.getElementById('process-order-btn');
+    const printInvoiceBtn = document.getElementById('modal-print-invoice-btn');
+    const generateAwbBtn = document.getElementById('modal-generate-awb-btn');
+    const printAwbBtn = document.getElementById('modal-print-awb-btn');
+    const awbRow = document.getElementById('modal-awb-row');
+    const awbCodeEl = document.getElementById('modal-awb-code');
+
+    if (processBtn) {
+        processBtn.classList.remove('hidden');
+        processBtn.disabled = false;
+    }
+
+    if (printInvoiceBtn) {
+        printInvoiceBtn.classList.add('hidden');
+        printInvoiceBtn.disabled = false;
+        if (printInvoiceBtn.dataset.originalHtml) {
+            printInvoiceBtn.innerHTML = printInvoiceBtn.dataset.originalHtml;
+        }
+    }
+
+    if (generateAwbBtn) {
+        generateAwbBtn.classList.add('hidden');
+        generateAwbBtn.removeAttribute('data-order-id');
+    }
+
+    if (printAwbBtn) {
+        printAwbBtn.classList.add('hidden');
+        printAwbBtn.disabled = false;
+        if (printAwbBtn.dataset.originalHtml) {
+            printAwbBtn.innerHTML = printAwbBtn.dataset.originalHtml;
+        }
+        delete printAwbBtn.dataset.awbCode;
+    }
+
+    if (awbRow && awbCodeEl) {
+        awbCodeEl.textContent = '';
+        awbRow.classList.add('hidden');
+    }
+}
+
+function isCompletedOrder(order) {
+    if (!order || !order.status) {
+        return false;
+    }
+    const status = String(order.status).toLowerCase();
+    return ['completed', 'ready', 'picked'].includes(status);
+}
+
+function getAwbCode(order) {
+    if (!order) {
+        return '';
+    }
+
+    const possibleKeys = ['awb_barcode', 'awb', 'tracking_number', 'awb_code', 'awb_number', 'awb_nr'];
+    for (const key of possibleKeys) {
+        if (order[key]) {
+            return String(order[key]).trim();
+        }
+    }
+    return '';
+}
+
+function applyAwbToOrder(order, awbCode) {
+    if (!order || !awbCode) {
+        return;
+    }
+    order.awb_barcode = awbCode;
+    order.awb = awbCode;
+    order.tracking_number = awbCode;
+    order.awb_code = awbCode;
 }
 
 /**
@@ -403,6 +568,137 @@ async function processOrder(orderId) {
         showErrorMessage('Eroare la procesarea comenzii: ' + error.message);
     }
 }
+
+
+async function handleModalInvoicePrint(event) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (!currentOrderDetails || !currentOrderDetails.id) {
+        showErrorMessage('Nicio comandă selectată pentru printarea facturii.');
+        return;
+    }
+
+    const btn = event.currentTarget;
+    const originalHtml = btn.dataset.originalHtml || btn.innerHTML;
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="material-symbols-outlined spinning">hourglass_empty</span> Se trimite la imprimantă...';
+
+    try {
+        const response = await fetch('api/invoices/print_invoice_network.php', {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'X-Requested-With': 'XMLHttpRequest',
+                'Cache-Control': 'no-cache',
+                'Accept': 'application/json'
+            },
+            body: new URLSearchParams({
+                order_id: currentOrderDetails.id,
+                printer_id: 2
+            })
+        });
+
+        const responseText = await response.text();
+
+        if (!response.ok) {
+            if (response.status === 403) {
+                throw new Error('Sesiune expirată. Reautentificare necesară.');
+            }
+            throw new Error(responseText || `Eroare server: HTTP ${response.status}`);
+        }
+
+        let data;
+        try {
+            data = JSON.parse(responseText);
+        } catch (error) {
+            console.error('Invoice print parse error:', error, responseText);
+            throw new Error('Răspuns invalid de la server.');
+        }
+
+        if (data.status !== 'success') {
+            throw new Error(data.message || 'Eroare la printarea facturii');
+        }
+
+        showSuccessMessage('Factura a fost trimisă la imprimantă.');
+    } catch (error) {
+        console.error('Invoice print error:', error);
+        showErrorMessage(`Eroare la printarea facturii: ${error.message}`);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalHtml;
+    }
+}
+
+async function handleModalAwbPrint(event) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (!currentOrderDetails || !currentOrderDetails.id) {
+        showErrorMessage('Nicio comandă selectată pentru printarea AWB-ului.');
+        return;
+    }
+
+    if (typeof printAWB !== 'function') {
+        showErrorMessage('Funcționalitatea de printare AWB nu este disponibilă.');
+        return;
+    }
+
+    const awbCode = getAwbCode(currentOrderDetails);
+
+    if (!awbCode) {
+        showErrorMessage('Această comandă nu are AWB generat încă.');
+        return;
+    }
+
+    const btn = event.currentTarget;
+    const originalHtml = btn.dataset.originalHtml || btn.innerHTML;
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="material-symbols-outlined spinning">hourglass_empty</span> Se pregătește printarea...';
+
+    try {
+        await printAWB(currentOrderDetails.id, awbCode, currentOrderDetails.order_number);
+    } catch (error) {
+        console.error('Print AWB error:', error);
+        showErrorMessage(`Eroare la printarea AWB: ${error.message || error}`);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalHtml;
+    }
+}
+
+document.addEventListener('awbGenerated', event => {
+    const detail = event.detail || {};
+    const orderId = detail.orderId;
+    const awbCode = detail.awbCode;
+
+    if (!orderId || !awbCode) {
+        return;
+    }
+
+    const updateList = orders => {
+        if (!Array.isArray(orders)) {
+            return;
+        }
+        orders.forEach(order => {
+            if (order && order.id === orderId) {
+                applyAwbToOrder(order, awbCode);
+            }
+        });
+    };
+
+    updateList(allOrders);
+    updateList(filteredOrders);
+
+    if (currentOrderDetails && currentOrderDetails.id === orderId) {
+        applyAwbToOrder(currentOrderDetails, awbCode);
+        updateModalActions(currentOrderDetails);
+        showSuccessMessage('AWB generat cu succes. Poți să îl printezi din această fereastră.');
+    }
+});
 
 
 /**

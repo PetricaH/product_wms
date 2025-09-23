@@ -182,10 +182,30 @@ try {
                     <!-- Order details will be loaded here -->
                 </div>
                 <div class="modal-footer">
-                    <button class="btn btn-secondary" onclick="closeOrderDetails()">Închide</button>
-                    <button class="btn btn-primary" id="process-order-btn" onclick="processCurrentOrder()">
-                        Procesează Comanda
-                    </button>
+                    <div class="modal-footer-left">
+                        <button type="button" class="btn btn-secondary" onclick="closeOrderDetails()">
+                            <span class="material-symbols-outlined">close</span>
+                            Închide
+                        </button>
+                    </div>
+                    <div class="modal-footer-right">
+                        <button type="button" class="btn btn-primary hidden" id="modal-print-invoice-btn">
+                            <span class="material-symbols-outlined">print</span>
+                            Printează Factura
+                        </button>
+                        <button type="button" class="btn btn-primary generate-awb-btn hidden" id="modal-generate-awb-btn" data-order-id="">
+                            <span class="material-symbols-outlined">local_shipping</span>
+                            Generează AWB
+                        </button>
+                        <button type="button" class="btn btn-success hidden" id="modal-print-awb-btn">
+                            <span class="material-symbols-outlined">print</span>
+                            Printează AWB
+                        </button>
+                        <button type="button" class="btn btn-primary" id="process-order-btn" onclick="processCurrentOrder()">
+                            <span class="material-symbols-outlined">play_arrow</span>
+                            Procesează Comanda
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>

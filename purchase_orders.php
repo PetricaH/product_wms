@@ -816,48 +816,6 @@ require_once __DIR__ . '/includes/header.php';
                 </form>
             </div>
 
-            <!-- Purchase Orders Table -->
-            <div class="dashboard-row">
-                <div class="dashboard-widget auto-order-dashboard">
-                    <div class="widget-header">
-                        <h3>Monitorizare Autocomandă</h3>
-                        <button class="btn btn-sm btn-refresh" type="button" onclick="purchaseOrdersManager?.refreshAutoOrderStats?.()">
-                            <span class="material-symbols-outlined">refresh</span>
-                        </button>
-                    </div>
-                    <div class="widget-content">
-                        <div class="stats-grid">
-                            <div class="stat-card">
-                                <div class="stat-value" id="totalAutoOrders">0</div>
-                                <div class="stat-label">Total Autocomenzi</div>
-                            </div>
-                            <div class="stat-card">
-                                <div class="stat-value" id="autoOrdersToday">0</div>
-                                <div class="stat-label">Generat Astăzi</div>
-                            </div>
-                            <div class="stat-card warning">
-                                <div class="stat-value" id="productsAtMinimum">0</div>
-                                <div class="stat-label">Produse Sub Prag</div>
-                            </div>
-                            <div class="stat-card error">
-                                <div class="stat-value" id="failedAutoOrders">0</div>
-                                <div class="stat-label">Autocomenzi Neprocesate</div>
-                            </div>
-                        </div>
-
-                        <div class="recent-auto-orders">
-                            <h4>Autocomenzi Recente (7 zile)</h4>
-                            <div class="auto-order-timeline" id="recentAutoOrdersList"></div>
-                        </div>
-
-                        <div class="products-needing-attention">
-                            <h4>Produse Ce Necesită Atenție</h4>
-                            <div class="attention-list" id="attentionProductsList"></div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
             <div class="table-container">
                 <table class="data-table" id="purchase-orders-table">
                     <thead>
@@ -888,23 +846,6 @@ require_once __DIR__ . '/includes/header.php';
                         </tr>
                     </tbody>
                 </table>
-            </div>
-
-            <div class="auto-order-history-panel">
-                <div class="history-filters">
-                    <input type="date" id="historyDateFrom" value="<?= htmlspecialchars($_GET['date_from'] ?? '') ?>" placeholder="De la">
-                    <input type="date" id="historyDateTo" value="<?= htmlspecialchars($_GET['date_to'] ?? '') ?>" placeholder="Până la">
-                    <select id="historyStatus">
-                        <option value="">Toate Statusurile</option>
-                        <option value="success">Succes</option>
-                        <option value="failed">Eșuat</option>
-                        <option value="pending">În Așteptare</option>
-                        <option value="processing">În Procesare</option>
-                    </select>
-                    <button class="btn btn-primary" type="button" onclick="purchaseOrdersManager?.loadAutoOrderHistory?.()">Filtrează</button>
-                </div>
-
-                <div class="history-timeline" id="autoOrderHistoryList"></div>
             </div>
         </div>
     </div>

@@ -144,13 +144,6 @@ function initializeReceivingFunctionality() {
         purchaseOrdersManager.loadPurchaseOrdersWithReceiving();
     }
 
-    if (typeof purchaseOrdersManager.refreshAutoOrderStats === 'function') {
-        purchaseOrdersManager.refreshAutoOrderStats();
-    }
-
-    if (typeof purchaseOrdersManager.loadAutoOrderHistory === 'function') {
-        purchaseOrdersManager.loadAutoOrderHistory();
-    }
 }
 
 // Initialize date fields with today's date

@@ -797,13 +797,10 @@ class Inventory {
      * @return array Stock summary data
      */
     public function getStockSummaryBySku(string $sku): array {
-        $query = "SELECT 
+        $query = "SELECT
                     COALESCE(SUM(i.quantity), 0) as inventory_quantity,
-                    COALESCE(p.quantity, 0) as product_quantity,
-                    GREATEST(
-                        COALESCE(SUM(i.quantity), 0), 
-                        COALESCE(p.quantity, 0)
-                    ) as total_quantity,
+                    0 as product_quantity,
+                    COALESCE(SUM(i.quantity), 0) as total_quantity,
                     COUNT(DISTINCT CASE WHEN i.quantity > 0 THEN i.location_id END) as locations_count,
                     GROUP_CONCAT(DISTINCT l.location_code) as locations,
                     p.product_id,
@@ -812,7 +809,7 @@ class Inventory {
                 LEFT JOIN {$this->inventoryTable} i ON p.product_id = i.product_id AND i.quantity > 0
                 LEFT JOIN {$this->locationsTable} l ON i.location_id = l.id
                 WHERE p.sku = :sku
-                GROUP BY p.product_id, p.quantity, p.name";
+                GROUP BY p.product_id, p.name";
 
         try {
             $stmt = $this->conn->prepare($query);
@@ -895,13 +892,11 @@ class Inventory {
      */
     public function getLowStockProducts(): array {
         $query = "SELECT p.product_id, p.sku, p.name, p.min_stock_level,
-                         COALESCE(SUM(i.quantity), p.quantity, 0) as current_stock,
-                         COALESCE(COUNT(DISTINCT CASE WHEN i.quantity > 0 THEN i.location_id END), 
-                                  CASE WHEN p.quantity > 0 THEN 1 ELSE 0 END) as locations_count,
-                         p.quantity as product_base_quantity,
-                         CASE 
-                            WHEN COUNT(i.id) > 0 THEN 'inventory_tracked'
-                            WHEN p.quantity > 0 THEN 'product_quantity'
+                         COALESCE(SUM(i.quantity), 0) as current_stock,
+                         COUNT(DISTINCT CASE WHEN i.quantity > 0 THEN i.location_id END) as locations_count,
+                         0 as product_base_quantity,
+                         CASE
+                            WHEN SUM(CASE WHEN i.quantity > 0 THEN 1 ELSE 0 END) > 0 THEN 'inventory_tracked'
                             ELSE 'no_stock'
                          END as stock_source
                   FROM {$this->productsTable} p
@@ -926,14 +921,12 @@ class Inventory {
      */
     public function getStockSummary(): array {
         $query = "SELECT p.product_id, p.sku, p.name, p.category, p.min_stock_level,
-                         COALESCE(SUM(i.quantity), p.quantity, 0) as total_stock,
-                         COALESCE(COUNT(DISTINCT CASE WHEN i.quantity > 0 THEN i.location_id END), 
-                                  CASE WHEN p.quantity > 0 THEN 1 ELSE 0 END) as locations_count,
+                         COALESCE(SUM(i.quantity), 0) as total_stock,
+                         COUNT(DISTINCT CASE WHEN i.quantity > 0 THEN i.location_id END) as locations_count,
                          MAX(i.received_at) as last_received,
-                         p.quantity as product_base_quantity,
-                         CASE 
-                            WHEN COUNT(i.id) > 0 THEN 'inventory_tracked'
-                            WHEN p.quantity > 0 THEN 'product_quantity'
+                         0 as product_base_quantity,
+                         CASE
+                            WHEN SUM(CASE WHEN i.quantity > 0 THEN 1 ELSE 0 END) > 0 THEN 'inventory_tracked'
                             ELSE 'no_stock'
                          END as stock_source
                   FROM {$this->productsTable} p

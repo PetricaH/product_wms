@@ -26,15 +26,33 @@ try {
     $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if (!$row) {
-        // Fall back to level dedicated to product
+        // Fall back to level assignments that allow this product
         $stmt = $db->prepare(
-            "SELECT lls.location_id, lls.level_number, NULL as subdivision_number, l.location_code
+            "SELECT
+                lls.location_id,
+                lls.level_number,
+                NULL as subdivision_number,
+                l.location_code
              FROM location_level_settings lls
              JOIN locations l ON lls.location_id = l.id
-             WHERE lls.dedicated_product_id = ?
+             WHERE lls.dedicated_product_id = :product_id
+                OR (
+                    lls.allowed_product_types IS NOT NULL
+                    AND (
+                        JSON_CONTAINS(lls.allowed_product_types, :product_json_numeric, '$')
+                        OR JSON_CONTAINS(lls.allowed_product_types, :product_json_string, '$')
+                    )
+                )
+             ORDER BY lls.dedicated_product_id IS NULL, lls.priority_order ASC, lls.level_number ASC
              LIMIT 1"
         );
-        $stmt->execute([$productId]);
+
+        $stmt->execute([
+            ':product_id' => $productId,
+            ':product_json_numeric' => json_encode((int)$productId),
+            ':product_json_string' => json_encode((string)$productId)
+        ]);
+
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
     }
 

@@ -284,22 +284,123 @@ function populateEditForm(productData) {
 function initializeSearch() {
     const searchInput = document.querySelector('input[name="search"]');
     const form = document.getElementById('filters-form');
-    
-    if (searchInput && form) {
-        let searchTimeout;
-        
-        searchInput.addEventListener('input', function() {
-            clearTimeout(searchTimeout);
-            searchTimeout = setTimeout(() => {
-                // Reset to page 1 when searching
-                const pageInput = form.querySelector('input[name="page"]');
-                if (pageInput) {
-                    pageInput.value = 1;
-                }
-                form.submit();
-            }, 500); // Debounce search
-        });
+    const tableContainer = document.getElementById('products-table-container');
+
+    if (!(searchInput && form && tableContainer)) {
+        return;
     }
+
+    const pageSize = tableContainer.dataset.pageSize || '25';
+    let searchTimeout;
+    let abortController;
+    let fallbackTriggered = false;
+
+    const buildQueryString = () => {
+        const formData = new FormData(form);
+        formData.set('page', '1');
+        formData.set('search', searchInput.value.trim());
+
+        const params = new URLSearchParams();
+        formData.forEach((value, key) => {
+            if (value !== null && value !== undefined) {
+                params.append(key, value);
+            }
+        });
+
+        params.set('pageSize', pageSize);
+        return params.toString();
+    };
+
+    const updateUrlState = () => {
+        if (!window.history?.replaceState) {
+            return;
+        }
+
+        const url = new URL(window.location.href);
+        const searchValue = searchInput.value.trim();
+        const categoryValue = form.querySelector('select[name="category"]')?.value || '';
+        const sellerValue = form.querySelector('select[name="seller_id"]')?.value || '';
+
+        if (searchValue) {
+            url.searchParams.set('search', searchValue);
+        } else {
+            url.searchParams.delete('search');
+        }
+
+        if (categoryValue) {
+            url.searchParams.set('category', categoryValue);
+        } else {
+            url.searchParams.delete('category');
+        }
+
+        if (sellerValue) {
+            url.searchParams.set('seller_id', sellerValue);
+        } else {
+            url.searchParams.delete('seller_id');
+        }
+
+        url.searchParams.set('page', '1');
+
+        window.history.replaceState({}, document.title, url.toString());
+    };
+
+    const updateTotals = (totalCount) => {
+        const badge = document.querySelector('.page-stats strong');
+        if (badge && typeof totalCount === 'number') {
+            badge.textContent = new Intl.NumberFormat('ro-RO').format(totalCount);
+        }
+    };
+
+    const performSearch = async () => {
+        const pageInput = form.querySelector('input[name="page"]');
+        if (pageInput) {
+            pageInput.value = 1;
+        }
+
+        if (abortController) {
+            abortController.abort();
+        }
+        abortController = new AbortController();
+
+        try {
+            const queryString = buildQueryString();
+            const response = await fetch(`api/products_table.php?${queryString}`, {
+                signal: abortController.signal,
+                headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                credentials: 'same-origin'
+            });
+
+            if (!response.ok) {
+                throw new Error(`Live search request failed with status ${response.status}`);
+            }
+
+            const data = await response.json();
+            if (!data.success) {
+                throw new Error(data.message || 'Unknown live search error');
+            }
+
+            tableContainer.innerHTML = data.html;
+            updateTotals(data.totalCount);
+            updateUrlState();
+            initializeBulkOperations();
+            fallbackTriggered = false;
+        } catch (error) {
+            if (error.name === 'AbortError') {
+                return;
+            }
+            console.error('Live product search failed:', error);
+
+            if (!fallbackTriggered) {
+                fallbackTriggered = true;
+                form.submit();
+            }
+        }
+    };
+
+    searchInput.addEventListener('input', () => {
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(performSearch, 300);
+    });
 }
 
 /**

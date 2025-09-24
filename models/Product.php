@@ -95,9 +95,16 @@ class Product {
                     p.*,
                     s.supplier_name as seller_name,
                     s.contact_person as seller_contact,
+                    COALESCE(stock.current_stock, 0) as current_stock,
                     ld.location_details
                   FROM {$this->table} p
                   LEFT JOIN sellers s ON p.seller_id = s.id
+                  LEFT JOIN (
+                      SELECT i.product_id,
+                             COALESCE(SUM(i.quantity), 0) AS current_stock
+                      FROM inventory i
+                      GROUP BY i.product_id
+                  ) stock ON stock.product_id = p.product_id
                   LEFT JOIN (
                       SELECT i.product_id,
                              GROUP_CONCAT(CONCAT(l.location_code, ' / ', i.shelf_level,

@@ -86,9 +86,16 @@
                                 <?php endif; ?>
                             </td>
                             <td>
+                                <?php
+                                    $rawCurrentStock = $product['current_stock'] ?? null;
+                                    $currentStockValue = is_numeric($rawCurrentStock) ? (float) $rawCurrentStock : 0.0;
+                                    $formattedStock = number_format($currentStockValue);
+                                    $rawMinStock = $product['min_stock_level'] ?? null;
+                                    $minStockLevel = is_numeric($rawMinStock) ? (float) $rawMinStock : 5.0;
+                                ?>
                                 <div class="quantity-info">
-                                    <span class="quantity-value"><?= number_format($product['quantity']) ?></span>
-                                    <?php if ($product['quantity'] <= ($product['min_stock_level'] ?? 5)): ?>
+                                    <span class="quantity-value"><?= $formattedStock ?></span>
+                                    <?php if ($currentStockValue <= $minStockLevel): ?>
                                         <span class="low-stock-indicator" title="Stoc scăzut">
                                             <span class="material-symbols-outlined">warning</span>
                                         </span>

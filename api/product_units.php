@@ -132,13 +132,18 @@ function handleGet($db) {
  */
 function handlePost($db) {
     $input = json_decode(file_get_contents('php://input'), true);
-    
+
     if (!$input) {
         http_response_code(400);
         echo json_encode(['error' => 'Invalid JSON input']);
         return;
     }
-    
+
+    if (isset($input['bulk_action'])) {
+        handleBulkAction($db, $input);
+        return;
+    }
+
     // Validate required fields
     $required = ['product_id', 'unit_type_id', 'weight_per_unit'];
     foreach ($required as $field) {
@@ -197,6 +202,107 @@ function handlePost($db) {
     } else {
         http_response_code(500);
         echo json_encode(['error' => 'Failed to create product unit']);
+    }
+}
+
+/**
+ * Handle bulk update/delete actions
+ */
+function handleBulkAction($db, array $input) {
+    $action = $input['bulk_action'] ?? '';
+    $ids = $input['ids'] ?? [];
+
+    if (!is_array($ids) || empty($ids)) {
+        http_response_code(400);
+        echo json_encode(['error' => 'Missing configuration IDs for bulk action']);
+        return;
+    }
+
+    $ids = array_values(array_filter(array_map('intval', $ids), function ($value) {
+        return $value > 0;
+    }));
+
+    if (empty($ids)) {
+        http_response_code(400);
+        echo json_encode(['error' => 'No valid configuration IDs provided']);
+        return;
+    }
+
+    $placeholders = implode(',', array_fill(0, count($ids), '?'));
+
+    switch ($action) {
+        case 'update':
+            $updates = $input['updates'] ?? [];
+            if (!is_array($updates) || empty($updates)) {
+                http_response_code(400);
+                echo json_encode(['error' => 'No updates provided for bulk action']);
+                return;
+            }
+
+            $allowedFields = ['active', 'fragile', 'hazardous', 'temperature_controlled', 'max_items_per_parcel', 'weight_per_unit'];
+            $setClauses = [];
+            $params = [];
+
+            foreach ($updates as $field => $value) {
+                if (!in_array($field, $allowedFields, true)) {
+                    continue;
+                }
+
+                switch ($field) {
+                    case 'active':
+                    case 'fragile':
+                    case 'hazardous':
+                    case 'temperature_controlled':
+                        $setClauses[] = "$field = ?";
+                        $params[] = $value ? 1 : 0;
+                        break;
+                    case 'max_items_per_parcel':
+                        $setClauses[] = "$field = ?";
+                        $params[] = $value !== null ? (int)$value : null;
+                        break;
+                    case 'weight_per_unit':
+                        $setClauses[] = "$field = ?";
+                        $params[] = $value !== null ? (float)$value : null;
+                        break;
+                }
+            }
+
+            if (empty($setClauses)) {
+                http_response_code(400);
+                echo json_encode(['error' => 'No valid fields provided for update']);
+                return;
+            }
+
+            $setClauses[] = 'updated_at = NOW()';
+            $sql = 'UPDATE product_units SET ' . implode(', ', $setClauses) . " WHERE id IN ($placeholders)";
+            $params = array_merge($params, $ids);
+
+            $stmt = $db->prepare($sql);
+            $stmt->execute($params);
+
+            echo json_encode([
+                'success' => true,
+                'affected' => $stmt->rowCount(),
+                'message' => 'Configurările selectate au fost actualizate.'
+            ]);
+            return;
+
+        case 'delete':
+            $sql = "DELETE FROM product_units WHERE id IN ($placeholders)";
+            $stmt = $db->prepare($sql);
+            $stmt->execute($ids);
+
+            echo json_encode([
+                'success' => true,
+                'affected' => $stmt->rowCount(),
+                'message' => 'Configurările selectate au fost șterse.'
+            ]);
+            return;
+
+        default:
+            http_response_code(400);
+            echo json_encode(['error' => 'Unknown bulk action']);
+            return;
     }
 }
 

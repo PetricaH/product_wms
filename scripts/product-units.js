@@ -85,6 +85,7 @@ const ProductUnitsApp = {
             unit: '',
             status: ''
         },
+        selectedUnits: new Set(),
         labelTemplates: [],
         labelFilters: { search: '', status: '' },
         labelStats: { total: 0, with_label: 0, without_label: 0 },
@@ -173,6 +174,15 @@ const ProductUnitsApp = {
             productUnitsBody: document.getElementById('productUnitsBody'),
             tableResultsCount: document.getElementById('tableResultsCount'),
             refreshTable: document.getElementById('refreshTable'),
+            selectAllUnits: document.getElementById('selectAllUnits'),
+            unitBulkActionsBar: document.getElementById('unitBulkActionsBar'),
+            selectedUnitsCount: document.getElementById('selectedUnitsCount'),
+            bulkPropertySelect: document.getElementById('bulkPropertySelect'),
+            applyBulkPropertyBtn: document.getElementById('applyBulkPropertyBtn'),
+            bulkMaxValue: document.getElementById('bulkMaxValue'),
+            applyBulkMaxBtn: document.getElementById('applyBulkMaxBtn'),
+            bulkWeightValue: document.getElementById('bulkWeightValue'),
+            applyBulkWeightBtn: document.getElementById('applyBulkWeightBtn'),
 
             // Label management
             labelTable: document.getElementById('labelTable'),
@@ -667,6 +677,24 @@ const ProductUnitsApp = {
         // Refresh buttons
         if (this.elements.refreshTable) {
             this.elements.refreshTable.addEventListener('click', () => this.loadProductUnits());
+        }
+
+        if (this.elements.selectAllUnits) {
+            this.elements.selectAllUnits.addEventListener('change', (event) => {
+                this.handleSelectAllUnits(event.target.checked);
+            });
+        }
+
+        if (this.elements.applyBulkPropertyBtn) {
+            this.elements.applyBulkPropertyBtn.addEventListener('click', () => this.applyBulkBooleanProperty());
+        }
+
+        if (this.elements.applyBulkMaxBtn) {
+            this.elements.applyBulkMaxBtn.addEventListener('click', () => this.applyBulkValueAction('set_max_items'));
+        }
+
+        if (this.elements.applyBulkWeightBtn) {
+            this.elements.applyBulkWeightBtn.addEventListener('click', () => this.applyBulkValueAction('set_weight'));
         }
 
         if (this.elements.showPendingProductsBtn) {
@@ -2105,14 +2133,21 @@ const ProductUnitsApp = {
         if (!this.elements.productUnitsBody) return;
 
         const tbody = this.elements.productUnitsBody;
-        
+
+        this.syncSelectedUnitsWithData();
+
         if (this.state.filteredData.length === 0) {
             this.renderEmptyTable();
             return;
         }
 
-        tbody.innerHTML = this.state.filteredData.map(unit => `
+        tbody.innerHTML = this.state.filteredData.map(unit => {
+            const isSelected = this.state.selectedUnits.has(unit.id);
+            return `
             <tr data-id="${unit.id}">
+                <td class="select-cell">
+                    <input type="checkbox" class="unit-checkbox" data-id="${unit.id}" ${isSelected ? 'checked' : ''}>
+                </td>
                 <td>
                     <div class="product-info">
                         <strong>${this.escapeHtml(unit.product_name)}</strong>
@@ -2142,22 +2177,24 @@ const ProductUnitsApp = {
                 </td>
                 <td>
                     <div class="action-buttons">
-                        <button class="btn btn-sm btn-secondary" 
-                                onclick="ProductUnitsApp.editProductUnit(${unit.id})" 
+                        <button class="btn btn-sm btn-secondary"
+                                onclick="ProductUnitsApp.editProductUnit(${unit.id})"
                                 title="Editează">
                             <span class="material-symbols-outlined">edit</span>
                         </button>
-                        <button class="btn btn-sm btn-danger" 
-                                onclick="ProductUnitsApp.deleteProductUnit(${unit.id})" 
+                        <button class="btn btn-sm btn-danger"
+                                onclick="ProductUnitsApp.deleteProductUnit(${unit.id})"
                                 title="Șterge">
                             <span class="material-symbols-outlined">delete</span>
                         </button>
                     </div>
                 </td>
             </tr>
-        `).join('');
+        `;
+        }).join('');
 
         this.updateTableInfo();
+        this.initializeUnitBulkSelection();
     },
 
     renderEmptyTable() {
@@ -2165,7 +2202,7 @@ const ProductUnitsApp = {
 
         this.elements.productUnitsBody.innerHTML = `
             <tr class="empty-row">
-                <td colspan="9" class="text-center">
+                <td colspan="10" class="text-center">
                     <div class="empty-state">
                         <span class="material-symbols-outlined">inventory_2</span>
                         <h3>Nu există configurări</h3>
@@ -2180,6 +2217,7 @@ const ProductUnitsApp = {
         `;
 
         this.updateTableInfo();
+        this.initializeUnitBulkSelection();
     },
 
     renderTableError(message) {
@@ -2187,7 +2225,7 @@ const ProductUnitsApp = {
 
         this.elements.productUnitsBody.innerHTML = `
             <tr class="error-row">
-                <td colspan="9" class="text-center">
+                <td colspan="10" class="text-center">
                     <div class="error-state">
                         <span class="material-symbols-outlined">error</span>
                         <h3>Eroare la încărcare</h3>
@@ -2202,6 +2240,7 @@ const ProductUnitsApp = {
         `;
 
         this.updateTableInfo();
+        this.initializeUnitBulkSelection();
     },
 
     showTableLoading() {
@@ -2209,7 +2248,7 @@ const ProductUnitsApp = {
 
         this.elements.productUnitsBody.innerHTML = `
             <tr class="loading-row">
-                <td colspan="9" class="text-center">
+                <td colspan="10" class="text-center">
                     <div class="loading-spinner">
                         <span class="material-symbols-outlined spinning">progress_activity</span>
                         Încărcare date...
@@ -2217,6 +2256,8 @@ const ProductUnitsApp = {
                 </td>
             </tr>
         `;
+
+        this.updateBulkUnitActionsUI();
     },
 
     updateTableInfo() {
@@ -2224,11 +2265,299 @@ const ProductUnitsApp = {
 
         const total = this.state.productUnits.length;
         const filtered = this.state.filteredData.length;
-        
+
         if (total === filtered) {
             this.elements.tableResultsCount.textContent = `${total} configurări`;
         } else {
             this.elements.tableResultsCount.textContent = `${filtered} din ${total} configurări`;
+        }
+    },
+
+    // ===== BULK SELECTION & ACTIONS =====
+    syncSelectedUnitsWithData() {
+        if (!(this.state.selectedUnits instanceof Set)) {
+            this.state.selectedUnits = new Set(Array.isArray(this.state.selectedUnits) ? this.state.selectedUnits : []);
+        }
+
+        const validIds = new Set(this.state.filteredData.map(unit => unit.id));
+        this.state.selectedUnits = new Set([...this.state.selectedUnits].filter(id => validIds.has(id)));
+    },
+
+    initializeUnitBulkSelection() {
+        if (!this.elements.productUnitsBody) return;
+
+        const checkboxes = this.elements.productUnitsBody.querySelectorAll('.unit-checkbox');
+        checkboxes.forEach(checkbox => {
+            const id = parseInt(checkbox.dataset.id, 10);
+            checkbox.checked = this.state.selectedUnits.has(id);
+            checkbox.addEventListener('change', (event) => {
+                const checkboxId = parseInt(event.target.dataset.id, 10);
+                if (Number.isNaN(checkboxId)) return;
+
+                if (event.target.checked) {
+                    this.state.selectedUnits.add(checkboxId);
+                } else {
+                    this.state.selectedUnits.delete(checkboxId);
+                }
+
+                this.updateBulkUnitActionsUI();
+            });
+        });
+
+        this.updateBulkUnitActionsUI();
+    },
+
+    handleSelectAllUnits(isChecked) {
+        if (!(this.state.selectedUnits instanceof Set)) {
+            this.state.selectedUnits = new Set();
+        }
+
+        const checkboxes = this.elements.productUnitsBody?.querySelectorAll('.unit-checkbox') || [];
+        if (isChecked) {
+            this.state.selectedUnits = new Set(
+                Array.from(checkboxes)
+                    .map(cb => parseInt(cb.dataset.id, 10))
+                    .filter(id => !Number.isNaN(id))
+            );
+        } else {
+            this.state.selectedUnits.clear();
+        }
+
+        checkboxes.forEach(cb => {
+            cb.checked = isChecked;
+        });
+
+        this.updateBulkUnitActionsUI();
+    },
+
+    updateBulkUnitActionsUI() {
+        const count = this.state.selectedUnits instanceof Set ? this.state.selectedUnits.size : 0;
+        const checkboxes = this.elements.productUnitsBody?.querySelectorAll('.unit-checkbox') || [];
+        const total = checkboxes.length;
+
+        if (this.elements.selectedUnitsCount) {
+            this.elements.selectedUnitsCount.textContent = count;
+        }
+
+        if (this.elements.unitBulkActionsBar) {
+            if (count > 0) {
+                this.elements.unitBulkActionsBar.style.display = 'block';
+            } else {
+                this.elements.unitBulkActionsBar.style.display = 'none';
+            }
+        }
+
+        if (this.elements.selectAllUnits) {
+            if (total === 0 || count === 0) {
+                this.elements.selectAllUnits.checked = false;
+                this.elements.selectAllUnits.indeterminate = false;
+            } else if (count === total) {
+                this.elements.selectAllUnits.checked = true;
+                this.elements.selectAllUnits.indeterminate = false;
+            } else {
+                this.elements.selectAllUnits.checked = false;
+                this.elements.selectAllUnits.indeterminate = true;
+            }
+        }
+    },
+
+    getSelectedUnitIds() {
+        if (!(this.state.selectedUnits instanceof Set)) {
+            this.state.selectedUnits = new Set(Array.isArray(this.state.selectedUnits) ? this.state.selectedUnits : []);
+        }
+
+        return Array.from(this.state.selectedUnits).filter(id => Number.isInteger(id) && id > 0);
+    },
+
+    clearUnitSelection() {
+        if (!(this.state.selectedUnits instanceof Set)) {
+            this.state.selectedUnits = new Set();
+        }
+
+        this.state.selectedUnits.clear();
+
+        const checkboxes = this.elements.productUnitsBody?.querySelectorAll('.unit-checkbox') || [];
+        checkboxes.forEach(cb => { cb.checked = false; });
+
+        if (this.elements.selectAllUnits) {
+            this.elements.selectAllUnits.checked = false;
+            this.elements.selectAllUnits.indeterminate = false;
+        }
+
+        this.updateBulkUnitActionsUI();
+    },
+
+    async performBulkUnitAction(action) {
+        const ids = this.getSelectedUnitIds();
+        if (!ids.length) {
+            this.showError('Selectați cel puțin o configurare.');
+            return;
+        }
+
+        switch (action) {
+            case 'activate':
+            case 'deactivate': {
+                const confirmMessage = action === 'activate'
+                    ? `Ești sigur că vrei să activezi ${ids.length} configurări?`
+                    : `Ești sigur că vrei să dezactivezi ${ids.length} configurări?`;
+                if (!confirm(confirmMessage)) {
+                    return;
+                }
+
+                const message = action === 'activate'
+                    ? `${ids.length} configurări activate cu succes.`
+                    : `${ids.length} configurări dezactivate cu succes.`;
+
+                await this.executeBulkUpdate({ active: action === 'activate' }, message);
+                break;
+            }
+            case 'delete': {
+                if (!confirm(`Ești sigur că vrei să ștergi ${ids.length} configurări?\n\nAceastă acțiune nu poate fi anulată.`)) {
+                    return;
+                }
+
+                await this.executeBulkDelete(ids);
+                break;
+            }
+            default:
+                console.warn('Unknown bulk unit action:', action);
+        }
+    },
+
+    async applyBulkBooleanProperty() {
+        const ids = this.getSelectedUnitIds();
+        if (!ids.length) {
+            this.showError('Selectați cel puțin o configurare.');
+            return;
+        }
+
+        const select = this.elements.bulkPropertySelect;
+        if (!select) return;
+
+        const value = select.value;
+        if (!value) {
+            this.showError('Selectați o proprietate pentru actualizare.');
+            return;
+        }
+
+        const [field, rawValue] = value.split(':');
+        if (!field || typeof rawValue === 'undefined') {
+            this.showError('Valoare proprietate invalidă.');
+            return;
+        }
+
+        const boolValue = rawValue === 'true';
+        const labels = {
+            fragile: boolValue ? 'fragil' : 'nefragil',
+            hazardous: boolValue ? 'periculos' : 'nepericulos',
+            temperature_controlled: boolValue ? 'cu control de temperatură' : 'fără control de temperatură'
+        };
+        const propertyLabel = labels[field] || 'actualizat';
+
+        await this.executeBulkUpdate({ [field]: boolValue }, `Proprietatea a fost setată la ${propertyLabel} pentru ${ids.length} configurări.`);
+
+        select.value = '';
+    },
+
+    async applyBulkValueAction(action) {
+        const ids = this.getSelectedUnitIds();
+        if (!ids.length) {
+            this.showError('Selectați cel puțin o configurare.');
+            return;
+        }
+
+        if (action === 'set_max_items') {
+            const input = this.elements.bulkMaxValue;
+            if (!input) return;
+
+            const value = parseInt(input.value, 10);
+            if (Number.isNaN(value) || value < 0) {
+                this.showError('Introduceți o valoare validă pentru Max/Colet.');
+                return;
+            }
+
+            await this.executeBulkUpdate({ max_items_per_parcel: value }, `Maximul pe colet a fost actualizat pentru ${ids.length} configurări.`);
+            input.value = '';
+        } else if (action === 'set_weight') {
+            const input = this.elements.bulkWeightValue;
+            if (!input) return;
+
+            const value = parseFloat(input.value);
+            if (Number.isNaN(value) || value <= 0) {
+                this.showError('Introduceți o greutate validă (mai mare decât 0).');
+                return;
+            }
+
+            await this.executeBulkUpdate({ weight_per_unit: value }, `Greutatea a fost actualizată pentru ${ids.length} configurări.`);
+            input.value = '';
+        }
+    },
+
+    async executeBulkUpdate(updates, successMessage = 'Configurările au fost actualizate.') {
+        const ids = this.getSelectedUnitIds();
+        if (!ids.length) {
+            this.showError('Selectați cel puțin o configurare.');
+            return;
+        }
+
+        if (!updates || typeof updates !== 'object' || Object.keys(updates).length === 0) {
+            this.showError('Nu există modificări de aplicat.');
+            return;
+        }
+
+        this.showLoading();
+
+        try {
+            const response = await this.apiCall('POST', this.config.apiEndpoints.productUnits, {
+                bulk_action: 'update',
+                ids,
+                updates
+            });
+
+            if (response.success) {
+                this.showSuccess(response.message || successMessage);
+                this.clearUnitSelection();
+                await this.loadProductUnits();
+                await this.loadStatistics();
+            } else {
+                throw new Error(response.error || 'Eroare la actualizarea configurărilor.');
+            }
+        } catch (error) {
+            console.error('Bulk update error:', error);
+            this.showError(error.message || 'Eroare la actualizarea configurărilor.');
+        } finally {
+            this.hideLoading();
+        }
+    },
+
+    async executeBulkDelete(ids) {
+        if (!ids || !ids.length) {
+            this.showError('Selectați cel puțin o configurare.');
+            return;
+        }
+
+        this.showLoading();
+
+        try {
+            const response = await this.apiCall('POST', this.config.apiEndpoints.productUnits, {
+                bulk_action: 'delete',
+                ids
+            });
+
+            if (response.success) {
+                const message = response.message || `${ids.length} configurări au fost șterse.`;
+                this.showSuccess(message);
+                this.clearUnitSelection();
+                await this.loadProductUnits();
+                await this.loadStatistics();
+            } else {
+                throw new Error(response.error || 'Eroare la ștergerea configurărilor.');
+            }
+        } catch (error) {
+            console.error('Bulk delete error:', error);
+            this.showError(error.message || 'Eroare la ștergerea configurărilor.');
+        } finally {
+            this.hideLoading();
         }
     },
 

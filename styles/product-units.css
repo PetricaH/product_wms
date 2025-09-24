@@ -232,6 +232,75 @@
 }
 
 /* ===== TABLE STYLES ===== */
+.bulk-actions-bar {
+    background: linear-gradient(135deg, var(--surface-background) 0%, var(--container-background) 100%);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    padding: 0.75rem 1rem;
+    margin: 0 0 1rem;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    position: sticky;
+    top: 80px;
+    z-index: 100;
+}
+
+.bulk-actions-content {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.bulk-selection-count {
+    font-weight: 600;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.85rem;
+}
+
+.bulk-selection-count::before {
+    content: "✓";
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    background-color: var(--primary-color);
+    color: #fff;
+    border-radius: 50%;
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.bulk-actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.bulk-divider {
+    width: 1px;
+    background: var(--border-color);
+    align-self: stretch;
+    margin: 0 0.5rem;
+}
+
+.select-column {
+    width: 48px;
+    text-align: center;
+}
+
+.select-column input[type="checkbox"],
+.unit-checkbox {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--primary-color);
+}
+
 .table-container {
     background: var(--container-background);
     border: 1px solid var(--border-color);

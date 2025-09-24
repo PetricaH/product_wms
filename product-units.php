@@ -232,11 +232,63 @@ $currentPage = 'product-units';
                                     </button>
                                 </div>
                             </div>
-                            
+
+                            <!-- Bulk Actions Bar -->
+                            <div class="bulk-actions-bar" id="unitBulkActionsBar" style="display: none;">
+                                <div class="bulk-actions-content">
+                                    <span class="bulk-selection-count">
+                                        <span id="selectedUnitsCount">0</span> configurări selectate
+                                    </span>
+                                    <div class="bulk-actions">
+                                        <button type="button" class="btn btn-sm btn-success" onclick="ProductUnitsApp.performBulkUnitAction('activate')">
+                                            <span class="material-symbols-outlined">check_circle</span>
+                                            Activează
+                                        </button>
+                                        <button type="button" class="btn btn-sm btn-warning" onclick="ProductUnitsApp.performBulkUnitAction('deactivate')">
+                                            <span class="material-symbols-outlined">block</span>
+                                            Dezactivează
+                                        </button>
+                                        <button type="button" class="btn btn-sm btn-danger" onclick="ProductUnitsApp.performBulkUnitAction('delete')">
+                                            <span class="material-symbols-outlined">delete</span>
+                                            Șterge
+                                        </button>
+                                        <div class="bulk-divider"></div>
+                                        <select id="bulkPropertySelect" class="form-control">
+                                            <option value="">Setează proprietate</option>
+                                            <option value="fragile:true">Marchează Fragil</option>
+                                            <option value="fragile:false">Elimină Fragil</option>
+                                            <option value="hazardous:true">Marchează Periculos</option>
+                                            <option value="hazardous:false">Elimină Periculos</option>
+                                            <option value="temperature_controlled:true">Control Temperatura: Da</option>
+                                            <option value="temperature_controlled:false">Control Temperatura: Nu</option>
+                                        </select>
+                                        <button type="button" id="applyBulkPropertyBtn" class="btn btn-sm btn-primary">
+                                            Aplică
+                                        </button>
+                                        <div class="bulk-divider"></div>
+                                        <div class="bulk-input-group" style="display:flex; gap:6px; align-items:center;">
+                                            <input type="number" id="bulkMaxValue" class="form-control" placeholder="Max/Colet" min="0">
+                                            <button type="button" id="applyBulkMaxBtn" class="btn btn-sm btn-info">
+                                                Setează
+                                            </button>
+                                        </div>
+                                        <div class="bulk-input-group" style="display:flex; gap:6px; align-items:center;">
+                                            <input type="number" step="0.001" id="bulkWeightValue" class="form-control" placeholder="Greutate (kg)" min="0">
+                                            <button type="button" id="applyBulkWeightBtn" class="btn btn-sm btn-info">
+                                                Actualizează
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
                             <div class="table-wrapper">
                                 <table class="data-table" id="productUnitsTable">
                                     <thead>
                                         <tr>
+                                            <th class="select-column">
+                                                <input type="checkbox" id="selectAllUnits">
+                                            </th>
                                             <th>Produs</th>
                                             <th>Cod Produs</th>
                                             <th>Unitate</th>
@@ -251,7 +303,7 @@ $currentPage = 'product-units';
                                     <tbody id="productUnitsBody">
                                         <!-- Table rows will be loaded via JavaScript -->
                                         <tr class="loading-row">
-                                            <td colspan="9" class="text-center">
+                                            <td colspan="10" class="text-center">
                                                 <div class="loading-spinner">
                                                     <span class="material-symbols-outlined spinning">progress_activity</span>
                                                     Încărcare date...

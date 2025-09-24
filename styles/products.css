@@ -205,10 +205,14 @@
     border: 1px solid var(--border-color);
     border-radius: var(--border-radius);
     overflow: hidden;
+    overflow-x: auto;
+    width: 100%;
+    -webkit-overflow-scrolling: touch;
 }
 
 .table {
     width: 100%;
+    min-width: 900px;
     border-collapse: collapse;
     margin: 0;
     font-size: 0.85rem;

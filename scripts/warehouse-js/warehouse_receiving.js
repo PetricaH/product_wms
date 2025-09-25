@@ -26,6 +26,9 @@ class WarehouseReceiving {
         this.barcodeCaptureSession = null;
         this.locationSuggestionCache = new Map();
 
+        this.activeTab = 'standard';
+        this.returnSearchAbortController = null;
+
         // TIMING INTEGRATION - Silent timing for performance tracking
         this.timingManager = null;
         this.activeTimingTasks = new Map(); // receiving_item_id -> task_id
@@ -36,10 +39,11 @@ class WarehouseReceiving {
 
     init() {
         this.bindEvents();
+        this.initializeTabs();
         this.initializeCurrentStep();
         this.loadRecentSessions();
         this.initializeTiming();
-        
+
         console.log('🚛 Warehouse Receiving initialized');
     }
 
@@ -177,6 +181,57 @@ class WarehouseReceiving {
         if (addStockBtn) {
             addStockBtn.addEventListener('click', () => this.addProductionStock());
         }
+
+        const returnSearchInput = document.getElementById('return-company-search');
+        if (returnSearchInput) {
+            const handleSearch = this.debounce((value) => this.searchReturnOrders(value), 350);
+            returnSearchInput.addEventListener('input', (event) => handleSearch(event.target.value));
+            returnSearchInput.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    this.searchReturnOrders(event.target.value);
+                }
+            });
+        }
+    }
+
+    initializeTabs() {
+        const tabButtons = document.querySelectorAll('[data-receiving-tab]');
+        const panels = document.querySelectorAll('.receiving-tab-panel');
+
+        if (!tabButtons.length || !panels.length) {
+            return;
+        }
+
+        tabButtons.forEach((button) => {
+            button.addEventListener('click', () => {
+                const target = button.getAttribute('data-receiving-tab');
+                if (!target || target === this.activeTab) {
+                    return;
+                }
+
+                this.activeTab = target;
+
+                tabButtons.forEach((btn) => {
+                    btn.classList.toggle('active', btn === button);
+                });
+
+                panels.forEach((panel) => {
+                    const panelKey = panel.getAttribute('data-receiving-panel');
+                    panel.classList.toggle('active', panelKey === target);
+                });
+
+                if (target === 'returns') {
+                    const input = document.getElementById('return-company-search');
+                    if (input) {
+                        input.focus();
+                        if (input.value.trim().length > 0) {
+                            this.searchReturnOrders(input.value);
+                        }
+                    }
+                }
+            });
+        });
     }
 
     initializeCurrentStep() {
@@ -289,6 +344,139 @@ class WarehouseReceiving {
                 </div>
             </div>
         `).join('');
+    }
+
+    async searchReturnOrders(query) {
+        const container = document.getElementById('return-orders-results');
+        if (!container) {
+            return;
+        }
+
+        const trimmedQuery = (query || '').trim();
+
+        if (!trimmedQuery) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <span class="material-symbols-outlined">travel_explore</span>
+                    <p>Introduceți numele unei companii pentru a vedea comenzile pregătite pentru retur.</p>
+                </div>
+            `;
+            return;
+        }
+
+        if (trimmedQuery.length < 2) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <span class="material-symbols-outlined">info</span>
+                    <p>Introduceți cel puțin 2 caractere pentru a căuta o companie.</p>
+                </div>
+            `;
+            return;
+        }
+
+        this.showReturnSearchLoading();
+
+        if (this.returnSearchAbortController) {
+            this.returnSearchAbortController.abort();
+        }
+
+        this.returnSearchAbortController = new AbortController();
+
+        try {
+            const response = await fetch(`${this.config.apiBase}/warehouse/search_picked_orders.php?company=${encodeURIComponent(trimmedQuery)}`, {
+                signal: this.returnSearchAbortController.signal
+            });
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(result.message || 'Nu am putut căuta comenzile pregătite.');
+            }
+
+            const orders = Array.isArray(result.orders) ? result.orders : [];
+            this.renderReturnOrders(orders, trimmedQuery);
+        } catch (error) {
+            if (error.name === 'AbortError') {
+                return;
+            }
+
+            console.error('Return search error:', error);
+            container.innerHTML = `
+                <div class="return-orders-error">
+                    ${this.escapeHtml(error.message || 'A apărut o eroare la încărcarea comenzilor de retur.')}
+                </div>
+            `;
+        } finally {
+            this.returnSearchAbortController = null;
+        }
+    }
+
+    showReturnSearchLoading() {
+        const container = document.getElementById('return-orders-results');
+        if (!container) {
+            return;
+        }
+
+        container.innerHTML = `
+            <div class="returns-loading">
+                <span class="material-symbols-outlined">autorenew</span>
+                <span>Căutăm comenzile pregătite...</span>
+            </div>
+        `;
+    }
+
+    renderReturnOrders(orders, query) {
+        const container = document.getElementById('return-orders-results');
+        if (!container) {
+            return;
+        }
+
+        if (!orders.length) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <span class="material-symbols-outlined">inventory_2</span>
+                    <p>Nu am găsit comenzi pregătite pentru compania <strong>${this.escapeHtml(query)}</strong>.</p>
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = orders
+            .map((order) => this.renderReturnOrderCard(order))
+            .join('');
+    }
+
+    renderReturnOrderCard(order) {
+        const orderNumber = order.order_number || 'Comandă';
+        const company = order.customer_name || 'Companie necunoscută';
+        const latest = order.latest_activity || order.updated_at || order.order_date;
+        const formattedDate = this.formatDateTime(latest);
+        const totalItems = Number(order.total_items ?? order.items_count ?? 0) || 0;
+        const totalValue = this.formatCurrency(order.total_value, order.currency || 'RON');
+        const statusLabel = order.status_label || this.formatOrderStatus(order.status);
+
+        return `
+            <div class="return-order-card">
+                <div class="return-order-card-header">
+                    <span class="return-order-number">${this.escapeHtml(orderNumber)}</span>
+                    <span class="return-order-date">${this.escapeHtml(formattedDate)}</span>
+                </div>
+                <div class="return-order-company">${this.escapeHtml(company)}</div>
+                <div class="return-order-meta">
+                    <span class="return-order-status">
+                        <span class="material-symbols-outlined">local_shipping</span>
+                        ${this.escapeHtml(statusLabel)}
+                    </span>
+                    <span>
+                        <span class="material-symbols-outlined">inventory_2</span>
+                        ${totalItems} articole
+                    </span>
+                    <span>
+                        <span class="material-symbols-outlined">payments</span>
+                        ${this.escapeHtml(totalValue)}
+                    </span>
+                </div>
+            </div>
+        `;
     }
 
     async searchProducts(query) {
@@ -1302,6 +1490,68 @@ class WarehouseReceiving {
     }
 
     // Utility functions
+
+    formatDateTime(value) {
+        if (!value) {
+            return '-';
+        }
+
+        let date = new Date(value);
+        if (Number.isNaN(date.getTime()) && typeof value === 'string') {
+            date = new Date(value.replace(' ', 'T'));
+        }
+
+        if (Number.isNaN(date.getTime())) {
+            return value;
+        }
+
+        return date.toLocaleString('ro-RO');
+    }
+
+    formatCurrency(amount, currency = 'RON') {
+        const numericValue = Number(amount);
+
+        if (!Number.isFinite(numericValue)) {
+            const fallback = typeof amount !== 'undefined' ? amount : 0;
+            return `${fallback} ${currency}`;
+        }
+
+        try {
+            return new Intl.NumberFormat('ro-RO', {
+                style: 'currency',
+                currency
+            }).format(numericValue);
+        } catch (error) {
+            return `${numericValue.toFixed(2)} ${currency}`;
+        }
+    }
+
+    formatOrderStatus(status) {
+        if (!status) {
+            return 'Necunoscut';
+        }
+
+        const normalized = String(status).toLowerCase();
+        const statusMap = {
+            'picked': 'Pregătită',
+            'ready_to_ship': 'Gata de expediere',
+            'completed': 'Finalizată',
+            'processing': 'În procesare',
+            'pending': 'În așteptare',
+            'assigned': 'Alocată'
+        };
+
+        return statusMap[normalized] || status;
+    }
+
+    debounce(fn, delay = 300) {
+        let timeout;
+        return (...args) => {
+            clearTimeout(timeout);
+            timeout = setTimeout(() => fn.apply(this, args), delay);
+        };
+    }
+
     showLoading(show) {
         const overlay = document.getElementById('loading-overlay');
         if (overlay) {

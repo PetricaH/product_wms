@@ -141,14 +141,209 @@ try {
 
 function findProductReturnLocation(PDO $db, int $productId): ?array
 {
+    $assignedLocation = findAssignedLocationForProduct($db, $productId);
+
+    if ($assignedLocation) {
+        $inventoryRecord = findInventoryRecordForLocation($db, $productId, (int)$assignedLocation['location_id']);
+
+        if ($inventoryRecord) {
+            return [
+                'inventory_id' => (int)$inventoryRecord['inventory_id'],
+                'location_id' => (int)$assignedLocation['location_id'],
+                'location_code' => $assignedLocation['location_code'],
+                'shelf_level' => $inventoryRecord['shelf_level'] ?? ($assignedLocation['shelf_level'] ?? null),
+                'subdivision_number' => $inventoryRecord['subdivision_number'] !== null
+                    ? (int)$inventoryRecord['subdivision_number']
+                    : ($assignedLocation['subdivision_number'] ?? null)
+            ];
+        }
+
+        return [
+            'inventory_id' => null,
+            'location_id' => (int)$assignedLocation['location_id'],
+            'location_code' => $assignedLocation['location_code'],
+            'shelf_level' => $assignedLocation['shelf_level'] ?? null,
+            'subdivision_number' => isset($assignedLocation['subdivision_number']) && $assignedLocation['subdivision_number'] !== null
+                ? (int)$assignedLocation['subdivision_number']
+                : null
+        ];
+    }
+
+    $inventoryLocation = findPrimaryInventoryPlacement($db, $productId);
+
+    if ($inventoryLocation) {
+        return [
+            'inventory_id' => (int)$inventoryLocation['inventory_id'],
+            'location_id' => (int)$inventoryLocation['location_id'],
+            'location_code' => $inventoryLocation['location_code'],
+            'shelf_level' => $inventoryLocation['shelf_level'],
+            'subdivision_number' => $inventoryLocation['subdivision_number'] !== null
+                ? (int)$inventoryLocation['subdivision_number']
+                : null
+        ];
+    }
+
+    return null;
+}
+
+function findAssignedLocationForProduct(PDO $db, int $productId): ?array
+{
+    $dedicatedSubdivision = findDedicatedSubdivisionForProduct($db, $productId);
+    if ($dedicatedSubdivision) {
+        return $dedicatedSubdivision;
+    }
+
+    $dedicatedLevel = findDedicatedLevelForProduct($db, $productId);
+    if ($dedicatedLevel) {
+        return $dedicatedLevel;
+    }
+
+    $allowedLevel = findAllowedLevelForProduct($db, $productId);
+    if ($allowedLevel) {
+        return $allowedLevel;
+    }
+
+    return null;
+}
+
+function findDedicatedSubdivisionForProduct(PDO $db, int $productId): ?array
+{
     $stmt = $db->prepare(
-        "SELECT i.id AS inventory_id,
-                i.location_id,
-                l.location_code,
-                i.shelf_level,
-                i.subdivision_number,
-                i.quantity,
-                i.received_at
+        "SELECT
+            ls.location_id,
+            l.location_code,
+            ls.subdivision_number,
+            COALESCE(lls.level_name, CONCAT('Nivel ', ls.level_number)) AS shelf_level
+         FROM location_subdivisions ls
+         JOIN locations l ON ls.location_id = l.id
+         LEFT JOIN location_level_settings lls
+            ON lls.location_id = ls.location_id AND lls.level_number = ls.level_number
+         WHERE ls.dedicated_product_id = :product_id
+         ORDER BY (l.status = 'active') DESC, ls.updated_at DESC, ls.subdivision_number ASC
+         LIMIT 1"
+    );
+    $stmt->execute([':product_id' => $productId]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$row) {
+        return null;
+    }
+
+    return [
+        'location_id' => (int)$row['location_id'],
+        'location_code' => $row['location_code'],
+        'shelf_level' => $row['shelf_level'] ?: null,
+        'subdivision_number' => $row['subdivision_number'] !== null ? (int)$row['subdivision_number'] : null
+    ];
+}
+
+function findDedicatedLevelForProduct(PDO $db, int $productId): ?array
+{
+    $stmt = $db->prepare(
+        "SELECT
+            lls.location_id,
+            l.location_code,
+            COALESCE(lls.level_name, CONCAT('Nivel ', lls.level_number)) AS shelf_level
+         FROM location_level_settings lls
+         JOIN locations l ON lls.location_id = l.id
+         WHERE lls.dedicated_product_id = :product_id
+         ORDER BY (l.status = 'active') DESC, lls.updated_at DESC, lls.level_number ASC
+         LIMIT 1"
+    );
+    $stmt->execute([':product_id' => $productId]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$row) {
+        return null;
+    }
+
+    return [
+        'location_id' => (int)$row['location_id'],
+        'location_code' => $row['location_code'],
+        'shelf_level' => $row['shelf_level'] ?: null,
+        'subdivision_number' => null
+    ];
+}
+
+function findAllowedLevelForProduct(PDO $db, int $productId): ?array
+{
+    $stmt = $db->prepare(
+        "SELECT
+            lls.location_id,
+            l.location_code,
+            COALESCE(lls.level_name, CONCAT('Nivel ', lls.level_number)) AS shelf_level
+         FROM location_level_settings lls
+         JOIN locations l ON lls.location_id = l.id
+         WHERE lls.allowed_product_types IS NOT NULL
+           AND (
+                JSON_CONTAINS(lls.allowed_product_types, :product_numeric, '$')
+                OR JSON_CONTAINS(lls.allowed_product_types, :product_string, '$')
+           )
+         ORDER BY (l.status = 'active') DESC, lls.priority_order ASC, lls.level_number ASC
+         LIMIT 1"
+    );
+
+    $stmt->execute([
+        ':product_numeric' => json_encode((int)$productId),
+        ':product_string' => json_encode((string)$productId)
+    ]);
+
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$row) {
+        return null;
+    }
+
+    return [
+        'location_id' => (int)$row['location_id'],
+        'location_code' => $row['location_code'],
+        'shelf_level' => $row['shelf_level'] ?: null,
+        'subdivision_number' => null
+    ];
+}
+
+function findInventoryRecordForLocation(PDO $db, int $productId, int $locationId): ?array
+{
+    $stmt = $db->prepare(
+        "SELECT
+            i.id AS inventory_id,
+            i.shelf_level,
+            i.subdivision_number
+         FROM inventory i
+         WHERE i.product_id = :product_id
+           AND i.location_id = :location_id
+         ORDER BY i.quantity DESC, i.received_at ASC
+         LIMIT 1"
+    );
+    $stmt->execute([
+        ':product_id' => $productId,
+        ':location_id' => $locationId
+    ]);
+
+    $inventory = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$inventory) {
+        return null;
+    }
+
+    return [
+        'inventory_id' => (int)$inventory['inventory_id'],
+        'shelf_level' => $inventory['shelf_level'] ?? null,
+        'subdivision_number' => $inventory['subdivision_number'] !== null ? (int)$inventory['subdivision_number'] : null
+    ];
+}
+
+function findPrimaryInventoryPlacement(PDO $db, int $productId): ?array
+{
+    $stmt = $db->prepare(
+        "SELECT
+            i.id AS inventory_id,
+            i.location_id,
+            l.location_code,
+            i.shelf_level,
+            i.subdivision_number,
+            i.quantity,
+            i.received_at
          FROM inventory i
          JOIN locations l ON i.location_id = l.id
          WHERE i.product_id = :product_id AND i.quantity >= 0
@@ -156,6 +351,7 @@ function findProductReturnLocation(PDO $db, int $productId): ?array
          LIMIT 1"
     );
     $stmt->execute([':product_id' => $productId]);
+
     $location = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if (!$location) {

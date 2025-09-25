@@ -2069,20 +2069,7 @@ const ProductUnitsApp = {
         if (!this.elements.stockCategoryFilter) return;
         const select = this.elements.stockCategoryFilter;
         const categories = [...new Set(this.state.products.map(p => p.category).filter(Boolean))].sort();
-        select.innerHTML = '<option value="">Toate categoriile</option>';
-        categories.forEach(cat => {
-            const opt = document.createElement('option');
-            opt.value = cat;
-            opt.textContent = cat;
-            select.appendChild(opt);
-        });
-    },
 
-    populateStockCategoryFilter() {
-        if (!this.elements.stockCategoryFilter) return;
-        const select = this.elements.stockCategoryFilter;
-        const categories = [...new Set(this.state.products.map(p => p.category).filter(Boolean))].sort();
-        
         // Start with the "All categories" option
         select.innerHTML = '<option value="">Toate categoriile</option>';
         
@@ -2098,7 +2085,7 @@ const ProductUnitsApp = {
         if (categories.includes('Marfa')) {
             select.value = 'Marfa';
             this.state.stockCategory = 'Marfa'; // Update the state
-            
+
             // Trigger the filtering to show only Marfa products
             this.applyStockFilters();
         }
@@ -3705,6 +3692,15 @@ async deletePackagingRule(id, ruleName) {
     },
 
     // ===== STOCK MANAGEMENT FUNCTIONS =====
+    applyStockFilters() {
+        if (this.elements.stockCategoryFilter) {
+            this.elements.stockCategoryFilter.value = this.state.stockCategory || '';
+        }
+
+        this.state.stockPagination.offset = 0;
+        return this.loadStockSettings();
+    },
+
     async loadStockSettings() {
         if (!this.elements.stockSettingsBody) return;
         this.elements.stockSettingsBody.innerHTML = `

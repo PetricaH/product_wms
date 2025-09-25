@@ -93,6 +93,7 @@ foreach ($incidents as $incident) {
 
 $unresolvedCounts = $incidentModel->getUnresolvedCounts();
 $unresolvedTotal = $incidentModel->getUnresolvedTotal();
+$incidentSidebarCount = (int) $unresolvedTotal;
 
 $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
 $cssPath = BASE_PATH . '/styles/incidents-admin.css';

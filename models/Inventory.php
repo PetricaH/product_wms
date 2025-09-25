@@ -747,25 +747,30 @@ class Inventory {
             $checkQuery = "SHOW COLUMNS FROM {$this->productsTable} LIKE 'quantity'";
             $checkStmt = $this->conn->prepare($checkQuery);
             $checkStmt->execute();
-            
+
             if ($checkStmt->rowCount() > 0) {
                 // Update total quantity in products table
-                $updateQuery = "UPDATE {$this->productsTable} p 
+                $updateQuery = "UPDATE {$this->productsTable} p
                                 SET quantity = (
-                                    SELECT COALESCE(SUM(i.quantity), 0) 
-                                    FROM {$this->inventoryTable} i 
+                                    SELECT COALESCE(SUM(i.quantity), 0)
+                                    FROM {$this->inventoryTable} i
                                     WHERE i.product_id = p.product_id
-                                ) 
+                                )
                                 WHERE p.product_id = :product_id";
-                
+
                 $stmt = $this->conn->prepare($updateQuery);
                 $stmt->bindParam(':product_id', $productId, PDO::PARAM_INT);
                 $stmt->execute();
-                // After updating quantity, check auto order rules
-                $this->triggerAutoOrder($productId);
             }
         } catch (PDOException $e) {
             error_log("Warning: Could not update product total quantity: " . $e->getMessage());
+        } finally {
+            try {
+                // Always evaluate auto order rules even if the quantity column is missing
+                $this->triggerAutoOrder($productId);
+            } catch (Throwable $t) {
+                error_log("Warning: Auto order evaluation failed: " . $t->getMessage());
+            }
         }
     }
 

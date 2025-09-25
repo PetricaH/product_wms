@@ -100,6 +100,7 @@ $cssUrl = rtrim(BASE_URL, '/') . '/styles/incidents-admin.css' . (file_exists($c
 $scriptPath = BASE_PATH . '/scripts/incidents-admin.js';
 $scriptUrl = file_exists($scriptPath) ? rtrim(BASE_URL, '/') . '/scripts/incidents-admin.js?v=' . filemtime($scriptPath) : '';
 
+
 ?>
 <!DOCTYPE html>
 <html lang="ro">

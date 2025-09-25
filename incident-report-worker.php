@@ -41,6 +41,7 @@ $cssHref = $assetBase . 'styles/incident-report.css';
 $jsPath = BASE_PATH . '/scripts/incident-report-worker.js';
 $jsSrc = $assetBase . 'scripts/incident-report-worker.js';
 
+
 if (file_exists($cssPath)) {
     $cssHref .= '?v=' . filemtime($cssPath);
 }

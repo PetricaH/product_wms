@@ -17,6 +17,8 @@ if (!defined('BASE_PATH')) {
     define('BASE_PATH', dirname(__DIR__, 2));
 }
 
+require_once BASE_PATH . '/models/Inventory.php';
+
 if (!file_exists(BASE_PATH . '/config/config.php')) {
     http_response_code(500);
     echo json_encode(['status' => 'error', 'message' => 'Config file missing.']);
@@ -38,6 +40,8 @@ try {
     if (session_status() === PHP_SESSION_NONE) {
         session_start();
     }
+
+    $inventoryModel = new Inventory($db);
 
     // Get JSON input
     $input = json_decode(file_get_contents('php://input'), true);
@@ -125,24 +129,36 @@ try {
         ':order_item_id' => $orderItemId
     ]);
 
-    // If inventory_id is provided, reduce inventory
+    // If inventory_id is provided, reduce inventory using the Inventory model so auto-order checks run
+    $locationId = null;
     if ($inventoryId) {
-        $updateInventoryQuery = "
-            UPDATE inventory 
-            SET quantity = quantity - :quantity_picked,
-                updated_at = NOW()
-            WHERE id = :inventory_id AND quantity >= :quantity_picked
-        ";
+        $inventoryStmt = $db->prepare('SELECT product_id, location_id FROM inventory WHERE id = :inventory_id');
+        $inventoryStmt->execute([':inventory_id' => $inventoryId]);
+        $inventoryRow = $inventoryStmt->fetch(PDO::FETCH_ASSOC);
 
-        $updateInventoryStmt = $db->prepare($updateInventoryQuery);
-        $updateInventoryStmt->execute([
-            ':quantity_picked' => $quantityPicked,
-            ':inventory_id' => $inventoryId
-        ]);
+        if (!$inventoryRow) {
+            $db->rollback();
+            http_response_code(404);
+            echo json_encode([
+                'status' => 'error',
+                'message' => 'Inventory record not found.'
+            ]);
+            exit;
+        }
 
-        // Check if inventory was actually updated
-        if ($updateInventoryStmt->rowCount() === 0) {
-            // Inventory update failed - not enough stock
+        if ((int)$inventoryRow['product_id'] !== (int)$item['product_id']) {
+            $db->rollback();
+            http_response_code(400);
+            echo json_encode([
+                'status' => 'error',
+                'message' => 'Inventory record does not match the requested product.'
+            ]);
+            exit;
+        }
+
+        $locationId = $inventoryRow['location_id'] !== null ? (int)$inventoryRow['location_id'] : null;
+
+        if (!$inventoryModel->removeStock((int)$item['product_id'], $quantityPicked, $locationId, false)) {
             $db->rollback();
             echo json_encode([
                 'status' => 'error',

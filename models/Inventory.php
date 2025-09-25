@@ -1513,42 +1513,36 @@ public function getCriticalStockAlerts(int $limit = 10): array {
 
         try {
             $query = "SELECT
-                        p.product_id,
-                        p.sku,
-                        p.name,
-                        COALESCE(inv.current_stock, 0) AS current_stock,
-                        p.min_stock_level,
-                        p.min_order_quantity,
-                        p.auto_order_enabled,
-                        p.seller_id,
-                        p.last_auto_order_date,
-                        p.price,
-                        p.price_eur,
-                        pp.id AS purchasable_product_id,
-                        pp.supplier_product_name,
-                        pp.supplier_product_code,
-                        pp.last_purchase_price,
-                        pp.preferred_seller_id,
-                        pp.currency,
-                        s.supplier_name,
-                        s.email AS seller_email,
-                        sp.supplier_name AS preferred_supplier_name,
-                        sp.email AS preferred_seller_email
-                    FROM {$this->productsTable} p
-                    LEFT JOIN (
-                        SELECT product_id, SUM(quantity) AS current_stock
-                        FROM inventory
-                        GROUP BY product_id
-                    ) inv ON inv.product_id = p.product_id
-                    LEFT JOIN purchasable_products pp
-                        ON pp.internal_product_id = p.product_id
-                    LEFT JOIN sellers s ON s.id = p.seller_id
-                    LEFT JOIN sellers sp ON sp.id = pp.preferred_seller_id
-                    WHERE p.product_id = :id
-                    ORDER BY
-                        CASE WHEN pp.preferred_seller_id = p.seller_id THEN 0 ELSE 1 END,
-                        CASE WHEN pp.last_purchase_price IS NULL OR pp.last_purchase_price <= 0 THEN 1 ELSE 0 END,
-                        pp.id ASC";
+            p.product_id,
+            p.sku,
+            p.name,
+            COALESCE(SUM(inv.quantity), 0) as quantity,
+            p.min_stock_level,
+            p.min_order_quantity,
+            p.auto_order_enabled,
+            p.seller_id,
+            p.last_auto_order_date,
+            pp.id AS purchasable_product_id,
+            pp.supplier_product_name,
+            pp.supplier_product_code,
+            pp.last_purchase_price,
+            pp.preferred_seller_id,
+            s.supplier_name,
+            s.email AS seller_email
+        FROM {$this->productsTable} p
+        LEFT JOIN purchasable_products pp
+            ON pp.internal_product_id = p.product_id
+        LEFT JOIN sellers s ON s.id = p.seller_id
+        LEFT JOIN inventory inv ON inv.product_id = p.product_id
+        WHERE p.product_id = :id
+        GROUP BY p.product_id, p.sku, p.name, p.min_stock_level, p.min_order_quantity, 
+                 p.auto_order_enabled, p.seller_id, p.last_auto_order_date, 
+                 pp.id, pp.supplier_product_name, pp.supplier_product_code, 
+                 pp.last_purchase_price, pp.preferred_seller_id, s.supplier_name, s.email
+        ORDER BY
+            CASE WHEN pp.preferred_seller_id = p.seller_id THEN 0 ELSE 1 END,
+            CASE WHEN pp.last_purchase_price IS NULL OR pp.last_purchase_price <= 0 THEN 1 ELSE 0 END,
+            pp.id ASC";
 
             $stmt = $this->conn->prepare($query);
             $stmt->bindValue(':id', $productId, PDO::PARAM_INT);

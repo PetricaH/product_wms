@@ -49,6 +49,7 @@ const ProductUnitsApp = {
             testCargus: `${baseUrl}/api/test_cargus.php`,
             recalculateWeight: `${baseUrl}/api/recalculate_weight.php`,
             stockSettings: `${baseUrl}/api/inventory_settings.php`,
+            sellerSearch: `${baseUrl}/api/seller_search.php`,
             autoOrderTest: `${baseUrl}/api/auto_order_test.php`,
             autoOrderDashboard: `${baseUrl}/api/auto_orders/dashboard.php`,
             autoOrderHistory: `${baseUrl}/api/auto_orders/history.php`,
@@ -77,6 +78,7 @@ const ProductUnitsApp = {
         stockSearch: '',
         stockCategory: '',
         stockSeller: '',
+        sellerSearchController: null,
         barrelDimensions: [],
         filteredData: [],
         isLoading: false,
@@ -214,6 +216,11 @@ const ProductUnitsApp = {
             stockProductId: document.getElementById('stockProductId'),
             stockProductSearch: document.getElementById('stockProductSearch'),
             stockProductResults: document.getElementById('stockProductResults'),
+            stockSellerId: document.getElementById('stockSellerId'),
+            stockSellerSearch: document.getElementById('stockSellerSearch'),
+            stockSellerResults: document.getElementById('stockSellerResults'),
+            selectedSellerInfo: document.getElementById('selectedSellerInfo'),
+            clearStockSeller: document.getElementById('clearStockSeller'),
             stockModalClose: document.querySelector('#stockSettingsModal .modal-close'),
             autoOrderEnabled: document.getElementById('autoOrderEnabled'),
             minStockLevel: document.getElementById('minStockLevel'),
@@ -793,10 +800,33 @@ const ProductUnitsApp = {
             }, this.config.debounceDelay));
         }
 
+        if (this.elements.stockSellerSearch) {
+            this.elements.stockSellerSearch.addEventListener('input', this.debounce(() => {
+                const q = this.elements.stockSellerSearch.value.trim();
+                this.searchStockSellers(q);
+            }, this.config.debounceDelay));
+
+            this.elements.stockSellerSearch.addEventListener('focus', () => {
+                const q = this.elements.stockSellerSearch.value.trim();
+                if (q.length >= 2) {
+                    this.searchStockSellers(q);
+                }
+            });
+        }
+
+        if (this.elements.clearStockSeller) {
+            this.elements.clearStockSeller.addEventListener('click', () => this.clearStockSeller());
+        }
+
+        if (this.elements.autoOrderEnabled) {
+            this.elements.autoOrderEnabled.addEventListener('change', () => this.updateAutoOrderWarning());
+        }
+
         document.addEventListener('click', (e) => {
             if (!e.target.closest('.seller-search-container')) {
                 this.hideProductResults('product');
                 this.hideProductResults('stockProduct');
+                this.hideSellerResults();
             }
         });
 
@@ -2768,6 +2798,9 @@ const ProductUnitsApp = {
         const searchInput = this.elements[`${context}Search`];
         if (idInput) idInput.value = id;
         if (searchInput) searchInput.value = name;
+        if (context === 'stockProduct') {
+            this.setStockSeller('', '');
+        }
         this.hideProductResults(context);
     },
 
@@ -2777,6 +2810,140 @@ const ProductUnitsApp = {
             resultsEl.innerHTML = '';
             resultsEl.classList.remove('show');
         }
+    },
+
+    hideSellerResults() {
+        if (this.state.sellerSearchController) {
+            this.state.sellerSearchController.abort();
+            this.state.sellerSearchController = null;
+        }
+        if (this.elements.stockSellerResults) {
+            this.elements.stockSellerResults.innerHTML = '';
+            this.elements.stockSellerResults.classList.remove('show');
+        }
+    },
+
+    async searchStockSellers(query) {
+        const container = this.elements.stockSellerResults;
+        if (!container) return;
+
+        if (!query || query.length < 2) {
+            this.hideSellerResults();
+            return;
+        }
+
+        if (this.state.sellerSearchController) {
+            this.state.sellerSearchController.abort();
+        }
+
+        const controller = new AbortController();
+        this.state.sellerSearchController = controller;
+
+        container.innerHTML = '<div class="seller-search-item">Se caută...</div>';
+        container.classList.add('show');
+
+        try {
+            const url = `${this.config.apiEndpoints.sellerSearch}?q=${encodeURIComponent(query)}&limit=10`;
+            const response = await fetch(url, {
+                method: 'GET',
+                credentials: 'same-origin',
+                signal: controller.signal
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+
+            const data = await response.json();
+            const sellers = data?.sellers || [];
+
+            if (!sellers.length) {
+                container.innerHTML = '<div class="seller-search-item">Nu s-au găsit furnizori</div>';
+                return;
+            }
+
+            container.innerHTML = sellers.map((seller, idx) => {
+                const id = Number.parseInt(seller.id, 10);
+                const safeId = Number.isFinite(id) ? id : '';
+                const safeName = this.escapeHtml(seller.name || '');
+                const detailsParts = [];
+                if (seller.code) {
+                    detailsParts.push(`Cod: ${seller.code}`);
+                }
+                if (seller.contact_person) {
+                    detailsParts.push(seller.contact_person);
+                }
+                if (seller.city) {
+                    detailsParts.push(seller.city);
+                }
+                const detailsText = detailsParts.length ? `<span class="seller-item-details">${this.escapeHtml(detailsParts.join(' • '))}</span>` : '';
+                return `
+                    <div class="seller-search-item" data-id="${safeId}" data-name="${safeName}" data-index="${idx}">
+                        <span class="seller-item-name">${safeName}</span>
+                        ${detailsText}
+                    </div>
+                `;
+            }).join('');
+
+            container.querySelectorAll('.seller-search-item').forEach((item) => {
+                item.addEventListener('click', () => {
+                    const id = item.getAttribute('data-id');
+                    const name = item.getAttribute('data-name');
+                    this.selectStockSeller(id, name);
+                });
+            });
+        } catch (error) {
+            if (error.name === 'AbortError') {
+                return;
+            }
+            console.error('Seller search error', error);
+            container.innerHTML = '<div class="seller-search-item">Eroare la căutare</div>';
+        } finally {
+            if (this.state.sellerSearchController === controller) {
+                this.state.sellerSearchController = null;
+            }
+        }
+    },
+
+    selectStockSeller(id, name) {
+        this.setStockSeller(id, name);
+        this.hideSellerResults();
+    },
+
+    setStockSeller(id = '', name = '') {
+        const normalizedId = id ? String(id) : '';
+        if (this.elements.stockSellerId) {
+            this.elements.stockSellerId.value = normalizedId;
+        }
+        if (this.elements.stockSellerSearch) {
+            this.elements.stockSellerSearch.value = name || '';
+        }
+        const hasSeller = Boolean(normalizedId);
+        if (this.elements.assignedSupplier) {
+            this.elements.assignedSupplier.textContent = hasSeller ? name : 'Neasignat';
+        }
+        if (this.elements.selectedSellerInfo) {
+            this.elements.selectedSellerInfo.classList.toggle('unassigned', !hasSeller);
+        }
+        if (this.elements.clearStockSeller) {
+            this.elements.clearStockSeller.style.display = hasSeller ? 'inline-flex' : 'none';
+        }
+        this.updateAutoOrderWarning();
+    },
+
+    clearStockSeller() {
+        this.setStockSeller('', '');
+        if (this.elements.stockSellerSearch) {
+            this.elements.stockSellerSearch.focus();
+        }
+        this.hideSellerResults();
+    },
+
+    updateAutoOrderWarning() {
+        if (!this.elements.noSupplierWarning) return;
+        const autoOrderEnabled = Boolean(this.elements.autoOrderEnabled?.checked);
+        const hasSeller = Boolean(this.elements.stockSellerId?.value);
+        this.elements.noSupplierWarning.style.display = autoOrderEnabled && !hasSeller ? 'flex' : 'none';
     },
 
     async deleteProductUnit(id) {
@@ -3792,7 +3959,7 @@ async deletePackagingRule(id, ruleName) {
             indicators.push(`<span class="status-indicator status-disabled">${AUTO_ORDER_UI_TEXT.statuses.disabled}</span>`);
         }
 
-        if (!setting.supplier_name) {
+        if (!setting.seller_id) {
             indicators.push(`<span class="status-indicator status-error">${AUTO_ORDER_UI_TEXT.statuses.noSupplier}</span>`);
         }
 
@@ -3829,7 +3996,8 @@ async deletePackagingRule(id, ruleName) {
         if (this.elements.stockProductId) this.elements.stockProductId.value = '';
         if (this.elements.stockProductSearch) this.elements.stockProductSearch.value = '';
         if (this.elements.stockProductResults) this.elements.stockProductResults.innerHTML = '';
-        if (this.elements.assignedSupplier) this.elements.assignedSupplier.textContent = '-';
+        this.setStockSeller('', '');
+        this.hideSellerResults();
         if (this.elements.currentStockInfo) this.elements.currentStockInfo.textContent = '0';
         if (this.elements.noSupplierWarning) this.elements.noSupplierWarning.style.display = 'none';
 
@@ -3851,14 +4019,36 @@ async deletePackagingRule(id, ruleName) {
         if (this.elements.stockProductId) this.elements.stockProductId.value = '';
         if (this.elements.stockProductSearch) this.elements.stockProductSearch.value = '';
         if (this.elements.stockProductResults) this.elements.stockProductResults.innerHTML = '';
+        this.setStockSeller('', '');
+        this.hideSellerResults();
     },
 
     async saveStockSettings() {
+        const rawProductId = this.elements.stockProductId?.value ?? '';
+        const parsedProductId = Number(rawProductId);
+
+        if (!rawProductId || !Number.isFinite(parsedProductId) || parsedProductId <= 0) {
+            this.showError('Selectați un produs valid.');
+            return;
+        }
+
+        const minStockValue = Number.parseInt(this.elements.minStockLevel?.value ?? '0', 10);
+        const minOrderValue = Number.parseInt(this.elements.minOrderQty?.value ?? '1', 10);
+        const sellerIdValue = (this.elements.stockSellerId?.value || '').trim();
+        let sellerId = null;
+        if (sellerIdValue !== '') {
+            const parsedSellerId = Number(sellerIdValue);
+            if (Number.isFinite(parsedSellerId) && parsedSellerId > 0) {
+                sellerId = parsedSellerId;
+            }
+        }
+
         const data = {
-            product_id: this.elements.stockProductId.value,
-            min_stock_level: this.elements.minStockLevel.value,
-            min_order_quantity: this.elements.minOrderQty.value,
-            auto_order_enabled: this.elements.autoOrderEnabled.checked
+            product_id: parsedProductId,
+            min_stock_level: Number.isFinite(minStockValue) && minStockValue >= 0 ? minStockValue : 0,
+            min_order_quantity: Number.isFinite(minOrderValue) && minOrderValue > 0 ? minOrderValue : 1,
+            auto_order_enabled: Boolean(this.elements.autoOrderEnabled?.checked),
+            seller_id: sellerId
         };
         try {
             const response = await this.apiCall('POST', this.config.apiEndpoints.stockSettings, data);
@@ -3903,17 +4093,13 @@ async deletePackagingRule(id, ruleName) {
             this.elements.autoOrderEnabled.checked = Boolean(setting.auto_order_enabled);
         }
 
-        if (this.elements.assignedSupplier) {
-            this.elements.assignedSupplier.textContent = setting.supplier_name || 'Neasignat';
-        }
+        this.setStockSeller(
+            setting.seller_id ? String(setting.seller_id) : '',
+            setting.supplier_name || ''
+        );
 
         if (this.elements.currentStockInfo) {
             this.elements.currentStockInfo.textContent = setting.current_stock ?? '-';
-        }
-
-        if (this.elements.noSupplierWarning) {
-            const shouldShowWarning = !setting.supplier_name && Boolean(setting.auto_order_enabled);
-            this.elements.noSupplierWarning.style.display = shouldShowWarning ? 'flex' : 'none';
         }
     },
 openPendingProductsModal() {

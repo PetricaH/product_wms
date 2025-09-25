@@ -83,6 +83,12 @@ if (in_array($currentPage, $timingCompatiblePages)) {
     echo 'window.TIMING_ENABLED = true;';
     echo '</script>';
 }
+
+// Attach the incident reporting widget for all warehouse pages
+$incidentWidgetPath = BASE_PATH . '/incident-report-worker.php';
+if (file_exists($incidentWidgetPath)) {
+    include $incidentWidgetPath;
+}
 ?>
 </body>
 </html>

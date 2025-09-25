@@ -3833,6 +3833,9 @@ async deletePackagingRule(id, ruleName) {
         if (this.elements.stockProductId) this.elements.stockProductId.value = '';
         if (this.elements.stockProductSearch) this.elements.stockProductSearch.value = '';
         if (this.elements.stockProductResults) this.elements.stockProductResults.innerHTML = '';
+        if (this.elements.assignedSupplier) this.elements.assignedSupplier.textContent = '-';
+        if (this.elements.currentStockInfo) this.elements.currentStockInfo.textContent = '0';
+        if (this.elements.noSupplierWarning) this.elements.noSupplierWarning.style.display = 'none';
 
         if (productId) {
             const prod = this.state.products.find(p => p.id == productId);
@@ -3877,18 +3880,45 @@ async deletePackagingRule(id, ruleName) {
     },
 
     editStockSetting(productId) {
-        const setting = this.state.stockSettings.find(s => s.product_id === productId);
-        if (!setting) return;
-        this.openStockModal();
-        const prod = this.state.products.find(p => p.id == productId);
-        if (prod) {
-            this.selectProduct(prod.id, prod.name, 'stockProduct');
+        const id = Number(productId);
+        if (!Number.isFinite(id)) {
+            return;
         }
-        this.elements.minStockLevel.value = setting.min_stock_level;
-        this.elements.minOrderQty.value = setting.min_order_quantity;
-        this.elements.autoOrderEnabled.checked = setting.auto_order_enabled;
-        this.elements.assignedSupplier.textContent = setting.supplier_name || 'Neasignat';
-        this.elements.currentStockInfo.textContent = setting.current_stock;
+
+        const setting = this.state.stockSettings.find((s) => Number(s.product_id) === id);
+        if (!setting) {
+            return;
+        }
+
+        this.openStockModal();
+
+        const productName = setting.product_name || setting.name || '';
+        this.selectProduct(id, productName, 'stockProduct');
+
+        if (this.elements.minStockLevel) {
+            this.elements.minStockLevel.value = setting.min_stock_level ?? 0;
+        }
+
+        if (this.elements.minOrderQty) {
+            this.elements.minOrderQty.value = setting.min_order_quantity ?? 1;
+        }
+
+        if (this.elements.autoOrderEnabled) {
+            this.elements.autoOrderEnabled.checked = Boolean(setting.auto_order_enabled);
+        }
+
+        if (this.elements.assignedSupplier) {
+            this.elements.assignedSupplier.textContent = setting.supplier_name || 'Neasignat';
+        }
+
+        if (this.elements.currentStockInfo) {
+            this.elements.currentStockInfo.textContent = setting.current_stock ?? '-';
+        }
+
+        if (this.elements.noSupplierWarning) {
+            const shouldShowWarning = !setting.supplier_name && Boolean(setting.auto_order_enabled);
+            this.elements.noSupplierWarning.style.display = shouldShowWarning ? 'flex' : 'none';
+        }
     },
 openPendingProductsModal() {
         if (!this.elements.pendingProductsModal) return;

@@ -28,6 +28,12 @@ class WarehouseReceiving {
 
         this.activeTab = 'standard';
         this.returnSearchAbortController = null;
+        this.returnSearchResults = new Map();
+        this.selectedReturnOrderId = null;
+        this.selectedReturnOrderDetails = null;
+        this.lastReturnSearchTerm = '';
+        this.returnRestockButton = null;
+        this.returnRestockButtonDefaultHtml = '';
 
         // TIMING INTEGRATION - Silent timing for performance tracking
         this.timingManager = null;
@@ -193,6 +199,12 @@ class WarehouseReceiving {
                 }
             });
         }
+
+        this.returnRestockButton = document.getElementById('return-restock-btn');
+        if (this.returnRestockButton) {
+            this.returnRestockButtonDefaultHtml = this.returnRestockButton.innerHTML;
+            this.returnRestockButton.addEventListener('click', () => this.processReturnRestock());
+        }
     }
 
     initializeTabs() {
@@ -355,6 +367,9 @@ class WarehouseReceiving {
         const trimmedQuery = (query || '').trim();
 
         if (!trimmedQuery) {
+            this.lastReturnSearchTerm = '';
+            this.returnSearchResults.clear();
+            this.clearReturnSelection();
             container.innerHTML = `
                 <div class="empty-state">
                     <span class="material-symbols-outlined">travel_explore</span>
@@ -365,6 +380,9 @@ class WarehouseReceiving {
         }
 
         if (trimmedQuery.length < 2) {
+            this.lastReturnSearchTerm = trimmedQuery;
+            this.returnSearchResults.clear();
+            this.clearReturnSelection();
             container.innerHTML = `
                 <div class="empty-state">
                     <span class="material-symbols-outlined">info</span>
@@ -374,6 +392,12 @@ class WarehouseReceiving {
             return;
         }
 
+        if (trimmedQuery !== this.lastReturnSearchTerm) {
+            this.clearReturnSelection();
+        }
+        this.lastReturnSearchTerm = trimmedQuery;
+
+        this.returnSearchResults.clear();
         this.showReturnSearchLoading();
 
         if (this.returnSearchAbortController) {
@@ -405,6 +429,8 @@ class WarehouseReceiving {
                     ${this.escapeHtml(error.message || 'A apărut o eroare la încărcarea comenzilor de retur.')}
                 </div>
             `;
+            this.toggleReturnRestockHint();
+            this.disableReturnRestockButton();
         } finally {
             this.returnSearchAbortController = null;
         }
@@ -422,6 +448,9 @@ class WarehouseReceiving {
                 <span>Căutăm comenzile pregătite...</span>
             </div>
         `;
+
+        this.toggleReturnRestockHint();
+        this.disableReturnRestockButton();
     }
 
     renderReturnOrders(orders, query) {
@@ -430,6 +459,8 @@ class WarehouseReceiving {
             return;
         }
 
+        this.returnSearchResults = new Map();
+
         if (!orders.length) {
             container.innerHTML = `
                 <div class="empty-state">
@@ -437,12 +468,24 @@ class WarehouseReceiving {
                     <p>Nu am găsit comenzi pregătite pentru compania <strong>${this.escapeHtml(query)}</strong>.</p>
                 </div>
             `;
+            this.clearReturnSelection();
+            this.toggleReturnRestockHint();
+            this.disableReturnRestockButton();
             return;
         }
+
+        orders.forEach(order => {
+            if (order && typeof order.id !== 'undefined') {
+                this.returnSearchResults.set(Number(order.id), order);
+            }
+        });
 
         container.innerHTML = orders
             .map((order) => this.renderReturnOrderCard(order))
             .join('');
+
+        this.attachReturnOrderEvents();
+        this.highlightSelectedReturnOrder();
     }
 
     renderReturnOrderCard(order) {
@@ -455,7 +498,7 @@ class WarehouseReceiving {
         const statusLabel = order.status_label || this.formatOrderStatus(order.status);
 
         return `
-            <div class="return-order-card">
+            <div class="return-order-card" data-order-id="${order.id}" data-order-number="${this.escapeHtml(orderNumber)}">
                 <div class="return-order-card-header">
                     <span class="return-order-number">${this.escapeHtml(orderNumber)}</span>
                     <span class="return-order-date">${this.escapeHtml(formattedDate)}</span>
@@ -477,6 +520,384 @@ class WarehouseReceiving {
                 </div>
             </div>
         `;
+    }
+
+    attachReturnOrderEvents() {
+        const container = document.getElementById('return-orders-results');
+        if (!container) {
+            return;
+        }
+
+        container.querySelectorAll('.return-order-card').forEach((card) => {
+            card.addEventListener('click', () => {
+                const orderId = Number(card.getAttribute('data-order-id'));
+                if (!Number.isFinite(orderId)) {
+                    return;
+                }
+                this.handleReturnOrderSelection(orderId);
+            });
+        });
+    }
+
+    highlightSelectedReturnOrder() {
+        const container = document.getElementById('return-orders-results');
+        if (!container) {
+            return;
+        }
+
+        let found = false;
+        container.querySelectorAll('.return-order-card').forEach((card) => {
+            const cardId = Number(card.getAttribute('data-order-id'));
+            const isSelected = this.selectedReturnOrderId !== null && cardId === this.selectedReturnOrderId;
+            card.classList.toggle('selected', isSelected);
+            if (isSelected) {
+                found = true;
+            }
+        });
+
+        if (!found && this.selectedReturnOrderId !== null) {
+            this.selectedReturnOrderId = null;
+            this.resetReturnDetails();
+        }
+    }
+
+    handleReturnOrderSelection(orderId) {
+        if (!Number.isFinite(orderId)) {
+            return;
+        }
+
+        this.selectedReturnOrderId = orderId;
+        this.highlightSelectedReturnOrder();
+        this.loadReturnOrderDetails(orderId);
+    }
+
+    async loadReturnOrderDetails(orderId) {
+        if (!Number.isFinite(orderId)) {
+            return;
+        }
+
+        this.showReturnDetailsLoading();
+
+        try {
+            const response = await fetch(`${this.config.apiBase}/warehouse/return_order_details.php?order_id=${encodeURIComponent(orderId)}`);
+            const result = await response.json();
+
+            if (!response.ok || !result.success) {
+                throw new Error(result.message || 'Nu am putut încărca detaliile comenzii.');
+            }
+
+            this.renderReturnOrderDetails(result);
+        } catch (error) {
+            console.error('Return order details error:', error);
+            const details = document.getElementById('return-order-details');
+            if (details) {
+                details.innerHTML = `
+                    <div class="return-orders-error">
+                        ${this.escapeHtml(error.message || 'A apărut o eroare la încărcarea produselor din retur.')}
+                    </div>
+                `;
+            }
+            this.selectedReturnOrderDetails = null;
+            this.toggleReturnRestockHint('warning', error.message || 'Nu am putut încărca produsele din retur.');
+            this.disableReturnRestockButton();
+        }
+    }
+
+    showReturnDetailsLoading() {
+        const details = document.getElementById('return-order-details');
+        if (!details) {
+            return;
+        }
+
+        details.innerHTML = `
+            <div class="returns-loading">
+                <span class="material-symbols-outlined">autorenew</span>
+                <span>Încărcăm detaliile comenzii...</span>
+            </div>
+        `;
+
+        this.toggleReturnRestockHint();
+        this.disableReturnRestockButton();
+    }
+
+    renderReturnOrderDetails(data) {
+        const details = document.getElementById('return-order-details');
+        if (!details) {
+            return;
+        }
+
+        const order = data.order || {};
+        const items = Array.isArray(data.items) ? data.items : [];
+
+        const normalizedItems = items.map((item) => {
+            const restockQuantity = Number(item.restock_quantity ?? item.picked_quantity ?? item.quantity_ordered ?? 0) || 0;
+            return {
+                ...item,
+                restock_quantity: restockQuantity,
+                location_id: item.location_id ? Number(item.location_id) : null,
+                inventory_id: item.inventory_id ? Number(item.inventory_id) : null,
+                shelf_level: item.shelf_level ?? null,
+                subdivision_number: typeof item.subdivision_number !== 'undefined' && item.subdivision_number !== null
+                    ? Number(item.subdivision_number)
+                    : null,
+                location_missing: !(item.location_id && item.location_code)
+            };
+        });
+
+        this.selectedReturnOrderDetails = {
+            order,
+            items: normalizedItems
+        };
+
+        const totalUnits = normalizedItems.reduce((sum, item) => sum + (item.restock_quantity || 0), 0);
+        const missingCount = normalizedItems.filter((item) => item.location_missing).length;
+
+        const summaryHtml = `
+            <div class="return-order-summary">
+                <div class="return-order-summary-item">
+                    <span class="return-order-summary-label">Comandă</span>
+                    <span class="return-order-summary-value">${this.escapeHtml(order.order_number || '-')}</span>
+                </div>
+                <div class="return-order-summary-item">
+                    <span class="return-order-summary-label">Client</span>
+                    <span class="return-order-summary-value">${this.escapeHtml(order.customer_name || 'N/A')}</span>
+                </div>
+                <div class="return-order-summary-item">
+                    <span class="return-order-summary-label">Status</span>
+                    <span class="return-order-summary-value">${this.escapeHtml(order.status_label || this.formatOrderStatus(order.status || 'picked'))}</span>
+                </div>
+                <div class="return-order-summary-item">
+                    <span class="return-order-summary-label">Articole</span>
+                    <span class="return-order-summary-value">${normalizedItems.length}</span>
+                </div>
+                <div class="return-order-summary-item">
+                    <span class="return-order-summary-label">Bucăți</span>
+                    <span class="return-order-summary-value">${totalUnits}</span>
+                </div>
+                <div class="return-order-summary-item">
+                    <span class="return-order-summary-label">Ultima actualizare</span>
+                    <span class="return-order-summary-value">${this.escapeHtml(this.formatDateTime(order.latest_activity))}</span>
+                </div>
+            </div>
+        `;
+
+        let itemsMarkup = '';
+        if (!normalizedItems.length) {
+            itemsMarkup = `
+                <div class="empty-state">
+                    <span class="material-symbols-outlined">inventory</span>
+                    <p>Nu există produse de readăugat în stoc pentru această comandă.</p>
+                </div>
+            `;
+        } else {
+            itemsMarkup = normalizedItems.map((item) => {
+                const hasLocation = Boolean(item.location_id && item.location_code);
+                const locationText = hasLocation
+                    ? `${this.escapeHtml(item.location_code)}${item.shelf_level ? ' · ' + this.escapeHtml(item.shelf_level) : ''}`
+                    : 'Necesită locație';
+                const locationIcon = hasLocation ? 'location_on' : 'warning';
+                const locationClass = hasLocation ? '' : 'return-item-location-missing';
+
+                return `
+                    <div class="return-item">
+                        <div class="return-item-header">
+                            <span class="return-item-name">${this.escapeHtml(item.product_name || 'Produs')}</span>
+                            <span class="return-item-sku">${this.escapeHtml(item.sku || '')}</span>
+                        </div>
+                        <div class="return-item-meta">
+                            <span>
+                                <span class="material-symbols-outlined">inventory_2</span>
+                                ${item.restock_quantity} buc
+                            </span>
+                            <span>
+                                <span class="material-symbols-outlined">shopping_cart</span>
+                                Ridicate: ${item.picked_quantity ?? item.restock_quantity}
+                            </span>
+                            <span class="${locationClass}">
+                                <span class="material-symbols-outlined">${locationIcon}</span>
+                                ${this.escapeHtml(locationText)}
+                            </span>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        details.innerHTML = `
+            ${summaryHtml}
+            <div class="return-items-list">
+                ${itemsMarkup}
+            </div>
+        `;
+
+        if (missingCount > 0) {
+            const message = missingCount === 1
+                ? 'Un produs nu are o locație activă. Actualizați locația înainte de a readăuga în stoc.'
+                : `${missingCount} produse nu au o locație activă. Actualizați locațiile înainte de a continua.`;
+            this.toggleReturnRestockHint('warning', message);
+        } else if (!normalizedItems.length) {
+            this.toggleReturnRestockHint('warning', 'Nu există produse de readăugat în stoc pentru această comandă.');
+        } else if (totalUnits === 0) {
+            this.toggleReturnRestockHint('warning', 'Cantitățile de returnat sunt zero pentru această comandă.');
+        } else {
+            this.toggleReturnRestockHint('success', 'Toate produsele vor fi readăugate în stoc în locațiile propuse.');
+        }
+
+        if (this.returnRestockButton) {
+            if (this.returnRestockButtonDefaultHtml) {
+                this.returnRestockButton.innerHTML = this.returnRestockButtonDefaultHtml;
+            }
+            this.returnRestockButton.disabled = missingCount > 0 || !normalizedItems.length || totalUnits === 0;
+        }
+    }
+
+    getDefaultReturnDetailsMarkup() {
+        return `
+            <div class="empty-state">
+                <span class="material-symbols-outlined">playlist_add_check</span>
+                <p>Selectați o comandă pentru a vedea produsele returnate și locațiile propuse.</p>
+            </div>
+        `;
+    }
+
+    resetReturnDetails() {
+        const details = document.getElementById('return-order-details');
+        if (details) {
+            details.innerHTML = this.getDefaultReturnDetailsMarkup();
+        }
+
+        this.selectedReturnOrderDetails = null;
+        this.toggleReturnRestockHint();
+        this.disableReturnRestockButton();
+    }
+
+    clearReturnSelection(resetDetails = true) {
+        this.selectedReturnOrderId = null;
+        const container = document.getElementById('return-orders-results');
+        if (container) {
+            container.querySelectorAll('.return-order-card.selected').forEach((card) => {
+                card.classList.remove('selected');
+            });
+        }
+
+        if (resetDetails) {
+            this.resetReturnDetails();
+        }
+    }
+
+    toggleReturnRestockHint(type = '', message = '') {
+        const hint = document.getElementById('return-restock-hint');
+        if (!hint) {
+            return;
+        }
+
+        hint.style.display = 'none';
+        hint.classList.remove('warning', 'success');
+        hint.innerHTML = '';
+
+        if (!type || !message) {
+            return;
+        }
+
+        const icon = type === 'success' ? 'check_circle' : 'warning';
+        hint.style.display = 'flex';
+        hint.classList.add(type);
+        hint.innerHTML = `
+            <span class="material-symbols-outlined">${icon}</span>
+            <span>${this.escapeHtml(message)}</span>
+        `;
+    }
+
+    disableReturnRestockButton() {
+        if (!this.returnRestockButton) {
+            this.returnRestockButton = document.getElementById('return-restock-btn');
+        }
+
+        if (!this.returnRestockButton) {
+            return;
+        }
+
+        if (this.returnRestockButtonDefaultHtml) {
+            this.returnRestockButton.innerHTML = this.returnRestockButtonDefaultHtml;
+        }
+
+        this.returnRestockButton.disabled = true;
+    }
+
+    async processReturnRestock() {
+        if (!this.selectedReturnOrderDetails || !this.selectedReturnOrderDetails.order) {
+            this.showError('Selectați o comandă de retur înainte de a readăuga produsele în stoc.');
+            return;
+        }
+
+        const { order, items } = this.selectedReturnOrderDetails;
+        const restockItems = items.filter((item) => item.location_id && item.restock_quantity > 0);
+
+        if (!restockItems.length) {
+            this.showError('Nu există produse eligibile pentru readăugare în stoc.');
+            return;
+        }
+
+        if (!this.returnRestockButton) {
+            this.returnRestockButton = document.getElementById('return-restock-btn');
+        }
+
+        if (this.returnRestockButton) {
+            this.returnRestockButton.disabled = true;
+            this.returnRestockButton.innerHTML = `
+                <span class="material-symbols-outlined spin">autorenew</span>
+                Se procesează...
+            `;
+        }
+
+        try {
+            const payload = {
+                order_id: order.id,
+                order_number: order.order_number,
+                items: restockItems.map((item) => ({
+                    order_item_id: item.order_item_id,
+                    product_id: item.product_id,
+                    restock_quantity: item.restock_quantity,
+                    location_id: item.location_id,
+                    inventory_id: item.inventory_id,
+                    shelf_level: item.shelf_level,
+                    subdivision_number: item.subdivision_number
+                }))
+            };
+
+            const response = await fetch(`${this.config.apiBase}/warehouse/process_return_restock.php`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': this.config.csrfToken
+                },
+                body: JSON.stringify(payload)
+            });
+
+            const result = await response.json();
+
+            if (!response.ok || !result.success) {
+                throw new Error(result.message || 'Nu am putut readăuga produsele în stoc.');
+            }
+
+            this.showSuccess(result.message || 'Produsele au fost readăugate în stoc din retur.');
+            this.selectedReturnOrderDetails = null;
+            this.clearReturnSelection();
+
+            const searchInput = document.getElementById('return-company-search');
+            if (searchInput && searchInput.value.trim().length >= 2) {
+                this.searchReturnOrders(searchInput.value);
+            } else {
+                this.returnSearchResults.clear();
+            }
+        } catch (error) {
+            console.error('Return restock error:', error);
+            this.showError(error.message || 'A apărut o eroare la readăugarea produselor în stoc.');
+            if (this.returnRestockButton && this.returnRestockButtonDefaultHtml) {
+                this.returnRestockButton.innerHTML = this.returnRestockButtonDefaultHtml;
+                this.returnRestockButton.disabled = false;
+            }
+        }
     }
 
     async searchProducts(query) {

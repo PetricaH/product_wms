@@ -362,10 +362,27 @@ $currentPage = 'warehouse_receiving';
                                 </div>
                                 <p class="returns-hint">Rezultatele afișează comenzile deja ridicate, cele mai recente apar primele.</p>
                             </div>
-                            <div id="return-orders-results" class="return-orders-results">
-                                <div class="empty-state">
-                                    <span class="material-symbols-outlined">travel_explore</span>
-                                    <p>Introduceți numele unei companii pentru a vedea comenzile pregătite pentru retur.</p>
+                            <div class="returns-panel-content">
+                                <div class="return-orders-column">
+                                    <div id="return-orders-results" class="return-orders-results">
+                                        <div class="empty-state">
+                                            <span class="material-symbols-outlined">travel_explore</span>
+                                            <p>Introduceți numele unei companii pentru a vedea comenzile pregătite pentru retur.</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="return-details-column">
+                                    <div id="return-order-details" class="return-order-details">
+                                        <div class="empty-state">
+                                            <span class="material-symbols-outlined">playlist_add_check</span>
+                                            <p>Selectați o comandă pentru a vedea produsele returnate și locațiile propuse.</p>
+                                        </div>
+                                    </div>
+                                    <div id="return-restock-hint" class="return-restock-hint" style="display:none;"></div>
+                                    <button type="button" class="btn btn-success" id="return-restock-btn" disabled>
+                                        <span class="material-symbols-outlined">inventory_2</span>
+                                        Adaugă în stoc
+                                    </button>
                                 </div>
                             </div>
                         </div>

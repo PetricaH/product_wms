@@ -1522,11 +1522,14 @@ public function getCriticalStockAlerts(int $limit = 10): array {
                         p.auto_order_enabled,
                         p.seller_id,
                         p.last_auto_order_date,
+                        p.price,
+                        p.price_eur,
                         pp.id AS purchasable_product_id,
                         pp.supplier_product_name,
                         pp.supplier_product_code,
                         pp.last_purchase_price,
                         pp.preferred_seller_id,
+                        pp.currency,
                         s.supplier_name,
                         s.email AS seller_email
                     FROM {$this->productsTable} p
@@ -1564,6 +1567,18 @@ public function getCriticalStockAlerts(int $limit = 10): array {
             $pragMinim = (float)($primaLinie['min_stock_level'] ?? 0);
             $cantitateMinimaComanda = (int)($primaLinie['min_order_quantity'] ?? 0);
             $ultimaAutocomanda = $primaLinie['last_auto_order_date'] ?? null;
+
+            $pretFallback = 0.0;
+            $monedaFallback = null;
+            $pretProdusRon = isset($primaLinie['price']) ? (float)$primaLinie['price'] : 0.0;
+            $pretProdusEur = isset($primaLinie['price_eur']) ? (float)$primaLinie['price_eur'] : 0.0;
+            if ($pretProdusRon > 0) {
+                $pretFallback = $pretProdusRon;
+                $monedaFallback = 'RON';
+            } elseif ($pretProdusEur > 0) {
+                $pretFallback = $pretProdusEur;
+                $monedaFallback = 'EUR';
+            }
 
             $detalii['produs'] = [
                 'id' => (int)$primaLinie['product_id'],
@@ -1633,36 +1648,70 @@ public function getCriticalStockAlerts(int $limit = 10): array {
                     continue;
                 }
 
-                $pret = (float)($row['last_purchase_price'] ?? 0);
+                $pretAchizitie = isset($row['last_purchase_price']) ? (float)$row['last_purchase_price'] : 0.0;
+                $monedaAchizitie = $row['currency'] ?? null;
+                $pretCalculat = $pretAchizitie;
+                $monedaCalculata = $monedaAchizitie;
+
+                if ($pretCalculat <= 0 && $pretFallback > 0) {
+                    $pretCalculat = $pretFallback;
+                    $monedaCalculata = $monedaFallback ?? $monedaCalculata;
+                }
+
+                $monedaCalculata = $monedaCalculata ?: ($monedaFallback ?: 'RON');
+
                 $scor = 1;
                 if ((int)($row['preferred_seller_id'] ?? 0) === $sellerId) {
                     $scor += 4;
                 }
-                if ($pret > 0) {
+                if ($pretCalculat > 0) {
                     $scor += 3;
                 }
 
-                if ($piesaSelectata === null || $scor > $scorSelectat || ($scor === $scorSelectat && $pret > (float)$piesaSelectata['last_purchase_price'])) {
-                    $piesaSelectata = $row;
+                if ($piesaSelectata === null
+                    || $scor > $scorSelectat
+                    || ($scor === $scorSelectat && $pretCalculat > (float)($piesaSelectata['pret'] ?? 0))) {
+                    $piesaSelectata = [
+                        'purchasable_product_id' => (int)$row['purchasable_product_id'],
+                        'supplier_product_name' => $row['supplier_product_name'] ?? null,
+                        'supplier_product_code' => $row['supplier_product_code'] ?? null,
+                        'pret' => $pretCalculat,
+                        'currency' => $monedaCalculata,
+                        'price_source' => $pretAchizitie > 0 ? 'purchasable_product' : ($pretCalculat > 0 ? 'product_price' : 'unknown')
+                    ];
                     $scorSelectat = $scor;
                 }
             }
 
             if ($piesaSelectata) {
                 $detalii['articol'] = [
-                    'id' => (int)$piesaSelectata['purchasable_product_id'],
+                    'id' => $piesaSelectata['purchasable_product_id'],
                     'nume' => $piesaSelectata['supplier_product_name'] ?? null,
                     'cod' => $piesaSelectata['supplier_product_code'] ?? null,
-                    'pret' => (float)($piesaSelectata['last_purchase_price'] ?? 0)
+                    'pret' => (float)($piesaSelectata['pret'] ?? 0),
+                    'currency' => $piesaSelectata['currency'] ?? ($monedaFallback ?: 'RON'),
+                    'price_source' => $piesaSelectata['price_source'] ?? null
                 ];
             }
 
             $pretValid = $detalii['articol'] && (float)$detalii['articol']['pret'] > 0;
+            $detaliuPret = 'Nu există un preț de achiziție valid pentru produs.';
+            if ($pretValid) {
+                $sursaPret = $detalii['articol']['price_source'] ?? null;
+                $monedaArticol = $detalii['articol']['currency'] ?? 'RON';
+                if ($sursaPret === 'product_price') {
+                    $detaliuPret = sprintf('Se va folosi prețul configurat în fișa produsului (%s).', $monedaArticol);
+                } elseif ($sursaPret === 'purchasable_product') {
+                    $detaliuPret = 'Se va folosi ultimul preț de achiziție salvat pentru furnizor.';
+                } else {
+                    $detaliuPret = 'Există un preț de achiziție valid pentru produs.';
+                }
+            }
             $detalii['validari'][] = [
                 'conditie' => 'Preț de achiziție disponibil',
                 'rezultat' => $pretValid ? 'ok' : 'eroare',
                 'tip' => 'critic',
-                'detalii' => $pretValid ? 'Există un preț de achiziție valid pentru produs.' : 'Nu există un preț de achiziție valid pentru produs.'
+                'detalii' => $detaliuPret
             ];
 
             $intervalRespectat = true;
@@ -1694,11 +1743,15 @@ public function getCriticalStockAlerts(int $limit = 10): array {
                 $cantitateComandata = $cantitateMinimaComanda;
             }
 
+            $monedaComanda = $detalii['articol']['currency'] ?? ($monedaFallback ?: 'RON');
+            $pretUnit = $detalii['articol']['pret'] ?? 0.0;
             $detalii['comanda'] = [
                 'cantitate' => $cantitateComandata,
                 'deficit_estimat' => $deficit,
-                'pret_unitar' => $detalii['articol']['pret'] ?? 0.0,
-                'valoare_totala' => ($detalii['articol']['pret'] ?? 0.0) * $cantitateComandata
+                'pret_unitar' => $pretUnit,
+                'valoare_totala' => $pretUnit * $cantitateComandata,
+                'currency' => $monedaComanda,
+                'price_source' => $detalii['articol']['price_source'] ?? null
             ];
 
             $detalii['validari'][] = [
@@ -1725,6 +1778,7 @@ public function getCriticalStockAlerts(int $limit = 10): array {
                     'email_subject' => null,
                     'email_recipient' => $emailFurnizor,
                     'total_amount' => $detalii['comanda']['valoare_totala'],
+                    'currency' => $monedaComanda,
                     'items' => [[
                         'purchasable_product_id' => $detalii['articol']['id'],
                         'quantity' => $cantitateComandata,
@@ -1757,6 +1811,7 @@ public function getCriticalStockAlerts(int $limit = 10): array {
         $cantitate = $context['comanda']['cantitate'] ?? 0;
         $pret = $context['comanda']['pret_unitar'] ?? 0.0;
         $total = $context['comanda']['valoare_totala'] ?? 0.0;
+        $currency = $context['comanda']['currency'] ?? 'RON';
         $dataGenerarii = date('d.m.Y H:i');
 
         $pretFormatat = number_format((float)$pret, 2, ',', '.');
@@ -1775,8 +1830,8 @@ public function getCriticalStockAlerts(int $limit = 10): array {
         $corp .= "Nume: {$numeProdus}\n";
         $corp .= "Cod: {$sku}\n";
         $corp .= "Cantitate: {$cantitate} bucăți\n";
-        $corp .= "Preț unitar: {$pretFormatat} RON\n";
-        $corp .= "Total: {$totalFormatat} RON\n";
+        $corp .= "Preț unitar: {$pretFormatat} {$currency}\n";
+        $corp .= "Total: {$totalFormatat} {$currency}\n";
         $corp .= "Această comandă a fost generată automat de sistemul nostru.\n";
         $corp .= "Cu stimă,\n";
         $corp .= "Sistem WMS - Autocomandă";

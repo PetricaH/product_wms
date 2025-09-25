@@ -159,174 +159,215 @@ $currentPage = 'warehouse_receiving';
                     </div>
                 <?php endif; ?>
 
-                <div class="form-actions" style="margin-bottom: 1rem;">
-                    <button type="button" id="toggle-production" class="btn btn-secondary">Recepție Producție</button>
-                </div>
-
-                 <!-- Step 1: Order Search -->
-                <div id="step-1" class="step-section active">
-                    <div class="step-header">
-                        <h2 class="step-title">
-                            <span class="material-symbols-outlined">search</span>
-                            Caută Comanda
-                        </h2>
-                        <p class="step-subtitle">Scrie numărul comenzii sau numele furnizorului</p>
-                    </div>
-
-                    <div class="step-content">
-                        <div class="form-group">
-                            <label for="po-search-input" class="form-label">Comandă sau Furnizor</label>
-                            <input type="text" id="po-search-input" class="form-input" placeholder="ex: PO-2024-001 sau Furnizor">
-                        </div>
-                        <div id="po-search-results" class="purchase-orders-list"></div>
-                    </div>
-                </div>
-
-                <!-- Production Receipt Section -->
-                <div id="production-section" class="step-section" style="display:none;">
-                    <div class="step-header">
-                        <h2 class="step-title">
-                            <span class="material-symbols-outlined">factory</span>
-                            Recepție Producție
-                        </h2>
-                        <p class="step-subtitle">Înregistrează produsele fabricate intern</p>
-                    </div>
-                    <div class="step-content">
-                        <div class="form-group">
-                            <label class="form-label">Număr Lot</label>
-                            <input type="text" id="prod-batch-number" class="form-input" readonly>
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">Data Producției</label>
-                            <input type="datetime-local" id="prod-date" class="form-input">
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">Caută Produs</label>
-                            <input type="text" id="prod-search-input" class="form-input" placeholder="Nume sau SKU">
-                            <div id="prod-search-results" class="purchase-orders-list"></div>
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">Cantitate (bucăți)</label>
-                            <input type="number" id="prod-qty" class="form-input" min="1" value="1">
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">Descriere Foto (opțional)</label>
-                            <textarea id="prod-photo-description" class="form-input" placeholder="Note pentru fotografii"></textarea>
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">Fotografii (opțional)</label>
-                            <input type="file" id="prod-photos" class="form-input" accept="image/*" capture="environment" multiple>
-                        </div>
-                        <button type="button" class="btn btn-primary" id="print-labels-btn">
-                            <span class="material-symbols-outlined">print</span>
-                            Printează Etichete
+                <div class="receiving-main">
+                    <div class="receiving-tabs">
+                        <button type="button" class="receiving-tab-button active" data-receiving-tab="standard">
+                            <span class="material-symbols-outlined">assignment_turned_in</span>
+                            Recepție Comenzi
                         </button>
-                        <button type="button" class="btn btn-outline-secondary btn-sm" id="preview-label-btn" style="margin-left:5px;">
-                            <span class="material-symbols-outlined">visibility</span>
-                            Preview
-                        </button>
-                        <button type="button" class="btn btn-success" id="add-stock-btn" style="display:none;" disabled>
+                        <button type="button" class="receiving-tab-button" data-receiving-tab="returns">
                             <span class="material-symbols-outlined">inventory_2</span>
-                            Adaugă în Stoc
+                            Recepție Retururi
                         </button>
                     </div>
-                </div>
 
+                    <div class="receiving-tab-panel active" id="receiving-tab-standard" data-receiving-panel="standard">
+                        <div class="form-actions" style="margin-bottom: 1rem;">
+                            <button type="button" id="toggle-production" class="btn btn-secondary">Recepție Producție</button>
+                        </div>
 
-                <!-- Step 3: Item Receiving -->
-                <div id="step-3" class="step-section">
-                    <div class="step-header">
-                        <h2 class="step-title">
-                            <span class="material-symbols-outlined">inventory</span>
-                            Recepționează Produsele
-                        </h2>
-                        <p class="step-subtitle">Verifică și înregistrează produsele primite</p>
-                    </div>
-                    
-                    <div class="step-content">
-                        <div class="receiving-summary">
-                            <div class="summary-card">
-                                <div class="summary-item">
-                                    <span class="summary-label">Comanda:</span>
-                                    <span class="summary-value" id="current-po-number">-</span>
+                        <!-- Step 1: Order Search -->
+                        <div id="step-1" class="step-section active">
+                            <div class="step-header">
+                                <h2 class="step-title">
+                                    <span class="material-symbols-outlined">search</span>
+                                    Caută Comanda
+                                </h2>
+                                <p class="step-subtitle">Scrie numărul comenzii sau numele furnizorului</p>
+                            </div>
+
+                            <div class="step-content">
+                                <div class="form-group">
+                                    <label for="po-search-input" class="form-label">Comandă sau Furnizor</label>
+                                    <input type="text" id="po-search-input" class="form-input" placeholder="ex: PO-2024-001 sau Furnizor">
                                 </div>
-                                <div class="summary-item">
-                                    <span class="summary-label">Furnizor:</span>
-                                    <span class="summary-value" id="current-supplier">-</span>
-                                </div>
-                                <div class="summary-item">
-                                    <span class="summary-label">Progres:</span>
-                                    <span class="summary-value">
-                                        <span id="items-received">0</span> / <span id="items-expected">0</span>
-                                    </span>
-                                </div>
+                                <div id="po-search-results" class="purchase-orders-list"></div>
                             </div>
                         </div>
-                        
-                        <div class="receiving-items">
-                            <div class="items-header">
-                                <h3>Produse de Recepționat</h3>
-                                <button type="button" class="btn btn-secondary" id="scan-barcode-btn">
-                                    <span class="material-symbols-outlined">qr_code_scanner</span>
-                                    Scanează Barcode
+
+                        <!-- Production Receipt Section -->
+                        <div id="production-section" class="step-section" style="display:none;">
+                            <div class="step-header">
+                                <h2 class="step-title">
+                                    <span class="material-symbols-outlined">factory</span>
+                                    Recepție Producție
+                                </h2>
+                                <p class="step-subtitle">Înregistrează produsele fabricate intern</p>
+                            </div>
+                            <div class="step-content">
+                                <div class="form-group">
+                                    <label class="form-label">Număr Lot</label>
+                                    <input type="text" id="prod-batch-number" class="form-input" readonly>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Data Producției</label>
+                                    <input type="datetime-local" id="prod-date" class="form-input">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Caută Produs</label>
+                                    <input type="text" id="prod-search-input" class="form-input" placeholder="Nume sau SKU">
+                                    <div id="prod-search-results" class="purchase-orders-list"></div>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Cantitate (bucăți)</label>
+                                    <input type="number" id="prod-qty" class="form-input" min="1" value="1">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Descriere Foto (opțional)</label>
+                                    <textarea id="prod-photo-description" class="form-input" placeholder="Note pentru fotografii"></textarea>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Fotografii (opțional)</label>
+                                    <input type="file" id="prod-photos" class="form-input" accept="image/*" capture="environment" multiple>
+                                </div>
+                                <button type="button" class="btn btn-primary" id="print-labels-btn">
+                                    <span class="material-symbols-outlined">print</span>
+                                    Printează Etichete
+                                </button>
+                                <button type="button" class="btn btn-outline-secondary btn-sm" id="preview-label-btn" style="margin-left:5px;">
+                                    <span class="material-symbols-outlined">visibility</span>
+                                    Preview
+                                </button>
+                                <button type="button" class="btn btn-success" id="add-stock-btn" style="display:none;" disabled>
+                                    <span class="material-symbols-outlined">inventory_2</span>
+                                    Adaugă în Stoc
                                 </button>
                             </div>
-                            
-                            <div id="expected-items-list" class="expected-items-list">
-                                <!-- Expected items will be populated here -->
+                        </div>
+
+
+                        <!-- Step 3: Item Receiving -->
+                        <div id="step-3" class="step-section">
+                            <div class="step-header">
+                                <h2 class="step-title">
+                                    <span class="material-symbols-outlined">inventory</span>
+                                    Recepționează Produsele
+                                </h2>
+                                <p class="step-subtitle">Verifică și înregistrează produsele primite</p>
                             </div>
-                        </div>
 
-                        <div class="form-group">
-                            <label class="form-label">Descriere Foto (opțional)</label>
-                            <textarea id="receiving-photo-description" class="form-input" placeholder="Note pentru fotografii"></textarea>
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">Fotografii Recepție (opțional)</label>
-                            <input type="file" id="receiving-photos" class="form-input" accept="image/*" capture="environment" multiple>                           
-                        </div>
-                  
-                        <div class="step-actions">
-                            <button type="button" class="btn btn-secondary" onclick="goToPreviousStep()">
-                                <span class="material-symbols-outlined">arrow_back</span>
-                                Înapoi
-                            </button>
-                            <button type="button" class="btn btn-primary" id="complete-receiving-btn">
-                                <span class="material-symbols-outlined">check</span>
-                                Finalizează Recepția
-                            </button>
-                        </div>
-                    </div>
-                </div>
+                            <div class="step-content">
+                                <div class="receiving-summary">
+                                    <div class="summary-card">
+                                        <div class="summary-item">
+                                            <span class="summary-label">Comanda:</span>
+                                            <span class="summary-value" id="current-po-number">-</span>
+                                        </div>
+                                        <div class="summary-item">
+                                            <span class="summary-label">Furnizor:</span>
+                                            <span class="summary-value" id="current-supplier">-</span>
+                                        </div>
+                                        <div class="summary-item">
+                                            <span class="summary-label">Progres:</span>
+                                            <span class="summary-value">
+                                                <span id="items-received">0</span> / <span id="items-expected">0</span>
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
 
-                <!-- Step 4: Completion -->
-                <div id="step-4" class="step-section">
-                    <div class="step-header">
-                        <h2 class="step-title">
-                            <span class="material-symbols-outlined">check_circle</span>
-                            Recepție Finalizată
-                        </h2>
-                        <p class="step-subtitle">Recepția a fost înregistrată cu succes</p>
-                    </div>
-                    
-                    <div class="step-content">
-                        <div class="completion-summary">
-                            <div class="summary-card">
-                                <div id="completion-details">
-                                    <!-- Completion details will be populated here -->
+                                <div class="receiving-items">
+                                    <div class="items-header">
+                                        <h3>Produse de Recepționat</h3>
+                                        <button type="button" class="btn btn-secondary" id="scan-barcode-btn">
+                                            <span class="material-symbols-outlined">qr_code_scanner</span>
+                                            Scanează Barcode
+                                        </button>
+                                    </div>
+
+                                    <div id="expected-items-list" class="expected-items-list">
+                                        <!-- Expected items will be populated here -->
+                                    </div>
+                                </div>
+
+                                <div class="form-group">
+                                    <label class="form-label">Descriere Foto (opțional)</label>
+                                    <textarea id="receiving-photo-description" class="form-input" placeholder="Note pentru fotografii"></textarea>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Fotografii Recepție (opțional)</label>
+                                    <input type="file" id="receiving-photos" class="form-input" accept="image/*" capture="environment" multiple>
+                                </div>
+
+                                <div class="step-actions">
+                                    <button type="button" class="btn btn-secondary" onclick="goToPreviousStep()">
+                                        <span class="material-symbols-outlined">arrow_back</span>
+                                        Înapoi
+                                    </button>
+                                    <button type="button" class="btn btn-primary" id="complete-receiving-btn">
+                                        <span class="material-symbols-outlined">check</span>
+                                        Finalizează Recepția
+                                    </button>
                                 </div>
                             </div>
                         </div>
-                        
-                        <div class="step-actions">
-                            <button type="button" class="btn btn-secondary" onclick="startNewReceiving()">
-                                <span class="material-symbols-outlined">add</span>
-                                Recepție Nouă
-                            </button>
-                            <button type="button" class="btn btn-primary" onclick="viewReceivingHistory()">
-                                <span class="material-symbols-outlined">history</span>
-                                Istoric Recepții
-                            </button>
+
+                        <!-- Step 4: Completion -->
+                        <div id="step-4" class="step-section">
+                            <div class="step-header">
+                                <h2 class="step-title">
+                                    <span class="material-symbols-outlined">check_circle</span>
+                                    Recepție Finalizată
+                                </h2>
+                                <p class="step-subtitle">Recepția a fost înregistrată cu succes</p>
+                            </div>
+
+                            <div class="step-content">
+                                <div class="completion-summary">
+                                    <div class="summary-card">
+                                        <div id="completion-details">
+                                            <!-- Completion details will be populated here -->
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="step-actions">
+                                    <button type="button" class="btn btn-secondary" onclick="startNewReceiving()">
+                                        <span class="material-symbols-outlined">add</span>
+                                        Recepție Nouă
+                                    </button>
+                                    <button type="button" class="btn btn-primary" onclick="viewReceivingHistory()">
+                                        <span class="material-symbols-outlined">history</span>
+                                        Istoric Recepții
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="receiving-tab-panel" id="receiving-tab-returns" data-receiving-panel="returns">
+                        <div class="returns-panel">
+                            <div class="returns-panel-header">
+                                <h2 class="returns-panel-title">
+                                    <span class="material-symbols-outlined">assignment_return</span>
+                                    Recepție Retururi
+                                </h2>
+                                <p class="returns-panel-subtitle">Caută comenzile pregătite (status „picked”) după numele companiei</p>
+                            </div>
+                            <div class="returns-search">
+                                <label for="return-company-search" class="form-label">Companie</label>
+                                <div class="returns-search-input">
+                                    <span class="material-symbols-outlined">search</span>
+                                    <input type="text" id="return-company-search" class="form-input" placeholder="Introdu numele companiei">
+                                </div>
+                                <p class="returns-hint">Rezultatele afișează comenzile deja ridicate, cele mai recente apar primele.</p>
+                            </div>
+                            <div id="return-orders-results" class="return-orders-results">
+                                <div class="empty-state">
+                                    <span class="material-symbols-outlined">travel_explore</span>
+                                    <p>Introduceți numele unei companii pentru a vedea comenzile pregătite pentru retur.</p>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>

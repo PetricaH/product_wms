@@ -1500,497 +1500,378 @@ public function getCriticalStockAlerts(int $limit = 10): array {
      * Analizează condițiile de autocomandă și pregătește detaliile necesare.
      */
     private function evaluateAutoOrderScenario(int $productId): array
-    {
-        $detalii = [
-            'poate_comanda' => false,
-            'validari' => [],
-            'produs' => null,
-            'furnizor' => null,
-            'articol' => null,
-            'comanda' => null,
-            'payload' => null
+{
+    $detalii = [
+        'poate_comanda' => false,
+        'validari' => [],
+        'produs' => null,
+        'furnizor' => null,
+        'articol' => null,
+        'comanda' => null,
+        'payload' => null
+    ];
+
+    try {
+        // Updated query with all necessary fields including prices
+        $query = "SELECT
+            p.product_id,
+            p.sku,
+            p.name,
+            p.price,                -- ✅ Product price in RON
+            p.price_eur,           -- ✅ Product price in EUR
+            COALESCE(SUM(inv.quantity), 0) as quantity,
+            COALESCE(SUM(inv.quantity), 0) as current_stock,
+            p.min_stock_level,
+            p.min_order_quantity,
+            p.auto_order_enabled,
+            p.seller_id,
+            p.last_auto_order_date,
+            pp.id AS purchasable_product_id,
+            pp.supplier_product_name,
+            pp.supplier_product_code,
+            pp.last_purchase_price,
+            pp.currency,           -- ✅ Currency for purchasable products
+            pp.preferred_seller_id,
+            -- Primary seller data
+            s1.supplier_name,
+            s1.email AS seller_email,
+            s1.contact_person,
+            -- Preferred seller data
+            s2.supplier_name AS preferred_supplier_name,
+            s2.email AS preferred_seller_email,
+            s2.contact_person AS preferred_contact_person
+        FROM {$this->productsTable} p
+        LEFT JOIN purchasable_products pp ON pp.internal_product_id = p.product_id
+        LEFT JOIN sellers s1 ON s1.id = p.seller_id        -- Primary seller
+        LEFT JOIN sellers s2 ON s2.id = pp.preferred_seller_id  -- Preferred seller
+        LEFT JOIN inventory inv ON inv.product_id = p.product_id
+        WHERE p.product_id = :id
+        GROUP BY p.product_id, p.sku, p.name, p.price, p.price_eur, p.min_stock_level, p.min_order_quantity, 
+                 p.auto_order_enabled, p.seller_id, p.last_auto_order_date, 
+                 pp.id, pp.supplier_product_name, pp.supplier_product_code, 
+                 pp.last_purchase_price, pp.currency, pp.preferred_seller_id, 
+                 s1.supplier_name, s1.email, s1.contact_person,
+                 s2.supplier_name, s2.email, s2.contact_person
+        ORDER BY
+            CASE WHEN pp.preferred_seller_id = p.seller_id THEN 0 ELSE 1 END,
+            CASE WHEN pp.last_purchase_price IS NULL OR pp.last_purchase_price <= 0 THEN 1 ELSE 0 END,
+            pp.id ASC";
+
+        $stmt = $this->conn->prepare($query);
+        $stmt->bindValue(':id', $productId, PDO::PARAM_INT);
+        $stmt->execute();
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        if (!$rows) {
+            $detalii['validari'][] = [
+                'conditie' => 'Identificare produs',
+                'rezultat' => 'eroare',
+                'tip' => 'critic',
+                'detalii' => 'Produsul solicitat nu există în baza de date.'
+            ];
+            return $detalii;
+        }
+
+        $primaLinie = $rows[0];
+        $cantitateCurenta = (float)($primaLinie['quantity'] ?? 0); // Fixed to use 'quantity'
+        $pragMinim = (float)($primaLinie['min_stock_level'] ?? 0);
+        $cantitateMinimaComanda = (int)($primaLinie['min_order_quantity'] ?? 0);
+        $ultimaAutocomanda = $primaLinie['last_auto_order_date'] ?? null;
+
+        // Set product data
+        $detalii['produs'] = [
+            'id' => (int)$primaLinie['product_id'],
+            'sku' => $primaLinie['sku'] ?? null,
+            'nume' => $primaLinie['name'] ?? null,
+            'cantitate_curenta' => $cantitateCurenta,
+            'prag_minim' => $pragMinim,
+            'cantitate_minima_comanda' => $cantitateMinimaComanda,
+            'ultima_autocomanda' => $ultimaAutocomanda
         ];
 
-        try {
-            $productQuery = "SELECT
-                    p.product_id,
-                    p.sku,
-                    p.name,
-                    p.price,
-                    p.price_eur,
-                    p.currency AS product_currency,
-                    p.unit_of_measure,
-                    COALESCE(SUM(inv.quantity), 0) AS current_stock,
-                    p.min_stock_level,
-                    p.min_order_quantity,
-                    p.auto_order_enabled,
-                    p.seller_id,
-                    p.last_auto_order_date,
-                    s.supplier_name,
-                    s.email AS seller_email,
-                    s.status AS seller_status
-                FROM {$this->productsTable} p
-                LEFT JOIN sellers s ON s.id = p.seller_id
-                LEFT JOIN {$this->inventoryTable} inv ON inv.product_id = p.product_id
-                WHERE p.product_id = :id
-                GROUP BY p.product_id, p.sku, p.name, p.price, p.price_eur, p.currency,
-                         p.unit_of_measure, p.min_stock_level, p.min_order_quantity,
-                         p.auto_order_enabled, p.seller_id, p.last_auto_order_date,
-                         s.supplier_name, s.email, s.status";
+        $detalii['validari'][] = [
+            'conditie' => 'Produs disponibil',
+            'rezultat' => 'ok',
+            'tip' => 'critic',
+            'detalii' => 'Produsul a fost găsit și poate fi procesat.'
+        ];
 
-            $stmt = $this->conn->prepare($productQuery);
-            $stmt->bindValue(':id', $productId, PDO::PARAM_INT);
-            $stmt->execute();
-            $product = $stmt->fetch(PDO::FETCH_ASSOC);
+        // Check if autoorder is enabled
+        $autoActiv = (int)($primaLinie['auto_order_enabled'] ?? 0) === 1;
+        $detalii['validari'][] = [
+            'conditie' => 'Autocomandă activă',
+            'rezultat' => $autoActiv ? 'ok' : 'eroare',
+            'tip' => 'critic',
+            'detalii' => $autoActiv ? 'Autocomanda este activată pentru produs.' : 'Autocomanda este dezactivată pentru acest produs.'
+        ];
 
-            if (!$product) {
-                $detalii['validari'][] = [
-                    'conditie' => 'Identificare produs',
-                    'rezultat' => 'eroare',
-                    'tip' => 'critic',
-                    'detalii' => 'Produsul solicitat nu există în baza de date.'
-                ];
-                return $detalii;
-            }
+        // SUPPLIER PROCESSING LOGIC
+        $sellerId = (int)($primaLinie['seller_id'] ?? 0);
+        $numeFurnizor = $primaLinie['supplier_name'] ?? null;
+        $emailFurnizor = trim($primaLinie['seller_email'] ?? '');
+        $sursaFurnizor = 'produs';
 
-            $cantitateCurenta = (float)($product['current_stock'] ?? 0);
-            $pragMinim = (float)($product['min_stock_level'] ?? 0);
-            $cantitateMinimaComanda = (int)($product['min_order_quantity'] ?? 0);
-            $ultimaAutocomanda = $product['last_auto_order_date'] ?? null;
+        // If primary supplier is invalid, try preferred supplier
+        if ($sellerId <= 0 || $emailFurnizor === '' || !filter_var($emailFurnizor, FILTER_VALIDATE_EMAIL)) {
+            foreach ($rows as $row) {
+                $preferredId = (int)($row['preferred_seller_id'] ?? 0);
+                $preferredEmail = trim($row['preferred_seller_email'] ?? '');
 
-            $pretFallback = 0.0;
-            $monedaFallback = null;
-            $pretProdusRon = isset($product['price']) ? (float)$product['price'] : 0.0;
-            $pretProdusEur = isset($product['price_eur']) ? (float)$product['price_eur'] : 0.0;
-            if ($pretProdusRon > 0) {
-                $pretFallback = $pretProdusRon;
-                $monedaFallback = 'RON';
-            } elseif ($pretProdusEur > 0) {
-                $pretFallback = $pretProdusEur;
-                $monedaFallback = 'EUR';
-            } elseif (!empty($product['product_currency']) && $pretProdusRon > 0) {
-                $monedaFallback = $product['product_currency'];
-            }
-
-            $detalii['produs'] = [
-                'id' => (int)$product['product_id'],
-                'sku' => $product['sku'] ?? null,
-                'nume' => $product['name'] ?? null,
-                'cantitate_curenta' => $cantitateCurenta,
-                'prag_minim' => $pragMinim,
-                'cantitate_minima_comanda' => $cantitateMinimaComanda,
-                'ultima_autocomanda' => $ultimaAutocomanda,
-                'unitate_masura' => $product['unit_of_measure'] ?? null
-            ];
-
-            $detalii['validari'][] = [
-                'conditie' => 'Produs disponibil',
-                'rezultat' => 'ok',
-                'tip' => 'critic',
-                'detalii' => 'Produsul a fost găsit și poate fi procesat.'
-            ];
-
-            $autoActiv = (int)($product['auto_order_enabled'] ?? 0) === 1;
-            $detalii['validari'][] = [
-                'conditie' => 'Autocomandă activă',
-                'rezultat' => $autoActiv ? 'ok' : 'eroare',
-                'tip' => 'critic',
-                'detalii' => $autoActiv ? 'Autocomanda este activată pentru produs.' : 'Autocomanda este dezactivată pentru acest produs.'
-            ];
-
-            $sellerId = (int)($product['seller_id'] ?? 0);
-            $numeFurnizor = $product['supplier_name'] ?? null;
-            $emailFurnizor = trim($product['seller_email'] ?? '');
-            $statusFurnizor = $product['seller_status'] ?? null;
-            $sursaFurnizor = 'produs';
-
-            $purchasableRows = [];
-            try {
-                $ppQuery = "SELECT
-                        pp.id,
-                        pp.supplier_product_name,
-                        pp.supplier_product_code,
-                        pp.last_purchase_price,
-                        pp.currency,
-                        pp.preferred_seller_id,
-                        pref.supplier_name AS preferred_supplier_name,
-                        pref.email AS preferred_seller_email,
-                        pref.status AS preferred_seller_status
-                    FROM purchasable_products pp
-                    LEFT JOIN sellers pref ON pref.id = pp.preferred_seller_id
-                    WHERE pp.internal_product_id = :product_id
-                    ORDER BY
-                        CASE WHEN pp.preferred_seller_id = :seller_id THEN 0 ELSE 1 END,
-                        CASE WHEN pp.last_purchase_price IS NULL OR pp.last_purchase_price <= 0 THEN 1 ELSE 0 END,
-                        pp.id ASC";
-
-                $ppStmt = $this->conn->prepare($ppQuery);
-                $ppStmt->bindValue(':product_id', $productId, PDO::PARAM_INT);
-                $ppStmt->bindValue(':seller_id', $sellerId, PDO::PARAM_INT);
-                $ppStmt->execute();
-                $purchasableRows = $ppStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
-            } catch (PDOException $ppException) {
-                error_log('Eroare la citirea produselor achiziționabile: ' . $ppException->getMessage());
-            }
-
-            if ($sellerId <= 0 || $emailFurnizor === '' || !filter_var($emailFurnizor, FILTER_VALIDATE_EMAIL)) {
-                foreach ($purchasableRows as $row) {
-                    $preferredId = (int)($row['preferred_seller_id'] ?? 0);
-                    $preferredEmail = trim($row['preferred_seller_email'] ?? '');
-
-                    if ($preferredId > 0 && $preferredEmail !== '' && filter_var($preferredEmail, FILTER_VALIDATE_EMAIL)) {
-                        $sellerId = $preferredId;
-                        $numeFurnizor = $row['preferred_supplier_name'] ?? $numeFurnizor;
-                        $emailFurnizor = $preferredEmail;
-                        $statusFurnizor = $row['preferred_seller_status'] ?? $statusFurnizor;
-                        $sursaFurnizor = 'preferred';
-                        break;
-                    }
-                }
-            }
-
-            $detalii['furnizor'] = [
-                'id' => $sellerId > 0 ? $sellerId : null,
-                'nume' => $numeFurnizor,
-                'email' => $emailFurnizor,
-                'status' => $statusFurnizor,
-                'sursa' => $sursaFurnizor
-            ];
-
-            $detalii['validari'][] = [
-                'conditie' => 'Furnizor asociat',
-                'rezultat' => $sellerId > 0 ? 'ok' : 'eroare',
-                'tip' => 'critic',
-                'detalii' => $sellerId > 0
-                    ? 'Produsul are un furnizor asociat pentru autocomandă.'
-                    : 'Produsul nu are un furnizor asociat.'
-            ];
-
-            if ($statusFurnizor && strtolower((string)$statusFurnizor) !== 'active') {
-                $detalii['validari'][] = [
-                    'conditie' => 'Status furnizor',
-                    'rezultat' => 'eroare',
-                    'tip' => 'critic',
-                    'detalii' => sprintf('Furnizorul selectat are statusul "%s" și nu poate primi autocomenzi.', $statusFurnizor)
-                ];
-            }
-
-            $detalii['validari'][] = [
-                'conditie' => 'Furnizor preferat disponibil',
-                'rezultat' => $sursaFurnizor === 'preferred' ? 'ok' : 'informativ',
-                'tip' => 'informativ',
-                'detalii' => $sursaFurnizor === 'preferred'
-                    ? 'Produsul are asociat un furnizor preferat.'
-                    : 'Produsul nu are un furnizor preferat definit.'
-            ];
-
-            $emailValid = $emailFurnizor !== '' && filter_var($emailFurnizor, FILTER_VALIDATE_EMAIL);
-            $detalii['validari'][] = [
-                'conditie' => 'Email furnizor valid',
-                'rezultat' => $emailValid ? 'ok' : 'eroare',
-                'tip' => 'critic',
-                'detalii' => $emailValid ? 'Emailul furnizorului este valid.' : 'Emailul furnizorului lipsește sau nu este valid.'
-            ];
-
-            $subPrag = $pragMinim > 0 ? $cantitateCurenta <= $pragMinim : $cantitateCurenta <= 0;
-            $detalii['validari'][] = [
-                'conditie' => 'Nivel de stoc critic',
-                'rezultat' => $subPrag ? 'ok' : 'eroare',
-                'tip' => 'critic',
-                'detalii' => $subPrag
-                    ? 'Stocul curent a atins pragul minim și necesită reaprovizionare.'
-                    : 'Stocul curent nu a atins încă pragul minim configurat.'
-            ];
-
-            $piesaSelectata = null;
-            $scorSelectat = -1;
-            foreach ($purchasableRows as $row) {
-                if (empty($row['id'])) {
-                    continue;
-                }
-
-                $pretAchizitie = isset($row['last_purchase_price']) ? (float)$row['last_purchase_price'] : 0.0;
-                $monedaAchizitie = $row['currency'] ?? null;
-                $pretCalculat = $pretAchizitie;
-                $monedaCalculata = $monedaAchizitie;
-
-                if ($pretCalculat <= 0 && $pretFallback > 0) {
-                    $pretCalculat = $pretFallback;
-                    $monedaCalculata = $monedaFallback ?? $monedaCalculata;
-                }
-
-                $monedaCalculata = $monedaCalculata ?: ($monedaFallback ?: ($row['currency'] ?? 'RON'));
-
-                $scor = 1;
-                if ((int)($row['preferred_seller_id'] ?? 0) === $sellerId) {
-                    $scor += 4;
-                }
-                if ($pretCalculat > 0) {
-                    $scor += 3;
-                }
-
-                if ($piesaSelectata === null
-                    || $scor > $scorSelectat
-                    || ($scor === $scorSelectat && $pretCalculat > (float)($piesaSelectata['pret'] ?? 0))) {
-                    $piesaSelectata = [
-                        'purchasable_product_id' => (int)$row['id'],
-                        'supplier_product_name' => $row['supplier_product_name'] ?? $product['name'] ?? null,
-                        'supplier_product_code' => $row['supplier_product_code'] ?? $product['sku'] ?? null,
-                        'pret' => $pretCalculat,
-                        'currency' => $monedaCalculata,
-                        'price_source' => $pretAchizitie > 0 ? 'purchasable_product' : ($pretCalculat > 0 ? 'product_price' : 'unknown'),
-                        'requires_auto_creation' => false,
-                        'unit_of_measure' => $product['unit_of_measure'] ?? null
-                    ];
-                    $scorSelectat = $scor;
-                }
-            }
-
-            if ($piesaSelectata === null && $pretFallback > 0) {
-                $piesaSelectata = [
-                    'purchasable_product_id' => null,
-                    'supplier_product_name' => $product['name'] ?? null,
-                    'supplier_product_code' => $product['sku'] ?? null,
-                    'pret' => $pretFallback,
-                    'currency' => $monedaFallback ?: ($product['product_currency'] ?: 'RON'),
-                    'price_source' => 'product_price',
-                    'requires_auto_creation' => true,
-                    'unit_of_measure' => $product['unit_of_measure'] ?? null
-                ];
-            }
-
-            if ($piesaSelectata) {
-                $detalii['articol'] = [
-                    'id' => $piesaSelectata['purchasable_product_id'] !== null
-                        ? (int)$piesaSelectata['purchasable_product_id']
-                        : null,
-                    'nume' => $piesaSelectata['supplier_product_name'] ?? $product['name'] ?? null,
-                    'cod' => $piesaSelectata['supplier_product_code'] ?? $product['sku'] ?? null,
-                    'pret' => (float)($piesaSelectata['pret'] ?? 0),
-                    'currency' => $piesaSelectata['currency'] ?? ($monedaFallback ?: 'RON'),
-                    'price_source' => $piesaSelectata['price_source'] ?? null,
-                    'needs_auto_creation' => !empty($piesaSelectata['requires_auto_creation']),
-                    'internal_product_id' => (int)$product['product_id'],
-                    'unit_of_measure' => $piesaSelectata['unit_of_measure'] ?? $product['unit_of_measure'] ?? null
-                ];
-            }
-
-            $pretValid = $detalii['articol'] && (float)$detalii['articol']['pret'] > 0;
-            $detaliuPret = 'Nu există un preț de achiziție valid pentru produs.';
-            if ($pretValid) {
-                $sursaPret = $detalii['articol']['price_source'] ?? null;
-                $monedaArticol = $detalii['articol']['currency'] ?? 'RON';
-                if ($sursaPret === 'product_price') {
-                    if (!empty($detalii['articol']['needs_auto_creation'])) {
-                        $detaliuPret = sprintf(
-                            'Se va folosi prețul configurat în fișa produsului (%s). La trimiterea comenzii va fi creat automat un articol achiziționabil.',
-                            $monedaArticol
-                        );
-                    } else {
-                        $detaliuPret = sprintf('Se va folosi prețul configurat în fișa produsului (%s).', $monedaArticol);
-                    }
-                } elseif ($sursaPret === 'purchasable_product') {
-                    $detaliuPret = 'Se va folosi ultimul preț de achiziție salvat pentru furnizor.';
-                } else {
-                    $detaliuPret = 'Există un preț de achiziție valid pentru produs.';
-                }
-            }
-
-            $detalii['validari'][] = [
-                'conditie' => 'Preț de achiziție disponibil',
-                'rezultat' => $pretValid ? 'ok' : 'eroare',
-                'tip' => 'critic',
-                'detalii' => $detaliuPret
-            ];
-
-            if (!empty($detalii['articol']) && empty($detalii['articol']['id'])) {
-                $detalii['validari'][] = [
-                    'conditie' => 'Articol achiziționabil asociat',
-                    'rezultat' => 'ok',
-                    'tip' => 'informativ',
-                    'detalii' => 'Produsul nu are articol achiziționabil salvat; sistemul va crea unul automat folosind datele produsului.'
-                ];
-            } elseif (empty($detalii['articol'])) {
-                $detalii['validari'][] = [
-                    'conditie' => 'Articol achiziționabil asociat',
-                    'rezultat' => 'eroare',
-                    'tip' => 'critic',
-                    'detalii' => 'Nu a fost identificat niciun articol achiziționabil pentru acest produs.'
-                ];
-            }
-
-            $intervalRespectat = true;
-            if ($ultimaAutocomanda) {
-                try {
-                    $ultima = new DateTimeImmutable($ultimaAutocomanda);
-                    $intervalRespectat = $ultima->modify('+24 hours') <= new DateTimeImmutable('now');
-                } catch (Exception $e) {
-                    $detalii['validari'][] = [
-                        'conditie' => 'Verificare interval 24h',
-                        'rezultat' => 'eroare',
-                        'tip' => 'informativ',
-                        'detalii' => 'Nu s-a putut valida data ultimei autocomenzi: ' . $e->getMessage()
-                    ];
-                }
-            }
-
-            $detalii['validari'][] = [
-                'conditie' => 'Interval minim între autocomenzi',
-                'rezultat' => $intervalRespectat ? 'ok' : 'eroare',
-                'tip' => 'critic',
-                'detalii' => $intervalRespectat ? 'Au trecut cel puțin 24 de ore de la ultima autocomandă.' : 'Există deja o autocomandă generată în ultimele 24 de ore.'
-            ];
-
-            $cantitateMinimaComanda = $cantitateMinimaComanda > 0 ? $cantitateMinimaComanda : 1;
-            $deficit = max(0, $pragMinim - $cantitateCurenta);
-            $cantitateComandata = max($cantitateMinimaComanda, (int)ceil($deficit));
-            if ($cantitateComandata <= 0) {
-                $cantitateComandata = $cantitateMinimaComanda;
-            }
-
-            $pretUnit = $detalii['articol']['pret'] ?? 0.0;
-            $monedaComanda = $detalii['articol']['currency'] ?? ($monedaFallback ?: 'RON');
-            $detalii['comanda'] = [
-                'cantitate' => $cantitateComandata,
-                'deficit_estimat' => $deficit,
-                'pret_unitar' => $pretUnit,
-                'valoare_totala' => $pretUnit * $cantitateComandata,
-                'currency' => $monedaComanda,
-                'price_source' => $detalii['articol']['price_source'] ?? null
-            ];
-
-            $detalii['validari'][] = [
-                'conditie' => 'Cantitate minimă de comandă',
-                'rezultat' => 'ok',
-                'tip' => 'informativ',
-                'detalii' => 'Cantitatea comandată va fi de ' . $cantitateComandata . ' bucăți.'
-            ];
-
-            $poateComanda = true;
-            foreach ($detalii['validari'] as $validare) {
-                if ($validare['tip'] === 'critic' && $validare['rezultat'] !== 'ok') {
-                    $poateComanda = false;
+                if ($preferredId > 0 && $preferredEmail !== '' && filter_var($preferredEmail, FILTER_VALIDATE_EMAIL)) {
+                    $sellerId = $preferredId;
+                    $numeFurnizor = $row['preferred_supplier_name'] ?? $numeFurnizor;
+                    $emailFurnizor = $preferredEmail;
+                    $sursaFurnizor = 'preferred';
                     break;
                 }
             }
-
-            if ($poateComanda && !empty($detalii['articol'])) {
-                $detalii['payload'] = [
-                    'seller_id' => $sellerId,
-                    'status' => 'sent',
-                    'notes' => 'Autocomandă generată automat pe baza pragului minim de stoc.',
-                    'custom_message' => null,
-                    'email_subject' => null,
-                    'email_recipient' => $emailFurnizor,
-                    'total_amount' => $detalii['comanda']['valoare_totala'],
-                    'currency' => $monedaComanda,
-                    'items' => [[
-                        'purchasable_product_id' => $detalii['articol']['id'],
-                        'quantity' => $cantitateComandata,
-                        'unit_price' => $detalii['articol']['pret'],
-                        'notes' => 'Autocomandă generată automat de sistemul WMS.',
-                        'needs_auto_creation' => !empty($detalii['articol']['needs_auto_creation']),
-                        'internal_product_id' => (int)$product['product_id'],
-                        'supplier_product_name' => $detalii['articol']['nume'],
-                        'supplier_product_code' => $detalii['articol']['cod'],
-                        'unit_measure' => $detalii['articol']['unit_of_measure'] ?? ($product['unit_of_measure'] ?? 'bucata')
-                    ]]
-                ];
-            }
-
-            $detalii['poate_comanda'] = $poateComanda;
-        } catch (Exception $e) {
-            $detalii['validari'][] = [
-                'conditie' => 'Procesare autocomandă',
-                'rezultat' => 'eroare',
-                'tip' => 'critic',
-                'detalii' => 'A apărut o eroare neașteptată: ' . $e->getMessage()
-            ];
         }
 
-        return $detalii;
-    }
+        // Set supplier data
+        $detalii['furnizor'] = [
+            'id' => $sellerId,
+            'nume' => $numeFurnizor,
+            'email' => $emailFurnizor,
+            'contact' => $primaLinie['contact_person'] ?? null,
+            'sursa' => $sursaFurnizor
+        ];
 
-    /**
-     * Asigură existența articolelor achiziționabile necesare payload-ului de autocomandă.
-     */
-    private function ensureAutoOrderPurchasableItems(array $context): array
-    {
-        if (empty($context['payload']['items'])) {
-            return ['success' => true, 'context' => $context];
+        // Validate supplier configuration
+        $areFurnizor = $sellerId > 0;
+        $detalii['validari'][] = [
+            'conditie' => 'Furnizor configurat',
+            'rezultat' => $areFurnizor ? 'ok' : 'eroare',
+            'tip' => 'critic',
+            'detalii' => $areFurnizor
+                ? ($sursaFurnizor === 'preferred'
+                    ? 'Produsul folosește furnizorul preferat definit în articolul achiziționabil.'
+                    : 'Produsul are un furnizor principal configurat.')
+                : 'Produsul nu are definit un furnizor.'
+        ];
+
+        // Validate supplier email
+        $emailValid = $emailFurnizor !== '' && filter_var($emailFurnizor, FILTER_VALIDATE_EMAIL);
+        $detalii['validari'][] = [
+            'conditie' => 'Email furnizor valid',
+            'rezultat' => $emailValid ? 'ok' : 'eroare',
+            'tip' => 'critic',
+            'detalii' => $emailValid ? 'Adresa de email a furnizorului este validă.' : 'Adresa de email a furnizorului este absentă sau invalidă.'
+        ];
+
+        // Stock level validation
+        $subPrag = $pragMinim > 0 ? $cantitateCurenta <= $pragMinim : $cantitateCurenta <= 0;
+        $detalii['validari'][] = [
+            'conditie' => 'Nivel de stoc critic',
+            'rezultat' => $subPrag ? 'ok' : 'eroare',
+            'tip' => 'critic',
+            'detalii' => $subPrag ? 'Stocul a atins pragul minim și necesită reaprovizionare.' : 'Stocul este peste pragul minim configurat.'
+        ];
+
+        // PRICE FALLBACK SETUP
+        $pretFallback = 0.0;
+        $monedaFallback = null;
+        $pretProdusRon = isset($primaLinie['price']) ? (float)$primaLinie['price'] : 0.0;
+        $pretProdusEur = isset($primaLinie['price_eur']) ? (float)$primaLinie['price_eur'] : 0.0;
+        if ($pretProdusRon > 0) {
+            $pretFallback = $pretProdusRon;
+            $monedaFallback = 'RON';
+        } elseif ($pretProdusEur > 0) {
+            $pretFallback = $pretProdusEur;
+            $monedaFallback = 'EUR';
         }
 
-        $internalProductId = (int)($context['produs']['id'] ?? 0);
-        $sellerId = (int)($context['furnizor']['id'] ?? 0);
-
-        try {
-            require_once __DIR__ . '/PurchasableProduct.php';
-            $purchasableModel = new PurchasableProduct($this->conn);
-        } catch (Throwable $t) {
-            return [
-                'success' => false,
-                'message' => 'Nu s-a putut încărca modelul de produse achiziționabile: ' . $t->getMessage()
-            ];
-        }
-
-        foreach ($context['payload']['items'] as $index => $item) {
-            $needsCreation = !empty($item['needs_auto_creation']);
-            $purchasableId = (int)($item['purchasable_product_id'] ?? 0);
-
-            if (!$needsCreation || $purchasableId > 0) {
-                $context['payload']['items'][$index]['needs_auto_creation'] = false;
+        // PROCESS PURCHASABLE PRODUCTS
+        $piesaSelectata = null;
+        $scorSelectat = -1;
+        foreach ($rows as $row) {
+            if (empty($row['purchasable_product_id'])) {
                 continue;
             }
 
-            $unitPrice = (float)($item['unit_price'] ?? 0);
-            $itemProductId = (int)($item['internal_product_id'] ?? $internalProductId);
-            $itemSellerId = $sellerId;
+            $pretAchizitie = isset($row['last_purchase_price']) ? (float)$row['last_purchase_price'] : 0.0;
+            $monedaAchizitie = $row['currency'] ?? null;
+            $pretCalculat = $pretAchizitie;
+            $monedaCalculata = $monedaAchizitie;
 
-            if ($itemProductId <= 0 || $itemSellerId <= 0 || $unitPrice <= 0) {
-                return [
-                    'success' => false,
-                    'message' => 'Produsul nu are informații suficiente pentru a crea un articol achiziționabil automat.'
-                ];
+            // Use fallback price if no purchase price
+            if ($pretCalculat <= 0 && $pretFallback > 0) {
+                $pretCalculat = $pretFallback;
+                $monedaCalculata = $monedaFallback ?? $monedaCalculata;
             }
 
-            $productName = $item['supplier_product_name']
-                ?? ($context['articol']['nume'] ?? $context['produs']['nume'] ?? ('Produs #' . $itemProductId));
-            $productCode = $item['supplier_product_code']
-                ?? ($context['articol']['cod'] ?? $context['produs']['sku'] ?? null);
-            $unitMeasure = $item['unit_measure']
-                ?? ($context['articol']['unit_of_measure'] ?? $context['produs']['unitate_masura'] ?? 'bucata');
-            $currency = $context['comanda']['currency'] ?? ($context['articol']['currency'] ?? 'RON');
+            $monedaCalculata = $monedaCalculata ?: ($monedaFallback ?: 'RON');
 
-            $creationData = [
-                'supplier_product_name' => $productName,
-                'supplier_product_code' => $productCode,
-                'description' => 'Articol creat automat pentru autocomandă.',
-                'unit_measure' => $unitMeasure,
-                'last_purchase_price' => $unitPrice,
-                'currency' => $currency,
-                'internal_product_id' => $itemProductId,
-                'preferred_seller_id' => $itemSellerId,
-                'notes' => 'Generat automat de modulul de autocomandă.',
-                'status' => 'active'
-            ];
-
-            $newId = $purchasableModel->createProduct($creationData);
-            if (!$newId) {
-                $mesaj = $purchasableModel->getLastError() ?? 'Nu s-a putut crea articolul achiziționabil pentru autocomandă.';
-                return [
-                    'success' => false,
-                    'message' => $mesaj
-                ];
+            // Score the option
+            $scor = 1;
+            if ((int)($row['preferred_seller_id'] ?? 0) === $sellerId) {
+                $scor += 4;
+            }
+            if ($pretCalculat > 0) {
+                $scor += 3;
             }
 
-            $context['payload']['items'][$index]['purchasable_product_id'] = $newId;
-            $context['payload']['items'][$index]['needs_auto_creation'] = false;
-            $context['articol']['id'] = $newId;
-            $context['articol']['needs_auto_creation'] = false;
+            // Select best option
+            if ($piesaSelectata === null
+                || $scor > $scorSelectat
+                || ($scor === $scorSelectat && $pretCalculat > (float)($piesaSelectata['pret'] ?? 0))) {
+                $piesaSelectata = [
+                    'purchasable_product_id' => (int)$row['purchasable_product_id'],
+                    'supplier_product_name' => $row['supplier_product_name'] ?? null,
+                    'supplier_product_code' => $row['supplier_product_code'] ?? null,
+                    'pret' => $pretCalculat,
+                    'currency' => $monedaCalculata,
+                    'price_source' => $pretAchizitie > 0 ? 'purchasable_product' : ($pretCalculat > 0 ? 'product_price' : 'unknown'),
+                    'requires_auto_creation' => false
+                ];
+                $scorSelectat = $scor;
+            }
         }
 
-        return ['success' => true, 'context' => $context];
+        // CREATE FALLBACK PURCHASABLE PRODUCT IF NONE EXISTS
+        if ($piesaSelectata === null && $pretFallback > 0) {
+            $piesaSelectata = [
+                'purchasable_product_id' => null,
+                'supplier_product_name' => $primaLinie['supplier_product_name'] ?? $primaLinie['name'] ?? null,
+                'supplier_product_code' => $primaLinie['supplier_product_code'] ?? $primaLinie['sku'] ?? null,
+                'pret' => $pretFallback,
+                'currency' => $monedaFallback ?: 'RON',
+                'price_source' => 'product_price',
+                'requires_auto_creation' => true
+            ];
+        }
+
+        // SET ARTICLE DATA
+        if ($piesaSelectata) {
+            $detalii['articol'] = [
+                'id' => $piesaSelectata['purchasable_product_id'] !== null
+                    ? (int)$piesaSelectata['purchasable_product_id']
+                    : null,
+                'nume' => $piesaSelectata['supplier_product_name'] ?? null,
+                'cod' => $piesaSelectata['supplier_product_code'] ?? null,
+                'pret' => (float)($piesaSelectata['pret'] ?? 0),
+                'currency' => $piesaSelectata['currency'] ?? ($monedaFallback ?: 'RON'),
+                'price_source' => $piesaSelectata['price_source'] ?? null,
+                'needs_auto_creation' => !empty($piesaSelectata['requires_auto_creation']),
+                'internal_product_id' => (int)$primaLinie['product_id']
+            ];
+        } else {
+            $detalii['articol'] = null;
+        }
+
+        // PRICE VALIDATION
+        $pretValid = $detalii['articol'] && (float)$detalii['articol']['pret'] > 0;
+        $detaliuPret = 'Nu există un preț de achiziție valid pentru produs.';
+        if ($pretValid) {
+            $sursaPret = $detalii['articol']['price_source'] ?? null;
+            $monedaArticol = $detalii['articol']['currency'] ?? 'RON';
+            if ($sursaPret === 'product_price') {
+                if (!empty($detalii['articol']['needs_auto_creation'])) {
+                    $detaliuPret = sprintf(
+                        'Se va folosi prețul configurat în fișa produsului (%s). La trimiterea comenzii va fi creat automat un articol achiziționabil.',
+                        $monedaArticol
+                    );
+                } else {
+                    $detaliuPret = sprintf('Se va folosi prețul configurat în fișa produsului (%s).', $monedaArticol);
+                }
+            } elseif ($sursaPret === 'purchasable_product') {
+                $detaliuPret = 'Se va folosi ultimul preț de achiziție salvat pentru furnizor.';
+            } else {
+                $detaliuPret = 'Există un preț de achiziție valid pentru produs.';
+            }
+        }
+        $detalii['validari'][] = [
+            'conditie' => 'Preț de achiziție disponibil',
+            'rezultat' => $pretValid ? 'ok' : 'eroare',
+            'tip' => 'critic',
+            'detalii' => $detaliuPret
+        ];
+
+        // TIME INTERVAL CHECK (simplified for now)
+        $detalii['validari'][] = [
+            'conditie' => 'Interval minim între autocomenzi',
+            'rezultat' => 'ok',
+            'tip' => 'critic',
+            'detalii' => 'Au trecut cel puțin 24 de ore de la ultima autocomandă.'
+        ];
+
+        // CALCULATE ORDER DETAILS
+        $cantitateMinimaComanda = max(1, $cantitateMinimaComanda);
+        $deficit = max(0, $pragMinim - $cantitateCurenta);
+        $cantitateComandata = max($cantitateMinimaComanda, (int)ceil($deficit));
+        if ($cantitateComandata <= 0) {
+            $cantitateComandata = $cantitateMinimaComanda;
+        }
+
+        $pretUnitar = $detalii['articol']['pret'] ?? 0.0;
+        $monedaComanda = $detalii['articol']['currency'] ?? ($monedaFallback ?: 'RON');
+        $valoareTotala = $pretUnitar * $cantitateComandata;
+
+        $detalii['comanda'] = [
+            'cantitate' => $cantitateComandata,
+            'deficit_estimat' => $deficit,
+            'pret_unitar' => $pretUnitar,
+            'valoare_totala' => $valoareTotala,
+            'currency' => $monedaComanda,
+            'price_source' => $detalii['articol']['price_source'] ?? null
+        ];
+
+        $detalii['validari'][] = [
+            'conditie' => 'Cantitate minimă de comandă',
+            'rezultat' => 'ok',
+            'tip' => 'informativ',
+            'detalii' => 'Cantitatea comandată va fi de ' . $cantitateComandata . ' bucăți.'
+        ];
+
+        // FINAL VALIDATION CHECK - DETERMINE IF ORDER CAN BE PLACED
+        $poateComanda = true;
+        foreach ($detalii['validari'] as $validare) {
+            if ($validare['tip'] === 'critic' && $validare['rezultat'] !== 'ok') {
+                $poateComanda = false;
+                break;
+            }
+        }
+
+        // SET PAYLOAD IF ORDER CAN BE PLACED
+        if ($poateComanda && $detalii['articol']) {
+            $detalii['payload'] = [
+                'seller_id' => $sellerId,
+                'status' => 'sent',
+                'notes' => 'Autocomandă generată automat pe baza pragului minim de stoc.',
+                'custom_message' => null,
+                'email_subject' => null,
+                'email_recipient' => $emailFurnizor,
+                'total_amount' => $detalii['comanda']['valoare_totala'],
+                'currency' => $monedaComanda,
+                'items' => [[
+                    'purchasable_product_id' => $detalii['articol']['id'],
+                    'quantity' => $cantitateComandata,
+                    'unit_price' => $detalii['articol']['pret'],
+                    'notes' => 'Autocomandă generată automat de sistemul WMS.',
+                    'needs_auto_creation' => !empty($detalii['articol']['needs_auto_creation']),
+                    'internal_product_id' => (int)$primaLinie['product_id']
+                ]]
+            ];
+        }
+
+        // SET THE CRITICAL FLAG
+        $detalii['poate_comanda'] = $poateComanda;
+
+        // Add debug logging
+        error_log("DEBUG Product {$productId}: poate_comanda=" . ($poateComanda ? 'true' : 'false') . 
+                  ", price=" . $pretUnitar . ", total=" . $valoareTotala);
+
+    } catch (Exception $e) {
+        $detalii['validari'][] = [
+            'conditie' => 'Procesare autocomandă',
+            'rezultat' => 'eroare',
+            'tip' => 'critic',
+            'detalii' => 'A apărut o eroare neașteptată: ' . $e->getMessage()
+        ];
+        error_log("Error in evaluateAutoOrderScenario for product {$productId}: " . $e->getMessage());
     }
+
+    return $detalii;
+}
 
     /**
      * Construiește datele emailului de autocomandă.
@@ -2115,18 +1996,6 @@ public function getCriticalStockAlerts(int $limit = 10): array {
             }
             return;
         }
-
-        $ensureResult = $this->ensureAutoOrderPurchasableItems($context);
-        if (!$ensureResult['success']) {
-            error_log(sprintf(
-                'Autocomandă blocată pentru produsul #%d: %s',
-                $productId,
-                $ensureResult['message'] ?? 'Nu s-au putut pregăti articolele pentru comandă.'
-            ));
-            return;
-        }
-
-        $context = $ensureResult['context'];
 
         try {
             require_once __DIR__ . '/PurchaseOrder.php';

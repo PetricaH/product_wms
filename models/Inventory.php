@@ -1876,6 +1876,68 @@ public function getCriticalStockAlerts(int $limit = 10): array {
     /**
      * Construiește datele emailului de autocomandă.
      */
+    private function ensureAutoOrderPurchasableProducts(array $context): array
+    {
+        if (empty($context['payload']['items'])) {
+            return ['success' => true, 'context' => $context];
+        }
+
+        require_once __DIR__ . '/PurchasableProduct.php';
+        $purchasableModel = new PurchasableProduct($this->conn);
+
+        foreach ($context['payload']['items'] as $index => $item) {
+            $purchasableId = (int)($item['purchasable_product_id'] ?? 0);
+            if ($purchasableId > 0) {
+                unset($context['payload']['items'][$index]['needs_auto_creation']);
+                continue;
+            }
+
+            $internalProductId = (int)($item['internal_product_id'] ?? ($context['produs']['id'] ?? 0));
+            $sellerId = (int)($context['furnizor']['id'] ?? 0);
+            $unitPrice = (float)($item['unit_price'] ?? 0);
+            $currency = $context['articol']['currency'] ?? ($context['comanda']['currency'] ?? 'RON');
+
+            if ($internalProductId <= 0 || $sellerId <= 0 || $unitPrice <= 0) {
+                return [
+                    'success' => false,
+                    'message' => 'Nu s-a putut crea articolul achiziționabil necesar pentru autocomandă.'
+                ];
+            }
+
+            $productName = $context['articol']['nume'] ?? ($context['produs']['nume'] ?? ('Produs #' . $internalProductId));
+            $productCode = $context['articol']['cod'] ?? ($context['produs']['sku'] ?? null);
+
+            $creationData = [
+                'supplier_product_name' => $productName,
+                'supplier_product_code' => $productCode,
+                'description' => 'Articol creat automat pentru autocomandă.',
+                'unit_measure' => 'buc',
+                'last_purchase_price' => $unitPrice,
+                'currency' => $currency,
+                'internal_product_id' => $internalProductId,
+                'preferred_seller_id' => $sellerId,
+                'notes' => 'Generat automat de modulul de autocomandă.',
+                'status' => 'active'
+            ];
+
+            $newId = $purchasableModel->createProduct($creationData);
+            if (!$newId) {
+                $error = $purchasableModel->getLastError() ?? 'Nu s-a putut crea produsul achiziționabil necesar.';
+                return [
+                    'success' => false,
+                    'message' => $error
+                ];
+            }
+
+            $context['payload']['items'][$index]['purchasable_product_id'] = $newId;
+            unset($context['payload']['items'][$index]['needs_auto_creation']);
+            $context['articol']['id'] = $newId;
+            $context['articol']['needs_auto_creation'] = false;
+        }
+
+        return ['success' => true, 'context' => $context];
+    }
+
     private function buildAutoOrderEmail(string $orderNumber, array $context): array
     {
         $numeProdus = $context['produs']['nume'] ?? '';
@@ -1889,24 +1951,32 @@ public function getCriticalStockAlerts(int $limit = 10): array {
         $pretFormatat = number_format((float)$pret, 2, ',', '.');
         $totalFormatat = number_format((float)$total, 2, ',', '.');
 
-        $subiect = sprintf('🤖 Autocomandă Urgentă - %s - %s', $numeProdus, $orderNumber);
+        $subiect = sprintf('🤖 Autocomandă generată automat - %s (%s)', $orderNumber, $numeProdus);
 
-        $corp = "Bună ziua,\n";
-        $corp .= "Sistemul nostru automat de gestiune a identificat că produsul \"{$numeProdus}\" a atins nivelul minim de stoc și necesită reaprovizionare urgentă.\n";
-        $corp .= "DETALII COMANDĂ:\n\n";
-        $corp .= "Număr comandă: {$orderNumber}\n";
-        $corp .= "Data generării: {$dataGenerarii}\n";
-        $corp .= "Tip comandă: AUTOCOMANDĂ (generată automat)\n";
-        $corp .= "Prioritate: URGENTĂ\n";
-        $corp .= "PRODUS COMANDAT:\n\n";
-        $corp .= "Nume: {$numeProdus}\n";
-        $corp .= "Cod: {$sku}\n";
-        $corp .= "Cantitate: {$cantitate} bucăți\n";
-        $corp .= "Preț unitar: {$pretFormatat} {$currency}\n";
-        $corp .= "Total: {$totalFormatat} {$currency}\n";
-        $corp .= "Această comandă a fost generată automat de sistemul nostru.\n";
-        $corp .= "Cu stimă,\n";
-        $corp .= "Sistem WMS - Autocomandă";
+        $corp = <<<EOT
+Bună ziua,
+
+Sistemul WMS a detectat că produsul "{$numeProdus}" (SKU: {$sku}) a atins nivelul minim de stoc și necesită reaprovizionare.
+
+Detalii comandă:
+  • Număr comandă: {$orderNumber}
+  • Data generării: {$dataGenerarii}
+  • Tip comandă: Autocomandă generată automat
+
+Produs comandat:
+  • Denumire: {$numeProdus}
+  • Cod / SKU: {$sku}
+  • Cantitate solicitată: {$cantitate} bucăți
+  • Preț unitar estimat: {$pretFormatat} {$currency}
+  • Valoare totală estimată: {$totalFormatat} {$currency}
+
+Această autocomandă a fost creată automat conform pragurilor de stoc configurate în sistem.
+
+Vă mulțumim pentru promptitudine.
+
+Cu stimă,
+Echipa Wartung – Sistem WMS
+EOT;
 
         return [
             'subiect' => $subiect,
@@ -1915,10 +1985,199 @@ public function getCriticalStockAlerts(int $limit = 10): array {
         ];
     }
 
+    private function generateAutoOrderPdf(array $orderInfo, array $items): ?string
+    {
+        if (!class_exists('FPDF')) {
+            $basePath = defined('BASE_PATH') ? BASE_PATH : dirname(__DIR__);
+            $fpdfPath = $basePath . '/lib/fpdf.php';
+            if (file_exists($fpdfPath)) {
+                require_once $fpdfPath;
+            }
+        }
+
+        if (!class_exists('FPDF')) {
+            error_log('FPDF library is not available for auto order PDF generation.');
+            return null;
+        }
+
+        try {
+            $currency = $orderInfo['currency'] ?? 'RON';
+            $pdf = new \FPDF();
+            $pdf->AddPage();
+            $pdf->SetFont('Arial', 'B', 16);
+            $pdf->Cell(0, 10, 'COMANDA ACHIZITIE', 0, 1, 'C');
+
+            $pdf->SetFont('Arial', '', 12);
+            $pdf->Cell(0, 8, 'Numar comanda: ' . ($orderInfo['order_number'] ?? ''), 0, 1);
+            $pdf->Cell(0, 8, 'Furnizor: ' . ($orderInfo['supplier_name'] ?? ''), 0, 1);
+            $pdf->Cell(0, 8, 'Data: ' . date('d.m.Y H:i'), 0, 1);
+            $pdf->Ln(10);
+
+            $pdf->SetFont('Arial', 'B', 10);
+            $pdf->Cell(80, 8, 'Produs', 1, 0, 'C');
+            $pdf->Cell(30, 8, 'Cantitate', 1, 0, 'C');
+            $pdf->Cell(30, 8, 'Pret (' . $currency . ')', 1, 0, 'C');
+            $pdf->Cell(40, 8, 'Total (' . $currency . ')', 1, 1, 'C');
+
+            $pdf->SetFont('Arial', '', 9);
+            $grandTotal = 0.0;
+
+            foreach ($items as $item) {
+                $name = $item['product_name'] ?? '';
+                if (strlen($name) > 45) {
+                    $name = substr($name, 0, 42) . '...';
+                }
+
+                $quantity = (float)($item['quantity'] ?? 0);
+                $unitPrice = (float)($item['unit_price'] ?? 0);
+                $lineTotal = $quantity * $unitPrice;
+                $grandTotal += $lineTotal;
+
+                $pdf->Cell(80, 8, $name, 1);
+                $pdf->Cell(30, 8, number_format($quantity, 2), 1, 0, 'R');
+                $pdf->Cell(30, 8, number_format($unitPrice, 2), 1, 0, 'R');
+                $pdf->Cell(40, 8, number_format($lineTotal, 2), 1, 1, 'R');
+            }
+
+            $pdf->SetFont('Arial', 'B', 10);
+            $pdf->Cell(140, 8, 'TOTAL', 1, 0, 'R');
+            $pdf->Cell(40, 8, number_format($grandTotal, 2) . ' ' . $currency, 1, 1, 'R');
+
+            $fileName = 'po_' . ($orderInfo['order_number'] ?? 'auto') . '_' . time() . '.pdf';
+            $basePath = defined('BASE_PATH') ? BASE_PATH : dirname(__DIR__);
+            $writableLocations = [
+                $basePath . '/storage/purchase_order_pdfs/',
+                '/tmp/wms_pdfs/',
+                '/tmp/',
+                $basePath . '/tmp/',
+                sys_get_temp_dir() . '/'
+            ];
+
+            foreach ($writableLocations as $directory) {
+                if (!is_dir($directory)) {
+                    @mkdir($directory, 0777, true);
+                }
+
+                if (!is_dir($directory) || !is_writable($directory)) {
+                    continue;
+                }
+
+                $fullPath = $directory . $fileName;
+                try {
+                    $pdf->Output('F', $fullPath);
+                    if (is_file($fullPath) && filesize($fullPath) > 0) {
+                        return $fileName;
+                    }
+                } catch (Exception $e) {
+                    error_log('Eroare la generarea PDF pentru autocomandă: ' . $e->getMessage());
+                }
+            }
+
+            error_log('Nu s-a putut salva PDF-ul autocomenzii în niciuna dintre locațiile disponibile.');
+            return null;
+        } catch (Throwable $t) {
+            error_log('Excepție la generarea PDF-ului pentru autocomandă: ' . $t->getMessage());
+            return null;
+        }
+    }
+
+    private function resolvePdfAttachment(?string $fileName): ?array
+    {
+        if (empty($fileName)) {
+            return null;
+        }
+
+        $basePath = defined('BASE_PATH') ? BASE_PATH : dirname(__DIR__);
+        $paths = [
+            $basePath . '/storage/purchase_order_pdfs/' . $fileName,
+            '/tmp/wms_pdfs/' . $fileName,
+            '/tmp/' . $fileName,
+            $basePath . '/tmp/' . $fileName,
+            $fileName
+        ];
+
+        foreach ($paths as $path) {
+            if (is_file($path)) {
+                return [
+                    'path' => $path,
+                    'name' => basename($path),
+                    'data' => @file_get_contents($path) ?: null
+                ];
+            }
+        }
+
+        return null;
+    }
+
+    private function saveAutoOrderEmailToSentFolder(array $smtpConfig, string $toEmail, string $subject, string $body, ?string $attachmentData, ?string $attachmentName): bool
+    {
+        if (!extension_loaded('imap')) {
+            return false;
+        }
+
+        $imapHost = $smtpConfig['imap_host'] ?? $smtpConfig['host'] ?? '';
+        if (empty($imapHost)) {
+            return false;
+        }
+
+        $imapPort = (int)($smtpConfig['imap_port'] ?? 993);
+        $flags = $smtpConfig['imap_flags'] ?? ['/imap/ssl/novalidate-cert'];
+        $folders = $smtpConfig['imap_sent_folders'] ?? ['Sent'];
+
+        $fromEmail = $smtpConfig['from_email'] ?? ($smtpConfig['username'] ?? '');
+        $headers = [
+            'Date: ' . date('r'),
+            'From: ' . $fromEmail,
+            'To: ' . $toEmail,
+            'Subject: ' . $subject,
+            'MIME-Version: 1.0'
+        ];
+
+        $message = implode("\r\n", $headers) . "\r\n";
+
+        if ($attachmentData && $attachmentName) {
+            $boundary = '----=_AutoOrder_' . md5(uniqid('', true));
+            $message .= 'Content-Type: multipart/mixed; boundary="' . $boundary . "\r\n\r\n";
+            $message .= '--' . $boundary . "\r\n";
+            $message .= "Content-Type: text/plain; charset=UTF-8\r\n";
+            $message .= "Content-Transfer-Encoding: 8bit\r\n\r\n";
+            $message .= $body . "\r\n\r\n";
+            $message .= '--' . $boundary . "\r\n";
+            $message .= 'Content-Type: application/pdf; name="' . $attachmentName . "\r\n";
+            $message .= "Content-Transfer-Encoding: base64\r\n";
+            $message .= 'Content-Disposition: attachment; filename="' . $attachmentName . "\r\n\r\n";
+            $message .= chunk_split(base64_encode($attachmentData)) . "\r\n";
+            $message .= '--' . $boundary . "--\r\n";
+        } else {
+            $message .= "Content-Type: text/plain; charset=UTF-8\r\n";
+            $message .= "Content-Transfer-Encoding: 8bit\r\n\r\n";
+            $message .= $body;
+        }
+
+        foreach ($flags as $flag) {
+            foreach ($folders as $folder) {
+                $mailbox = sprintf('{%s:%d%s}%s', $imapHost, $imapPort, $flag, $folder);
+                $connection = @imap_open($mailbox, $smtpConfig['username'], $smtpConfig['password']);
+                if ($connection === false) {
+                    continue;
+                }
+
+                $result = imap_append($connection, $mailbox, $message, '\\Seen');
+                imap_close($connection);
+
+                if ($result) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
     /**
      * Trimite emailul de autocomandă folosind infrastructura existentă.
      */
-    private function dispatchAutoOrderEmail(array $smtpConfig, string $toEmail, ?string $toName, string $subject, string $body): array
+    private function dispatchAutoOrderEmail(array $smtpConfig, string $toEmail, ?string $toName, string $subject, string $body, ?string $pdfFile = null): array
     {
         if (empty($smtpConfig['host']) || empty($smtpConfig['port']) || empty($smtpConfig['username']) || empty($smtpConfig['password'])) {
             return [
@@ -1953,12 +2212,33 @@ public function getCriticalStockAlerts(int $limit = 10): array {
             }
 
             $mailer->addAddress($toEmail, $toName ?? '');
+            if (!empty($fromEmail)) {
+                $mailer->addBCC($fromEmail);
+            }
             $mailer->Subject = $subject;
             $mailer->Body = $body;
             $mailer->AltBody = $body;
             $mailer->isHTML(false);
 
+            $attachment = $this->resolvePdfAttachment($pdfFile);
+            if ($attachment && !empty($attachment['path'])) {
+                $mailer->addAttachment($attachment['path'], $attachment['name']);
+            }
+
             $mailer->send();
+
+            $savedToSent = $this->saveAutoOrderEmailToSentFolder(
+                $smtpConfig,
+                $toEmail,
+                $subject,
+                $body,
+                $attachment['data'] ?? null,
+                $attachment['name'] ?? null
+            );
+
+            if (!$savedToSent) {
+                error_log('Autocomandă: email transmis dar nu a putut fi salvat în folderul Sent.');
+            }
 
             return [
                 'success' => true,
@@ -2001,6 +2281,14 @@ public function getCriticalStockAlerts(int $limit = 10): array {
             require_once __DIR__ . '/PurchaseOrder.php';
             $purchaseOrder = new PurchaseOrder($this->conn);
 
+            $ensureResult = $this->ensureAutoOrderPurchasableProducts($context);
+            if (empty($ensureResult['success'])) {
+                error_log(sprintf('Autocomandă blocată: %s', $ensureResult['message'] ?? 'Nu s-au putut pregăti articolele.'));
+                return;
+            }
+
+            $context = $ensureResult['context'];
+
             $orderId = $purchaseOrder->createPurchaseOrder($context['payload']);
             if (!$orderId) {
                 error_log(sprintf('Autocomandă eșuată pentru produsul #%d: nu s-a putut crea comanda de achiziție.', $productId));
@@ -2013,6 +2301,26 @@ public function getCriticalStockAlerts(int $limit = 10): array {
             $orderNumber = $orderNumberStmt->fetchColumn();
             if (!$orderNumber) {
                 $orderNumber = 'PO-' . date('Y') . '-NEDEFINIT';
+            }
+
+            $orderInfo = [
+                'order_number' => $orderNumber,
+                'supplier_name' => $context['furnizor']['nume'] ?? '',
+                'currency' => $context['comanda']['currency'] ?? 'RON'
+            ];
+
+            $itemsForPdf = [];
+            foreach ($context['payload']['items'] as $itemPayload) {
+                $itemsForPdf[] = [
+                    'product_name' => $context['articol']['nume'] ?? ($context['produs']['nume'] ?? ''),
+                    'quantity' => $itemPayload['quantity'] ?? 0,
+                    'unit_price' => $itemPayload['unit_price'] ?? 0
+                ];
+            }
+
+            $pdfFile = $this->generateAutoOrderPdf($orderInfo, $itemsForPdf);
+            if ($pdfFile) {
+                $purchaseOrder->updatePdfPath($orderId, $pdfFile);
             }
 
             $email = $this->buildAutoOrderEmail($orderNumber, $context);
@@ -2033,7 +2341,8 @@ public function getCriticalStockAlerts(int $limit = 10): array {
                 $context['furnizor']['email'],
                 $context['furnizor']['nume'],
                 $email['subiect'],
-                $email['corp']
+                $email['corp'],
+                $pdfFile ?? ($context['payload']['pdf_path'] ?? null)
             );
 
             if ($emailResult['success']) {

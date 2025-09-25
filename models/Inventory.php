@@ -1531,7 +1531,9 @@ public function getCriticalStockAlerts(int $limit = 10): array {
                         pp.preferred_seller_id,
                         pp.currency,
                         s.supplier_name,
-                        s.email AS seller_email
+                        s.email AS seller_email,
+                        sp.supplier_name AS preferred_supplier_name,
+                        sp.email AS preferred_seller_email
                     FROM {$this->productsTable} p
                     LEFT JOIN (
                         SELECT product_id, SUM(quantity) AS current_stock
@@ -1541,6 +1543,7 @@ public function getCriticalStockAlerts(int $limit = 10): array {
                     LEFT JOIN purchasable_products pp
                         ON pp.internal_product_id = p.product_id
                     LEFT JOIN sellers s ON s.id = p.seller_id
+                    LEFT JOIN sellers sp ON sp.id = pp.preferred_seller_id
                     WHERE p.product_id = :id
                     ORDER BY
                         CASE WHEN pp.preferred_seller_id = p.seller_id THEN 0 ELSE 1 END,
@@ -1608,11 +1611,28 @@ public function getCriticalStockAlerts(int $limit = 10): array {
             $sellerId = (int)($primaLinie['seller_id'] ?? 0);
             $numeFurnizor = $primaLinie['supplier_name'] ?? null;
             $emailFurnizor = trim($primaLinie['seller_email'] ?? '');
+            $sursaFurnizor = 'produs';
+
+            if ($sellerId <= 0 || $emailFurnizor === '' || !filter_var($emailFurnizor, FILTER_VALIDATE_EMAIL)) {
+                foreach ($rows as $row) {
+                    $preferredId = (int)($row['preferred_seller_id'] ?? 0);
+                    $preferredEmail = trim($row['preferred_seller_email'] ?? '');
+
+                    if ($preferredId > 0 && $preferredEmail !== '' && filter_var($preferredEmail, FILTER_VALIDATE_EMAIL)) {
+                        $sellerId = $preferredId;
+                        $numeFurnizor = $row['preferred_supplier_name'] ?? $numeFurnizor;
+                        $emailFurnizor = $preferredEmail;
+                        $sursaFurnizor = 'preferred';
+                        break;
+                    }
+                }
+            }
 
             $detalii['furnizor'] = [
                 'id' => $sellerId,
                 'nume' => $numeFurnizor,
-                'email' => $emailFurnizor
+                'email' => $emailFurnizor,
+                'sursa' => $sursaFurnizor
             ];
 
             $areFurnizor = $sellerId > 0;
@@ -1620,7 +1640,11 @@ public function getCriticalStockAlerts(int $limit = 10): array {
                 'conditie' => 'Furnizor configurat',
                 'rezultat' => $areFurnizor ? 'ok' : 'eroare',
                 'tip' => 'critic',
-                'detalii' => $areFurnizor ? 'Produsul are asociat un furnizor preferat.' : 'Produsul nu are un furnizor preferat definit.'
+                'detalii' => $areFurnizor
+                    ? ($sursaFurnizor === 'preferred'
+                        ? 'Produsul folosește furnizorul preferat definit în articolul achiziționabil.'
+                        : 'Produsul are asociat un furnizor preferat.')
+                    : 'Produsul nu are un furnizor preferat definit.'
             ];
 
             $emailValid = $emailFurnizor !== '' && filter_var($emailFurnizor, FILTER_VALIDATE_EMAIL);

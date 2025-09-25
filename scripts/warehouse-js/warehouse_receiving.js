@@ -24,6 +24,7 @@ class WarehouseReceiving {
         this.barcodeDecisionKeyHandler = null;
         this.activeBarcodeTask = null;
         this.barcodeCaptureSession = null;
+        this.locationSuggestionCache = new Map();
 
         // TIMING INTEGRATION - Silent timing for performance tracking
         this.timingManager = null;
@@ -611,11 +612,107 @@ class WarehouseReceiving {
             
             if (response.ok) {
                 this.receivingItems = result.items || [];
+                await this.autoAssignSuggestedLocations();
                 this.displayReceivingItems();
             }
             
         } catch (error) {
             console.error('Error loading receiving items:', error);
+        }
+    }
+
+    async autoAssignSuggestedLocations() {
+        if (!Array.isArray(this.receivingItems) || this.receivingItems.length === 0) {
+            return;
+        }
+
+        const assignmentTasks = this.receivingItems.map(async (item) => {
+            if (!item || item.location_code) {
+                return;
+            }
+
+            try {
+                const suggestion = await this.fetchSuggestedLocation(item);
+                if (suggestion && suggestion.location_code) {
+                    this.ensureLocationInConfig(suggestion);
+                    item.location_code = suggestion.location_code;
+                    if (!item.location_id && suggestion.location_id) {
+                        item.location_id = suggestion.location_id;
+                    }
+                }
+            } catch (error) {
+                console.warn('Could not auto-assign location for item', item?.sku || item?.id, error);
+            }
+        });
+
+        await Promise.allSettled(assignmentTasks);
+    }
+
+    async fetchSuggestedLocation(item) {
+        const cacheKey = item?.product_id || item?.sku;
+        if (!cacheKey) {
+            return null;
+        }
+
+        if (this.locationSuggestionCache.has(cacheKey)) {
+            return this.locationSuggestionCache.get(cacheKey);
+        }
+
+        let query = '';
+        if (item.product_id) {
+            query = `product_id=${encodeURIComponent(item.product_id)}`;
+        } else if (item.sku) {
+            query = `sku=${encodeURIComponent(item.sku)}`;
+        } else {
+            return null;
+        }
+
+        const url = `${this.config.apiBase}/product_location.php?${query}`;
+
+        try {
+            const response = await fetch(url, { credentials: 'same-origin' });
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+
+            const data = await response.json();
+            const suggestion = Array.isArray(data) ? (data[0] || null) : data;
+
+            if (suggestion && suggestion.location_code) {
+                const normalized = {
+                    location_id: suggestion.location_id ?? suggestion.id ?? null,
+                    location_code: suggestion.location_code,
+                    zone: suggestion.zone ?? suggestion.zone_name ?? null
+                };
+                this.locationSuggestionCache.set(cacheKey, normalized);
+                return normalized;
+            }
+
+            this.locationSuggestionCache.set(cacheKey, null);
+            return null;
+        } catch (error) {
+            this.locationSuggestionCache.set(cacheKey, null);
+            throw error;
+        }
+    }
+
+    ensureLocationInConfig(location) {
+        if (!location || !location.location_code) {
+            return;
+        }
+
+        if (!Array.isArray(this.config.locations)) {
+            this.config.locations = [];
+        }
+
+        const exists = this.config.locations.some(loc => loc.location_code === location.location_code);
+        if (!exists) {
+            this.config.locations.push({
+                id: location.location_id || null,
+                location_code: location.location_code,
+                zone: location.zone || '---',
+                type: 'warehouse'
+            });
         }
     }
 
@@ -678,9 +775,18 @@ class WarehouseReceiving {
     }
 
     getLocationOptions(selectedCode = '') {
-        const locations = this.config.locations || [];
+        const locations = Array.isArray(this.config.locations) ? [...this.config.locations] : [];
+
+        if (selectedCode && !locations.some(loc => loc.location_code === selectedCode)) {
+            locations.unshift({
+                id: null,
+                location_code: selectedCode,
+                zone: '---'
+            });
+        }
+
         return locations.map(loc =>
-            `<option value="${loc.location_code}" ${loc.location_code === selectedCode ? 'selected' : ''}>${loc.location_code} (${loc.zone})</option>`
+            `<option value="${loc.location_code}" ${loc.location_code === selectedCode ? 'selected' : ''}>${loc.location_code} (${loc.zone || '---'})</option>`
         ).join('');
     }
 

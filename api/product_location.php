@@ -8,8 +8,19 @@ $config = require BASE_PATH . '/config/config.php';
 $db = $config['connection_factory']();
 
 $productId = isset($_GET['product_id']) ? (int)$_GET['product_id'] : 0;
+$sku = isset($_GET['sku']) ? trim((string)$_GET['sku']) : '';
+
+if ($productId <= 0 && $sku !== '') {
+    $stmt = $db->prepare("SELECT product_id FROM products WHERE sku = :sku LIMIT 1");
+    $stmt->execute([':sku' => $sku]);
+    $foundId = $stmt->fetchColumn();
+    if ($foundId) {
+        $productId = (int)$foundId;
+    }
+}
+
 if ($productId <= 0) {
-    echo json_encode(['error' => 'Invalid product_id']);
+    echo json_encode([]);
     exit;
 }
 

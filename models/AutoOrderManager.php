@@ -117,6 +117,8 @@ class AutoOrderManager
                         p.auto_order_enabled,
                         p.seller_id,
                         p.last_auto_order_date,
+                        p.price,
+                        p.price_eur,
                         s.supplier_name,
                         s.email AS seller_email,
                         s.contact_person,
@@ -124,7 +126,8 @@ class AutoOrderManager
                         pp.supplier_product_name,
                         pp.supplier_product_code,
                         pp.last_purchase_price,
-                        pp.preferred_seller_id
+                        pp.preferred_seller_id,
+                        pp.currency
                     FROM {$this->productsTable} p
                     LEFT JOIN (
                         SELECT product_id, SUM(quantity) AS current_stock
@@ -161,6 +164,18 @@ class AutoOrderManager
             $pragMinim = (float)($primaLinie['min_stock_level'] ?? 0);
             $cantitateMinimaComanda = (int)($primaLinie['min_order_quantity'] ?? 0);
             $ultimaAutocomanda = $primaLinie['last_auto_order_date'] ?? null;
+
+            $pretFallback = 0.0;
+            $monedaFallback = null;
+            $pretProdusRon = isset($primaLinie['price']) ? (float)$primaLinie['price'] : 0.0;
+            $pretProdusEur = isset($primaLinie['price_eur']) ? (float)$primaLinie['price_eur'] : 0.0;
+            if ($pretProdusRon > 0) {
+                $pretFallback = $pretProdusRon;
+                $monedaFallback = 'RON';
+            } elseif ($pretProdusEur > 0) {
+                $pretFallback = $pretProdusEur;
+                $monedaFallback = 'EUR';
+            }
 
             $detalii['produs'] = [
                 'id' => (int)$primaLinie['product_id'],
@@ -229,21 +244,34 @@ class AutoOrderManager
                     continue;
                 }
 
-                $pret = (float)($row['last_purchase_price'] ?? 0);
+                $pretAchizitie = isset($row['last_purchase_price']) ? (float)$row['last_purchase_price'] : 0.0;
+                $monedaAchizitie = $row['currency'] ?? null;
+                $pretCalculat = $pretAchizitie;
+                $monedaCalculata = $monedaAchizitie;
+
+                if ($pretCalculat <= 0 && $pretFallback > 0) {
+                    $pretCalculat = $pretFallback;
+                    $monedaCalculata = $monedaFallback ?? $monedaCalculata;
+                }
+
+                $monedaCalculata = $monedaCalculata ?: ($monedaFallback ?: 'RON');
+
                 $scor = 1;
                 if ((int)($row['preferred_seller_id'] ?? 0) === $sellerId) {
                     $scor += 4;
                 }
-                if ($pret > 0) {
+                if ($pretCalculat > 0) {
                     $scor += 3;
                 }
 
-                if ($articolSelectat === null || $scor > $scorSelectat || ($scor === $scorSelectat && $pret > (float)($articolSelectat['pret'] ?? 0))) {
+                if ($articolSelectat === null || $scor > $scorSelectat || ($scor === $scorSelectat && $pretCalculat > (float)($articolSelectat['pret'] ?? 0))) {
                     $articolSelectat = [
                         'id' => (int)$row['purchasable_product_id'],
                         'nume' => $row['supplier_product_name'] ?? $primaLinie['name'] ?? '',
                         'cod' => $row['supplier_product_code'] ?? null,
-                        'pret' => $pret > 0 ? $pret : 0.0
+                        'pret' => $pretCalculat,
+                        'currency' => $monedaCalculata,
+                        'price_source' => $pretAchizitie > 0 ? 'purchasable_product' : ($pretCalculat > 0 ? 'product_price' : 'unknown')
                     ];
                     $scorSelectat = $scor;
                 }
@@ -283,13 +311,16 @@ class AutoOrderManager
             }
 
             $pretUnitar = $articolSelectat['pret'] ?? 0.0;
+            $monedaComanda = $articolSelectat['currency'] ?? ($monedaFallback ?: 'RON');
             $valoareTotala = $pretUnitar * $cantitateComandata;
 
             $detalii['comanda'] = [
                 'cantitate' => $cantitateComandata,
                 'deficit_estimat' => $deficit,
                 'pret_unitar' => $pretUnitar,
-                'valoare_totala' => $valoareTotala
+                'valoare_totala' => $valoareTotala,
+                'currency' => $monedaComanda,
+                'price_source' => $articolSelectat['price_source'] ?? null
             ];
 
             $detalii['validari'][] = [
@@ -317,6 +348,7 @@ class AutoOrderManager
                     'email_subject' => null,
                     'email_recipient' => $emailFurnizor,
                     'total_amount' => $valoareTotala,
+                    'currency' => $monedaComanda,
                     'items' => [[
                         'purchasable_product_id' => $articolSelectat['id'],
                         'quantity' => $cantitateComandata,
@@ -877,6 +909,7 @@ class AutoOrderManager
         $cantitate = $context['comanda']['cantitate'] ?? 0;
         $pret = $context['comanda']['pret_unitar'] ?? 0.0;
         $total = $context['comanda']['valoare_totala'] ?? 0.0;
+        $currency = $context['comanda']['currency'] ?? 'RON';
         $dataGenerarii = date('d.m.Y H:i');
 
         $pretFormatat = number_format((float)$pret, 2, ',', '.');
@@ -890,8 +923,8 @@ class AutoOrderManager
         $corp .= "Număr comandă: {$orderNumber}\n";
         $corp .= "Data generării: {$dataGenerarii}\n";
         $corp .= "Cantitate solicitată: {$cantitate} bucăți\n";
-        $corp .= "Preț unitar estimat: {$pretFormatat} RON\n";
-        $corp .= "Valoare totală estimată: {$totalFormatat} RON\n\n";
+        $corp .= "Preț unitar estimat: {$pretFormatat} {$currency}\n";
+        $corp .= "Valoare totală estimată: {$totalFormatat} {$currency}\n\n";
         $corp .= "Această autocomandă a fost generată automat conform pragurilor de stoc configurate.\n";
         $corp .= "Vă mulțumim pentru promptitudine.\n\n";
         $corp .= "Cu stimă,\n";

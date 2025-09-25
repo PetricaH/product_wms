@@ -77,8 +77,9 @@ try {
     if (!$printer) {
         respond(['success' => false, 'error' => 'No suitable printer found'], 404);
     }
-    if (!$printer['server_active']) {
-        respond(['success' => false, 'error' => 'Print server is not active'], 503);
+    $printServerUrl = resolvePrintServerUrl($printer, $config);
+    if (!$printServerUrl) {
+        respond(['success' => false, 'error' => 'Print server is not available'], 503);
     }
 
     // Generate QR image (high quality)
@@ -171,7 +172,6 @@ try {
     // Build URL and send to print server
     $pdfUrl = getSimpleBaseUrl() . '/storage/location_qr_pdfs/' . $fileName;
 
-    $printServerUrl = "http://{$printer['ip_address']}:{$printer['port']}/print_server.php";
     $result = sendToPrintServerSimple($printServerUrl, $pdfUrl, $printer['network_identifier']);
 
     if ($result['success']) {
@@ -193,6 +193,35 @@ function generateTempQRImage(string $data): ?string {
     $tempFile = $tempDir . '/qr_' . uniqid() . '.png';
     file_put_contents($tempFile, $qrData);
     return $tempFile;
+}
+
+function resolvePrintServerUrl(array $printer, array $config): ?string {
+    $ip = trim((string)($printer['ip_address'] ?? ''));
+    $port = trim((string)($printer['port'] ?? ''));
+    $activeRaw = $printer['server_active'] ?? null;
+
+    $isActive = true;
+    if ($activeRaw !== null) {
+        $isActive = filter_var($activeRaw, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+        if ($isActive === null) {
+            $isActive = ((string)$activeRaw === '1' || (int)$activeRaw === 1);
+        }
+    }
+
+    if ($ip !== '' && $port !== '' && $isActive) {
+        return "http://{$ip}:{$port}/print_server.php";
+    }
+
+    $fallback = $config['print_server_url'] ?? '';
+    if ($fallback !== '') {
+        $fallback = rtrim($fallback, '/');
+        if (!preg_match('/print_server\.php(\?|$)/', $fallback)) {
+            $fallback .= '/print_server.php';
+        }
+        return $fallback;
+    }
+
+    return null;
 }
 
 function sendToPrintServerSimple(string $printServerUrl, string $pdfUrl, string $printerName): array {

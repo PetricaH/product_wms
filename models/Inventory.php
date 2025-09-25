@@ -1516,7 +1516,7 @@ public function getCriticalStockAlerts(int $limit = 10): array {
                         p.product_id,
                         p.sku,
                         p.name,
-                        p.quantity,
+                        COALESCE(inv.current_stock, 0) AS current_stock,
                         p.min_stock_level,
                         p.min_order_quantity,
                         p.auto_order_enabled,
@@ -1530,6 +1530,11 @@ public function getCriticalStockAlerts(int $limit = 10): array {
                         s.supplier_name,
                         s.email AS seller_email
                     FROM {$this->productsTable} p
+                    LEFT JOIN (
+                        SELECT product_id, SUM(quantity) AS current_stock
+                        FROM inventory
+                        GROUP BY product_id
+                    ) inv ON inv.product_id = p.product_id
                     LEFT JOIN purchasable_products pp
                         ON pp.internal_product_id = p.product_id
                     LEFT JOIN sellers s ON s.id = p.seller_id
@@ -1555,7 +1560,7 @@ public function getCriticalStockAlerts(int $limit = 10): array {
             }
 
             $primaLinie = $rows[0];
-            $cantitateCurenta = (float)($primaLinie['quantity'] ?? 0);
+            $cantitateCurenta = (float)($primaLinie['current_stock'] ?? 0);
             $pragMinim = (float)($primaLinie['min_stock_level'] ?? 0);
             $cantitateMinimaComanda = (int)($primaLinie['min_order_quantity'] ?? 0);
             $ultimaAutocomanda = $primaLinie['last_auto_order_date'] ?? null;

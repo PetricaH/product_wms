@@ -41,11 +41,17 @@ try {
 
         $where = $conditions ? 'WHERE ' . implode(' AND ', $conditions) : '';
 
-        $query = "SELECT p.product_id, p.sku, p.name, p.category, p.quantity,
+        $query = "SELECT p.product_id, p.sku, p.name, p.category,
+                         COALESCE(inv.current_stock, 0) AS current_stock,
                          p.min_stock_level, p.min_order_quantity,
                          p.auto_order_enabled, p.last_auto_order_date,
                          s.supplier_name
                   FROM products p
+                  LEFT JOIN (
+                        SELECT product_id, SUM(quantity) AS current_stock
+                        FROM inventory
+                        GROUP BY product_id
+                  ) inv ON inv.product_id = p.product_id
                   LEFT JOIN sellers s ON p.seller_id = s.id
                   $where
                   ORDER BY p.name ASC
@@ -74,7 +80,7 @@ try {
                 'sku' => $r['sku'],
                 'product_name' => $r['name'],
                 'category' => $r['category'],
-                'current_stock' => (int)$r['quantity'],
+                'current_stock' => (int)$r['current_stock'],
                 'min_stock_level' => (int)$r['min_stock_level'],
                 'min_order_quantity' => (int)($r['min_order_quantity'] ?? 1),
                 'auto_order_enabled' => (bool)$r['auto_order_enabled'],

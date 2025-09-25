@@ -111,7 +111,7 @@ class AutoOrderManager
                         p.product_id,
                         p.sku,
                         p.name,
-                        p.quantity,
+                        COALESCE(inv.current_stock, 0) AS current_stock,
                         p.min_stock_level,
                         p.min_order_quantity,
                         p.auto_order_enabled,
@@ -126,6 +126,11 @@ class AutoOrderManager
                         pp.last_purchase_price,
                         pp.preferred_seller_id
                     FROM {$this->productsTable} p
+                    LEFT JOIN (
+                        SELECT product_id, SUM(quantity) AS current_stock
+                        FROM inventory
+                        GROUP BY product_id
+                    ) inv ON inv.product_id = p.product_id
                     LEFT JOIN {$this->purchasableProductsTable} pp
                         ON pp.internal_product_id = p.product_id
                     LEFT JOIN sellers s ON s.id = p.seller_id
@@ -152,7 +157,7 @@ class AutoOrderManager
             }
 
             $primaLinie = $rows[0];
-            $cantitateCurenta = (float)($primaLinie['quantity'] ?? 0);
+            $cantitateCurenta = (float)($primaLinie['current_stock'] ?? 0);
             $pragMinim = (float)($primaLinie['min_stock_level'] ?? 0);
             $cantitateMinimaComanda = (int)($primaLinie['min_order_quantity'] ?? 0);
             $ultimaAutocomanda = $primaLinie['last_auto_order_date'] ?? null;
@@ -714,12 +719,19 @@ class AutoOrderManager
     {
         try {
             $sql = "SELECT po.*, poi.quantity, poi.unit_price, pp.internal_product_id, p.name AS product_name,
-                           p.sku, p.min_stock_level, p.quantity AS stoc_curent, p.last_auto_order_date AS last_auto_order_date_produs,
+                           p.sku, p.min_stock_level,
+                           COALESCE(inv.current_stock, 0) AS stoc_curent,
+                           p.last_auto_order_date AS last_auto_order_date_produs,
                            s.email AS seller_email, s.supplier_name
                     FROM {$this->purchaseOrdersTable} po
                     INNER JOIN {$this->purchaseOrderItemsTable} poi ON poi.purchase_order_id = po.id
                     INNER JOIN {$this->purchasableProductsTable} pp ON poi.purchasable_product_id = pp.id
                     INNER JOIN {$this->productsTable} p ON pp.internal_product_id = p.product_id
+                    LEFT JOIN (
+                        SELECT product_id, SUM(quantity) AS current_stock
+                        FROM inventory
+                        GROUP BY product_id
+                    ) inv ON inv.product_id = p.product_id
                     LEFT JOIN sellers s ON po.seller_id = s.id
                     WHERE po.id = :id
                     LIMIT 1";

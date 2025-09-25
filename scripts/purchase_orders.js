@@ -711,9 +711,9 @@ function createProductItem(index) {
                            step="0.001" min="0.001" required onchange="calculateItemTotal(${index})">
                 </div>
                 <div class="form-group">
-                    <label>Preț Unitar (RON) *</label>
-                    <input type="number" name="items[${index}][unit_price]" class="form-control unit-price" 
-                           step="0.01" min="0.01" required onchange="calculateItemTotal(${index})">
+                    <label>Preț Unitar (RON) (opțional)</label>
+                    <input type="number" name="items[${index}][unit_price]" class="form-control unit-price"
+                           step="0.01" min="0" onchange="calculateItemTotal(${index})">
                 </div>
                 <div class="form-group">
                     <label>Total</label>
@@ -901,7 +901,7 @@ function validateStockPurchaseForm() {
 
         console.log('✅ Fixed validation check:', { productName, quantity, unitPrice }); // Debug log
 
-        if (productName && quantity > 0 && unitPrice > 0) {
+        if (productName && quantity > 0) {
             if (!internalProductHidden || !internalProductHidden.value) {
                 alert('Te rog selectează produsul intern din lista de sugestii.');
                 if (internalProductSearch) {
@@ -914,7 +914,7 @@ function validateStockPurchaseForm() {
     }
 
     if (!hasValidItems) {
-        alert('Te rog adaugă cel puțin un produs valid cu cantitate și preț.');
+        alert('Te rog adaugă cel puțin un produs valid cu cantitate.');
         return false;
     }
     

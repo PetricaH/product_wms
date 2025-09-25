@@ -8,7 +8,7 @@ class Product {
     
     private $defaultFields = [
         'product_id', 'sku', 'name', 'description', 'category', 'unit_of_measure', 'quantity',
-        'min_stock_level', 'price', 'weight', 'dimensions', 'barcode',
+        'min_stock_level', 'price', 'price_eur', 'weight', 'dimensions', 'barcode',
         'image_url', 'status', 'seller_id', 'created_at', 'updated_at', 'smartbill_product_id'
     ];
     
@@ -214,8 +214,8 @@ class Product {
         }
         
         $query = "INSERT INTO {$this->table} (
-                    sku, name, description, category, unit_of_measure, quantity, price, seller_id
-                  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+                    sku, name, description, category, unit_of_measure, quantity, price, price_eur, seller_id
+                  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
         
         try {
             $stmt = $this->conn->prepare($query);
@@ -227,6 +227,7 @@ class Product {
                 $productData['unit_of_measure'] ?? 'pcs',
                 intval($productData['quantity'] ?? 0),
                 floatval($productData['price'] ?? 0),
+                floatval($productData['price_eur'] ?? 0),
                 !empty($productData['seller_id']) ? intval($productData['seller_id']) : null
             ];
             
@@ -290,6 +291,7 @@ class Product {
             'unit_of_measure' => ':unit_of_measure',
             'quantity' => ':quantity',
             'price' => ':price',
+            'price_eur' => ':price_eur',
             'min_stock_level' => ':min_stock_level',
             'seller_id' => ':seller_id'
         ];
@@ -302,7 +304,7 @@ class Product {
                 // Handle different data types
                 if (in_array($field, ['quantity', 'min_stock_level', 'seller_id'])) {
                     $params[$param] = $productData[$field] !== null ? intval($productData[$field]) : null;
-                } elseif ($field === 'price') {
+                } elseif (in_array($field, ['price', 'price_eur'], true)) {
                     $params[$param] = floatval($productData[$field]);
                 } else {
                     $params[$param] = $productData[$field];
@@ -863,7 +865,8 @@ class Product {
             'category' => 'Category',
             'quantity' => 'Base Quantity',
             'min_stock_level' => 'Min Stock Level',
-            'price' => 'Price',
+            'price' => 'Price (RON)',
+            'price_eur' => 'Price (EUR)',
             'created_at' => 'Created Date'
         ];
     }
@@ -887,7 +890,8 @@ class Product {
             'unit_of_measure' => 'unit_of_measure',
             'quantity' => 'quantity',
             'min_stock_level' => 'min_stock_level',
-            'price' => 'price'
+            'price' => 'price',
+            'price_eur' => 'price_eur'
         ];
         
         foreach ($directMappings as $newField => $existingField) {

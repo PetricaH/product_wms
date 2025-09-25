@@ -68,11 +68,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $items = [];
                 if (!empty($_POST['items'])) {
                     foreach ($_POST['items'] as $item) {
-                        if (!empty($item['product_id']) && !empty($item['quantity']) && isset($item['unit_price'])) {
+                        if (!empty($item['product_id']) && !empty($item['quantity'])) {
+                            $unitPrice = 0.0;
+                            if (isset($item['unit_price']) && $item['unit_price'] !== '') {
+                                $unitPrice = floatval($item['unit_price']);
+                            }
+
                             $items[] = [
                                 'product_id' => intval($item['product_id']),
                                 'quantity' => intval($item['quantity']),
-                                'unit_price' => floatval($item['unit_price'])
+                                'unit_price' => $unitPrice
                             ];
                         }
                     }
@@ -522,8 +527,8 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                         <input type="number" name="items[0][quantity]" class="form-control" min="1" required>
                                     </div>
                                     <div class="form-group">
-                                        <label class="form-label">Preț Unitar</label>
-                                        <input type="number" name="items[0][unit_price]" class="form-control" step="0.01" min="0" required>
+                                        <label class="form-label">Preț Unitar (opțional)</label>
+                                        <input type="number" name="items[0][unit_price]" class="form-control" step="0.01" min="0">
                                     </div>
                                     <div class="form-group">
                                         <label class="form-label">&nbsp;</label>

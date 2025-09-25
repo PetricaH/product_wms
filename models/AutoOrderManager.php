@@ -1088,63 +1088,72 @@ class AutoOrderManager
      * Trimite efectiv emailul folosind infrastructura existentă.
      */
     private function trimiteEmailSimplu(array $smtpConfig, string $destinatar, ?string $numeDestinatar, string $subiect, string $corp): array
-    {
-        if (empty($smtpConfig['host']) || empty($smtpConfig['port']) || empty($smtpConfig['username']) || empty($smtpConfig['password'])) {
-            return [
-                'success' => false,
-                'message' => 'Configurația SMTP este incompletă.'
-            ];
-        }
-
-        $basePath = defined('BASE_PATH') ? BASE_PATH : dirname(__DIR__);
-        require_once $basePath . '/lib/PHPMailer/PHPMailer.php';
-        require_once $basePath . '/lib/PHPMailer/SMTP.php';
-        require_once $basePath . '/lib/PHPMailer/Exception.php';
-
-        try {
-            $mailer = new \PHPMailer\PHPMailer\PHPMailer(true);
-            $mailer->isSMTP();
-            $mailer->Host = $smtpConfig['host'];
-            $mailer->Port = (int)$smtpConfig['port'];
-            $mailer->SMTPAuth = true;
-            $mailer->Username = $smtpConfig['username'];
-            $mailer->Password = $smtpConfig['password'];
-            if (!empty($smtpConfig['encryption'])) {
-                $mailer->SMTPSecure = $smtpConfig['encryption'];
-            }
-            $mailer->CharSet = 'UTF-8';
-
-            $fromEmail = $smtpConfig['from_email'] ?? $smtpConfig['username'];
-            $fromName = $smtpConfig['from_name'] ?? 'Sistem WMS';
-            $mailer->setFrom($fromEmail, $fromName);
-            if (!empty($smtpConfig['reply_to'])) {
-                $mailer->addReplyTo($smtpConfig['reply_to']);
+        {
+            if (empty($smtpConfig['host']) || empty($smtpConfig['port']) || empty($smtpConfig['username']) || empty($smtpConfig['password'])) {
+                return [
+                    'success' => false,
+                    'message' => 'Configurația SMTP este incompletă.'
+                ];
             }
 
-            $mailer->addAddress($destinatar, $numeDestinatar ?? '');
-            $mailer->Subject = $subiect;
-            $mailer->Body = $corp;
-            $mailer->AltBody = $corp;
-            $mailer->isHTML(false);
+            $basePath = defined('BASE_PATH') ? BASE_PATH : dirname(__DIR__);
+            require_once $basePath . '/lib/PHPMailer/PHPMailer.php';
+            require_once $basePath . '/lib/PHPMailer/SMTP.php';
+            require_once $basePath . '/lib/PHPMailer/Exception.php';
 
-            $mailer->send();
+            try {
+                $mailer = new \PHPMailer\PHPMailer\PHPMailer(true);
+                $mailer->isSMTP();
+                $mailer->Host = $smtpConfig['host'];
+                $mailer->Port = (int)$smtpConfig['port'];
+                $mailer->SMTPAuth = true;
+                $mailer->Username = $smtpConfig['username'];
+                $mailer->Password = $smtpConfig['password'];
+                if (!empty($smtpConfig['encryption'])) {
+                    $mailer->SMTPSecure = $smtpConfig['encryption'];
+                }
+                $mailer->CharSet = 'UTF-8';
 
-            return [
-                'success' => true,
-                'message' => 'Email trimis cu succes.'
-            ];
-        } catch (\PHPMailer\PHPMailer\Exception $e) {
-            return [
-                'success' => false,
-                'message' => 'Trimiterea emailului a eșuat: ' . $e->getMessage()
-            ];
-        } catch (Exception $e) {
-            return [
-                'success' => false,
-                'message' => 'Eroare neașteptată la trimiterea emailului: ' . $e->getMessage()
-            ];
+                $fromEmail = $smtpConfig['from_email'] ?? $smtpConfig['username'];
+                $fromName = $smtpConfig['from_name'] ?? 'Sistem WMS';
+                $mailer->setFrom($fromEmail, $fromName);
+                if (!empty($smtpConfig['reply_to'])) {
+                    $mailer->addReplyTo($smtpConfig['reply_to']);
+                }
+
+                $mailer->addAddress($destinatar, $numeDestinatar ?? '');
+                $mailer->Subject = $subiect;
+                
+                // 🔧 FIX: Detect if content is HTML and set format accordingly
+                $isHtml = (stripos($corp, '<') !== false && stripos($corp, '>') !== false);
+                $mailer->isHTML($isHtml);
+                $mailer->Body = $corp;
+                
+                // Create plain text version for HTML emails
+                if ($isHtml) {
+                    $mailer->AltBody = $this->convertHtmlToPlainText($corp);
+                } else {
+                    $mailer->AltBody = $corp;
+                }
+
+                $mailer->send();
+
+                return [
+                    'success' => true,
+                    'message' => 'Email trimis cu succes.'
+                ];
+            } catch (\PHPMailer\PHPMailer\Exception $e) {
+                return [
+                    'success' => false,
+                    'message' => 'Trimiterea emailului a eșuat: ' . $e->getMessage()
+                ];
+            } catch (Exception $e) {
+                return [
+                    'success' => false,
+                    'message' => 'Eroare neașteptată la trimiterea emailului: ' . $e->getMessage()
+                ];
+            }
         }
-    }
 
     /**
      * Actualizează rapid starea autocomenzii pentru produs.

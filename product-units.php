@@ -1195,8 +1195,24 @@ $currentPage = 'product-units';
                         </div>
                     </div>
                     <div class="form-group">
-                        <label>Furnizor Asignat</label>
-                        <div id="assignedSupplier" class="form-info">-</div>
+                        <label for="stockSellerSearch">Furnizor Asignat</label>
+                        <div class="seller-search-container">
+                            <input type="hidden" id="stockSellerId" name="seller_id" value="">
+                            <input type="text"
+                                   id="stockSellerSearch"
+                                   class="seller-search-input"
+                                   placeholder="Caută furnizor..."
+                                   autocomplete="off">
+                            <div class="seller-search-results" id="stockSellerResults"></div>
+                        </div>
+                        <div class="selected-seller-info unassigned" id="selectedSellerInfo">
+                            <span class="material-symbols-outlined">store</span>
+                            <span id="assignedSupplier" class="selected-seller-name">Neasignat</span>
+                            <button type="button" class="btn btn-sm btn-ghost" id="clearStockSeller" style="display:none;">
+                                <span class="material-symbols-outlined">close</span>
+                                Elimină
+                            </button>
+                        </div>
                     </div>
                     <div class="form-group">
                         <label>Stoc Curent</label>

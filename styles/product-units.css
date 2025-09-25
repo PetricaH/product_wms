@@ -1868,6 +1868,33 @@ option {
     color: var(--text-secondary);
 }
 
+.selected-seller-info {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+    padding: 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    background-color: var(--surface-background);
+    transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.selected-seller-info.unassigned {
+    border-style: dashed;
+    color: var(--text-secondary);
+    opacity: 0.85;
+}
+
+.selected-seller-info .material-symbols-outlined {
+    font-size: 1.25rem;
+    color: inherit;
+}
+
+.selected-seller-info .btn {
+    margin-left: auto;
+}
+
 .stock-row {
     background: rgba(33, 150, 243, 0.05);
     border-left: 3px solid rgba(33, 150, 243, 0.7);

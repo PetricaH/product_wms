@@ -41,7 +41,7 @@ try {
 
         $where = $conditions ? 'WHERE ' . implode(' AND ', $conditions) : '';
 
-        $query = "SELECT p.product_id, p.sku, p.name, p.category,
+        $query = "SELECT p.product_id, p.sku, p.name, p.category, p.seller_id,
                          COALESCE(inv.current_stock, 0) AS current_stock,
                          p.min_stock_level, p.min_order_quantity,
                          p.auto_order_enabled, p.last_auto_order_date,
@@ -85,6 +85,7 @@ try {
                 'min_order_quantity' => (int)($r['min_order_quantity'] ?? 1),
                 'auto_order_enabled' => (bool)$r['auto_order_enabled'],
                 'last_auto_order_date' => $r['last_auto_order_date'],
+                'seller_id' => isset($r['seller_id']) ? (int)$r['seller_id'] : null,
                 'supplier_name' => $r['supplier_name']
             ];
         }, $rows);
@@ -110,18 +111,28 @@ try {
         $minStock = max(0, (int)($input['min_stock_level'] ?? 0));
         $minOrder = max(1, (int)($input['min_order_quantity'] ?? 1));
         $autoOrder = !empty($input['auto_order_enabled']) ? 1 : 0;
+        $sellerId = null;
+        if (array_key_exists('seller_id', $input) && $input['seller_id'] !== null && $input['seller_id'] !== '') {
+            $sellerId = (int)$input['seller_id'];
+        }
+
         $query = "UPDATE products
                   SET min_stock_level = :min_stock,
                       min_order_quantity = :min_order,
-                      auto_order_enabled = :auto_order
+                      auto_order_enabled = :auto_order,
+                      seller_id = :seller_id
                   WHERE product_id = :id";
         $stmt = $db->prepare($query);
-        $success = $stmt->execute([
-            ':min_stock' => $minStock,
-            ':min_order' => $minOrder,
-            ':auto_order' => $autoOrder,
-            ':id' => $productId
-        ]);
+        $stmt->bindValue(':min_stock', $minStock, PDO::PARAM_INT);
+        $stmt->bindValue(':min_order', $minOrder, PDO::PARAM_INT);
+        $stmt->bindValue(':auto_order', $autoOrder, PDO::PARAM_INT);
+        if ($sellerId === null) {
+            $stmt->bindValue(':seller_id', null, PDO::PARAM_NULL);
+        } else {
+            $stmt->bindValue(':seller_id', $sellerId, PDO::PARAM_INT);
+        }
+        $stmt->bindValue(':id', $productId, PDO::PARAM_INT);
+        $success = $stmt->execute();
         if ($success) {
             echo json_encode(['success' => true]);
         } else {

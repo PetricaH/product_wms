@@ -14,6 +14,7 @@ class Inventory {
     private $locationsTable = "locations";
     private ?InventoryTransactionService $transactionService = null;
     private ?bool $inventoryTransactionsTableExists = null;
+    private array $deferredAutoOrderProductIds = [];
 
     public function __construct($db) {
         $this->conn = $db;
@@ -333,6 +334,8 @@ class Inventory {
                 $this->conn->commit();
             }
 
+            $this->processDeferredAutoOrders();
+
             $userId = $_SESSION['user_id'] ?? 0;
             logActivity(
                 $userId,
@@ -376,6 +379,9 @@ class Inventory {
         } catch (PDOException $e) {
             if ($useTransaction && $this->conn->inTransaction()) {
                 $this->conn->rollBack();
+            }
+            if (!empty($data['product_id'])) {
+                $this->discardDeferredAutoOrder((int)$data['product_id']);
             }
             error_log("Add stock failed: " . $e->getMessage());
             return false;
@@ -483,6 +489,9 @@ class Inventory {
         } catch (PDOException $e) {
             if ($useTransaction && $this->conn->inTransaction()) {
                 $this->conn->rollBack();
+            }
+            if (!empty($record['product_id'])) {
+                $this->discardDeferredAutoOrder((int)$record['product_id']);
             }
             error_log('Increase inventory failed: ' . $e->getMessage());
             return false;
@@ -731,6 +740,7 @@ class Inventory {
             if ($useTransaction && $this->conn->inTransaction()) {
                 $this->conn->rollBack();
             }
+            $this->discardDeferredAutoOrder($productId);
             error_log("Remove stock failed: " . $e->getMessage());
             return false;
         }
@@ -747,26 +757,68 @@ class Inventory {
             $checkQuery = "SHOW COLUMNS FROM {$this->productsTable} LIKE 'quantity'";
             $checkStmt = $this->conn->prepare($checkQuery);
             $checkStmt->execute();
-            
+
             if ($checkStmt->rowCount() > 0) {
                 // Update total quantity in products table
-                $updateQuery = "UPDATE {$this->productsTable} p 
+                $updateQuery = "UPDATE {$this->productsTable} p
                                 SET quantity = (
-                                    SELECT COALESCE(SUM(i.quantity), 0) 
-                                    FROM {$this->inventoryTable} i 
+                                    SELECT COALESCE(SUM(i.quantity), 0)
+                                    FROM {$this->inventoryTable} i
                                     WHERE i.product_id = p.product_id
-                                ) 
+                                )
                                 WHERE p.product_id = :product_id";
-                
+
                 $stmt = $this->conn->prepare($updateQuery);
                 $stmt->bindParam(':product_id', $productId, PDO::PARAM_INT);
                 $stmt->execute();
-                // After updating quantity, check auto order rules
-                $this->triggerAutoOrder($productId);
             }
         } catch (PDOException $e) {
             error_log("Warning: Could not update product total quantity: " . $e->getMessage());
+        } finally {
+            $this->scheduleAutoOrderEvaluation($productId);
         }
+    }
+
+    private function scheduleAutoOrderEvaluation(int $productId): void
+    {
+        if ($this->conn->inTransaction()) {
+            $this->deferredAutoOrderProductIds[$productId] = true;
+            return;
+        }
+
+        $this->runAutoOrderEvaluation($productId);
+    }
+
+    private function runAutoOrderEvaluation(int $productId): void
+    {
+        try {
+            $this->triggerAutoOrder($productId);
+        } catch (Throwable $t) {
+            error_log("Warning: Auto order evaluation failed: " . $t->getMessage());
+        }
+    }
+
+    public function processDeferredAutoOrders(): void
+    {
+        if ($this->conn->inTransaction()) {
+            return;
+        }
+
+        if (empty($this->deferredAutoOrderProductIds)) {
+            return;
+        }
+
+        $productIds = array_keys($this->deferredAutoOrderProductIds);
+        $this->deferredAutoOrderProductIds = [];
+
+        foreach ($productIds as $productId) {
+            $this->runAutoOrderEvaluation((int)$productId);
+        }
+    }
+
+    public function discardDeferredAutoOrder(int $productId): void
+    {
+        unset($this->deferredAutoOrderProductIds[$productId]);
     }
 
     /**
@@ -1051,6 +1103,7 @@ class Inventory {
                 // Remove stock via FIFO if no specific record provided
                 if (!$this->removeStock($productId, $quantity, $fromLocationId, false)) {
                     $this->conn->rollBack();
+                    $this->discardDeferredAutoOrder($productId);
                     return false;
                 }
             }
@@ -1065,10 +1118,13 @@ class Inventory {
 
             if (!$this->addStock($addData, false)) {
                 $this->conn->rollBack();
+                $this->discardDeferredAutoOrder($productId);
                 return false;
             }
 
             $this->conn->commit();
+
+            $this->processDeferredAutoOrders();
 
             if ($this->hasTransactionLogging()) {
                 try {
@@ -1099,6 +1155,7 @@ class Inventory {
             if ($this->conn->inTransaction()) {
                 $this->conn->rollBack();
             }
+            $this->discardDeferredAutoOrder($productId);
             error_log("Move stock failed: " . $e->getMessage());
             return false;
         }

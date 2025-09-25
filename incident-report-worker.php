@@ -38,8 +38,9 @@ if ($dbFactory && is_callable($dbFactory)) {
 $assetBase = rtrim(BASE_URL, '/') . '/';
 $cssPath = BASE_PATH . '/styles/incident-report.css';
 $cssHref = $assetBase . 'styles/incident-report.css';
-$jsPath = BASE_PATH . '/js/incident-report-worker.js';
-$jsSrc = $assetBase . 'js/incident-report-worker.js';
+$jsPath = BASE_PATH . '/scripts/incident-report-worker.js';
+$jsSrc = $assetBase . 'scripts/incident-report-worker.js';
+
 
 if (file_exists($cssPath)) {
     $cssHref .= '?v=' . filemtime($cssPath);

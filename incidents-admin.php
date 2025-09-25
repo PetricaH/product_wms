@@ -97,8 +97,9 @@ $unresolvedTotal = $incidentModel->getUnresolvedTotal();
 $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
 $cssPath = BASE_PATH . '/styles/incidents-admin.css';
 $cssUrl = rtrim(BASE_URL, '/') . '/styles/incidents-admin.css' . (file_exists($cssPath) ? '?v=' . filemtime($cssPath) : '');
-$scriptPath = BASE_PATH . '/js/incidents-admin.js';
-$scriptUrl = file_exists($scriptPath) ? rtrim(BASE_URL, '/') . '/js/incidents-admin.js?v=' . filemtime($scriptPath) : '';
+$scriptPath = BASE_PATH . '/scripts/incidents-admin.js';
+$scriptUrl = file_exists($scriptPath) ? rtrim(BASE_URL, '/') . '/scripts/incidents-admin.js?v=' . filemtime($scriptPath) : '';
+
 
 ?>
 <!DOCTYPE html>

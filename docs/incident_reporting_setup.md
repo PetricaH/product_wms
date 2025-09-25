@@ -45,4 +45,5 @@
 ## 8. Personalizare Ulterioară
 - Pentru includerea altor câmpuri se poate extinde modelul `Incident`.
 - Stilurile se află în `styles/incident-report.css` și `styles/incidents-admin.css`.
-- Logica front-end este în `js/incident-report-worker.js` și `js/incidents-admin.js`.
+- Logica front-end este în `scripts/incident-report-worker.js` și `scripts/incidents-admin.js`.
+

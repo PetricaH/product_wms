@@ -12,12 +12,15 @@ node_modules/
 /src
 
 /storage
+!storage/incidents/
+storage/incidents/*
+!storage/incidents/.gitignore
 
 # Ignore OS system files
-.DS_StoreThumbs.db
+.DS_Store
+Thumbs.db
 # Ignore database backups
 database/backups/*.sql
 vendor/
 \.phpunit.result.cache
 storage/invoice_pdfs/
-storage

@@ -97,6 +97,17 @@ if (isset($_SESSION['username'])) {
         </li>
         <?php endif; ?>
 
+        <?php if (isset($_SESSION['role']) && $_SESSION['role'] === 'admin'): ?>
+        <li class="sidebar__item">
+            <a href="<?= getNavUrl('incidents-admin.php') ?>"
+               class="sidebar__link <?= getActiveClass('incidents-admin.php') ?>"
+               data-tooltip="Incidente">
+                <span class="material-symbols-outlined">emergency</span>
+                <span class="link-text">Incidente</span>
+            </a>
+        </li>
+        <?php endif; ?>
+
         <li class="sidebar__item">
             <a href="<?= getNavUrl('products.php') ?>"
                class="sidebar__link <?= getActiveClass('products.php') ?>"

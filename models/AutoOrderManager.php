@@ -120,6 +120,8 @@ class AutoOrderManager
                         s.supplier_name,
                         s.email AS seller_email,
                         s.contact_person,
+                        sp.supplier_name AS preferred_supplier_name,
+                        sp.email AS preferred_seller_email,
                         pp.id AS purchasable_product_id,
                         pp.supplier_product_name,
                         pp.supplier_product_code,
@@ -134,6 +136,7 @@ class AutoOrderManager
                     LEFT JOIN {$this->purchasableProductsTable} pp
                         ON pp.internal_product_id = p.product_id
                     LEFT JOIN sellers s ON s.id = p.seller_id
+                    LEFT JOIN sellers sp ON sp.id = pp.preferred_seller_id
                     WHERE p.product_id = :id
                     ORDER BY
                         CASE WHEN pp.preferred_seller_id = p.seller_id THEN 0 ELSE 1 END,
@@ -190,12 +193,29 @@ class AutoOrderManager
             $sellerId = (int)($primaLinie['seller_id'] ?? 0);
             $numeFurnizor = $primaLinie['supplier_name'] ?? null;
             $emailFurnizor = trim($primaLinie['seller_email'] ?? '');
+            $sursaFurnizor = 'produs';
+
+            if ($sellerId <= 0 || $emailFurnizor === '' || !filter_var($emailFurnizor, FILTER_VALIDATE_EMAIL)) {
+                foreach ($rows as $row) {
+                    $preferredId = (int)($row['preferred_seller_id'] ?? 0);
+                    $preferredEmail = trim($row['preferred_seller_email'] ?? '');
+
+                    if ($preferredId > 0 && $preferredEmail !== '' && filter_var($preferredEmail, FILTER_VALIDATE_EMAIL)) {
+                        $sellerId = $preferredId;
+                        $numeFurnizor = $row['preferred_supplier_name'] ?? $numeFurnizor;
+                        $emailFurnizor = $preferredEmail;
+                        $sursaFurnizor = 'preferred';
+                        break;
+                    }
+                }
+            }
 
             $detalii['furnizor'] = [
                 'id' => $sellerId,
                 'nume' => $numeFurnizor,
                 'email' => $emailFurnizor,
-                'contact' => $primaLinie['contact_person'] ?? null
+                'contact' => $primaLinie['contact_person'] ?? null,
+                'sursa' => $sursaFurnizor
             ];
 
             $areFurnizor = $sellerId > 0;
@@ -203,7 +223,11 @@ class AutoOrderManager
                 'conditie' => 'Furnizor configurat',
                 'rezultat' => $areFurnizor ? 'ok' : 'eroare',
                 'tip' => 'critic',
-                'detalii' => $areFurnizor ? 'Produsul are un furnizor principal configurat.' : 'Produsul nu are definit un furnizor.'
+                'detalii' => $areFurnizor
+                    ? ($sursaFurnizor === 'preferred'
+                        ? 'Produsul folosește furnizorul preferat definit în articolul achiziționabil.'
+                        : 'Produsul are un furnizor principal configurat.')
+                    : 'Produsul nu are definit un furnizor.'
             ];
 
             $emailValid = $emailFurnizor !== '' && filter_var($emailFurnizor, FILTER_VALIDATE_EMAIL);

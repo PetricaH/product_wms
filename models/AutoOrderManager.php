@@ -8,6 +8,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/PurchaseOrder.php';
 require_once __DIR__ . '/Setting.php';
+require_once __DIR__ . '/PurchasableProduct.php';
 
 class AutoOrderManager
 {
@@ -18,6 +19,7 @@ class AutoOrderManager
     private PDO $conn;
     private PurchaseOrder $purchaseOrder;
     private Setting $settingModel;
+    private PurchasableProduct $purchasableProductModel;
     private array $emailConfig = [];
     private string $productsTable = 'products';
     private string $purchaseOrdersTable = 'purchase_orders';
@@ -32,6 +34,7 @@ class AutoOrderManager
         $this->conn = $conn;
         $this->purchaseOrder = new PurchaseOrder($conn);
         $this->settingModel = new Setting($conn);
+        $this->purchasableProductModel = new PurchasableProduct($conn);
         $this->emailConfig = $this->incarcaConfiguratieEmail();
     }
 
@@ -295,18 +298,35 @@ class AutoOrderManager
                         'cod' => $row['supplier_product_code'] ?? null,
                         'pret' => $pretCalculat,
                         'currency' => $monedaCalculata,
-                        'price_source' => $pretAchizitie > 0 ? 'purchasable_product' : ($pretCalculat > 0 ? 'product_price' : 'unknown')
+                        'price_source' => $pretAchizitie > 0 ? 'purchasable_product' : ($pretCalculat > 0 ? 'product_price' : 'unknown'),
+                        'needs_auto_creation' => false,
+                        'internal_product_id' => (int)$primaLinie['product_id']
                     ];
                     $scorSelectat = $scor;
                 }
+            }
+
+            if ($articolSelectat === null && $pretFallback > 0) {
+                $articolSelectat = [
+                    'id' => null,
+                    'nume' => $primaLinie['supplier_product_name'] ?? $primaLinie['name'] ?? '',
+                    'cod' => $primaLinie['supplier_product_code'] ?? $primaLinie['sku'] ?? null,
+                    'pret' => $pretFallback,
+                    'currency' => $monedaFallback ?: 'RON',
+                    'price_source' => 'product_price',
+                    'needs_auto_creation' => true,
+                    'internal_product_id' => (int)$primaLinie['product_id']
+                ];
             }
 
             if ($articolSelectat) {
                 $detalii['validari'][] = [
                     'conditie' => 'Articol achiziționabil asociat',
                     'rezultat' => 'ok',
-                    'tip' => 'critic',
-                    'detalii' => 'A fost identificat un articol valid pentru comandă.'
+                    'tip' => !empty($articolSelectat['needs_auto_creation']) ? 'informativ' : 'critic',
+                    'detalii' => !empty($articolSelectat['needs_auto_creation'])
+                        ? 'Nu există încă un articol achiziționabil salvat. Sistemul va crea automat unul folosind datele produsului.'
+                        : 'A fost identificat un articol valid pentru comandă.'
                 ];
             } else {
                 $detalii['validari'][] = [
@@ -377,7 +397,9 @@ class AutoOrderManager
                         'purchasable_product_id' => $articolSelectat['id'],
                         'quantity' => $cantitateComandata,
                         'unit_price' => $pretUnitar,
-                        'notes' => 'Autocomandă generată automat de sistemul WMS.'
+                        'notes' => 'Autocomandă generată automat de sistemul WMS.',
+                        'needs_auto_creation' => !empty($articolSelectat['needs_auto_creation']),
+                        'internal_product_id' => (int)$primaLinie['product_id']
                     ]]
                 ];
             }
@@ -421,6 +443,17 @@ class AutoOrderManager
         $productId = (int)($context['produs']['id'] ?? 0);
 
         try {
+            $pregatire = $this->ensurePurchasableItems($context);
+            if (!$pregatire['success']) {
+                $mesaj = $pregatire['message'] ?? 'Articolul necesar nu a putut fi pregătit pentru autocomandă.';
+                $this->log($mesaj, 'error');
+                return [
+                    'succes' => false,
+                    'mesaj' => $mesaj
+                ];
+            }
+            $context = $pregatire['context'];
+
             $orderId = $this->purchaseOrder->createPurchaseOrder($context['payload']);
             if (!$orderId) {
                 $mesaj = sprintf('Autocomanda pentru produsul #%d a eșuat: comanda de achiziție nu a putut fi creată.', $productId);
@@ -493,6 +526,67 @@ class AutoOrderManager
                 'mesaj' => $mesaj
             ];
         }
+    }
+
+    /**
+     * Asigură existența produselor achiziționabile necesare pentru payload.
+     */
+    private function ensurePurchasableItems(array $context): array
+    {
+        if (empty($context['payload']['items'])) {
+            return ['success' => true, 'context' => $context];
+        }
+
+        foreach ($context['payload']['items'] as $index => $item) {
+            $purchasableId = (int)($item['purchasable_product_id'] ?? 0);
+            if ($purchasableId > 0) {
+                continue;
+            }
+
+            $internalProductId = (int)($item['internal_product_id'] ?? $context['produs']['id'] ?? 0);
+            $sellerId = (int)($context['furnizor']['id'] ?? 0);
+            $unitPrice = (float)($item['unit_price'] ?? 0);
+            $currency = $context['articol']['currency'] ?? ($context['comanda']['currency'] ?? 'RON');
+
+            if ($internalProductId <= 0 || $sellerId <= 0 || $unitPrice <= 0) {
+                return [
+                    'success' => false,
+                    'message' => 'Produsul nu are asociat un articol achiziționabil și nu s-a putut genera unul automat.'
+                ];
+            }
+
+            $productName = $context['articol']['nume'] ?? $context['produs']['nume'] ?? ('Produs #' . $internalProductId);
+            $productCode = $context['articol']['cod'] ?? $context['produs']['sku'] ?? null;
+
+            $creationData = [
+                'supplier_product_name' => $productName,
+                'supplier_product_code' => $productCode,
+                'description' => 'Articol creat automat pentru autocomandă.',
+                'unit_measure' => 'buc',
+                'last_purchase_price' => $unitPrice,
+                'currency' => $currency,
+                'internal_product_id' => $internalProductId,
+                'preferred_seller_id' => $sellerId,
+                'notes' => 'Generat automat de modulul de autocomandă.',
+                'status' => 'active'
+            ];
+
+            $newId = $this->purchasableProductModel->createProduct($creationData);
+            if (!$newId) {
+                $mesaj = $this->purchasableProductModel->getLastError() ?? 'Nu s-a putut crea produsul achiziționabil necesar.';
+                return [
+                    'success' => false,
+                    'message' => $mesaj
+                ];
+            }
+
+            $context['payload']['items'][$index]['purchasable_product_id'] = $newId;
+            unset($context['payload']['items'][$index]['needs_auto_creation']);
+            $context['articol']['id'] = $newId;
+            $context['articol']['needs_auto_creation'] = false;
+        }
+
+        return ['success' => true, 'context' => $context];
     }
 
     /**

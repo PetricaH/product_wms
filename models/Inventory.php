@@ -1695,21 +1695,40 @@ public function getCriticalStockAlerts(int $limit = 10): array {
                         'supplier_product_code' => $row['supplier_product_code'] ?? null,
                         'pret' => $pretCalculat,
                         'currency' => $monedaCalculata,
-                        'price_source' => $pretAchizitie > 0 ? 'purchasable_product' : ($pretCalculat > 0 ? 'product_price' : 'unknown')
+                        'price_source' => $pretAchizitie > 0 ? 'purchasable_product' : ($pretCalculat > 0 ? 'product_price' : 'unknown'),
+                        'requires_auto_creation' => false
                     ];
                     $scorSelectat = $scor;
                 }
             }
 
+            if ($piesaSelectata === null && $pretFallback > 0) {
+                $piesaSelectata = [
+                    'purchasable_product_id' => null,
+                    'supplier_product_name' => $primaLinie['supplier_product_name'] ?? $primaLinie['name'] ?? null,
+                    'supplier_product_code' => $primaLinie['supplier_product_code'] ?? $primaLinie['sku'] ?? null,
+                    'pret' => $pretFallback,
+                    'currency' => $monedaFallback ?: 'RON',
+                    'price_source' => 'product_price',
+                    'requires_auto_creation' => true
+                ];
+            }
+
             if ($piesaSelectata) {
                 $detalii['articol'] = [
-                    'id' => $piesaSelectata['purchasable_product_id'],
+                    'id' => $piesaSelectata['purchasable_product_id'] !== null
+                        ? (int)$piesaSelectata['purchasable_product_id']
+                        : null,
                     'nume' => $piesaSelectata['supplier_product_name'] ?? null,
                     'cod' => $piesaSelectata['supplier_product_code'] ?? null,
                     'pret' => (float)($piesaSelectata['pret'] ?? 0),
                     'currency' => $piesaSelectata['currency'] ?? ($monedaFallback ?: 'RON'),
-                    'price_source' => $piesaSelectata['price_source'] ?? null
+                    'price_source' => $piesaSelectata['price_source'] ?? null,
+                    'needs_auto_creation' => !empty($piesaSelectata['requires_auto_creation']),
+                    'internal_product_id' => (int)$primaLinie['product_id']
                 ];
+            } else {
+                $detalii['articol'] = null;
             }
 
             $pretValid = $detalii['articol'] && (float)$detalii['articol']['pret'] > 0;
@@ -1718,7 +1737,14 @@ public function getCriticalStockAlerts(int $limit = 10): array {
                 $sursaPret = $detalii['articol']['price_source'] ?? null;
                 $monedaArticol = $detalii['articol']['currency'] ?? 'RON';
                 if ($sursaPret === 'product_price') {
-                    $detaliuPret = sprintf('Se va folosi prețul configurat în fișa produsului (%s).', $monedaArticol);
+                    if (!empty($detalii['articol']['needs_auto_creation'])) {
+                        $detaliuPret = sprintf(
+                            'Se va folosi prețul configurat în fișa produsului (%s). La trimiterea comenzii va fi creat automat un articol achiziționabil.',
+                            $monedaArticol
+                        );
+                    } else {
+                        $detaliuPret = sprintf('Se va folosi prețul configurat în fișa produsului (%s).', $monedaArticol);
+                    }
                 } elseif ($sursaPret === 'purchasable_product') {
                     $detaliuPret = 'Se va folosi ultimul preț de achiziție salvat pentru furnizor.';
                 } else {
@@ -1731,6 +1757,15 @@ public function getCriticalStockAlerts(int $limit = 10): array {
                 'tip' => 'critic',
                 'detalii' => $detaliuPret
             ];
+
+            if ($detalii['articol'] && empty($detalii['articol']['id'])) {
+                $detalii['validari'][] = [
+                    'conditie' => 'Articol achiziționabil asociat',
+                    'rezultat' => 'ok',
+                    'tip' => 'informativ',
+                    'detalii' => 'Produsul nu are articol achiziționabil salvat; sistemul va crea unul automat folosind datele produsului.'
+                ];
+            }
 
             $intervalRespectat = true;
             if ($ultimaAutocomanda) {
@@ -1801,7 +1836,9 @@ public function getCriticalStockAlerts(int $limit = 10): array {
                         'purchasable_product_id' => $detalii['articol']['id'],
                         'quantity' => $cantitateComandata,
                         'unit_price' => $detalii['articol']['pret'],
-                        'notes' => 'Autocomandă generată automat de sistemul WMS.'
+                        'notes' => 'Autocomandă generată automat de sistemul WMS.',
+                        'needs_auto_creation' => !empty($detalii['articol']['needs_auto_creation']),
+                        'internal_product_id' => (int)$primaLinie['product_id']
                     ]]
                 ];
             }

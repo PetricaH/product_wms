@@ -23,6 +23,56 @@ if (isset($_SESSION['username'])) {
         $userInitials .= strtoupper(substr($nameParts[1], 0, 1));
     }
 }
+
+if (!function_exists('resolveIncidentSidebarCount')) {
+    /**
+     * Return the number of unresolved incidents for the sidebar badge.
+     */
+    function resolveIncidentSidebarCount(?array $existingConfig = null): int
+    {
+        static $cachedCount = null;
+
+        if ($cachedCount !== null) {
+            return $cachedCount;
+        }
+
+        $cachedCount = 0;
+
+        if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
+            return $cachedCount;
+        }
+
+        $configData = $existingConfig;
+        if ($configData === null) {
+            $configPath = BASE_PATH . '/config/config.php';
+            if (!is_readable($configPath)) {
+                return $cachedCount;
+            }
+            $configData = require $configPath;
+        }
+
+        $dbFactory = $configData['connection_factory'] ?? null;
+        if (!$dbFactory || !is_callable($dbFactory)) {
+            return $cachedCount;
+        }
+
+        try {
+            $db = $dbFactory();
+            require_once BASE_PATH . '/models/Incident.php';
+            $incidentModel = new Incident($db);
+            $cachedCount = (int) $incidentModel->getUnresolvedTotal();
+        } catch (Throwable $exception) {
+            $cachedCount = 0;
+        }
+
+        return $cachedCount;
+    }
+}
+
+$incidentSidebarCount = $incidentSidebarCount ?? null;
+if ($incidentSidebarCount === null) {
+    $incidentSidebarCount = resolveIncidentSidebarCount($config ?? null);
+}
 ?>
 
 <button class="mobile-menu-btn" id="mobile-menu-btn" aria-label="Open Menu">
@@ -104,6 +154,9 @@ if (isset($_SESSION['username'])) {
                data-tooltip="Incidente">
                 <span class="material-symbols-outlined">emergency</span>
                 <span class="link-text">Incidente</span>
+                <span class="sidebar__badge <?= ($incidentSidebarCount ?? 0) > 0 ? 'sidebar__badge--alert' : 'sidebar__badge--clear' ?>">
+                    <?= $incidentSidebarCount ?? 0 ?>
+                </span>
             </a>
         </li>
         <?php endif; ?>

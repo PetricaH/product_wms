@@ -132,6 +132,34 @@
     font-size: 0.9rem;
 }
 
+.sidebar__badge {
+    position: absolute;
+    top: 50%;
+    right: 1rem;
+    transform: translateY(-50%);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 24px;
+    padding: 0 0.5rem;
+    height: 20px;
+    border-radius: 999px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: #fff;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+    transition: var(--sidebar-transition);
+}
+
+.sidebar__badge--alert {
+    background: var(--danger-color);
+}
+
+.sidebar__badge--clear {
+    background: var(--success-color);
+}
+
 .sidebar__link:hover {
     background-color: rgba(255, 255, 255, 0.08);
     color: var(--white);
@@ -165,6 +193,13 @@
 .sidebar.collapsed .sidebar__link {
     padding: 0.75rem;
     justify-content: center;
+}
+
+.sidebar.collapsed .sidebar__badge {
+    position: absolute;
+    top: 0.55rem;
+    right: 0.55rem;
+    transform: none;
 }
 
 /* ===== PROFILE SECTION ===== */

@@ -1882,17 +1882,23 @@ const ProductUnitsApp = {
         if (!productId) {
             return;
         }
+        const requestPayload = { action: 'send_test_email', product_id: productId };
+
+        const configuredRecipient = (this.state.emailTemplate?.testRecipient || '').trim();
+        if (configuredRecipient && this.isValidEmail?.(configuredRecipient)) {
+            requestPayload.test_recipient = configuredRecipient;
+        }
         try {
             const response = await fetch(this.config.apiEndpoints.autoOrderTest, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'send_test_email', product_id: productId })
+                body: JSON.stringify(requestPayload)
             });
-            const payload = await response.json();
-            if (!payload.success) {
-                throw new Error(payload.message || 'Trimiterea emailului de test a eșuat.');
+            const responsePayload = await response.json();
+            if (!responsePayload.success) {
+                throw new Error(responsePayload.message || 'Trimiterea emailului de test a eșuat.');
             }
-            this.showSuccess(payload.message || 'Emailul de test pentru autocomandă a fost trimis.');
+            this.showSuccess(responsePayload.message || 'Emailul de test pentru autocomandă a fost trimis.');
         } catch (error) {
             console.error('sendAutoOrderTestEmail error', error);
             this.showError(error.message || 'Trimiterea emailului de test a eșuat.');

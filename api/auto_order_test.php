@@ -29,10 +29,8 @@ if (!$dbFactory || !is_callable($dbFactory)) {
 try {
     $db = $dbFactory();
     require_once BASE_PATH . '/models/Inventory.php';
-    require_once BASE_PATH . '/models/AutoOrderManager.php';
 
     $inventory = new Inventory($db);
-    $autoManager = new AutoOrderManager($db);
 
     if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         $productId = isset($_GET['product_id']) ? (int)$_GET['product_id'] : 0;
@@ -98,75 +96,33 @@ try {
 
     switch ($action) {
         case 'send_test_email':
-            $result = $inventory->testAutoOrder($productId);
-            $emailData = $result['email'] ?? null;
-            if (empty($emailData) || empty($result['furnizor']['email'])) {
-                echo json_encode([
-                    'success' => false,
-                    'message' => 'Nu există un email valid pentru furnizor.'
-                ]);
-                exit;
-            }
+            $recipient = isset($payload['test_recipient'])
+                ? trim((string)$payload['test_recipient'])
+                : null;
 
-            $smtpConfig = $config['email'] ?? [];
-            if (empty($smtpConfig)) {
-                echo json_encode([
-                    'success' => false,
-                    'message' => 'Configurația de email nu este definită.'
-                ]);
-                exit;
-            }
+            $result = $inventory->sendAutoOrderTestEmail($productId, $recipient ?: null);
 
-            require_once BASE_PATH . '/lib/PHPMailer/PHPMailer.php';
-            require_once BASE_PATH . '/lib/PHPMailer/SMTP.php';
-            require_once BASE_PATH . '/lib/PHPMailer/Exception.php';
-
-            $mailer = new PHPMailer\PHPMailer\PHPMailer(true);
-            try {
-                $mailer->isSMTP();
-                $mailer->Host = $smtpConfig['host'] ?? '';
-                $mailer->Port = (int)($smtpConfig['port'] ?? 0);
-                $mailer->SMTPAuth = true;
-                $mailer->Username = $smtpConfig['username'] ?? '';
-                $mailer->Password = $smtpConfig['password'] ?? '';
-                if (!empty($smtpConfig['encryption'])) {
-                    $mailer->SMTPSecure = $smtpConfig['encryption'];
-                }
-                $mailer->CharSet = 'UTF-8';
-
-                $fromEmail = $smtpConfig['from_email'] ?? $smtpConfig['username'] ?? '';
-                $fromName = $smtpConfig['from_name'] ?? 'Sistem WMS';
-                $mailer->setFrom($fromEmail, $fromName);
-                if (!empty($smtpConfig['reply_to'])) {
-                    $mailer->addReplyTo($smtpConfig['reply_to']);
-                }
-
-                $mailer->addAddress($result['furnizor']['email'], $result['furnizor']['nume'] ?? '');
-                $rawSubject = $emailData['subiect'] ?? 'Test Autocomandă';
-                $cleanSubject = trim(preg_replace('/^[^\pL\d]+/u', '', $rawSubject));
-                $mailer->Subject = $cleanSubject ?: 'Test Autocomandă';
-                $mailer->Body = $emailData['corp'] ?? '';
-                $mailer->AltBody = $emailData['corp'] ?? '';
-                $mailer->isHTML(false);
-                $mailer->send();
-
-                echo json_encode([
-                    'success' => true,
-                    'message' => 'Emailul de test a fost trimis către furnizor.'
-                ]);
-            } catch (Throwable $e) {
-                echo json_encode([
-                    'success' => false,
-                    'message' => 'Trimiterea emailului de test a eșuat: ' . $e->getMessage()
-                ]);
-            }
+            echo json_encode([
+                'success' => (bool)($result['success'] ?? false),
+                'message' => $result['message'] ?? 'Rezultatul trimiterii emailului de test nu este disponibil.',
+                'order_number' => $result['order_number'] ?? null
+            ]);
             exit;
 
         case 'execute_auto_order':
-            $result = $autoManager->createAndSendAutoOrder($productId);
+            $overrideRecipient = isset($payload['override_recipient'])
+                ? trim((string)$payload['override_recipient'])
+                : null;
+
+            if ($overrideRecipient !== null && $overrideRecipient === '') {
+                $overrideRecipient = null;
+            }
+
+            $result = $inventory->executeAutoOrder($productId, $overrideRecipient);
+
             echo json_encode([
-                'success' => (bool)($result['succes'] ?? false),
-                'message' => $result['mesaj'] ?? 'Rezultatul nu este disponibil.',
+                'success' => (bool)($result['success'] ?? false),
+                'message' => $result['message'] ?? 'Rezultatul nu este disponibil.',
                 'order_id' => $result['order_id'] ?? null,
                 'order_number' => $result['order_number'] ?? null
             ]);

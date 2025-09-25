@@ -78,6 +78,8 @@ try {
     // Begin transaction
     $db->beginTransaction();
 
+    $autoOrderProductId = null;
+
     try {
         // Get current order item details
         $itemQuery = "
@@ -104,6 +106,8 @@ try {
         if (!$orderItem) {
             throw new Exception('Order item not found.');
         }
+
+        $autoOrderProductId = (int)$orderItem['product_id'];
 
         $currentPicked = (int)($orderItem['picked_quantity'] ?? 0);
         $totalOrdered = (int)$orderItem['quantity'];
@@ -174,6 +178,8 @@ try {
         // Commit transaction
         $db->commit();
 
+        $inventoryModel->processDeferredAutoOrders();
+
         $userId = $_SESSION['user_id'] ?? 0;
         logActivity(
             $userId,
@@ -205,7 +211,12 @@ try {
         ]);
 
     } catch (Exception $e) {
-        $db->rollback();
+        if ($db->inTransaction()) {
+            $db->rollback();
+        }
+        if ($autoOrderProductId !== null) {
+            $inventoryModel->discardDeferredAutoOrder($autoOrderProductId);
+        }
         throw $e;
     }
 

@@ -42,6 +42,8 @@ try {
     }
 
     $inventoryModel = new Inventory($db);
+    $autoOrderProductId = null;
+
 
     // Get JSON input
     $input = json_decode(file_get_contents('php://input'), true);
@@ -101,6 +103,8 @@ try {
         exit;
     }
 
+    $autoOrderProductId = (int)$item['product_id'];
+
     $currentPicked = (int)$item['picked_quantity'];
     $newPickedTotal = $currentPicked + $quantityPicked;
 
@@ -145,8 +149,8 @@ try {
             ]);
             exit;
         }
-
         if ((int)$inventoryRow['product_id'] !== (int)$item['product_id']) {
+
             $db->rollback();
             http_response_code(400);
             echo json_encode([
@@ -160,6 +164,9 @@ try {
 
         if (!$inventoryModel->removeStock((int)$item['product_id'], $quantityPicked, $locationId, false)) {
             $db->rollback();
+            if ($autoOrderProductId !== null) {
+                $inventoryModel->discardDeferredAutoOrder($autoOrderProductId);
+            }
             echo json_encode([
                 'status' => 'error',
                 'message' => 'Insufficient inventory at specified location.'
@@ -200,6 +207,8 @@ try {
 
     $db->commit();
 
+    $inventoryModel->processDeferredAutoOrders();
+
     $userId = $_SESSION['user_id'] ?? 0;
     logActivity(
         $userId,
@@ -234,6 +243,9 @@ try {
     if ($db && $db->inTransaction()) {
         $db->rollback();
     }
+    if ($autoOrderProductId !== null) {
+        $inventoryModel->discardDeferredAutoOrder($autoOrderProductId);
+    }
     error_log("Database error in confirm_pick.php: " . $e->getMessage());
     http_response_code(500);
     echo json_encode([
@@ -245,6 +257,9 @@ try {
 } catch (Exception $e) {
     if ($db && $db->inTransaction()) {
         $db->rollback();
+    }
+    if ($autoOrderProductId !== null) {
+        $inventoryModel->discardDeferredAutoOrder($autoOrderProductId);
     }
     error_log("General error in confirm_pick.php: " . $e->getMessage());
     http_response_code(500);

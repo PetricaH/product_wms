@@ -1226,6 +1226,14 @@ $currentPage = 'product-units';
                         <label for="minOrderQty">Cantitate Min. Comandă</label>
                         <input type="number" id="minOrderQty" name="min_order_quantity" min="1" value="1">
                     </div>
+                    <div class="form-group">
+                        <label for="stockPriceRon">Preț (RON)</label>
+                        <input type="number" id="stockPriceRon" name="price" step="0.01" min="0">
+                    </div>
+                    <div class="form-group">
+                        <label for="stockPriceEur">Preț (EUR)</label>
+                        <input type="number" id="stockPriceEur" name="price_eur" step="0.01" min="0">
+                    </div>
                     <div class="form-group checkbox-group">
                         <label class="checkbox-label">
                             <input type="checkbox" id="autoOrderEnabled" name="auto_order_enabled">

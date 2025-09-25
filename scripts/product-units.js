@@ -225,6 +225,8 @@ const ProductUnitsApp = {
             autoOrderEnabled: document.getElementById('autoOrderEnabled'),
             minStockLevel: document.getElementById('minStockLevel'),
             minOrderQty: document.getElementById('minOrderQty'),
+            stockPriceRon: document.getElementById('stockPriceRon'),
+            stockPriceEur: document.getElementById('stockPriceEur'),
             assignedSupplier: document.getElementById('assignedSupplier'),
             currentStockInfo: document.getElementById('currentStockInfo'),
             noSupplierWarning: document.getElementById('noSupplierWarning'),
@@ -3998,6 +4000,8 @@ async deletePackagingRule(id, ruleName) {
         if (this.elements.stockProductResults) this.elements.stockProductResults.innerHTML = '';
         this.setStockSeller('', '');
         this.hideSellerResults();
+        if (this.elements.stockPriceRon) this.elements.stockPriceRon.value = '';
+        if (this.elements.stockPriceEur) this.elements.stockPriceEur.value = '';
         if (this.elements.currentStockInfo) this.elements.currentStockInfo.textContent = '0';
         if (this.elements.noSupplierWarning) this.elements.noSupplierWarning.style.display = 'none';
 
@@ -4021,6 +4025,8 @@ async deletePackagingRule(id, ruleName) {
         if (this.elements.stockProductResults) this.elements.stockProductResults.innerHTML = '';
         this.setStockSeller('', '');
         this.hideSellerResults();
+        if (this.elements.stockPriceRon) this.elements.stockPriceRon.value = '';
+        if (this.elements.stockPriceEur) this.elements.stockPriceEur.value = '';
     },
 
     async saveStockSettings() {
@@ -4043,12 +4049,45 @@ async deletePackagingRule(id, ruleName) {
             }
         }
 
+        const priceRonRaw = this.elements.stockPriceRon?.value ?? '';
+        const priceEurRaw = this.elements.stockPriceEur?.value ?? '';
+
+        const normalizePrice = (value) => {
+            if (typeof value !== 'string') {
+                return null;
+            }
+            const trimmed = value.trim();
+            if (trimmed === '') {
+                return null;
+            }
+            const normalized = trimmed.replace(/\s+/g, '');
+            const parsed = Number.parseFloat(normalized.replace(/,/g, '.'));
+            if (!Number.isFinite(parsed) || parsed < 0) {
+                return NaN;
+            }
+            return parsed;
+        };
+
+        const priceRon = normalizePrice(priceRonRaw);
+        if (Number.isNaN(priceRon)) {
+            this.showError('Introduceți un preț RON valid.');
+            return;
+        }
+
+        const priceEur = normalizePrice(priceEurRaw);
+        if (Number.isNaN(priceEur)) {
+            this.showError('Introduceți un preț EUR valid.');
+            return;
+        }
+
         const data = {
             product_id: parsedProductId,
             min_stock_level: Number.isFinite(minStockValue) && minStockValue >= 0 ? minStockValue : 0,
             min_order_quantity: Number.isFinite(minOrderValue) && minOrderValue > 0 ? minOrderValue : 1,
             auto_order_enabled: Boolean(this.elements.autoOrderEnabled?.checked),
-            seller_id: sellerId
+            seller_id: sellerId,
+            price: priceRon === null ? null : priceRon,
+            price_eur: priceEur === null ? null : priceEur
         };
         try {
             const response = await this.apiCall('POST', this.config.apiEndpoints.stockSettings, data);
@@ -4100,6 +4139,14 @@ async deletePackagingRule(id, ruleName) {
 
         if (this.elements.currentStockInfo) {
             this.elements.currentStockInfo.textContent = setting.current_stock ?? '-';
+        }
+        if (this.elements.stockPriceRon) {
+            const ronValue = setting.price;
+            this.elements.stockPriceRon.value = (ronValue !== null && ronValue !== undefined) ? ronValue : '';
+        }
+        if (this.elements.stockPriceEur) {
+            const eurValue = setting.price_eur;
+            this.elements.stockPriceEur.value = (eurValue !== null && eurValue !== undefined) ? eurValue : '';
         }
     },
 openPendingProductsModal() {

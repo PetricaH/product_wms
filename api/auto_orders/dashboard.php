@@ -37,15 +37,22 @@ try {
 
     // Products below minimum stock with auto order enabled
     $productsQuery = $db->prepare(
-        "SELECT p.product_id, p.name, p.sku, p.quantity, p.min_stock_level, p.last_auto_order_date,
+        "SELECT p.product_id, p.name, p.sku,
+                COALESCE(inv.current_stock, 0) AS quantity,
+                p.min_stock_level, p.last_auto_order_date,
                 s.supplier_name
          FROM products p
+         LEFT JOIN (
+             SELECT product_id, SUM(quantity) AS current_stock
+             FROM inventory
+             GROUP BY product_id
+         ) inv ON inv.product_id = p.product_id
          LEFT JOIN sellers s ON p.seller_id = s.id
          WHERE p.auto_order_enabled = 1
            AND p.min_stock_level IS NOT NULL
            AND p.min_stock_level > 0
-           AND p.quantity <= p.min_stock_level
-         ORDER BY p.quantity ASC, p.name ASC
+           AND COALESCE(inv.current_stock, 0) <= p.min_stock_level
+         ORDER BY quantity ASC, p.name ASC
          LIMIT 15"
     );
     $productsQuery->execute();

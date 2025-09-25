@@ -355,6 +355,7 @@ class Inventory {
                     $data['location_id'],
                     $data['quantity'],
                     [
+                        'transaction_type' => $data['transaction_type'] ?? 'receive',
                         'batch_number' => $data['batch_number'] ?? null,
                         'lot_number' => $data['lot_number'] ?? null,
                         'expiry_date' => $data['expiry_date'] ?? null,
@@ -466,6 +467,7 @@ class Inventory {
                         (int)$record['location_id'],
                         $quantity,
                         [
+                            'transaction_type' => $options['transaction_type'] ?? 'receive',
                             'batch_number' => $options['batch_number'] ?? $record['batch_number'] ?? null,
                             'lot_number' => $options['lot_number'] ?? $record['lot_number'] ?? null,
                             'expiry_date' => $options['expiry_date'] ?? $record['expiry_date'] ?? null,

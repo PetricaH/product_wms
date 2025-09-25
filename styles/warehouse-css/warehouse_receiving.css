@@ -166,8 +166,26 @@ body {
   margin: 0;
 }
 
-.return-orders-results {
+.returns-panel-content {
   margin-top: 2rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+  gap: 1.75rem;
+}
+
+@media (max-width: 1200px) {
+  .returns-panel-content {
+    grid-template-columns: 1fr;
+  }
+}
+
+.return-orders-column {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.return-orders-results {
   display: flex;
   flex-direction: column;
   gap: 1rem;
@@ -212,6 +230,18 @@ body {
   flex-direction: column;
   gap: 1rem;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  cursor: pointer;
+  transition: border-color 0.25s ease, box-shadow 0.25s ease, transform 0.25s ease;
+}
+
+.return-order-card:hover {
+  border-color: rgba(127, 189, 255, 0.4);
+  transform: translateY(-1px);
+}
+
+.return-order-card.selected {
+  border-color: rgba(127, 189, 255, 0.65);
+  box-shadow: 0 12px 28px rgba(79, 142, 255, 0.25);
 }
 
 .return-order-card-header {
@@ -273,6 +303,147 @@ body {
   text-align: center;
 }
 
+.return-details-column {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.return-order-details {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  min-height: 320px;
+}
+
+.return-order-details .empty-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 2rem 1rem;
+  color: var(--light-gray);
+  gap: 0.75rem;
+}
+
+.return-order-details .empty-state .material-symbols-outlined {
+  font-size: 2.4rem;
+  color: var(--white);
+}
+
+.return-order-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 1rem;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 10px;
+  padding: 1rem 1.25rem;
+}
+
+.return-order-summary-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.return-order-summary-label {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--light-gray);
+}
+
+.return-order-summary-value {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--white);
+}
+
+.return-items-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.return-item {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.return-item-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.return-item-name {
+  font-weight: 600;
+  color: var(--white);
+}
+
+.return-item-sku {
+  font-size: 0.85rem;
+  color: var(--light-gray);
+}
+
+.return-item-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.75rem;
+  color: var(--light-gray);
+}
+
+.return-item-meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.return-item-location-missing {
+  color: #ffbaba;
+  font-weight: 600;
+}
+
+.return-restock-hint {
+  display: none;
+  align-items: flex-start;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  line-height: 1.4;
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+}
+
+.return-restock-hint.warning {
+  display: flex;
+  background: rgba(255, 193, 7, 0.12);
+  border: 1px solid rgba(255, 193, 7, 0.35);
+  color: #ffe082;
+}
+
+.return-restock-hint.success {
+  display: flex;
+  background: rgba(76, 175, 80, 0.12);
+  border: 1px solid rgba(76, 175, 80, 0.35);
+  color: #c8e6c9;
+}
+
+.return-restock-hint .material-symbols-outlined {
+  font-size: 1.2rem;
+}
+
 /* ===== LOADING OVERLAY ===== */
 .loading-overlay {
   position: fixed;
@@ -306,6 +477,11 @@ body {
 @keyframes spin {
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
+}
+
+.material-symbols-outlined.spin {
+  animation: spin 1s linear infinite;
+  margin-right: 0.35rem;
 }
 
 /* ===== ALERT MESSAGES ===== */

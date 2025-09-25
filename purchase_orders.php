@@ -461,12 +461,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
 
                     $quantity = floatval($item['quantity']);
-                    $unitPrice = floatval($item['unit_price']);
+                    $unitPrice = max(0, floatval($item['unit_price'] ?? 0));
 
-                    if ($quantity <= 0 || $unitPrice <= 0) {
-                        throw new Exception('Cantitatea și prețul trebuie să fie mai mari decât 0.');
+                    if ($quantity <= 0) {
+                        throw new Exception('Cantitatea trebuie să fie mai mare decât 0.');
                     }
-                    
+
                     $totalPrice = $quantity * $unitPrice;
                     
                     $processedItems[] = [
@@ -993,9 +993,9 @@ require_once __DIR__ . '/includes/header.php';
                                                    step="0.001" min="0.001" required onchange="calculateItemTotal(0)">
                                         </div>
                                         <div class="form-group">
-                                            <label>Preț Unitar (RON) *</label>
-                                            <input type="number" name="items[0][unit_price]" class="form-control unit-price" 
-                                                   step="0.01" min="0.01" required onchange="calculateItemTotal(0)">
+                                            <label>Preț Unitar (RON) (opțional)</label>
+                                            <input type="number" name="items[0][unit_price]" class="form-control unit-price"
+                                                   step="0.01" min="0" onchange="calculateItemTotal(0)">
                                         </div>
                                         <div class="form-group">
                                             <label>Total</label>

@@ -40,6 +40,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'description' => trim($_POST['description'] ?? ''),
                 'sku' => trim($_POST['sku'] ?? ''),
                 'price' => floatval($_POST['price'] ?? 0),
+                'price_eur' => floatval($_POST['price_eur'] ?? 0),
                 'category' => trim($_POST['category'] ?? ''),
                 'unit_of_measure' => trim($_POST['unit_of_measure'] ?? 'pcs'),
                 'status' => isset($_POST['status']) ? 'active' : 'inactive',
@@ -79,6 +80,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'description' => trim($_POST['description'] ?? ''),
                     'sku' => trim($_POST['sku'] ?? ''),
                     'price' => floatval($_POST['price'] ?? 0),
+                    'price_eur' => floatval($_POST['price_eur'] ?? 0),
                     'category' => trim($_POST['category'] ?? ''),
                     'unit_of_measure' => trim($_POST['unit_of_measure'] ?? 'pcs'),
                     'status' => isset($_POST['status']) ? 'active' : 'inactive',
@@ -645,6 +647,10 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                             <input type="number" id="create-price" name="price" class="form-control" step="0.01" min="0">
                         </div>
                         <div class="form-group">
+                            <label for="create-price-eur">Preț (EUR)</label>
+                            <input type="number" id="create-price-eur" name="price_eur" class="form-control" step="0.01" min="0">
+                        </div>
+                        <div class="form-group">
                             <label for="create-category">Categorie</label>
                             <input type="text" id="create-category" name="category" class="form-control">
                         </div>
@@ -737,6 +743,10 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                         <div class="form-group">
                             <label for="edit-price">Preț (RON)</label>
                             <input type="number" id="edit-price" name="price" class="form-control" step="0.01" min="0">
+                        </div>
+                        <div class="form-group">
+                            <label for="edit-price-eur">Preț (EUR)</label>
+                            <input type="number" id="edit-price-eur" name="price_eur" class="form-control" step="0.01" min="0">
                         </div>
                         <div class="form-group">
                             <label for="edit-category">Categorie</label>

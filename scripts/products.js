@@ -267,6 +267,7 @@ function populateEditForm(productData) {
         document.getElementById('edit-sku').value = product.sku || '';
         document.getElementById('edit-description').value = product.description || '';
         document.getElementById('edit-price').value = product.price || '';
+        document.getElementById('edit-price-eur').value = product.price_eur || '';
         document.getElementById('edit-category').value = product.category || '';
         document.getElementById('edit-unit').value = product.unit_of_measure || 'pcs';
         document.getElementById('edit-status').checked = (product.status == undefined ? 1 : product.status) == 1;
@@ -1894,6 +1895,7 @@ function populateEditForm(productData) {
         document.getElementById('edit-sku').value = product.sku || '';
         document.getElementById('edit-description').value = product.description || '';
         document.getElementById('edit-price').value = product.price || '';
+        document.getElementById('edit-price-eur').value = product.price_eur || '';
         document.getElementById('edit-category').value = product.category || '';
         document.getElementById('edit-unit').value = product.unit_of_measure || 'pcs';
         document.getElementById('edit-status').checked = (product.status == undefined ? 1 : product.status) == 1;

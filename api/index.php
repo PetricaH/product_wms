@@ -567,6 +567,7 @@ class ProductionWMSAPI {
             'name' => $input['name'],
             'unit_of_measure' => $input['unit_of_measure'] ?? 'buc',
             'price' => floatval($input['price'] ?? 0),
+            'price_eur' => floatval($input['price_eur'] ?? 0),
             'category' => $input['category'] ?? 'General'
         ];
         

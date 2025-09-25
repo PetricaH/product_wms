@@ -772,7 +772,7 @@ function addOrderItem() {
                 <input type="number" name="items[${itemCounter}][quantity]" class="form-control item-quantity" placeholder="Cant." min="1" required>
             </div>
             <div class="form-group">
-                <input type="number" name="items[${itemCounter}][unit_price]" class="form-control item-price" placeholder="Preț" step="0.01" min="0" required>
+                <input type="number" name="items[${itemCounter}][unit_price]" class="form-control item-price" placeholder="Preț (opțional)" step="0.01" min="0">
             </div>
             <div class="form-group form-group-sm">
                 <button type="button" class="btn btn-danger btn-sm" onclick="removeOrderItem(this)" title="Șterge produs">

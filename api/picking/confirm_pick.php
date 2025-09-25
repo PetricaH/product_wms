@@ -44,6 +44,7 @@ try {
     $inventoryModel = new Inventory($db);
     $autoOrderProductId = null;
 
+
     // Get JSON input
     $input = json_decode(file_get_contents('php://input'), true);
 
@@ -148,8 +149,8 @@ try {
             ]);
             exit;
         }
-
         if ((int)$inventoryRow['product_id'] !== (int)$item['product_id']) {
+
             $db->rollback();
             http_response_code(400);
             echo json_encode([

@@ -85,7 +85,7 @@ if ($incidentSidebarCount === null) {
             <div class="logo-icon">W</div>
             <span class="logo-text">WMS</span>
         </a>
-        <button class="sidebar__toggle" id="sidebar-toggle" aria-label="Toggle Sidebar">
+        <button class="sidebar__toggle" id="sidebar-toggle" type="button" aria-label="Restrânge bara laterală" aria-expanded="true">
             <span class="material-symbols-outlined">chevron_left</span>
         </button>
     </div>
@@ -250,10 +250,9 @@ if ($incidentSidebarCount === null) {
                 </span>
             </div>
         </a>
-        <a href="<?= getNavUrl('logout.php') ?>" 
-           class="logout-link" 
-           title="Logout"
-           onclick="return confirm('Sunteți sigur că doriți să vă deconectați?')">
+        <a href="<?= getNavUrl('logout.php') ?>"
+           class="logout-link"
+           title="Logout">
             <span class="material-symbols-outlined">logout</span>
         </a>
     </div>
@@ -270,59 +269,166 @@ document.addEventListener('DOMContentLoaded', function() {
     const sidebarToggle = document.getElementById('sidebar-toggle');
     const sidebarOverlay = document.getElementById('sidebar-overlay');
     const mobileMenuBtn = document.getElementById('mobile-menu-btn');
-    
-    // Load saved sidebar state
-    const isCollapsed = localStorage.getItem('sidebar-collapsed') === 'true';
-    if (isCollapsed) {
-        sidebar.classList.add('collapsed');
+    const logoutLink = document.querySelector('.sidebar__profile .logout-link');
+
+    const lockBodyScroll = (locked) => {
+        document.body.style.overflow = locked ? 'hidden' : '';
+    };
+
+    if (sidebar && sidebarToggle) {
+        const toggleIcon = sidebarToggle.querySelector('.material-symbols-outlined');
+
+        const applyCollapsedState = (collapsed) => {
+            sidebar.classList.toggle('collapsed', collapsed);
+            localStorage.setItem('sidebar-collapsed', collapsed);
+
+            if (toggleIcon) {
+                toggleIcon.textContent = collapsed ? 'chevron_right' : 'chevron_left';
+            }
+
+            const label = collapsed ? 'Extinde bara laterală' : 'Restrânge bara laterală';
+            sidebarToggle.setAttribute('aria-expanded', String(!collapsed));
+            sidebarToggle.setAttribute('aria-label', label);
+            sidebarToggle.setAttribute('title', label);
+        };
+
+        const savedCollapsed = localStorage.getItem('sidebar-collapsed') === 'true';
+        applyCollapsedState(savedCollapsed);
+
+        sidebarToggle.addEventListener('click', function() {
+            const collapsed = !sidebar.classList.contains('collapsed');
+            applyCollapsedState(collapsed);
+        });
     }
-    
-    // Toggle sidebar collapse
-    sidebarToggle.addEventListener('click', function() {
-        sidebar.classList.toggle('collapsed');
-        const collapsed = sidebar.classList.contains('collapsed');
-        localStorage.setItem('sidebar-collapsed', collapsed);
-    });
-    
-    // Mobile functionality
-    if (window.innerWidth <= 768) {
-        // Mobile menu toggle
-        function toggleMobileSidebar() {
-            sidebar.classList.toggle('mobile-open');
-            sidebarOverlay.classList.toggle('active');
-            document.body.style.overflow = sidebar.classList.contains('mobile-open') ? 'hidden' : '';
+
+    const toggleMobileSidebar = () => {
+        if (!sidebar) {
+            return;
         }
 
-        // Open sidebar when clicking the mobile menu button
-        if (mobileMenuBtn) {
-            mobileMenuBtn.addEventListener('click', function() {
-                toggleMobileSidebar();
-            });
+        const isOpen = sidebar.classList.toggle('mobile-open');
+        if (sidebarOverlay) {
+            sidebarOverlay.classList.toggle('active', isOpen);
         }
-        
-        // Close sidebar when clicking overlay
-        sidebarOverlay.addEventListener('click', function() {
-            toggleMobileSidebar();
-        });
-        
-        // Close sidebar on escape key
-        document.addEventListener('keydown', function(e) {
-            if (e.key === 'Escape' && sidebar.classList.contains('mobile-open')) {
+        lockBodyScroll(isOpen);
+    };
+
+    if (mobileMenuBtn) {
+        mobileMenuBtn.addEventListener('click', toggleMobileSidebar);
+    }
+
+    if (sidebarOverlay) {
+        sidebarOverlay.addEventListener('click', toggleMobileSidebar);
+    }
+
+    document.addEventListener('keydown', function(event) {
+        if (event.key === 'Escape') {
+            if (sidebar && sidebar.classList.contains('mobile-open')) {
                 toggleMobileSidebar();
             }
-        });
-        
-        // Expose toggle function globally for mobile menu button
-        window.toggleMobileSidebar = toggleMobileSidebar;
-    }
-    
-    // Handle window resize
-    window.addEventListener('resize', function() {
-        if (window.innerWidth > 768) {
-            sidebar.classList.remove('mobile-open');
-            sidebarOverlay.classList.remove('active');
-            document.body.style.overflow = '';
         }
     });
+
+    window.addEventListener('resize', function() {
+        if (window.innerWidth > 768 && sidebar) {
+            sidebar.classList.remove('mobile-open');
+            if (sidebarOverlay) {
+                sidebarOverlay.classList.remove('active');
+            }
+            lockBodyScroll(false);
+        }
+    });
+
+    const showLogoutModal = (logoutUrl) => {
+        if (!logoutUrl) {
+            return;
+        }
+
+        if (sidebar && sidebar.classList.contains('mobile-open')) {
+            toggleMobileSidebar();
+        }
+
+        const existingModal = document.querySelector('.wms-modal[data-modal="logout"]');
+        if (existingModal) {
+            existingModal.remove();
+        }
+
+        const modal = document.createElement('div');
+        modal.className = 'wms-modal';
+        modal.dataset.modal = 'logout';
+        modal.innerHTML = `
+            <div class="wms-modal__backdrop"></div>
+            <div class="wms-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="logout-modal-title" aria-describedby="logout-modal-message">
+                <div class="wms-modal__icon">
+                    <span class="material-symbols-outlined" aria-hidden="true">logout</span>
+                </div>
+                <h2 class="wms-modal__title" id="logout-modal-title">Confirmați deconectarea</h2>
+                <p class="wms-modal__message" id="logout-modal-message">
+                    Sunteți sigur că doriți să ieșiți din aplicația WMS?
+                </p>
+                <div class="wms-modal__actions">
+                    <button type="button" class="wms-modal__cancel">Rămâi conectat</button>
+                    <button type="button" class="wms-modal__confirm">
+                        <span class="material-symbols-outlined" aria-hidden="true">check_circle</span>
+                        Deconectare
+                    </button>
+                </div>
+            </div>
+        `;
+
+        const cancelButton = modal.querySelector('.wms-modal__cancel');
+        const confirmButton = modal.querySelector('.wms-modal__confirm');
+        const backdrop = modal.querySelector('.wms-modal__backdrop');
+
+        const closeModal = () => {
+            modal.classList.remove('is-visible');
+            document.body.classList.remove('modal-open');
+            modal.addEventListener('transitionend', () => modal.remove(), { once: true });
+            document.removeEventListener('keydown', handleKeydown);
+        };
+
+        const handleKeydown = (event) => {
+            if (event.key === 'Escape') {
+                closeModal();
+            }
+        };
+
+        if (cancelButton) {
+            cancelButton.addEventListener('click', (event) => {
+                event.preventDefault();
+                closeModal();
+            });
+        }
+
+        if (confirmButton) {
+            confirmButton.addEventListener('click', (event) => {
+                event.preventDefault();
+                closeModal();
+                window.location.href = logoutUrl;
+            });
+        }
+
+        if (backdrop) {
+            backdrop.addEventListener('click', closeModal);
+        }
+
+        document.body.appendChild(modal);
+        requestAnimationFrame(() => {
+            modal.classList.add('is-visible');
+            if (confirmButton) {
+                confirmButton.focus();
+            }
+        });
+
+        document.body.classList.add('modal-open');
+        document.addEventListener('keydown', handleKeydown);
+    };
+
+    if (logoutLink) {
+        logoutLink.addEventListener('click', function(event) {
+            event.preventDefault();
+            showLogoutModal(this.getAttribute('href'));
+        });
+    }
 });
 </script>

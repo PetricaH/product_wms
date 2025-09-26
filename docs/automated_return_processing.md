@@ -32,7 +32,7 @@ If notifications are enabled, the SMTP settings from the global `email` configur
 
 ## 3. Cron Jobs
 
-Two entry points are provided inside `scripts/`:
+Two PHP entry points are available under the `cron/` directory:
 
 - `process_daily_returns.php` – call once per day to fetch `AwbRetur` data.
 - `process_delta_events.php` – schedule every hour (or more often) to capture status changes via `AwbTrace/GetDeltaEvents`.
@@ -40,8 +40,8 @@ Two entry points are provided inside `scripts/`:
 Example crontab:
 
 ```
-0 6 * * * /usr/bin/php /var/www/wms/scripts/process_daily_returns.php >> /var/log/wms/returns.log 2>&1
-*/2 * * * * /usr/bin/php /var/www/wms/scripts/process_delta_events.php >> /var/log/wms/returns_delta.log 2>&1
+0 6 * * * /usr/bin/php /var/www/wms/cron/process_daily_returns.php >> /var/log/wms/returns.log 2>&1
+*/2 * * * * /usr/bin/php /var/www/wms/cron/process_delta_events.php >> /var/log/wms/returns_delta.log 2>&1
 ```
 
 Both scripts exit with a non-zero code when the sync fails, enabling straightforward monitoring.

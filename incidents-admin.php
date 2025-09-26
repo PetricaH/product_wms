@@ -173,11 +173,11 @@ $scriptUrl = file_exists($scriptPath) ? rtrim(BASE_URL, '/') . '/scripts/inciden
                             <input type="search" id="filter-search" name="search" value="<?= htmlspecialchars($filters['search']) ?>" placeholder="Număr, titlu sau raportant">
                         </div>
                         <div class="filter-actions">
-                            <button type="submit" class="btn-primary">
+                            <button type="submit" class="btn btn-primary">
                                 <span class="material-symbols-outlined">filter_alt</span>
                                 Filtrează
                             </button>
-                            <a class="btn-secondary" href="<?= htmlspecialchars($_SERVER['PHP_SELF']) ?>">
+                            <a class="btn btn-secondary" href="<?= htmlspecialchars($_SERVER['PHP_SELF']) ?>">
                                 <span class="material-symbols-outlined">refresh</span>
                                 Resetează
                             </a>
@@ -231,11 +231,11 @@ $scriptUrl = file_exists($scriptPath) ? rtrim(BASE_URL, '/') . '/scripts/inciden
                                             <td><?= htmlspecialchars($incident['reported_at_display']) ?></td>
                                             <td>
                                                 <div class="action-group">
-                                                    <button type="button" class="btn-icon view-incident" data-incident='<?= $incidentJson ?>'>
+                                                    <button type="button" class="btn btn-icon view-incident" data-incident='<?= $incidentJson ?>'>
                                                         <span class="material-symbols-outlined">visibility</span>
                                                         Vezi Detalii
                                                     </button>
-                                                    <button type="button" class="btn-icon update-incident" data-incident='<?= $incidentJson ?>'>
+                                                    <button type="button" class="btn btn-icon update-incident" data-incident='<?= $incidentJson ?>'>
                                                         <span class="material-symbols-outlined">playlist_add_check</span>
                                                         Actualizează Status
                                                     </button>
@@ -263,7 +263,7 @@ $scriptUrl = file_exists($scriptPath) ? rtrim(BASE_URL, '/') . '/scripts/inciden
                 </header>
                 <div class="modal-body" id="incident-detail-body"></div>
                 <footer class="modal-footer">
-                    <button type="button" class="btn-secondary" data-modal-close>Închide</button>
+                    <button type="button" class="btn btn-secondary" data-modal-close>Închide</button>
                 </footer>
             </div>
         </div>
@@ -302,8 +302,8 @@ $scriptUrl = file_exists($scriptPath) ? rtrim(BASE_URL, '/') . '/scripts/inciden
                     </div>
                 </form>
                 <footer class="modal-footer">
-                    <button type="button" class="btn-secondary" data-modal-close>Anulează</button>
-                    <button type="button" class="btn-primary" id="status-save-btn">
+                    <button type="button" class="btn btn-secondary" data-modal-close>Anulează</button>
+                    <button type="button" class="btn btn-primary" id="status-save-btn">
                         <span class="material-symbols-outlined">save</span>
                         Salvează
                     </button>

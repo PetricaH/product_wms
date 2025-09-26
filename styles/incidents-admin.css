@@ -101,6 +101,20 @@
     border-radius: var(--border-radius);
     padding: 0.75rem;
     color: var(--text-primary);
+    appearance: none;
+}
+
+.filter-group select,
+.form-group select {
+    background-color: var(--surface-background);
+    border-color: var(--border-color-strong);
+    color: var(--text-primary);
+}
+
+.filter-group select option,
+.form-group select option {
+    background-color: var(--surface-background);
+    color: var(--text-primary);
 }
 
 .filter-group input[type="search"]::placeholder {
@@ -212,22 +226,26 @@
 }
 
 .btn-icon {
-    background: var(--button-background);
-    border: 1px solid transparent;
-    color: var(--text-primary);
+    background: color-mix(in srgb, var(--primary-color) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--primary-color) 45%, transparent);
+    color: var(--primary-color);
     border-radius: var(--border-radius);
-    padding: 0.65rem 0.75rem;
+    padding: 0.65rem 0.9rem;
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     gap: 0.5rem;
-    font-size: 0.85rem;
+    font-size: 0.9rem;
+    font-weight: 600;
     cursor: pointer;
     transition: var(--transition);
+    box-shadow: var(--base-shadow);
 }
 
 .btn-icon:hover {
-    background: var(--button-hover);
-    border-color: var(--border-color);
+    background: color-mix(in srgb, var(--primary-color) 25%, transparent);
+    border-color: var(--primary-color);
+    color: var(--white);
 }
 
 .empty-state {
@@ -260,13 +278,20 @@
 .modal-dialog {
     background: var(--container-background);
     border-radius: var(--border-radius-large);
-    width: min(960px, 100%);
-    max-height: 85vh;
+    width: min(1100px, 95vw);
+    max-height: calc(100vh - 3rem);
     overflow: hidden;
     box-shadow: var(--base-shadow);
     border: 1px solid var(--border-color);
     display: flex;
     flex-direction: column;
+}
+
+.modal-content {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    max-height: inherit;
 }
 
 .modal-header,
@@ -320,6 +345,7 @@
 .modal-body {
     padding: 1.5rem;
     overflow-y: auto;
+    flex: 1;
 }
 
 .modal-body .detail-layout {
@@ -401,6 +427,10 @@
 .photo-gallery a:hover {
     transform: translateY(-2px);
     border-color: var(--border-color-strong);
+}
+
+body.modal-open {
+    overflow: hidden;
 }
 
 @media (min-width: 992px) {
@@ -487,6 +517,27 @@
 }
 
 @media (max-width: 768px) {
+    .modal.incident-modal {
+        padding: 0.75rem;
+    }
+
+    .modal-dialog {
+        width: 100%;
+        max-height: calc(100vh - 1.5rem);
+    }
+
+    .modal-body {
+        padding: 1rem;
+    }
+
+    .modal-body .detail-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .photo-gallery {
+        grid-template-columns: 1fr;
+    }
+
     .filters-form {
         grid-template-columns: 1fr;
     }
@@ -497,5 +548,11 @@
 
     .incident-badges {
         grid-template-columns: 1fr;
+    }
+}
+
+@media (min-width: 1200px) {
+    .modal-dialog {
+        width: min(1280px, 92vw);
     }
 }

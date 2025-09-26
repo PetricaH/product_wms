@@ -59,9 +59,8 @@ $csrfToken = getCsrfToken();
      data-create-endpoint="<?= htmlspecialchars($createEndpoint) ?>"
      data-csrf="<?= htmlspecialchars($csrfToken) ?>"
      data-max-photos="5">
-    <button type="button" class="incident-fab" id="incident-fab">
-        <span class="material-symbols-outlined">report</span>
-        <span class="fab-label">Raportează Incident</span>
+    <button type="button" class="incident-fab" id="incident-fab" aria-label="Raportează incident">
+        <span class="material-symbols-outlined" aria-hidden="true">report</span>
     </button>
 
     <div class="incident-modal" id="incident-modal" aria-hidden="true">

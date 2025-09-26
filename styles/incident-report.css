@@ -1,6 +1,6 @@
 /* Incident Reporting Widget Styles */
 :root {
-    --incident-fab-size: 62px;
+    --incident-fab-size: 52px;
 }
 
 .incident-widget {
@@ -18,26 +18,26 @@ body.incident-modal-open {
 .incident-fab {
     display: flex;
     align-items: center;
-    gap: 12px;
+    justify-content: center;
     background: var(--attention-color, #ff7b00);
     color: var(--white, #ffffff);
     border: none;
-    border-radius: var(--incident-fab-size);
-    padding: 0 22px;
+    border-radius: 50%;
+    width: var(--incident-fab-size);
     height: var(--incident-fab-size);
-    box-shadow: var(--card-shadow, 0 10px 30px rgba(0, 0, 0, 0.35));
-    font-weight: 600;
+    box-shadow: var(--card-shadow, 0 10px 24px rgba(0, 0, 0, 0.3));
     cursor: pointer;
-    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    transition: transform 0.3s ease, box-shadow 0.3s ease, background 0.3s ease;
 }
 
 .incident-fab .material-symbols-outlined {
-    font-size: 28px;
+    font-size: 26px;
 }
 
 .incident-fab:hover {
     transform: translateY(-4px);
-    box-shadow: 0 12px 34px rgba(0, 0, 0, 0.45);
+    box-shadow: 0 14px 32px rgba(0, 0, 0, 0.35);
+    background: var(--attention-color-hover, #ff8f26);
 }
 
 .incident-modal {
@@ -62,10 +62,10 @@ body.incident-modal-open {
 
 .incident-modal-content {
     position: relative;
-    background: var(--surface-background, #1b1d23);
-    color: var(--text-primary, #ffffff);
+    background: #ffffff;
+    color: #1b1d23;
     border-radius: 18px;
-    box-shadow: var(--card-shadow, 0 25px 70px rgba(0, 0, 0, 0.45));
+    box-shadow: var(--card-shadow, 0 25px 70px rgba(15, 23, 42, 0.25));
     width: min(760px, 100%);
     max-height: calc(100vh - 80px);
     overflow: hidden;
@@ -78,7 +78,7 @@ body.incident-modal-open {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    border-bottom: 1px solid var(--border-color, rgba(255,255,255,0.08));
+    border-bottom: 1px solid #e5e7eb;
 }
 
 .incident-modal-header h2 {
@@ -90,7 +90,7 @@ body.incident-modal-open {
 .incident-modal-close {
     background: transparent;
     border: none;
-    color: inherit;
+    color: #4b5563;
     cursor: pointer;
     padding: 6px;
     border-radius: 50%;
@@ -98,7 +98,7 @@ body.incident-modal-open {
 }
 
 .incident-modal-close:hover {
-    background: rgba(255,255,255,0.08);
+    background: rgba(15, 23, 42, 0.06);
 }
 
 .incident-form {
@@ -119,20 +119,25 @@ body.incident-modal-open {
 }
 
 .incident-field label {
-    font-weight: 500;
-    color: var(--text-secondary, #a0a7b5);
+    font-weight: 600;
+    color: #374151;
 }
 
 .incident-field input,
 .incident-field select,
 .incident-field textarea {
-    background: var(--input-background, rgba(255,255,255,0.04));
-    border: 1px solid var(--input-border, rgba(255,255,255,0.1));
+    background: #f8fafc;
+    border: 1px solid #cbd5f5;
     border-radius: 12px;
     padding: 12px 14px;
-    color: var(--text-primary, #ffffff);
+    color: #111827;
     font-size: 0.95rem;
     transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.incident-field input::placeholder,
+.incident-field textarea::placeholder {
+    color: #6b7280;
 }
 
 .incident-field textarea {
@@ -144,8 +149,8 @@ body.incident-modal-open {
 .incident-field select:focus,
 .incident-field textarea:focus {
     outline: none;
-    border-color: var(--input-focus, rgba(255,255,255,0.35));
-    box-shadow: 0 0 0 2px rgba(255,255,255,0.08);
+    border-color: #2563eb;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.18);
 }
 
 .incident-field-span {
@@ -154,7 +159,7 @@ body.incident-modal-open {
 
 .incident-help {
     font-size: 0.8rem;
-    color: var(--text-muted, #7f8698);
+    color: #6b7280;
 }
 
 .incident-photo-preview {
@@ -167,10 +172,11 @@ body.incident-modal-open {
     display: flex;
     align-items: center;
     gap: 8px;
-    background: rgba(255,255,255,0.06);
+    background: #eef2ff;
     border-radius: 12px;
     padding: 8px 12px;
     font-size: 0.85rem;
+    color: #1e3a8a;
 }
 
 .incident-photo-chip button {
@@ -203,23 +209,24 @@ body.incident-modal-open {
 }
 
 .btn-secondary {
-    background: rgba(255,255,255,0.08);
-    color: var(--text-primary, #ffffff);
+    background: #e5e7eb;
+    color: #111827;
 }
 
 .btn-secondary:hover {
     transform: translateY(-1px);
+    background: #d1d5db;
 }
 
 .btn-primary {
     background: var(--primary-color, #0d6efd);
     color: #ffffff;
-    box-shadow: 0 10px 30px rgba(13,110,253,0.35);
+    box-shadow: 0 10px 30px rgba(13,110,253,0.25);
 }
 
 .btn-primary:hover {
     transform: translateY(-1px);
-    box-shadow: 0 12px 34px rgba(13,110,253,0.45);
+    box-shadow: 0 12px 34px rgba(13,110,253,0.35);
 }
 
 .incident-toast-container {

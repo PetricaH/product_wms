@@ -56,6 +56,9 @@
         if (value === null || value === undefined || value === '') {
             return '<span class="text-muted">N/A</span>';
         }
+        if (typeof value === 'string') {
+            return value.replace(/\n/g, '<br>');
+        }
         return value;
     };
 
@@ -65,6 +68,7 @@
             .filter(Boolean)
             .join(' - ');
         const photos = Array.isArray(incident.photos) ? incident.photos : [];
+        const followUpRequired = incident.follow_up_required === '1' || incident.follow_up_required === 1;
         const photoHtml = photos.length
             ? `<div class="photo-gallery">${photos.map((photo) => {
                     const url = `${baseUrl.replace(/\/$/, '')}/${photo.file_path}`;
@@ -75,59 +79,70 @@
             : '<p class="text-muted">Nu există fotografii atașate.</p>';
 
         detailBody.innerHTML = `
-            <div class="detail-grid">
-                <div class="detail-card">
-                    <span class="label">Număr incident</span>
-                    <span class="value mono">${incident.incident_number}</span>
-                </div>
-                <div class="detail-card">
-                    <span class="label">Tip</span>
-                    <span class="value">${incident.type_label}</span>
-                </div>
-                <div class="detail-card">
-                    <span class="label">Severitate</span>
-                    <span class="value">${incident.severity_label}</span>
-                </div>
-                <div class="detail-card">
-                    <span class="label">Status</span>
-                    <span class="value">${incident.status_label}</span>
-                </div>
-                <div class="detail-card">
-                    <span class="label">Raportant</span>
-                    <span class="value">${incident.reporter_name} (${incident.reporter_email})</span>
-                </div>
-                <div class="detail-card">
-                    <span class="label">Data producerii</span>
-                    <span class="value">${incident.occurred_at_display}</span>
-                </div>
-                <div class="detail-card">
-                    <span class="label">Data raportării</span>
-                    <span class="value">${incident.reported_at_display}</span>
-                </div>
-                <div class="detail-card">
-                    <span class="label">Cost estimativ</span>
-                    <span class="value">${incident.estimated_cost_display}</span>
-                </div>
-                <div class="detail-card">
-                    <span class="label">Locație</span>
-                    <span class="value">${locationInfo || '<span class="text-muted">Nespecificat</span>'}</span>
-                </div>
-            </div>
-            <div class="detail-card">
-                <span class="label">Descriere</span>
-                <p>${formatValue(incident.description)}</p>
-            </div>
-            <div class="detail-card">
-                <span class="label">Note administrator</span>
-                <p>${formatValue(incident.admin_notes)}</p>
-            </div>
-            <div class="detail-card">
-                <span class="label">Note rezolvare</span>
-                <p>${formatValue(incident.resolution_notes)}</p>
-            </div>
-            <div class="detail-card">
-                <span class="label">Documentare foto</span>
-                ${photoHtml}
+            <div class="detail-layout">
+                <section class="detail-summary">
+                    <div class="detail-grid">
+                        <div class="detail-card">
+                            <span class="label">Număr incident</span>
+                            <span class="value mono">${incident.incident_number}</span>
+                        </div>
+                        <div class="detail-card">
+                            <span class="label">Tip</span>
+                            <span class="value">${incident.type_label}</span>
+                        </div>
+                        <div class="detail-card">
+                            <span class="label">Severitate</span>
+                            <span class="value">${incident.severity_label}</span>
+                        </div>
+                        <div class="detail-card">
+                            <span class="label">Status</span>
+                            <span class="value">${incident.status_label}</span>
+                        </div>
+        
+                        <div class="detail-card">
+                            <span class="label">Raportant</span>
+                            <span class="value">${incident.reporter_name} (${incident.reporter_email})</span>
+                        </div>
+                        <div class="detail-card">
+                            <span class="label">Data producerii</span>
+                            <span class="value">${incident.occurred_at_display}</span>
+                        </div>
+                        <div class="detail-card">
+                            <span class="label">Data raportării</span>
+                            <span class="value">${incident.reported_at_display}</span>
+                        </div>
+                        <div class="detail-card">
+                            <span class="label">Cost estimativ</span>
+                            <span class="value">${incident.estimated_cost_display}</span>
+                        </div>
+                        <div class="detail-card">
+                            <span class="label">Locație</span>
+                            <span class="value">${locationInfo || '<span class="text-muted">Nespecificat</span>'}</span>
+                        </div>
+                        <div class="detail-card">
+                            <span class="label">Acțiuni suplimentare</span>
+                            <span class="value">${followUpRequired ? 'Da' : 'Nu'}</span>
+                        </div>
+                    </div>
+                    <div class="detail-card">
+                        <span class="label">Descriere</span>
+                        <p>${formatValue(incident.description)}</p>
+                    </div>
+                </section>
+                <aside class="detail-meta">
+                    <div class="detail-card">
+                        <span class="label">Note administrator</span>
+                        <p>${formatValue(incident.admin_notes)}</p>
+                    </div>
+                    <div class="detail-card">
+                        <span class="label">Note rezolvare</span>
+                        <p>${formatValue(incident.resolution_notes)}</p>
+                    </div>
+                    <div class="detail-card full-height">
+                        <span class="label">Documentare foto</span>
+                        ${photoHtml}
+                    </div>
+                </aside>
             </div>
         `;
     };
@@ -178,9 +193,11 @@
             return;
         }
 
-        if (event.target.matches('[data-modal-close]')) {
-            const modal = event.target.closest('.modal');
+        const closeTrigger = event.target.closest('[data-modal-close]');
+        if (closeTrigger) {
+            const modal = closeTrigger.closest('.modal');
             closeModal(modal);
+            return;
         }
     });
 

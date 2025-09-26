@@ -61,7 +61,8 @@ function summary(PDO $db) {
     $stmt = $db->query("SELECT
             SUM(status='in_progress') AS in_progress,
             SUM(status='pending') AS pending,
-            SUM(status='completed') AS completed
+            SUM(status='completed') AS completed,
+            SUM(auto_created = 1) AS auto_created
         FROM returns");
     $row = $stmt->fetch(PDO::FETCH_ASSOC);
     $disc = $db->query("SELECT COUNT(*) FROM return_discrepancies WHERE resolution_status='pending'")->fetchColumn();
@@ -71,7 +72,8 @@ function summary(PDO $db) {
             'in_progress' => (int)$row['in_progress'],
             'pending' => (int)$row['pending'],
             'completed' => (int)$row['completed'],
-            'discrepancies' => (int)$disc
+            'discrepancies' => (int)$disc,
+            'auto_created' => (int)$row['auto_created']
         ]
     ]);
 }
@@ -112,6 +114,7 @@ function listReturns(PDO $db) {
     }
 
     $sql = "SELECT r.id, o.order_number, o.customer_name, r.status,
+                   r.return_awb, r.auto_created, r.return_date,
                    u.username AS processed_by, r.created_at, r.verified_at,
                    (SELECT COUNT(*) FROM return_discrepancies rd WHERE rd.return_id = r.id) AS discrepancies
             FROM returns r
@@ -130,12 +133,28 @@ function listReturns(PDO $db) {
         header('Content-Type: text/csv');
         header('Content-Disposition: attachment; filename="returns.csv"');
         $out = fopen('php://output', 'w');
-        fputcsv($out, ['ID','Order','Customer','Status','Processed By','Created At','Verified At','Discrepancies']);
+        fputcsv($out, ['ID','Order','Customer','Status','Return AWB','Auto Created','Return Date','Processed By','Created At','Verified At','Discrepancies']);
         foreach ($rows as $r) {
-            fputcsv($out, [$r['id'],$r['order_number'],$r['customer_name'],$r['status'],$r['processed_by'],$r['created_at'],$r['verified_at'],$r['discrepancies']]);
+            fputcsv($out, [
+                $r['id'],
+                $r['order_number'],
+                $r['customer_name'],
+                $r['status'],
+                $r['return_awb'],
+                (int)$r['auto_created'],
+                $r['return_date'],
+                $r['processed_by'],
+                $r['created_at'],
+                $r['verified_at'],
+                $r['discrepancies']
+            ]);
         }
         fclose($out);
         return;
+    }
+
+    foreach ($rows as &$row) {
+        $row['auto_created'] = (bool)$row['auto_created'];
     }
 
     echo json_encode(['success' => true, 'returns' => $rows]);
@@ -149,6 +168,7 @@ function detail(PDO $db, int $id) {
     }
 
     $stmt = $db->prepare("SELECT r.id, r.status, r.notes, r.created_at, r.verified_at,
+                                   r.return_awb, r.auto_created, r.return_date,
                                    o.order_number, o.customer_name,
                                    u.username AS processed_by, v.username AS verified_by
                            FROM returns r
@@ -178,6 +198,8 @@ function detail(PDO $db, int $id) {
                               WHERE rd.return_id = :id");
     $discStmt->execute([':id' => $id]);
     $discrepancies = $discStmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $return['auto_created'] = (bool)$return['auto_created'];
 
     echo json_encode([
         'success' => true,

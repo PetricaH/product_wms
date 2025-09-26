@@ -231,6 +231,131 @@ class CargusService
     }
 
     /**
+     * Retrieve returned AWBs reported by Cargus for a specific date.
+     *
+     * @param string|\DateTimeInterface $date Expected format Y-m-d when string.
+     * @return array{success:bool,data?:array,error?:string,code?:int,raw?:mixed}
+     */
+    public function getReturnedAWBs($date) {
+        try {
+            $normalizedDate = $this->normalizeDateValue($date, 'Y-m-d');
+            if ($normalizedDate === null) {
+                return [
+                    'success' => false,
+                    'error' => 'Invalid date format. Expected Y-m-d.',
+                    'code' => 400,
+                ];
+            }
+
+            if (!$this->authenticate()) {
+                return [
+                    'success' => false,
+                    'error' => 'Authentication failed',
+                    'code' => 401,
+                ];
+            }
+
+            $endpoint = sprintf('AwbRetur?date=%s', urlencode($normalizedDate));
+            $response = $this->makeRequest('GET', $endpoint);
+
+            if ($response['success']) {
+                $data = $response['data'] ?? [];
+                $count = is_array($data) ? count($data) : 0;
+                $this->logInfo('Fetched returned AWBs', [
+                    'date' => $normalizedDate,
+                    'count' => $count,
+                ]);
+
+                return [
+                    'success' => true,
+                    'data' => is_array($data) ? $data : [],
+                    'code' => $response['code'] ?? 200,
+                ];
+            }
+
+            // Enhance error context for rate limiting scenarios
+            if (($response['code'] ?? 0) === 429) {
+                $response['error'] = $response['error'] ?? 'Rate limit reached while fetching returned AWBs';
+            }
+
+            return $response;
+        } catch (\Throwable $exception) {
+            $this->logError('Returned AWB retrieval exception', $exception->getMessage());
+            return [
+                'success' => false,
+                'error' => 'Internal error: ' . $exception->getMessage(),
+                'code' => 500,
+            ];
+        }
+    }
+
+    /**
+     * Retrieve delta tracking events from Cargus between two dates.
+     *
+     * @param string|\DateTimeInterface $fromDate Expected string format m-d-Y.
+     * @param string|\DateTimeInterface $toDate   Expected string format m-d-Y.
+     * @return array{success:bool,data?:array,error?:string,code?:int,raw?:mixed}
+     */
+    public function getDeltaEvents($fromDate, $toDate) {
+        try {
+            $normalizedFrom = $this->normalizeDateValue($fromDate, 'm-d-Y');
+            $normalizedTo = $this->normalizeDateValue($toDate, 'm-d-Y');
+
+            if ($normalizedFrom === null || $normalizedTo === null) {
+                return [
+                    'success' => false,
+                    'error' => 'Invalid date format. Expected m-d-Y.',
+                    'code' => 400,
+                ];
+            }
+
+            if (!$this->authenticate()) {
+                return [
+                    'success' => false,
+                    'error' => 'Authentication failed',
+                    'code' => 401,
+                ];
+            }
+
+            $query = http_build_query([
+                'FromDate' => $normalizedFrom,
+                'ToDate' => $normalizedTo,
+            ]);
+            $endpoint = 'AwbTrace/GetDeltaEvents?' . $query;
+            $response = $this->makeRequest('GET', $endpoint);
+
+            if ($response['success']) {
+                $data = $response['data'] ?? [];
+                $count = is_array($data) ? count($data) : 0;
+                $this->logInfo('Fetched delta events', [
+                    'from' => $normalizedFrom,
+                    'to' => $normalizedTo,
+                    'count' => $count,
+                ]);
+
+                return [
+                    'success' => true,
+                    'data' => is_array($data) ? $data : [],
+                    'code' => $response['code'] ?? 200,
+                ];
+            }
+
+            if (($response['code'] ?? 0) === 429) {
+                $response['error'] = $response['error'] ?? 'Rate limit reached while fetching delta events';
+            }
+
+            return $response;
+        } catch (\Throwable $exception) {
+            $this->logError('Delta events retrieval exception', $exception->getMessage());
+            return [
+                'success' => false,
+                'error' => 'Internal error: ' . $exception->getMessage(),
+                'code' => 500,
+            ];
+        }
+    }
+
+    /**
      * Retrieve a valid authentication token
      */
     public function getAuthToken() {
@@ -238,6 +363,30 @@ class CargusService
             return $this->token;
         }
         return null;
+    }
+
+    /**
+     * Normalize supported date inputs.
+     *
+     * @param string|\DateTimeInterface $value
+     */
+    private function normalizeDateValue($value, string $expectedFormat): ?string
+    {
+        if ($value instanceof \DateTimeInterface) {
+            return $value->format($expectedFormat);
+        }
+
+        $stringValue = is_string($value) ? trim($value) : '';
+        if ($stringValue === '') {
+            return null;
+        }
+
+        $date = \DateTimeImmutable::createFromFormat($expectedFormat, $stringValue);
+        if ($date === false) {
+            return null;
+        }
+
+        return $date->format($expectedFormat);
     }
 
     /**

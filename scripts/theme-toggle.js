@@ -46,13 +46,13 @@ class ThemeToggle {
         const toggleButton = document.createElement('button');
         toggleButton.id = 'theme-toggle';
         toggleButton.className = 'theme-toggle';
-        toggleButton.setAttribute('aria-label', 'Toggle theme');
-        toggleButton.title = 'Switch between dark and light theme';
-        
+        toggleButton.type = 'button';
+
         this.updateToggleButton(toggleButton);
-        
+
         toggleButton.addEventListener('click', () => {
             this.toggle();
+            this.setManualPreference();
         });
 
         // Add to navbar profile section or header
@@ -72,17 +72,14 @@ class ThemeToggle {
         const isDark = this.currentTheme === 'dark';
         
         toggleButton.innerHTML = `
-            <span class="material-symbols-outlined">
+            <span class="material-symbols-outlined" aria-hidden="true">
                 ${isDark ? 'light_mode' : 'dark_mode'}
             </span>
-            <span class="theme-text">
-                ${isDark ? 'Light' : 'Dark'}
-            </span>
         `;
-        
-        toggleButton.setAttribute('aria-label', 
-            `Switch to ${isDark ? 'light' : 'dark'} theme`
-        );
+
+        const label = `Comută la tema ${isDark ? 'luminoasă' : 'întunecată'}`;
+        toggleButton.setAttribute('aria-label', label);
+        toggleButton.setAttribute('title', label);
     }
 
     watchSystemTheme() {
@@ -130,37 +127,30 @@ document.addEventListener('keydown', (e) => {
 // CSS for theme toggle button (can be added to global.css)
 const themeToggleCSS = `
 .theme-toggle {
-    background: var(--button-background);
-    border: 1px solid var(--border-color-strong);
-    color: var(--text-primary);
-    padding: 0.5rem 0.75rem;
-    border-radius: var(--border-radius);
+    background: var(--sidebar-toggle-background);
+    border: 1px solid var(--sidebar-toggle-border);
+    color: var(--sidebar-toggle-color);
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
     cursor: pointer;
     transition: var(--transition);
-    display: flex;
+    display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
-    font-size: 0.9rem;
-    font-weight: 500;
+    justify-content: center;
+    padding: 0;
+    box-shadow: var(--sidebar-toggle-shadow);
 }
 
-.theme-toggle:hover {
-    background-color: var(--button-hover);
-    transform: translateY(-1px);
+.theme-toggle:hover,
+.theme-toggle:focus-visible {
+    background: var(--sidebar-link-hover-bg);
+    color: var(--sidebar-link-hover-color);
+    transform: translateY(-2px);
 }
 
 .theme-toggle .material-symbols-outlined {
-    font-size: 1.1rem;
-}
-
-.theme-text {
-    display: none;
-}
-
-@media (min-width: 768px) {
-    .theme-text {
-        display: inline;
-    }
+    font-size: 1.25rem;
 }
 `;
 

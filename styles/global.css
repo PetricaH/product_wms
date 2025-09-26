@@ -39,6 +39,45 @@
     --input-background: rgba(255, 255, 255, 0.05);
     --input-border: rgba(255, 255, 255, 0.2);
     --input-focus: rgba(255, 255, 255, 0.4);
+
+    /* Sidebar */
+    --sidebar-background: linear-gradient(180deg, var(--dark-gray) 0%, var(--darker-gray) 100%);
+    --sidebar-border-color: rgba(255, 255, 255, 0.1);
+    --sidebar-shadow: 2px 0 12px rgba(0, 0, 0, 0.35);
+    --sidebar-logo-text: var(--white);
+    --sidebar-logo-icon-bg: linear-gradient(135deg, var(--white) 0%, var(--light-gray) 100%);
+    --sidebar-logo-icon-color: var(--black);
+    --sidebar-link-color: var(--light-gray);
+    --sidebar-link-hover-bg: rgba(255, 255, 255, 0.08);
+    --sidebar-link-hover-color: var(--white);
+    --sidebar-link-active-bg: rgba(255, 255, 255, 0.15);
+    --sidebar-link-active-border: var(--white);
+    --sidebar-tooltip-background: rgba(22, 22, 26, 0.95);
+    --sidebar-tooltip-color: var(--white);
+    --sidebar-overlay-background: rgba(0, 0, 0, 0.55);
+    --sidebar-profile-background: linear-gradient(90deg, var(--darker-gray) 0%, var(--dark-gray) 100%);
+    --sidebar-profile-name: var(--white);
+    --sidebar-profile-role: var(--light-gray);
+    --sidebar-toggle-background: rgba(255, 255, 255, 0.08);
+    --sidebar-toggle-border: rgba(255, 255, 255, 0.15);
+    --sidebar-toggle-color: var(--white);
+    --sidebar-toggle-shadow: 0 12px 24px rgba(0, 0, 0, 0.35);
+    --sidebar-logout-hover-background: rgba(220, 53, 69, 0.18);
+    --sidebar-logout-hover-color: #ff8a9a;
+
+    /* Modal */
+    --modal-backdrop-color: rgba(12, 13, 17, 0.75);
+    --modal-surface-background: var(--surface-background);
+    --modal-border-color: var(--border-color-strong);
+    --modal-shadow: 0 24px 48px rgba(0, 0, 0, 0.45);
+    --modal-title-color: var(--text-primary);
+    --modal-message-color: var(--text-secondary);
+    --modal-icon-background: rgba(255, 255, 255, 0.08);
+    --modal-icon-color: var(--attention-color);
+    --modal-action-secondary-bg: transparent;
+    --modal-action-secondary-border: rgba(255, 255, 255, 0.2);
+    --modal-action-secondary-hover: rgba(255, 255, 255, 0.12);
+    --modal-action-secondary-color: var(--text-primary);
     
     /* Shadows & Effects */
     --base-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
@@ -64,6 +103,45 @@
     --input-background: var(--white);
     --input-border: rgba(0, 0, 0, 0.2);
     --input-focus: rgba(0, 0, 0, 0.3);
+
+    /* Sidebar */
+    --sidebar-background: linear-gradient(180deg, #ffffff 0%, #eef1f6 100%);
+    --sidebar-border-color: rgba(15, 16, 19, 0.08);
+    --sidebar-shadow: 2px 0 20px rgba(15, 16, 19, 0.12);
+    --sidebar-logo-text: var(--black);
+    --sidebar-logo-icon-bg: linear-gradient(135deg, #edf1f7 0%, #ffffff 100%);
+    --sidebar-logo-icon-color: var(--black);
+    --sidebar-link-color: var(--text-secondary);
+    --sidebar-link-hover-bg: rgba(13, 110, 253, 0.12);
+    --sidebar-link-hover-color: var(--text-primary);
+    --sidebar-link-active-bg: rgba(13, 110, 253, 0.18);
+    --sidebar-link-active-border: var(--primary-color);
+    --sidebar-tooltip-background: #ffffff;
+    --sidebar-tooltip-color: var(--text-secondary);
+    --sidebar-overlay-background: rgba(15, 16, 19, 0.35);
+    --sidebar-profile-background: linear-gradient(90deg, #f8f9fa 0%, #ffffff 100%);
+    --sidebar-profile-name: var(--text-primary);
+    --sidebar-profile-role: var(--text-secondary);
+    --sidebar-toggle-background: #ffffff;
+    --sidebar-toggle-border: rgba(15, 16, 19, 0.12);
+    --sidebar-toggle-color: var(--text-secondary);
+    --sidebar-toggle-shadow: 0 12px 30px rgba(15, 16, 19, 0.15);
+    --sidebar-logout-hover-background: rgba(220, 53, 69, 0.12);
+    --sidebar-logout-hover-color: var(--danger-color);
+
+    /* Modal */
+    --modal-backdrop-color: rgba(15, 16, 19, 0.55);
+    --modal-surface-background: var(--container-background);
+    --modal-border-color: rgba(15, 16, 19, 0.12);
+    --modal-shadow: 0 24px 48px rgba(15, 16, 19, 0.18);
+    --modal-title-color: var(--text-primary);
+    --modal-message-color: var(--text-secondary);
+    --modal-icon-background: rgba(13, 110, 253, 0.12);
+    --modal-icon-color: var(--primary-color);
+    --modal-action-secondary-bg: rgba(15, 16, 19, 0.04);
+    --modal-action-secondary-border: rgba(15, 16, 19, 0.12);
+    --modal-action-secondary-hover: rgba(13, 110, 253, 0.12);
+    --modal-action-secondary-color: var(--text-primary);
     
     /* Shadows & Effects */
     --base-shadow: 0 5px 15px rgba(0, 0, 0, 0.07);
@@ -114,6 +192,10 @@ body {
     transition: var(--transition);
 }
 
+body.modal-open {
+    overflow: hidden;
+}
+
 /* ===== APP CONTAINER ===== */
 .app {
     display: flex;
@@ -154,6 +236,133 @@ body {
     flex: 1;
     display: flex;
     flex-direction: column;
+}
+
+/* ===== MODAL COMPONENT ===== */
+.wms-modal {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    z-index: 1300;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.25s ease, visibility 0.25s ease;
+}
+
+.wms-modal.is-visible {
+    opacity: 1;
+    visibility: visible;
+}
+
+.wms-modal__backdrop {
+    position: absolute;
+    inset: 0;
+    background: var(--modal-backdrop-color);
+    backdrop-filter: blur(2px);
+}
+
+.wms-modal__dialog {
+    position: relative;
+    background: var(--modal-surface-background);
+    border-radius: var(--border-radius-large);
+    border: 1px solid var(--modal-border-color);
+    box-shadow: var(--modal-shadow);
+    padding: 2rem 2.5rem;
+    width: min(90vw, 420px);
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    transform: translateY(12px);
+    transition: transform 0.25s ease;
+}
+
+.wms-modal.is-visible .wms-modal__dialog {
+    transform: translateY(0);
+}
+
+.wms-modal__icon {
+    width: 56px;
+    height: 56px;
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--modal-icon-background);
+    color: var(--modal-icon-color);
+    font-size: 2rem;
+}
+
+.wms-modal__title {
+    font-size: 1.4rem;
+    font-weight: 600;
+    color: var(--modal-title-color);
+}
+
+.wms-modal__message {
+    font-size: 0.95rem;
+    color: var(--modal-message-color);
+    line-height: 1.5;
+}
+
+.wms-modal__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    margin-top: 0.5rem;
+}
+
+.wms-modal__actions button {
+    font: inherit;
+    cursor: pointer;
+    border-radius: var(--border-radius);
+    transition: var(--transition);
+    padding: 0.65rem 1.1rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.wms-modal__actions .wms-modal__cancel {
+    background: var(--modal-action-secondary-bg);
+    border: 1px solid var(--modal-action-secondary-border);
+    color: var(--modal-action-secondary-color);
+}
+
+.wms-modal__actions .wms-modal__cancel:hover,
+.wms-modal__actions .wms-modal__cancel:focus-visible {
+    background: var(--modal-action-secondary-hover);
+}
+
+.wms-modal__actions .wms-modal__confirm {
+    background: var(--danger-color);
+    border: 1px solid var(--danger-color);
+    color: #fff;
+    box-shadow: 0 12px 24px rgba(220, 53, 69, 0.25);
+}
+
+.wms-modal__actions .wms-modal__confirm:hover,
+.wms-modal__actions .wms-modal__confirm:focus-visible {
+    filter: brightness(1.05);
+}
+
+@media (max-width: 480px) {
+    .wms-modal__dialog {
+        padding: 1.5rem;
+        width: min(92vw, 360px);
+    }
+
+    .wms-modal__actions {
+        flex-direction: column-reverse;
+        align-items: stretch;
+    }
+
+    .wms-modal__actions button {
+        width: 100%;
+        justify-content: center;
+    }
 }
 
 /* ===== PAGE HEADERS ===== */

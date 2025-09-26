@@ -64,6 +64,10 @@ $currentPage = 'returns_dashboard';
                         <div id="stat-discrepancies" class="stat-number">0</div>
                         <div class="stat-label">Discrepanțe</div>
                     </div>
+                    <div class="stat-card">
+                        <div id="stat-auto-created" class="stat-number">0</div>
+                        <div class="stat-label">Returnări automate</div>
+                    </div>
                 </div>
 
                 <form id="filter-form" class="filters">
@@ -104,6 +108,9 @@ $currentPage = 'returns_dashboard';
                                     <th>Comandă</th>
                                     <th>Client</th>
                                     <th>Status</th>
+                                    <th>AWB retur</th>
+                                    <th>Automat</th>
+                                    <th>Data retur</th>
                                     <th>Procesat de</th>
                                     <th>Creat</th>
                                     <th>Verificat</th>

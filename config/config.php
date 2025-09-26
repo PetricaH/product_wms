@@ -163,6 +163,16 @@ return [
         'imap_sent_folders' => ['INBOX.Sent', 'Sent', 'INBOX/Sent', 'Sent Items', 'Sent Messages']
     ],
 
+    'automation' => [
+        'auto_return_user_id' => (int)(getenv('AUTO_RETURN_USER_ID') ?: 0),
+        'delta_event_hours' => (int)(getenv('AUTO_RETURN_DELTA_HOURS') ?: 6),
+        'notification' => [
+            'enabled' => filter_var(getenv('AUTO_RETURN_NOTIFY_ENABLED'), FILTER_VALIDATE_BOOLEAN),
+            'recipients' => array_values(array_filter(array_map('trim', explode(',', getenv('AUTO_RETURN_NOTIFY_RECIPIENTS') ?: '')))),
+        ],
+        'log_file' => getenv('AUTO_RETURN_LOG_FILE') ?: (__DIR__ . '/../storage/logs/automated_returns.log'),
+    ],
+
     'label_left_offset_mm' => 4,   // 3–6 mm de obicei e suficient
     'label_top_offset_mm'  => 0
 ];

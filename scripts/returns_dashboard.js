@@ -24,6 +24,7 @@ async function fetchSummary() {
             animateNumber('stat-pending', data.summary.pending || 0);
             animateNumber('stat-completed', data.summary.completed || 0);
             animateNumber('stat-discrepancies', data.summary.discrepancies || 0);
+            animateNumber('stat-auto-created', data.summary.auto_created || 0);
         } else {
             throw new Error('Invalid data structure received');
         }
@@ -36,6 +37,7 @@ async function fetchSummary() {
         document.getElementById('stat-pending').textContent = '0';
         document.getElementById('stat-completed').textContent = '0';
         document.getElementById('stat-discrepancies').textContent = '0';
+        document.getElementById('stat-auto-created').textContent = '0';
     } finally {
         // Remove loading state
         document.querySelectorAll('.stat-card').forEach(card => {
@@ -99,7 +101,7 @@ function initTable() {
             { data: 'id' },
             { data: 'order_number' },
             { data: 'customer_name' },
-            { 
+            {
                 data: 'status',
                 render: function(data, type, row) {
                     if (type === 'display') {
@@ -108,10 +110,31 @@ function initTable() {
                     return data;
                 }
             },
+            {
+                data: 'return_awb',
+                render: function(data) {
+                    return data ? data : '—';
+                }
+            },
+            {
+                data: 'auto_created',
+                render: function(data, type) {
+                    if (type === 'display') {
+                        return data ? '<span class="badge badge-info">Auto</span>' : '<span class="badge badge-muted">Manual</span>';
+                    }
+                    return data;
+                }
+            },
+            {
+                data: 'return_date',
+                render: function(data) {
+                    return data ? data : '—';
+                }
+            },
             { data: 'processed_by' },
             { data: 'created_at' },
             { data: 'verified_at' },
-            { 
+            {
                 data: 'discrepancies',
                 render: function(data, type, row) {
                     if (type === 'display') {
@@ -187,6 +210,9 @@ async function loadReturnDetail(id) {
                 <div class="return-meta">
                     <p><strong>Status:</strong> <span class="status-badge status-${r.status}">${r.status}</span></p>
                     <p><strong>Client:</strong> ${r.customer_name}</p>
+                    <p><strong>AWB retur:</strong> ${r.return_awb || '—'}</p>
+                    <p><strong>Return automat:</strong> ${r.auto_created ? 'Da' : 'Nu'}</p>
+                    ${r.return_date ? `<p><strong>Data retur:</strong> ${r.return_date}</p>` : ''}
                     <p><strong>Created:</strong> ${r.created_at}</p>
                     ${r.verified_at ? `<p><strong>Verified:</strong> ${r.verified_at}</p>` : ''}
                 </div>

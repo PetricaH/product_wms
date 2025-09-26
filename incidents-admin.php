@@ -257,7 +257,7 @@ $scriptUrl = file_exists($scriptPath) ? rtrim(BASE_URL, '/') . '/scripts/inciden
             <div class="modal-content">
                 <header class="modal-header">
                     <h2 class="modal-title">Detalii Incident</h2>
-                    <button type="button" class="modal-close" data-modal-close>
+                    <button type="button" class="modal-close" data-modal-close aria-label="Închide fereastra">
                         <span class="material-symbols-outlined">close</span>
                     </button>
                 </header>
@@ -274,7 +274,7 @@ $scriptUrl = file_exists($scriptPath) ? rtrim(BASE_URL, '/') . '/scripts/inciden
             <div class="modal-content">
                 <header class="modal-header">
                     <h2 class="modal-title">Actualizează Status Incident</h2>
-                    <button type="button" class="modal-close" data-modal-close>
+                    <button type="button" class="modal-close" data-modal-close aria-label="Închide fereastra">
                         <span class="material-symbols-outlined">close</span>
                     </button>
                 </header>

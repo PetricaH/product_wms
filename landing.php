@@ -389,6 +389,7 @@
             padding: 1.1rem 1.5rem;
             border-radius: 14px;
             border: 1px solid rgba(148, 161, 178, 0.18);
+
             background: rgba(148, 161, 178, 0.05);
             display: flex;
             flex-wrap: wrap;

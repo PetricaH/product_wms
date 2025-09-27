@@ -186,7 +186,6 @@
             position: relative;
             overflow: hidden;
             background: linear-gradient(155deg, rgba(26, 26, 29, 0.96) 0%, rgba(15, 16, 19, 0.94) 45%, rgba(26, 26, 29, 0.98) 100%);
-
         }
 
         .hero::before {
@@ -390,6 +389,7 @@
             padding: 1.1rem 1.5rem;
             border-radius: 14px;
             border: 1px solid rgba(148, 161, 178, 0.18);
+
             background: rgba(148, 161, 178, 0.05);
             display: flex;
             flex-wrap: wrap;
@@ -529,6 +529,30 @@
             background: linear-gradient(145deg, rgba(148, 161, 178, 0.12), rgba(26, 26, 29, 0.92));
             border: 1px solid rgba(148, 161, 178, 0.2);
             box-shadow: 0 38px 72px rgba(15, 16, 19, 0.5);
+            overflow: hidden;
+        }
+
+        .cta-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+            margin-top: 1.75rem;
+        }
+
+        .cal-embed {
+            margin-top: 2.5rem;
+            background: linear-gradient(150deg, rgba(26, 26, 29, 0.94), rgba(15, 16, 19, 0.92));
+            border: 1px solid rgba(148, 161, 178, 0.16);
+            border-radius: 24px;
+            padding: 1rem;
+            box-shadow: inset 0 1px 0 rgba(254, 255, 255, 0.03);
+        }
+
+        .cal-embed .cal-inline {
+            width: 100%;
+            min-height: 560px;
+            border-radius: 18px;
+            overflow: hidden;
         }
 
         .cta-card h2 {
@@ -642,6 +666,14 @@
 
             .cta-card {
                 padding: 2.5rem;
+            }
+
+            .cta-actions {
+                flex-direction: column;
+            }
+
+            .cal-embed .cal-inline {
+                min-height: 520px;
             }
         }
     </style>
@@ -892,13 +924,54 @@
                 <div class="cta-card">
                     <h2 class="translate" data-lang-ro="Transformă-ți operațiunile de depozit în doar câteva săptămâni" data-lang-en="Transform your warehouse operations in weeks">Transformă-ți operațiunile de depozit în doar câteva săptămâni</h2>
                     <p class="translate" data-lang-ro="Programează un demo personalizat pentru a vedea cum NOTSOWMS conectează SmartBill, Cargus și procesele interne într-o singură platformă enterprise." data-lang-en="Schedule a personalized demo to see how NOTSOWMS connects SmartBill, Cargus, and internal processes into one enterprise platform.">Programează un demo personalizat pentru a vedea cum NOTSOWMS conectează SmartBill, Cargus și procesele interne într-o singură platformă enterprise.</p>
-                    <div class="hero-actions">
-                        <a class="btn btn-primary translate" href="mailto:enterprise@notsowms.ro" data-lang-ro="Rezervă un demo" data-lang-en="Book a demo">Rezervă un demo</a>
-                        <a class="btn btn-secondary translate" href="tel:+40371234567" data-lang-ro="Vorbește cu un consultant" data-lang-en="Speak with a consultant">Vorbește cu un consultant</a>
+                    <div class="cta-actions">
+                        <a class="btn btn-primary translate" href="https://cal.com/notso/15min" target="_blank" rel="noreferrer" data-lang-ro="Rezervă un demo" data-lang-en="Book a demo">Rezervă un demo</a>
+                        <a class="btn btn-secondary translate" href="https://cal.com/notso/15min?utm=landing" target="_blank" rel="noreferrer" data-lang-ro="Planifică o consultanță" data-lang-en="Schedule a consultation">Planifică o consultanță</a>
+                    </div>
+                    <div class="cal-embed">
+                        <div class="cal-inline" id="my-cal-inline-15min"></div>
                     </div>
                 </div>
             </div>
         </section>
+        <script type="text/javascript">
+            (function (C, A, L) {
+                let p = function (a, ar) { a.q.push(ar); };
+                let d = C.document;
+                C.Cal = C.Cal || function () {
+                    let cal = C.Cal;
+                    let ar = arguments;
+                    if (!cal.loaded) {
+                        cal.ns = {};
+                        cal.q = cal.q || [];
+                        d.head.appendChild(d.createElement("script")).src = A;
+                        cal.loaded = true;
+                    }
+                    if (ar[0] === L) {
+                        const api = function () { p(api, arguments); };
+                        const namespace = ar[1];
+                        api.q = api.q || [];
+                        if (typeof namespace === "string") {
+                            cal.ns[namespace] = cal.ns[namespace] || api;
+                            p(cal.ns[namespace], ar);
+                            p(cal, ["initNamespace", namespace]);
+                        } else p(cal, ar);
+                        return;
+                    }
+                    p(cal, ar);
+                };
+            })(window, "https://app.cal.com/embed/embed.js", "init");
+
+            Cal("init", "15min", { origin: "https://app.cal.com" });
+
+            Cal.ns["15min"]("inline", {
+                elementOrSelector: "#my-cal-inline-15min",
+                config: { "layout": "month_view", "theme": "dark" },
+                calLink: "notso/15min",
+            });
+
+            Cal.ns["15min"]("ui", { "theme": "dark", "hideEventTypeDetails": false, "layout": "month_view" });
+        </script>
     </main>
 
     <footer>

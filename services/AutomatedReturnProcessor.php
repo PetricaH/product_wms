@@ -345,18 +345,114 @@ class AutomatedReturnProcessor
 
     private function extractBarcode(array $payload): ?string
     {
+        $attempts = [];
+
+        $shorten = static function (string $value): string {
+            if (strlen($value) <= 64) {
+                return $value;
+            }
+
+            return substr($value, 0, 64) . '…';
+        };
+
+        $processCandidate = function ($value, string $source) use (&$processCandidate, &$attempts, $shorten): ?string {
+            if (is_array($value)) {
+                foreach ($value as $key => $nested) {
+                    $result = $processCandidate($nested, $source . '[' . $key . ']');
+                    if ($result !== null) {
+                        return $result;
+                    }
+                }
+
+                return null;
+            }
+
+            if ($value === null || $value === '') {
+                $attempts[] = [
+                    'source' => $source,
+                    'value' => $value,
+                    'normalized' => null,
+                    'valid' => false,
+                ];
+                return null;
+            }
+
+            if (!is_scalar($value) && !(is_object($value) && method_exists($value, '__toString'))) {
+                $attempts[] = [
+                    'source' => $source,
+                    'value' => gettype($value),
+                    'normalized' => null,
+                    'valid' => false,
+                ];
+                return null;
+            }
+
+            $string = trim((string)$value);
+            if ($string === '') {
+                $attempts[] = [
+                    'source' => $source,
+                    'value' => '',
+                    'normalized' => null,
+                    'valid' => false,
+                ];
+                return null;
+            }
+
+            $clean = preg_replace('/\D+/', '', $string) ?: '';
+            $isValid = $clean !== '' && preg_match('/^\d{8,12}$/', $clean) === 1;
+
+            $attempts[] = [
+                'source' => $source,
+                'value' => $shorten($string),
+                'normalized' => $clean ?: null,
+                'valid' => $isValid,
+            ];
+
+            return $isValid ? $clean : null;
+        };
+
         $candidates = [];
+
+        if (isset($payload['Awb']) && is_array($payload['Awb'])) {
+            $candidates[] = ['value' => $payload['Awb']['BarCode'] ?? null, 'source' => 'Awb.BarCode'];
+            if (isset($payload['Awb']['ParcelCodes'])) {
+                $candidates[] = ['value' => $payload['Awb']['ParcelCodes'], 'source' => 'Awb.ParcelCodes'];
+            }
+        }
+
+        if (!empty($payload['ClientObservation']) && is_string($payload['ClientObservation'])) {
+            if (preg_match('/seria\s+(\d+)/i', $payload['ClientObservation'], $matches)) {
+                $candidates[] = ['value' => $matches[1], 'source' => 'ClientObservation.regex'];
+            }
+            $candidates[] = ['value' => $payload['ClientObservation'], 'source' => 'ClientObservation'];
+        }
+
+        if (isset($payload['AwbReturn']) && is_array($payload['AwbReturn'])) {
+            $candidates[] = ['value' => $payload['AwbReturn']['BarCode'] ?? null, 'source' => 'AwbReturn.BarCode'];
+            if (isset($payload['AwbReturn']['ParcelCodes'])) {
+                $candidates[] = ['value' => $payload['AwbReturn']['ParcelCodes'], 'source' => 'AwbReturn.ParcelCodes'];
+            }
+        }
+
         foreach (['ReturnBarCode', 'ReturnBarcode', 'ReturnAWB', 'BarCode', 'Barcode', 'AWB', 'Awb', 'ParcelBarCode'] as $field) {
-            if (!empty($payload[$field])) {
-                $candidates[] = $payload[$field];
+            if (array_key_exists($field, $payload)) {
+                $candidates[] = ['value' => $payload[$field], 'source' => $field];
             }
         }
 
         foreach ($candidates as $candidate) {
-            $clean = preg_replace('/\D+/', '', (string)$candidate);
-            if ($clean !== '') {
-                return $clean;
+            $barcode = $processCandidate($candidate['value'], $candidate['source']);
+            if ($barcode !== null) {
+                $this->log('DEBUG', 'Extracted AWB barcode', [
+                    'barcode' => $barcode,
+                    'source' => $candidate['source'],
+                ]);
+                return $barcode;
             }
+        }
+
+        if (!empty($attempts)) {
+            $this->log('DEBUG', 'Failed to extract AWB barcode', ['attempts' => $attempts]);
         }
 
         return null;
@@ -377,15 +473,27 @@ class AutomatedReturnProcessor
 
     private function extractReturnDate(array $payload): ?\DateTimeInterface
     {
-        foreach (['ReturnDate', 'Return_Date', 'Date', 'ScanDate', 'EventDate'] as $field) {
-            if (!empty($payload[$field])) {
-                $value = $payload[$field];
-                $date = $this->createDateTime($value);
-                if ($date !== null) {
-                    return $date;
-                }
+        $fields = ['TimestampDeparture', 'ReturnDate', 'Return_Date', 'Date', 'ScanDate', 'EventDate'];
+        $attempts = [];
+
+        foreach ($fields as $field) {
+            if (empty($payload[$field])) {
+                continue;
             }
+
+            $value = $payload[$field];
+            $date = $this->createDateTime($value);
+            if ($date !== null) {
+                return $date;
+            }
+
+            $attempts[] = ['field' => $field, 'value' => is_scalar($value) ? (string)$value : gettype($value)];
         }
+
+        if (!empty($attempts)) {
+            $this->log('DEBUG', 'Failed to parse return date from payload', ['attempts' => $attempts]);
+        }
+
         return null;
     }
 
@@ -418,6 +526,10 @@ class AutomatedReturnProcessor
 
     private function extractStatusMessage(array $payload): ?string
     {
+        if (!empty($payload['ClientObservation'])) {
+            return (string)$payload['ClientObservation'];
+        }
+
         foreach (['StatusDescription', 'StatusDesc', 'StatusMessage', 'Message', 'EventName', 'EventDescription', 'Status'] as $field) {
             if (!empty($payload[$field])) {
                 return (string)$payload[$field];

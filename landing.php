@@ -32,7 +32,6 @@
             font-family: 'Poppins', sans-serif;
             background: radial-gradient(140% 140% at 80% 8%, rgba(148, 161, 178, 0.18) 0%, rgba(148, 161, 178, 0.08) 38%, rgba(148, 161, 178, 0.02) 62%, rgba(15, 16, 19, 0) 85%),
                         radial-gradient(120% 120% at 18% 42%, rgba(148, 161, 178, 0.14) 0%, rgba(148, 161, 178, 0.06) 40%, rgba(148, 161, 178, 0.02) 65%, rgba(15, 16, 19, 0) 85%),
-
                         linear-gradient(180deg, var(--black) 0%, var(--darker-gray) 55%, var(--black) 100%);
             color: var(--white);
             min-height: 100vh;
@@ -186,22 +185,27 @@
         .hero {
             position: relative;
             overflow: hidden;
+            background: linear-gradient(155deg, rgba(26, 26, 29, 0.96) 0%, rgba(15, 16, 19, 0.94) 45%, rgba(26, 26, 29, 0.98) 100%);
+
         }
 
         .hero::before {
             content: "";
             position: absolute;
-            inset: -15% 42% 38% -22%;
-            background: radial-gradient(120% 120% at 25% 30%, rgba(148, 161, 178, 0.24) 0%, rgba(148, 161, 178, 0.12) 38%, rgba(148, 161, 178, 0.05) 62%, rgba(15, 16, 19, 0) 88%);
+            inset: -32% 35% 28% -28%;
+            background: radial-gradient(120% 120% at 28% 32%, rgba(148, 161, 178, 0.22) 0%, rgba(148, 161, 178, 0.1) 42%, rgba(148, 161, 178, 0.04) 68%, rgba(15, 16, 19, 0) 88%);
+            filter: blur(48px);
+            opacity: 0.8;
             pointer-events: none;
         }
 
         .hero::after {
             content: "";
             position: absolute;
-            inset: 34% -28% -22% 38%;
-            background: radial-gradient(135% 135% at 70% 38%, rgba(148, 161, 178, 0.16) 0%, rgba(148, 161, 178, 0.08) 44%, rgba(148, 161, 178, 0.03) 68%, rgba(15, 16, 19, 0) 88%);
-
+            inset: 26% -32% -36% 42%;
+            background: radial-gradient(130% 130% at 72% 36%, rgba(148, 161, 178, 0.18) 0%, rgba(148, 161, 178, 0.08) 46%, rgba(148, 161, 178, 0.03) 72%, rgba(15, 16, 19, 0) 92%);
+            filter: blur(60px);
+            opacity: 0.75;
             pointer-events: none;
         }
 

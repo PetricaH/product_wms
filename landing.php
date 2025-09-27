@@ -30,7 +30,9 @@
         body {
             margin: 0;
             font-family: 'Poppins', sans-serif;
-            background: radial-gradient(circle at top right, rgba(148, 161, 178, 0.12), transparent 45%),
+            background: radial-gradient(140% 140% at 80% 8%, rgba(148, 161, 178, 0.18) 0%, rgba(148, 161, 178, 0.08) 38%, rgba(148, 161, 178, 0.02) 62%, rgba(15, 16, 19, 0) 85%),
+                        radial-gradient(120% 120% at 18% 42%, rgba(148, 161, 178, 0.14) 0%, rgba(148, 161, 178, 0.06) 40%, rgba(148, 161, 178, 0.02) 65%, rgba(15, 16, 19, 0) 85%),
+
                         linear-gradient(180deg, var(--black) 0%, var(--darker-gray) 55%, var(--black) 100%);
             color: var(--white);
             min-height: 100vh;
@@ -189,16 +191,17 @@
         .hero::before {
             content: "";
             position: absolute;
-            inset: -10% 35% 40% -25%;
-            background: radial-gradient(circle, rgba(148, 161, 178, 0.14), transparent 60%);
+            inset: -15% 42% 38% -22%;
+            background: radial-gradient(120% 120% at 25% 30%, rgba(148, 161, 178, 0.24) 0%, rgba(148, 161, 178, 0.12) 38%, rgba(148, 161, 178, 0.05) 62%, rgba(15, 16, 19, 0) 88%);
             pointer-events: none;
         }
 
         .hero::after {
             content: "";
             position: absolute;
-            inset: 35% -25% -20% 40%;
-            background: radial-gradient(circle, rgba(148, 161, 178, 0.1), transparent 65%);
+            inset: 34% -28% -22% 38%;
+            background: radial-gradient(135% 135% at 70% 38%, rgba(148, 161, 178, 0.16) 0%, rgba(148, 161, 178, 0.08) 44%, rgba(148, 161, 178, 0.03) 68%, rgba(15, 16, 19, 0) 88%);
+
             pointer-events: none;
         }
 
@@ -471,7 +474,7 @@
         }
 
         .card-list li::before {
-            content: '\u2022';
+            content: '•';
             color: var(--light-gray);
             font-weight: 600;
             margin-top: -0.05rem;

@@ -255,7 +255,7 @@ class CargusService
                 ];
             }
 
-            $endpoint = sprintf('AwbRetur?date=%s', urlencode($normalizedDate));
+            $endpoint = sprintf('AwbRetur?data=%s', urlencode($normalizedDate));
             $response = $this->makeRequest('GET', $endpoint);
 
             if ($response['success']) {

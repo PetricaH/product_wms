@@ -32,6 +32,7 @@
             font-family: 'Poppins', sans-serif;
             background: radial-gradient(140% 140% at 80% 8%, rgba(148, 161, 178, 0.18) 0%, rgba(148, 161, 178, 0.08) 38%, rgba(148, 161, 178, 0.02) 62%, rgba(15, 16, 19, 0) 85%),
                         radial-gradient(120% 120% at 18% 42%, rgba(148, 161, 178, 0.14) 0%, rgba(148, 161, 178, 0.06) 40%, rgba(148, 161, 178, 0.02) 65%, rgba(15, 16, 19, 0) 85%),
+
                         linear-gradient(180deg, var(--black) 0%, var(--darker-gray) 55%, var(--black) 100%);
             color: var(--white);
             min-height: 100vh;
@@ -200,6 +201,7 @@
             position: absolute;
             inset: 34% -28% -22% 38%;
             background: radial-gradient(135% 135% at 70% 38%, rgba(148, 161, 178, 0.16) 0%, rgba(148, 161, 178, 0.08) 44%, rgba(148, 161, 178, 0.03) 68%, rgba(15, 16, 19, 0) 88%);
+
             pointer-events: none;
         }
 

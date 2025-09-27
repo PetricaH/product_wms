@@ -186,6 +186,7 @@
             position: relative;
             overflow: hidden;
             background: linear-gradient(155deg, rgba(26, 26, 29, 0.96) 0%, rgba(15, 16, 19, 0.94) 45%, rgba(26, 26, 29, 0.98) 100%);
+
         }
 
         .hero::before {

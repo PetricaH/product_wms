@@ -8,6 +8,23 @@ if (session_status() === PHP_SESSION_NONE) {
 $userId = $_SESSION['user_id'] ?? 0;
 logActivity($userId, 'logout', 'user', $userId, 'User logged out');
 
+$config = $config ?? require __DIR__ . '/config/config.php';
+
+if ($userId) {
+    try {
+        $dbFactory = $config['connection_factory'];
+        $pdo = $dbFactory();
+
+        require_once __DIR__ . '/models/User.php';
+        $usersModel = new Users($pdo);
+        $usersModel->deleteRememberTokens((int)$userId);
+    } catch (Throwable $logoutCleanupError) {
+        error_log('Failed to clean remember tokens on logout: ' . $logoutCleanupError->getMessage());
+    }
+}
+
+forgetRememberMeCookie();
+
 $_SESSION = [];
 if (ini_get('session.use_cookies')) {
     $params = session_get_cookie_params();

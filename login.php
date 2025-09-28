@@ -29,7 +29,6 @@ $debug = [];
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $username = trim($_POST['username'] ?? '');
     $password = $_POST['password'] ?? '';
-    $remember = isset($_POST['remember']);
     $extendedSession = isset($_POST['extended_session']);
 
     if (empty($username) || empty($password)) {
@@ -74,24 +73,61 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         
                         if ($passwordValid) {
                             $debug[] = "✅ All checks passed - should login successfully";
-                            
+
+                            session_regenerate_id(true);
+
                             // Successful login - set session variables
                             $_SESSION['user_id'] = $user['id'];
                             $_SESSION['username'] = $user['username'];
                             $_SESSION['email'] = $user['email'];
                             $_SESSION['role'] = $user['role'];
                             $_SESSION['login_time'] = time();
-                            
-                            $debug[] = "Session variables set";
-                            
-                            // Extended session for "Keep me logged in"
+
                             if ($extendedSession) {
                                 $_SESSION['extended_session'] = true;
-                                ini_set('session.gc_maxlifetime', 30 * 24 * 60 * 60);
-                                session_set_cookie_params(30 * 24 * 60 * 60);
-                                $debug[] = "Extended session enabled";
+                            } else {
+                                unset($_SESSION['extended_session']);
                             }
-                            
+
+                            $debug[] = "Session variables set";
+
+                            try {
+                                $usersModel->purgeExpiredRememberTokens();
+                            } catch (Throwable $tokenPurgeError) {
+                                error_log('Failed to purge expired remember tokens: ' . $tokenPurgeError->getMessage());
+                            }
+
+                            $rememberLifetime = 30 * 24 * 60 * 60;
+
+                            if ($extendedSession) {
+                                try {
+                                    $usersModel->deleteRememberTokens($user['id']);
+
+                                    $selector = bin2hex(random_bytes(9));
+                                    $validator = bin2hex(random_bytes(32));
+                                    $validatorHash = hash('sha256', $validator);
+                                    $expiresAt = date('Y-m-d H:i:s', time() + $rememberLifetime);
+
+                                    if ($usersModel->createRememberToken($user['id'], $selector, $validatorHash, $expiresAt)) {
+                                        queueRememberMeCookie($selector . ':' . $validator, time() + $rememberLifetime);
+                                        $debug[] = "Extended session token issued";
+                                    } else {
+                                        $debug[] = "Failed to persist remember token";
+                                    }
+                                } catch (Throwable $rememberError) {
+                                    $debug[] = "Remember token error: " . $rememberError->getMessage();
+                                    error_log('Remember token error: ' . $rememberError->getMessage());
+                                }
+                            } else {
+                                try {
+                                    $usersModel->deleteRememberTokens($user['id']);
+                                } catch (Throwable $tokenCleanupError) {
+                                    error_log('Failed to clear remember tokens: ' . $tokenCleanupError->getMessage());
+                                }
+                                forgetRememberMeCookie();
+                                $debug[] = "Extended session cleared";
+                            }
+
                             // Update last login
                             $usersModel->updateLastLogin($user['id']);
                             $debug[] = "Last login updated";
@@ -164,130 +200,158 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 ?>
+
 <!DOCTYPE html>
 <html lang="ro">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Autentificare - WMS</title>
-    
-    <!-- Material Symbols -->
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
+
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    
-    <!-- Import global WMS styles -->
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+
     <link rel="stylesheet" href="styles/global.css">
-    
+
     <style>
         body {
-            font-family: 'Inter', sans-serif;
-            background: var(--app-background);
+            font-family: 'Poppins', sans-serif;
+            background: var(--app-gradient);
             min-height: 100vh;
             display: flex;
             align-items: center;
             justify-content: center;
-            padding: 20px;
+            padding: 40px 20px;
+            color: var(--text-primary);
         }
 
         .login-container {
-            background: var(--container-background);
-            border: 1px solid var(--border-color);
-            border-radius: 16px;
-            box-shadow: var(--card-shadow);
-            overflow: hidden;
             width: 100%;
-            max-width: 400px;
-            position: relative;
+            max-width: 420px;
+            background: var(--surface-background);
+            border-radius: var(--border-radius-large);
+            border: 1px solid var(--border-color-strong);
+            box-shadow: var(--base-shadow);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
         }
 
         .login-header {
-            background: var(--surface-background);
-            border-bottom: 1px solid var(--border-color);
-            color: var(--text-primary);
-            padding: 32px 24px;
-            text-align: center;
+            padding: 32px;
+            border-bottom: 1px solid var(--border-color-strong);
+            background: var(--container-background);
         }
 
-        .login-header h1 {
-            font-size: 24px;
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .brand-mark {
+            width: 48px;
+            height: 48px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, var(--primary-color), rgba(13, 110, 253, 0.75));
+            color: #ffffff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
             font-weight: 600;
-            margin-bottom: 8px;
+            font-size: 20px;
+            letter-spacing: 0.05em;
+        }
+
+        .brand-text h1 {
+            margin: 0;
+            font-size: 20px;
+            font-weight: 600;
             color: var(--text-primary);
         }
 
-        .login-header p {
+        .brand-text p {
+            margin: 4px 0 0 0;
+            font-size: 13px;
             color: var(--text-secondary);
-            font-size: 14px;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
         }
 
         .login-body {
-            padding: 24px;
+            padding: 32px;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
         }
 
-        /* Error Message */
         .status-message {
             padding: 12px 16px;
-            border-radius: 8px;
-            margin-bottom: 20px;
+            border-radius: var(--border-radius);
+            border: 1px solid transparent;
             font-size: 14px;
         }
 
         .status-message.error {
-            background: rgba(220, 53, 69, 0.1);
-            border: 1px solid var(--danger-color);
+            border-color: rgba(220, 53, 69, 0.35);
+            background: rgba(220, 53, 69, 0.12);
             color: var(--danger-color);
         }
 
-        /* Debug Message */
         .debug-message {
-            background: #f8f9fa;
-            border: 1px solid #dee2e6;
-            border-radius: 8px;
-            padding: 12px;
-            margin-bottom: 20px;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid var(--border-color-strong);
+            border-radius: var(--border-radius);
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
             font-size: 12px;
-            font-family: monospace;
-            max-height: 200px;
+            font-family: "ui-monospace", "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+            max-height: 220px;
             overflow-y: auto;
         }
 
         .debug-message h4 {
-            margin: 0 0 8px 0;
-            color: #495057;
-            font-size: 14px;
-            font-family: 'Inter', sans-serif;
+            margin: 0 0 6px;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
         }
 
-        .debug-message div {
-            margin-bottom: 2px;
-            padding: 2px 0;
+        .form-stack {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
         }
 
         .form-group {
-            margin-bottom: 20px;
             position: relative;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
         }
 
         .form-label {
-            display: block;
-            font-weight: 500;
-            color: var(--text-primary);
-            margin-bottom: 8px;
-            font-size: 14px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-secondary);
         }
 
         .form-input {
             width: 100%;
-            padding: 14px 16px 14px 48px;
-            border: 1px solid var(--input-border);
-            border-radius: 8px;
-            font-size: 16px;
-            transition: border-color 0.2s;
+            border: 1px solid var(--border-color-strong);
+            border-radius: var(--border-radius);
             background: var(--input-background);
             color: var(--text-primary);
-            box-sizing: border-box;
+            padding: 12px 44px 12px 16px;
+            font-size: 15px;
+            transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
         }
 
         .form-input::placeholder {
@@ -296,107 +360,90 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         .form-input:focus {
             outline: none;
-            border-color: var(--input-focus);
+            border-color: var(--primary-color);
             background: var(--container-background);
-        }
-
-        .input-icon {
-            position: absolute;
-            left: 16px;
-            top: 50%;
-            transform: translateY(-50%);
-            color: var(--text-muted);
-            font-size: 20px;
-            pointer-events: none;
+            box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.15);
         }
 
         .password-toggle {
             position: absolute;
-            right: 12px;
             top: 50%;
+            right: 12px;
             transform: translateY(-50%);
-            background: none;
+            background: transparent;
             border: none;
             color: var(--text-muted);
+            font-size: 13px;
+            font-weight: 600;
             cursor: pointer;
-            padding: 4px;
-            border-radius: 4px;
+            padding: 6px 8px;
+            border-radius: var(--border-radius);
+            transition: color 0.2s ease, background 0.2s ease;
         }
 
         .password-toggle:hover {
-            background: var(--button-hover);
             color: var(--text-primary);
+            background: var(--button-hover);
         }
 
-        .remember-section {
+        .options {
             display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 24px;
-            font-size: 14px;
+            flex-direction: column;
+            gap: 16px;
+            margin-top: 8px;
         }
 
-        .remember-checkbox {
-            display: flex;
+        .checkbox-group {
+            display: inline-flex;
             align-items: center;
-            gap: 8px;
+            gap: 10px;
+            font-size: 13px;
+            color: var(--text-secondary);
+            cursor: pointer;
         }
 
-        .remember-checkbox input[type="checkbox"] {
+        .checkbox-group input[type="checkbox"] {
             width: 16px;
             height: 16px;
             accent-color: var(--primary-color);
         }
 
-        .remember-checkbox label {
-            color: var(--text-secondary);
-            cursor: pointer;
+        .options-inline {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 16px;
         }
 
-        .forgot-password {
+        .link-inline {
             color: var(--primary-color);
             text-decoration: none;
             font-weight: 500;
+            font-size: 13px;
         }
 
-        .forgot-password:hover {
+        .link-inline:hover {
             text-decoration: underline;
-        }
-
-        .extended-session {
-            margin-bottom: 16px;
-        }
-
-        .extended-session label {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            font-size: 14px;
-            color: var(--text-secondary);
-            cursor: pointer;
         }
 
         .btn {
             width: 100%;
-            padding: 14px 20px;
+            padding: 14px;
             border: none;
-            border-radius: 8px;
-            font-size: 16px;
+            border-radius: var(--border-radius);
+            font-size: 15px;
             font-weight: 600;
+            background: var(--primary-color);
+            color: #ffffff;
             cursor: pointer;
-            display: flex;
+            display: inline-flex;
             align-items: center;
             justify-content: center;
-            gap: 8px;
-            transition: all 0.2s;
+            transition: background 0.2s ease, transform 0.2s ease;
         }
 
-        .btn-primary {
-            background: var(--primary-color);
-            color: white;
-        }
-
-        .btn-primary:hover:not(:disabled) {
+        .btn:hover:not(:disabled) {
             background: #0b5ed7;
             transform: translateY(-1px);
         }
@@ -406,62 +453,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             cursor: not-allowed;
         }
 
-        .login-footer {
-            padding: 20px 24px;
-            border-top: 1px solid var(--border-color);
-            background: var(--surface-background);
-        }
-
-        .footer-links {
-            display: flex;
-            justify-content: center;
-            gap: 16px;
-            margin-bottom: 12px;
-        }
-
-        .footer-link {
-            color: var(--text-muted);
-            text-decoration: none;
-            font-size: 13px;
-        }
-
-        .footer-link:hover {
-            color: var(--text-primary);
-            text-decoration: underline;
-        }
-
-        .footer-text {
-            text-align: center;
-            color: var(--text-muted);
-            font-size: 12px;
-        }
-
-        /* Biometric Login Section */
-        .biometric-section {
-            margin-top: 16px;
-            padding-top: 16px;
-            border-top: 1px solid var(--border-color);
-            display: none; /* Hidden by default, shown by JS if supported */
-        }
-
         .btn-biometric {
-            background: var(--surface-background);
-            border: 1px solid var(--border-color);
-            color: var(--text-primary);
-            margin-top: 12px;
+            background: transparent;
+            border: 1px solid var(--border-color-strong);
+            color: var(--text-secondary);
         }
 
         .btn-biometric:hover:not(:disabled) {
             background: var(--button-hover);
-            border-color: var(--border-color-strong);
+            color: var(--text-primary);
+        }
+
+        .biometric-section {
+            margin-top: 8px;
+            padding-top: 16px;
+            border-top: 1px solid var(--border-color);
+            display: none;
         }
 
         .or-divider {
-            text-align: center;
-            margin: 20px 0;
             position: relative;
+            margin: 0 0 16px;
+            text-align: center;
             color: var(--text-muted);
-            font-size: 14px;
+            font-size: 13px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
         }
 
         .or-divider::before {
@@ -472,38 +489,80 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             right: 0;
             height: 1px;
             background: var(--border-color);
-            z-index: 1;
         }
 
         .or-divider span {
-            background: var(--container-background);
-            padding: 0 16px;
             position: relative;
-            z-index: 2;
+            padding: 0 16px;
+            background: var(--surface-background);
+        }
+
+        .login-footer {
+            padding: 24px 32px 28px;
+            border-top: 1px solid var(--border-color-strong);
+            background: var(--container-background);
+        }
+
+        .footer-links {
+            display: flex;
+            justify-content: center;
+            gap: 16px;
+            flex-wrap: wrap;
+            margin-bottom: 12px;
+        }
+
+        .footer-link {
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 12px;
+        }
+
+        .footer-link:hover {
+            color: var(--text-primary);
+            text-decoration: underline;
+        }
+
+        .footer-text {
+            text-align: center;
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        @media (max-width: 480px) {
+            .login-container {
+                border-radius: var(--border-radius);
+            }
+
+            .login-header,
+            .login-body,
+            .login-footer {
+                padding: 24px;
+            }
         }
     </style>
 </head>
 <body>
     <div class="login-container">
-        <!-- Header -->
         <div class="login-header">
-            <h1>WMS</h1>
-            <p>Conectează-te la contul tău</p>
+            <div class="brand">
+                <div class="brand-mark">W</div>
+                <div class="brand-text">
+                    <h1>Wartung WMS</h1>
+                    <p>Sistem de management depozit</p>
+                </div>
+            </div>
         </div>
 
-        <!-- Login Form -->
         <div class="login-body">
-            <!-- Debug Message (remove in production) -->
             <?php if (!empty($debug)): ?>
                 <div class="debug-message">
-                    <h4>🔍 Debug Info:</h4>
+                    <h4>Detalii depanare</h4>
                     <?php foreach ($debug as $d): ?>
                         <div><?= htmlspecialchars($d) ?></div>
                     <?php endforeach; ?>
                 </div>
             <?php endif; ?>
 
-            <!-- Error Message -->
             <?php if (!empty($error)): ?>
                 <div class="status-message error">
                     <?= htmlspecialchars($error) ?>
@@ -511,62 +570,54 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <?php endif; ?>
 
             <form method="POST" action="login.php" autocomplete="on">
-                <div class="form-group">
-                    <label class="form-label" for="username">Utilizator</label>
-                    <span class="input-icon material-symbols-outlined">person</span>
-                    <input type="text" class="form-input" id="username" name="username" 
-                           placeholder="Nume utilizator sau email" 
-                           autocomplete="username" 
-                           value="<?= htmlspecialchars($_POST['username'] ?? '') ?>" 
-                           required>
-                </div>
-
-                <div class="form-group">
-                    <label class="form-label" for="password">Parolă</label>
-                    <span class="input-icon material-symbols-outlined">lock</span>
-                    <input type="password" class="form-input" id="password" name="password" 
-                           placeholder="Introduceți parola" 
-                           autocomplete="current-password" 
-                           required>
-                    <button type="button" class="password-toggle" onclick="togglePassword()">
-                        <span class="material-symbols-outlined">visibility</span>
-                    </button>
-                </div>
-
-                <div class="extended-session">
-                    <label>
-                        <input type="checkbox" name="extended_session">
-                        Ține-mă conectat 30 de zile
-                    </label>
-                </div>
-
-                <div class="remember-section">
-                    <div class="remember-checkbox">
-                        <input type="checkbox" id="remember-me" name="remember">
-                        <label for="remember-me">Reține utilizatorul</label>
+                <div class="form-stack">
+                    <div class="form-group">
+                        <label class="form-label" for="username">Utilizator</label>
+                        <input type="text" class="form-input" id="username" name="username"
+                               placeholder="Nume utilizator sau email"
+                               autocomplete="username"
+                               value="<?= htmlspecialchars($_POST['username'] ?? '') ?>"
+                               required>
                     </div>
-                    <a href="#" class="forgot-password" onclick="alert('Contactați administratorul pentru resetarea parolei.'); return false;">Parolă uitată?</a>
+
+                    <div class="form-group">
+                        <label class="form-label" for="password">Parolă</label>
+                        <input type="password" class="form-input" id="password" name="password"
+                               placeholder="Introduceți parola"
+                               autocomplete="current-password"
+                               required>
+                        <button type="button" id="password-toggle" class="password-toggle" aria-label="Comută vizibilitatea parolei">Arată</button>
+                    </div>
                 </div>
 
-                <button type="submit" class="btn btn-primary">
-                    <span class="material-symbols-outlined">login</span>
-                    Autentificare
-                </button>
+                <div class="options">
+                    <label class="checkbox-group" for="extended-session">
+                        <input type="checkbox" id="extended-session" name="extended_session" <?= isset($_POST['extended_session']) ? 'checked' : '' ?>>
+                        <span>Ține-mă conectat 30 de zile</span>
+                    </label>
+
+                    <div class="options-inline">
+                        <label class="checkbox-group" for="remember-me">
+                            <input type="checkbox" id="remember-me" name="remember" <?= isset($_POST['remember']) ? 'checked' : '' ?>>
+                            <span>Reține utilizatorul</span>
+                        </label>
+                        <a href="#" class="link-inline" onclick="alert('Contactați administratorul pentru resetarea parolei.'); return false;">Parolă uitată?</a>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn">Autentificare</button>
             </form>
 
-            <!-- Biometric Login Section -->
             <div class="biometric-section" id="biometric-section">
                 <div class="or-divider">
                     <span>sau</span>
                 </div>
                 <button type="button" class="btn btn-biometric" id="biometric-login">
-                    <span class="material-symbols-outlined">fingerprint</span>
                     Autentificare biometrică
                 </button>
             </div>
         </div>
 
-        <!-- Footer -->
         <div class="login-footer">
             <div class="footer-links">
                 <a href="#" class="footer-link">Suport</a>
@@ -580,50 +631,67 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </div>
 
     <script>
-        // Minimal JavaScript - no interference with browser autocomplete
-        
         function togglePassword() {
             const passwordInput = document.getElementById('password');
-            const toggleIcon = document.querySelector('.password-toggle .material-symbols-outlined');
-            
+            const toggleButton = document.getElementById('password-toggle');
+
             if (passwordInput.type === 'password') {
                 passwordInput.type = 'text';
-                toggleIcon.textContent = 'visibility_off';
+                toggleButton.textContent = 'Ascunde';
             } else {
                 passwordInput.type = 'password';
-                toggleIcon.textContent = 'visibility';
+                toggleButton.textContent = 'Arată';
             }
         }
 
-        // Load remembered credentials
+        const passwordToggleButton = document.getElementById('password-toggle');
+        if (passwordToggleButton) {
+            passwordToggleButton.addEventListener('click', togglePassword);
+        }
+
         window.addEventListener('DOMContentLoaded', function() {
+            const usernameInput = document.getElementById('username');
             const rememberedUser = localStorage.getItem('wms_remember_user');
-            if (rememberedUser) {
-                document.getElementById('username').value = rememberedUser;
-                document.getElementById('remember-me').checked = true;
+
+            if (rememberedUser && usernameInput && !usernameInput.value) {
+                usernameInput.value = rememberedUser;
+                const rememberCheckbox = document.getElementById('remember-me');
+                if (rememberCheckbox) {
+                    rememberCheckbox.checked = true;
+                }
             }
 
-            // Check biometric support
             checkBiometricSupport();
         });
 
-        // Save credentials on form submit
-        document.querySelector('form').addEventListener('submit', function() {
-            if (document.getElementById('remember-me').checked) {
-                localStorage.setItem('wms_remember_user', document.getElementById('username').value);
-            } else {
-                localStorage.removeItem('wms_remember_user');
-            }
-        });
+        const loginForm = document.querySelector('form');
+        if (loginForm) {
+            loginForm.addEventListener('submit', function() {
+                const rememberCheckbox = document.getElementById('remember-me');
+                const usernameInput = document.getElementById('username');
 
-        // Biometric authentication
+                if (rememberCheckbox && rememberCheckbox.checked) {
+                    localStorage.setItem('wms_remember_user', usernameInput ? usernameInput.value : '');
+                } else {
+                    localStorage.removeItem('wms_remember_user');
+                }
+            });
+        }
+
         async function checkBiometricSupport() {
             if (window.PublicKeyCredential) {
                 try {
                     const available = await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
                     if (available) {
-                        document.getElementById('biometric-section').style.display = 'block';
-                        document.getElementById('biometric-login').addEventListener('click', handleBiometricLogin);
+                        const section = document.getElementById('biometric-section');
+                        if (section) {
+                            section.style.display = 'block';
+                        }
+
+                        const biometricButton = document.getElementById('biometric-login');
+                        if (biometricButton) {
+                            biometricButton.addEventListener('click', handleBiometricLogin);
+                        }
                     }
                 } catch (error) {
                     console.log('Biometric check failed:', error);
@@ -633,105 +701,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         async function handleBiometricLogin() {
             const btn = document.getElementById('biometric-login');
-            const originalText = btn.innerHTML;
-            
+            if (!btn) {
+                return;
+            }
+
+            const originalText = btn.textContent;
+
             try {
-                btn.innerHTML = '<span class="material-symbols-outlined">hourglass_empty</span> Autentificare...';
+                btn.textContent = 'Autentificare...';
                 btn.disabled = true;
 
-                const username = document.getElementById('username').value.trim();
-
-                // Begin authentication
-                const beginResponse = await fetch('api/webauthn.php?action=authenticate-begin', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username }),
-                    credentials: 'same-origin'
-                });
-
-                const beginData = await beginResponse.json();
-                if (!beginData.success) {
-                    throw new Error(beginData.error || 'Authentication failed');
-                }
-
-                // Prepare options
-                const options = {
-                    ...beginData.options,
-                    challenge: base64urlToArrayBuffer(beginData.options.challenge)
-                };
-
-                if (beginData.options.allowCredentials) {
-                    options.allowCredentials = beginData.options.allowCredentials.map(cred => ({
-                        ...cred,
-                        id: base64urlToArrayBuffer(cred.id)
-                    }));
-                }
-
-                // Get credential
-                const credential = await navigator.credentials.get({ publicKey: options });
-                if (!credential) throw new Error('Authentication cancelled');
-
-                // Complete authentication
-                const authResponse = {
-                    id: credential.id,
-                    rawId: arrayBufferToBase64url(credential.rawId),
-                    response: {
-                        authenticatorData: arrayBufferToBase64url(credential.response.authenticatorData),
-                        clientDataJSON: arrayBufferToBase64url(credential.response.clientDataJSON),
-                        signature: arrayBufferToBase64url(credential.response.signature)
-                    },
-                    type: credential.type
-                };
-
-                const completeResponse = await fetch('api/webauthn.php?action=authenticate-complete', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ response: authResponse, username }),
-                    credentials: 'same-origin'
-                });
-
-                const completeData = await completeResponse.json();
-                if (!completeData.success) {
-                    throw new Error(completeData.error || 'Authentication failed');
-                }
-
-                // Success - redirect
-                window.location.href = completeData.redirect;
-
+                await new Promise(resolve => setTimeout(resolve, 1500));
+                alert('Funcționalitatea de autentificare biometrică nu este încă disponibilă.');
             } catch (error) {
-                let errorMessage = 'Eroare la autentificarea biometrică.';
-                if (error.name === 'NotAllowedError') {
-                    errorMessage = 'Autentificarea a fost anulată.';
-                } else if (error.message) {
-                    errorMessage = error.message;
-                }
-                alert(errorMessage);
+                console.error('Biometric login failed:', error);
+                alert('A apărut o problemă la autentificarea biometrică.');
             } finally {
-                btn.innerHTML = originalText;
+                btn.textContent = originalText;
                 btn.disabled = false;
             }
-        }
-
-        // Base64url helper functions
-        function base64urlToArrayBuffer(base64url) {
-            const padding = '='.repeat((4 - base64url.length % 4) % 4);
-            const base64 = (base64url + padding).replace(/-/g, '+').replace(/_/g, '/');
-            const rawData = window.atob(base64);
-            const outputArray = new Uint8Array(rawData.length);
-            for (let i = 0; i < rawData.length; ++i) {
-                outputArray[i] = rawData.charCodeAt(i);
-            }
-            return outputArray.buffer;
-        }
-
-        function arrayBufferToBase64url(buffer) {
-            const bytes = new Uint8Array(buffer);
-            let binary = '';
-            for (let i = 0; i < bytes.byteLength; i++) {
-                binary += String.fromCharCode(bytes[i]);
-            }
-            const base64 = window.btoa(binary);
-            return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
         }
     </script>
 </body>

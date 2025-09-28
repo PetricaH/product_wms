@@ -339,4 +339,94 @@ class Users {
             return false;
         }
     }
+
+    /**
+     * Persist a remember-me token for extended sessions.
+     */
+    public function createRememberToken(int $userId, string $selector, string $validatorHash, string $expiresAt): bool
+    {
+        try {
+            $stmt = $this->db->prepare("
+                INSERT INTO user_remember_tokens (user_id, selector, validator_hash, expires_at, created_at, updated_at)
+                VALUES (:user_id, :selector, :validator_hash, :expires_at, NOW(), NOW())
+            ");
+
+            return $stmt->execute([
+                ':user_id' => $userId,
+                ':selector' => $selector,
+                ':validator_hash' => $validatorHash,
+                ':expires_at' => $expiresAt,
+            ]);
+        } catch (PDOException $e) {
+            error_log("Error in Users::createRememberToken: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Retrieve a stored remember-me token by selector.
+     */
+    public function findRememberToken(string $selector): ?array
+    {
+        try {
+            $stmt = $this->db->prepare("
+                SELECT id, user_id, selector, validator_hash, expires_at
+                FROM user_remember_tokens
+                WHERE selector = :selector
+                LIMIT 1
+            ");
+            $stmt->bindParam(':selector', $selector, PDO::PARAM_STR);
+            $stmt->execute();
+
+            $token = $stmt->fetch(PDO::FETCH_ASSOC);
+            return $token ?: null;
+        } catch (PDOException $e) {
+            error_log("Error in Users::findRememberToken: " . $e->getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Remove all remember-me tokens for a user.
+     */
+    public function deleteRememberTokens(int $userId): bool
+    {
+        try {
+            $stmt = $this->db->prepare("DELETE FROM user_remember_tokens WHERE user_id = :user_id");
+            $stmt->bindParam(':user_id', $userId, PDO::PARAM_INT);
+            return $stmt->execute();
+        } catch (PDOException $e) {
+            error_log("Error in Users::deleteRememberTokens: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Delete a specific remember-me token by its ID.
+     */
+    public function deleteRememberTokenById(int $tokenId): bool
+    {
+        try {
+            $stmt = $this->db->prepare("DELETE FROM user_remember_tokens WHERE id = :id");
+            $stmt->bindParam(':id', $tokenId, PDO::PARAM_INT);
+            return $stmt->execute();
+        } catch (PDOException $e) {
+            error_log("Error in Users::deleteRememberTokenById: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Remove expired remember-me tokens.
+     */
+    public function purgeExpiredRememberTokens(): bool
+    {
+        try {
+            $stmt = $this->db->prepare("DELETE FROM user_remember_tokens WHERE expires_at <= NOW()");
+            return $stmt->execute();
+        } catch (PDOException $e) {
+            error_log("Error in Users::purgeExpiredRememberTokens: " . $e->getMessage());
+            return false;
+        }
+    }
 }

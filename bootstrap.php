@@ -16,6 +16,39 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
+if (!defined('REMEMBER_ME_COOKIE_NAME')) {
+    define('REMEMBER_ME_COOKIE_NAME', 'wms_remember');
+}
+
+function rememberMeCookieBaseOptions(): array
+{
+    $params = session_get_cookie_params();
+
+    return [
+        'path' => $params['path'] ?? '/',
+        'domain' => $params['domain'] ?? '',
+        'secure' => !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off',
+        'httponly' => true,
+        'samesite' => $params['samesite'] ?? 'Lax',
+    ];
+}
+
+function queueRememberMeCookie(string $value, int $expiresAt): void
+{
+    $options = rememberMeCookieBaseOptions();
+    $options['expires'] = $expiresAt;
+
+    setcookie(REMEMBER_ME_COOKIE_NAME, $value, $options);
+}
+
+function forgetRememberMeCookie(): void
+{
+    $options = rememberMeCookieBaseOptions();
+    $options['expires'] = time() - 3600;
+
+    setcookie(REMEMBER_ME_COOKIE_NAME, '', $options);
+}
+
 // Generate CSRF token
 if (!isset($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
@@ -40,9 +73,68 @@ $apiWhitelist = [
     'webhook_process_import.php',
     'index.php' // if you have api/index.php
 ];
-$isApiRequest = strpos($_SERVER['REQUEST_URI'], '/api/') !== false && 
+$isApiRequest = strpos($_SERVER['REQUEST_URI'], '/api/') !== false &&
                 in_array($currentScript, $apiWhitelist);
 $requiresAuth = !in_array($currentScript, $publicPages) && !$isApiRequest;
+
+if (!isset($_SESSION['user_id']) && !empty($_COOKIE[REMEMBER_ME_COOKIE_NAME] ?? '')) {
+    $cookieValue = $_COOKIE[REMEMBER_ME_COOKIE_NAME];
+    $parts = explode(':', $cookieValue, 2);
+
+    if (count($parts) === 2) {
+        [$selector, $validator] = $parts;
+
+        try {
+            $config = $config ?? require __DIR__ . '/config/config.php';
+            $dbFactory = $config['connection_factory'];
+            $pdo = $dbFactory();
+
+            require_once __DIR__ . '/models/User.php';
+            $usersModel = new Users($pdo);
+
+            $token = $usersModel->findRememberToken($selector);
+            $expectedHash = $token ? $token['validator_hash'] : null;
+
+            if ($token && $expectedHash && hash_equals($expectedHash, hash('sha256', $validator)) && strtotime($token['expires_at']) > time()) {
+                $user = $usersModel->findById((int)$token['user_id']);
+
+                if ($user && (int)$user['status'] === 1) {
+                    session_regenerate_id(true);
+
+                    $_SESSION['user_id'] = (int)$user['id'];
+                    $_SESSION['username'] = $user['username'];
+                    $_SESSION['email'] = $user['email'];
+                    $_SESSION['role'] = $user['role'];
+                    $_SESSION['login_time'] = time();
+                    $_SESSION['extended_session'] = true;
+
+                    $usersModel->deleteRememberTokenById((int)$token['id']);
+
+                    $newSelector = bin2hex(random_bytes(9));
+                    $newValidator = bin2hex(random_bytes(32));
+                    $newValidatorHash = hash('sha256', $newValidator);
+                    $expiresAt = date('Y-m-d H:i:s', time() + (30 * 24 * 60 * 60));
+
+                    $usersModel->createRememberToken((int)$user['id'], $newSelector, $newValidatorHash, $expiresAt);
+                    queueRememberMeCookie($newSelector . ':' . $newValidator, time() + (30 * 24 * 60 * 60));
+                } else {
+                    $usersModel->deleteRememberTokenById((int)$token['id']);
+                    forgetRememberMeCookie();
+                }
+            } else {
+                if ($token) {
+                    $usersModel->deleteRememberTokenById((int)$token['id']);
+                }
+                forgetRememberMeCookie();
+            }
+        } catch (Throwable $rememberException) {
+            error_log('Remember me auto-login failed: ' . $rememberException->getMessage());
+            forgetRememberMeCookie();
+        }
+    } else {
+        forgetRememberMeCookie();
+    }
+}
 
 if ($requiresAuth && !isset($_SESSION['user_id'])) {
     header('Location: ' . getNavUrl('login.php'));
@@ -51,10 +143,10 @@ if ($requiresAuth && !isset($_SESSION['user_id'])) {
 
 // Verify active user session against database
 if ($requiresAuth && isset($_SESSION['user_id'])) {
-    $config = require __DIR__ . '/config/config.php';
+    $config = $config ?? require __DIR__ . '/config/config.php';
     $dbFactory = $config['connection_factory'];
     $db = $dbFactory();
-    
+
     require_once __DIR__ . '/models/User.php';
     $usersModel = new Users($db);
     $user = $usersModel->findById($_SESSION['user_id']);

@@ -79,6 +79,9 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
+// Ensure processing continues even if the client disconnects (e.g., screen off)
+ignore_user_abort(true);
+
 // Only allow POST
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
@@ -154,6 +157,7 @@ if (strpos($contentType, 'application/json') !== false) {
 // Enhanced validation with logging
 $productId = $input['product_id'] ?? null;
 $quantity = (int)($input['quantity'] ?? 0);
+$requestedPrintCopies = (int)($input['print_copies'] ?? 0);
 $batchNumber = trim($input['batch_number'] ?? '');
 $producedAt = $input['produced_at'] ?? date('Y-m-d H:i:s');
 $locationInput = $input['location_id'] ?? null;
@@ -172,6 +176,9 @@ if (!$productId || $quantity <= 0) {
     echo json_encode(['success' => false, 'message' => 'Product ID and quantity required']);
     exit;
 }
+
+$printCopies = $requestedPrintCopies > 0 ? $requestedPrintCopies : $quantity;
+
 
 try {
     // Convert product_id to integer if it's a string (SKU lookup)
@@ -350,8 +357,10 @@ try {
         if ($labelUrl && $doPrint) {
             $headers = @get_headers($labelUrl);
             if ($headers && strpos($headers[0], '200') !== false) {
-                sendToPrintServer($labelUrl, $printer, $config);
-                error_log("Production Receipt Debug - PDF label generated with rotation: $labelUrl");
+                for ($copy = 0; $copy < $printCopies; $copy++) {
+                    sendToPrintServer($labelUrl, $printer, $config);
+                }
+                error_log("Production Receipt Debug - PDF label generated with rotation: $labelUrl (copies: {$printCopies})");
             } else {
                 error_log("Label not available yet: $labelUrl");
             }

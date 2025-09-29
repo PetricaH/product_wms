@@ -2170,32 +2170,40 @@ public function getCriticalStockAlerts(int $limit = 10): array {
 
         $subiect = sprintf('🤖 Autocomandă generată automat - %s (%s)', $orderNumber, $numeProdus);
 
-        $corp = <<<EOT
-Bună ziua,
+        $lines = [
+            'Detalii comandă',
+            '',
+            "Număr comandă: {$orderNumber}",
+            '',
+            "Data generării: {$dataGenerarii}",
+            '',
+            'Tip comandă: Autocomandă generată automat',
+            '',
+            "Denumire produs: {$numeProdus}",
+            '',
+            "Cod / SKU: {$sku}",
+            '',
+            "Cantitate solicitată: {$cantitate} bucăți",
+            '',
+            'Bună ziua,',
+            '',
+            "Sistemul WMS a detectat că produsul \"{$numeProdus}\" (SKU: {$sku}) a atins nivelul minim de stoc și necesită reaprovizionare.",
+            '',
+            'Detalii financiare',
+            '',
+            "Preț unitar estimat: {$pretFormatat} {$currency}",
+            '',
+            "Valoare totală estimată: {$totalFormatat} {$currency}",
+            '',
+            'Această autocomandă a fost creată automat conform pragurilor de stoc configurate în sistem.',
+            '',
+            'Vă mulțumim pentru promptitudine.',
+            '',
+            'Cu stimă,',
+            'Echipa Wartung – Sistem WMS',
+        ];
 
-Sistemul WMS a detectat că produsul "{$numeProdus}" (SKU: {$sku}) a atins nivelul minim de stoc și necesită reaprovizionare.
-
-Detalii comandă
-Număr comandă: {$orderNumber}
-Data generării: {$dataGenerarii}
-Tip comandă: Autocomandă generată automat
-
-Produs comandat
-Denumire produs: {$numeProdus}
-Cod / SKU: {$sku}
-Cantitate solicitată: {$cantitate} bucăți
-
-Detalii financiare
-Preț unitar estimat: {$pretFormatat} {$currency}
-Valoare totală estimată: {$totalFormatat} {$currency}
-
-Această autocomandă a fost creată automat conform pragurilor de stoc configurate în sistem.
-
-Vă mulțumim pentru promptitudine.
-
-Cu stimă,
-Echipa Wartung – Sistem WMS
-EOT;
+        $corp = implode(PHP_EOL, $lines);
 
         return [
             'subiect' => $subiect,

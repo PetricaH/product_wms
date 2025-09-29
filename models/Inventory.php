@@ -2163,7 +2163,7 @@ public function getCriticalStockAlerts(int $limit = 10): array {
         $pret = $context['comanda']['pret_unitar'] ?? 0.0;
         $total = $context['comanda']['valoare_totala'] ?? 0.0;
         $currency = $context['comanda']['currency'] ?? 'RON';
-        $dataGenerarii = date('d.m.Y H:i');
+        $dataGenerarii = date('d.m.Y, ora H:i');
 
         $pretFormatat = number_format((float)$pret, 2, ',', '.');
         $totalFormatat = number_format((float)$total, 2, ',', '.');
@@ -2175,17 +2175,19 @@ Bună ziua,
 
 Sistemul WMS a detectat că produsul "{$numeProdus}" (SKU: {$sku}) a atins nivelul minim de stoc și necesită reaprovizionare.
 
-Detalii comandă:
-  • Număr comandă: {$orderNumber}
-  • Data generării: {$dataGenerarii}
-  • Tip comandă: Autocomandă generată automat
+Detalii comandă
+Număr comandă: {$orderNumber}
+Data generării: {$dataGenerarii}
+Tip comandă: Autocomandă generată automat
 
-Produs comandat:
-  • Denumire: {$numeProdus}
-  • Cod / SKU: {$sku}
-  • Cantitate solicitată: {$cantitate} bucăți
-  • Preț unitar estimat: {$pretFormatat} {$currency}
-  • Valoare totală estimată: {$totalFormatat} {$currency}
+Produs comandat
+Denumire produs: {$numeProdus}
+Cod / SKU: {$sku}
+Cantitate solicitată: {$cantitate} bucăți
+
+Detalii financiare
+Preț unitar estimat: {$pretFormatat} {$currency}
+Valoare totală estimată: {$totalFormatat} {$currency}
 
 Această autocomandă a fost creată automat conform pragurilor de stoc configurate în sistem.
 

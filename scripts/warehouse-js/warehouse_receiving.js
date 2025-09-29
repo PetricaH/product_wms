@@ -968,42 +968,40 @@ class WarehouseReceiving {
             const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content') || this.config.csrfToken;
 
             const printerName = 'Godex EZ6250i';
+            const formData = new FormData();
+            formData.append('product_id', this.selectedProductId);
+            formData.append('quantity', qty);
+            formData.append('print_copies', qty);
+            formData.append('batch_number', batch);
+            formData.append('produced_at', date);
+            formData.append('printer', printerName);
+            formData.append('source', 'factory');
+            formData.append('action', 'print');
 
-            for (let i = 0; i < qty; i++) {
-                const formData = new FormData();
-                formData.append('product_id', this.selectedProductId);
-                formData.append('quantity', qty);
-                formData.append('batch_number', batch);
-                formData.append('produced_at', date);
-                formData.append('printer', printerName);
-                formData.append('source', 'factory');
-                formData.append('action', 'print');
+            const desc = document.getElementById('prod-photo-description');
+            if (desc && desc.value.trim()) {
+                formData.append('photo_description', desc.value.trim());
+            }
 
-                const desc = document.getElementById('prod-photo-description');
-                if (desc && desc.value.trim()) {
-                    formData.append('photo_description', desc.value.trim());
-                }
+            const photos = document.getElementById('prod-photos');
+            if (photos && photos.files.length) {
+                Array.from(photos.files).forEach(f => formData.append('photos[]', f));
+            }
 
-                const photos = document.getElementById('prod-photos');
-                if (photos && photos.files.length) {
-                    Array.from(photos.files).forEach(f => formData.append('photos[]', f));
-                }
+            console.log('Sending production receipt data');
 
-                console.log('Sending production receipt data');
+            const response = await fetch(`${this.config.apiBase}/receiving/record_production_receipt.php`, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'X-CSRF-Token': csrfToken },
+                body: formData
+            });
 
-                const response = await fetch(`${this.config.apiBase}/receiving/record_production_receipt.php`, {
-                    method: 'POST',
-                    credentials: 'same-origin',
-                    headers: { 'X-CSRF-Token': csrfToken },
-                    body: formData
-                });
+            const result = await response.json();
+            console.log('API Response:', result); // Debug logging
 
-                const result = await response.json();
-                console.log('API Response:', result); // Debug logging
-
-                if (!response.ok || !result.success) {
-                    throw new Error(result.message || 'Eroare la imprimare');
-                }
+            if (!response.ok || !result.success) {
+                throw new Error(result.message || 'Eroare la imprimare');
             }
 
             this.showSuccess('Etichetele au fost trimise la imprimantă');

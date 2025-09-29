@@ -2203,7 +2203,6 @@ public function getCriticalStockAlerts(int $limit = 10): array {
             'Cu stimă,',
             'Echipa Wartung – Sistem WMS',
         ];
-
         $corpText = implode("\r\n", $lines);
 
         $numeProdusHtml = htmlspecialchars($numeProdus, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');

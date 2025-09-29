@@ -2046,6 +2046,7 @@ public function getCriticalStockAlerts(int $limit = 10): array {
                 $recipientName,
                 $email['subiect'],
                 $email['corp'],
+                $email['corp_html'] ?? null,
                 $pdfFile ?? ($context['payload']['pdf_path'] ?? null)
             );
 
@@ -2157,47 +2158,110 @@ public function getCriticalStockAlerts(int $limit = 10): array {
 
     private function buildAutoOrderEmail(string $orderNumber, array $context): array
     {
-        $numeProdus = $context['produs']['nume'] ?? '';
-        $sku = $context['produs']['sku'] ?? '';
+        $numeProdus = trim($context['produs']['nume'] ?? '') ?: 'Produs fără nume';
+        $sku = trim($context['produs']['sku'] ?? '') ?: 'N/A';
         $cantitate = $context['comanda']['cantitate'] ?? 0;
         $pret = $context['comanda']['pret_unitar'] ?? 0.0;
         $total = $context['comanda']['valoare_totala'] ?? 0.0;
         $currency = $context['comanda']['currency'] ?? 'RON';
-        $dataGenerarii = date('d.m.Y H:i');
+        $dataGenerarii = date('d.m.Y, ora H:i');
 
         $pretFormatat = number_format((float)$pret, 2, ',', '.');
         $totalFormatat = number_format((float)$total, 2, ',', '.');
 
         $subiect = sprintf('🤖 Autocomandă generată automat - %s (%s)', $orderNumber, $numeProdus);
 
-        $corp = <<<EOT
-Bună ziua,
+        $lines = [
+            'Detalii comandă',
+            '',
+            "Număr comandă: {$orderNumber}",
+            '',
+            "Data generării: {$dataGenerarii}",
+            '',
+            'Tip comandă: Autocomandă generată automat',
+            '',
+            "Denumire produs: {$numeProdus}",
+            '',
+            "Cod / SKU: {$sku}",
+            '',
+            "Cantitate solicitată: {$cantitate} bucăți",
+            '',
+            'Bună ziua,',
+            '',
+            "Sistemul WMS a detectat că produsul \"{$numeProdus}\" (SKU: {$sku}) a atins nivelul minim de stoc și necesită reaprovizionare.",
+            '',
+            'Detalii financiare',
+            '',
+            "Preț unitar estimat: {$pretFormatat} {$currency}",
+            '',
+            "Valoare totală estimată: {$totalFormatat} {$currency}",
+            '',
+            'Această autocomandă a fost creată automat conform pragurilor de stoc configurate în sistem.',
+            '',
+            'Vă mulțumim pentru promptitudine.',
+            '',
+            'Cu stimă,',
+            'Echipa Wartung – Sistem WMS',
+        ];
 
-Sistemul WMS a detectat că produsul "{$numeProdus}" (SKU: {$sku}) a atins nivelul minim de stoc și necesită reaprovizionare.
+        $corpText = implode("\r\n", $lines);
 
-Detalii comandă:
-  • Număr comandă: {$orderNumber}
-  • Data generării: {$dataGenerarii}
-  • Tip comandă: Autocomandă generată automat
+        $numeProdusHtml = htmlspecialchars($numeProdus, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $skuHtml = htmlspecialchars($sku, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 
-Produs comandat:
-  • Denumire: {$numeProdus}
-  • Cod / SKU: {$sku}
-  • Cantitate solicitată: {$cantitate} bucăți
-  • Preț unitar estimat: {$pretFormatat} {$currency}
-  • Valoare totală estimată: {$totalFormatat} {$currency}
+        $htmlTableRow = static function (string $label, string $value): string {
+            return sprintf(
+                '<tr><td style="padding:2px 12px 2px 0;font-weight:600;white-space:nowrap;">%s</td><td style="padding:2px 0;color:#1f2933;">%s</td></tr>',
+                htmlspecialchars($label, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
+                htmlspecialchars($value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')
+            );
+        };
 
-Această autocomandă a fost creată automat conform pragurilor de stoc configurate în sistem.
+        $detaliiComandaRows = [
+            $htmlTableRow('Număr comandă:', $orderNumber),
+            $htmlTableRow('Data generării:', $dataGenerarii),
+            $htmlTableRow('Tip comandă:', 'Autocomandă generată automat'),
+            $htmlTableRow('Denumire produs:', $numeProdus),
+            $htmlTableRow('Cod / SKU:', $sku),
+            $htmlTableRow('Cantitate solicitată:', $cantitate . ' bucăți'),
+        ];
 
-Vă mulțumim pentru promptitudine.
+        $detaliiFinanciareRows = [
+            $htmlTableRow('Preț unitar estimat:', $pretFormatat . ' ' . $currency),
+            $htmlTableRow('Valoare totală estimată:', $totalFormatat . ' ' . $currency),
+        ];
 
-Cu stimă,
-Echipa Wartung – Sistem WMS
-EOT;
+        $corpHtml = <<<HTML
+<div style="font-family:Arial,'Helvetica Neue',Helvetica,sans-serif;font-size:14px;line-height:1.5;color:#111827;">
+    <p style="margin:0 0 12px 0;font-size:16px;font-weight:700;color:#0f172a;">Detalii comandă</p>
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 16px 0;border-collapse:collapse;">
+        %s
+    </table>
+    <p style="margin:0 0 12px 0;">Bună ziua,</p>
+    <p style="margin:0 0 16px 0;">Sistemul WMS a detectat că produsul „%s” (SKU: %s) a atins nivelul minim de stoc și necesită reaprovizionare.</p>
+    <p style="margin:0 0 12px 0;font-size:16px;font-weight:700;color:#0f172a;">Detalii financiare</p>
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 16px 0;border-collapse:collapse;">
+        %s
+    </table>
+    <p style="margin:0 0 12px 0;">Această autocomandă a fost creată automat conform pragurilor de stoc configurate în sistem.</p>
+    <p style="margin:0 0 12px 0;">Vă mulțumim pentru promptitudine.</p>
+    <p style="margin:0 0 2px 0;">Cu stimă,</p>
+    <p style="margin:0;">Echipa Wartung – Sistem WMS</p>
+</div>
+HTML;
+
+        $corpHtml = sprintf(
+            $corpHtml,
+            implode('', $detaliiComandaRows),
+            $numeProdusHtml,
+            $skuHtml,
+            implode('', $detaliiFinanciareRows)
+        );
 
         return [
             'subiect' => $subiect,
-            'corp' => $corp,
+            'corp' => $corpText,
+            'corp_html' => $corpHtml,
             'data_generare' => $dataGenerarii
         ];
     }
@@ -2394,7 +2458,15 @@ EOT;
     /**
      * Trimite emailul de autocomandă folosind infrastructura existentă.
      */
-    private function dispatchAutoOrderEmail(array $smtpConfig, string $toEmail, ?string $toName, string $subject, string $body, ?string $pdfFile = null): array
+    private function dispatchAutoOrderEmail(
+        array $smtpConfig,
+        string $toEmail,
+        ?string $toName,
+        string $subject,
+        string $bodyText,
+        ?string $bodyHtml = null,
+        ?string $pdfFile = null
+    ): array
     {
         if (empty($smtpConfig['host']) || empty($smtpConfig['port']) || empty($smtpConfig['username']) || empty($smtpConfig['password'])) {
             return [
@@ -2433,9 +2505,15 @@ EOT;
                 $mailer->addBCC($fromEmail);
             }
             $mailer->Subject = $subject;
-            $mailer->Body = $body;
-            $mailer->AltBody = $body;
-            $mailer->isHTML(false);
+            if ($bodyHtml) {
+                $mailer->isHTML(true);
+                $mailer->Body = $bodyHtml;
+                $mailer->AltBody = $bodyText;
+            } else {
+                $mailer->isHTML(false);
+                $mailer->Body = $bodyText;
+                $mailer->AltBody = $bodyText;
+            }
 
             $attachment = $this->resolvePdfAttachment($pdfFile);
             if ($attachment && !empty($attachment['path'])) {
@@ -2448,7 +2526,7 @@ EOT;
                 $smtpConfig,
                 $toEmail,
                 $subject,
-                $body,
+                $bodyText,
                 $attachment['data'] ?? null,
                 $attachment['name'] ?? null
             );
@@ -2577,6 +2655,7 @@ EOT;
             $simulation['furnizor']['nume'] ?? '',
             $emailData['subiect'] ?? ('Autocomandă test - ' . $orderNumber),
             $emailData['corp'] ?? 'Acesta este un email de test pentru autocomandă.',
+            $emailData['corp_html'] ?? null,
             $pdfFile
         );
 

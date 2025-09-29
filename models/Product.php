@@ -3,9 +3,12 @@
 // File: models/Product.php - Adapted for your existing database schema
 class Product {
     private $conn;
-    
+
     private $table = "products";
-    
+
+    private $tableColumns = [];
+    private $lastError = '';
+
     private $defaultFields = [
         'product_id', 'sku', 'name', 'description', 'category', 'unit_of_measure', 'quantity',
         'min_stock_level', 'price', 'price_eur', 'weight', 'dimensions', 'barcode',
@@ -201,40 +204,92 @@ class Product {
      * @return int|false Product ID on success, false on failure
      */
     public function createProduct(array $productData) {
+        $this->lastError = '';
+
         // Validate required fields
         if (empty($productData['name']) || empty($productData['sku'])) {
             error_log("Product creation failed: SKU and name are required");
+            $this->lastError = 'SKU and name are required';
             return false;
         }
-        
+
         // Check if SKU already exists
         if ($this->skuExists($productData['sku'])) {
             error_log("Product creation failed: SKU already exists - " . $productData['sku']);
+            $this->lastError = 'SKU already exists';
             return false;
         }
-        
-        $query = "INSERT INTO {$this->table} (
-                    sku, name, description, category, unit_of_measure, quantity, price, price_eur, seller_id
-                  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
-        
+
+        $availableColumns = $this->getTableColumns();
+        if (empty($availableColumns)) {
+            $this->lastError = 'Unable to read products table definition';
+            error_log('Product creation failed: could not determine available columns for products table');
+            return false;
+        }
+
+        $columnResolvers = [
+            'sku' => fn($data) => $data['sku'],
+            'name' => fn($data) => $data['name'],
+            'description' => fn($data) => $data['description'] ?? '',
+            'category' => fn($data) => $data['category'] ?? '',
+            'unit_of_measure' => fn($data) => $data['unit_of_measure'] ?? 'pcs',
+            'quantity' => fn($data) => isset($data['quantity']) ? (int)$data['quantity'] : 0,
+            'min_stock_level' => fn($data) => isset($data['min_stock_level']) ? (int)$data['min_stock_level'] : 0,
+            'price' => fn($data) => isset($data['price']) ? number_format((float)$data['price'], 2, '.', '') : number_format(0, 2, '.', ''),
+            'price_eur' => function ($data) {
+                if (!isset($data['price_eur']) || $data['price_eur'] === '' || $data['price_eur'] === null) {
+                    return null;
+                }
+                return number_format((float)$data['price_eur'], 2, '.', '');
+            },
+            'status' => fn($data) => $data['status'] ?? 'active',
+            'seller_id' => function ($data) {
+                if (empty($data['seller_id'])) {
+                    return null;
+                }
+                $sellerId = (int)$data['seller_id'];
+                return $sellerId > 0 ? $sellerId : null;
+            }
+        ];
+
+        $columns = [];
+        $placeholders = [];
+        $params = [];
+
+        foreach ($columnResolvers as $column => $resolver) {
+            if (in_array($column, $availableColumns, true)) {
+                $value = $resolver($productData);
+                $columns[] = $column;
+                $placeholder = ':' . $column;
+                $placeholders[] = $placeholder;
+                $params[$placeholder] = $value;
+            }
+        }
+
+        if (empty($columns)) {
+            $this->lastError = 'No valid columns found for products insert';
+            error_log('Product creation failed: no valid columns found for insert');
+            return false;
+        }
+
+        $query = "INSERT INTO {$this->table} (" . implode(', ', $columns) . ") VALUES (" . implode(', ', $placeholders) . ")";
+
         try {
             $stmt = $this->conn->prepare($query);
-            $params = [
-                $productData['sku'],
-                $productData['name'],
-                $productData['description'] ?? '',
-                $productData['category'] ?? '',
-                $productData['unit_of_measure'] ?? 'pcs',
-                intval($productData['quantity'] ?? 0),
-                floatval($productData['price'] ?? 0),
-                floatval($productData['price_eur'] ?? 0),
-                !empty($productData['seller_id']) ? intval($productData['seller_id']) : null
-            ];
-            
-            $success = $stmt->execute($params);
+            foreach ($params as $placeholder => $value) {
+                if ($value === null) {
+                    $stmt->bindValue($placeholder, null, PDO::PARAM_NULL);
+                } elseif (is_int($value)) {
+                    $stmt->bindValue($placeholder, $value, PDO::PARAM_INT);
+                } else {
+                    $stmt->bindValue($placeholder, $value);
+                }
+            }
+
+            $success = $stmt->execute();
             if ($success) {
                 $productId = $this->conn->lastInsertId();
-                
+
                 // Log activity if available
                 if (function_exists('logActivity')) {
                     $userId = $_SESSION['user_id'] ?? 0;
@@ -248,14 +303,19 @@ class Product {
                         $productData
                     );
                 }
-                
+
                 return $productId;
             } else {
                 error_log("Product creation failed for SKU: " . $productData['sku'] . " - Execute returned false");
+                $errorInfo = $stmt->errorInfo();
+                if (!empty($errorInfo[2])) {
+                    $this->lastError = $errorInfo[2];
+                }
                 return false;
             }
         } catch (PDOException $e) {
             error_log("Error creating product " . $productData['sku'] . ": " . $e->getMessage());
+            $this->lastError = $e->getMessage();
             return false;
         }
     }
@@ -385,6 +445,36 @@ class Product {
             error_log("Error checking SKU existence: " . $e->getMessage());
             return false;
         }
+    }
+
+    /**
+     * Retrieve and cache the columns available on the products table
+     * @return array
+     */
+    private function getTableColumns(): array {
+        if (!empty($this->tableColumns)) {
+            return $this->tableColumns;
+        }
+
+        try {
+            $stmt = $this->conn->query("SHOW COLUMNS FROM {$this->table}");
+            if ($stmt !== false) {
+                $this->tableColumns = $stmt->fetchAll(PDO::FETCH_COLUMN);
+            }
+        } catch (PDOException $e) {
+            error_log('Failed to fetch columns for products table: ' . $e->getMessage());
+            $this->tableColumns = [];
+        }
+
+        return $this->tableColumns;
+    }
+
+    /**
+     * Get the last error message recorded during a failed operation
+     * @return string
+     */
+    public function getLastError(): string {
+        return $this->lastError;
     }
     
     /**

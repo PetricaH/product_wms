@@ -68,6 +68,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 } else {
                     $message = 'Eroare la crearea produsului. Verificați dacă SKU-ul nu există deja.';
+                    $errorDetails = $productModel->getLastError();
+                    if (!empty($errorDetails)) {
+                        $message .= ' Detalii: ' . htmlspecialchars($errorDetails, ENT_QUOTES, 'UTF-8');
+                    }
                     $messageType = 'error';
                 }
             }

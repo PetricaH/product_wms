@@ -219,6 +219,12 @@ $currentPage = 'warehouse_receiving';
                                     <div id="prod-search-results" class="purchase-orders-list"></div>
                                 </div>
                                 <div class="form-group">
+                                    <label class="form-label">Locație de depozitare</label>
+                                    <div id="prod-location-info" class="production-location-info" data-state="idle">
+                                        Selectează un produs pentru a vedea locația sugerată de stocare.
+                                    </div>
+                                </div>
+                                <div class="form-group">
                                     <label class="form-label">Cantitate (bucăți)</label>
                                     <input type="number" id="prod-qty" class="form-input" min="1" value="1">
                                 </div>

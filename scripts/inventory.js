@@ -366,6 +366,152 @@ window.addStockForProduct = addStockForProduct;
 window.updateSubdivisionOptions = updateSubdivisionOptions;
 window.setExpiry = setExpiry;
 
+document.addEventListener('DOMContentLoaded', () => {
+    const container = document.querySelector('.product-search-container[data-product-search]');
+    if (!container) return;
+
+    const searchInput = container.querySelector('#product-search-input');
+    const hiddenInput = container.querySelector('#product-search-id');
+    const resultsContainer = container.querySelector('#product-search-results');
+    if (!searchInput || !hiddenInput || !resultsContainer) return;
+
+    let products = [];
+    try {
+        const raw = container.dataset.productSearch || '[]';
+        const parsed = JSON.parse(raw);
+        products = Array.isArray(parsed) ? parsed : [];
+    } catch (error) {
+        console.error('Nu s-a putut încărca lista de produse pentru căutare:', error);
+    }
+
+    const normalizedProducts = products
+        .map((product) => ({
+            id: String(product.id ?? product.product_id ?? ''),
+            name: product.name || '',
+            sku: product.sku || ''
+        }))
+        .filter((product) => product.id);
+
+    if (searchInput.dataset.selectedLabel) {
+        searchInput.dataset.selectedLabel = searchInput.dataset.selectedLabel.trim().toLowerCase();
+    }
+
+    if (searchInput.dataset.selectedId && !hiddenInput.value) {
+        hiddenInput.value = searchInput.dataset.selectedId;
+    }
+
+    const clearSelection = () => {
+        hiddenInput.value = '';
+        searchInput.dataset.selectedId = '';
+        searchInput.dataset.selectedLabel = '';
+    };
+
+    const hideResults = () => {
+        resultsContainer.innerHTML = '';
+        resultsContainer.classList.remove('show');
+    };
+
+    const renderResults = (items) => {
+        if (!items.length) {
+            resultsContainer.innerHTML = '<div class="search-result-item no-results">Nu s-au găsit produse</div>';
+        } else {
+            resultsContainer.innerHTML = items
+                .map((item) => `
+                    <div class="search-result-item" data-product-id="${item.id}" data-product-name="${escapeHtml(item.name)}">
+                        <div class="product-name">${escapeHtml(item.name)}</div>
+                        <div class="product-details">${escapeHtml(item.sku)}</div>
+                    </div>
+                `)
+                .join('');
+        }
+        resultsContainer.classList.add('show');
+    };
+
+    const updateResults = () => {
+        const term = searchInput.value.trim().toLowerCase();
+        const selectedLabel = (searchInput.dataset.selectedLabel || '').toLowerCase();
+        const hasSelection = Boolean(searchInput.dataset.selectedId);
+
+        if (hasSelection && term !== selectedLabel) {
+            clearSelection();
+        } else if (!hasSelection && hiddenInput.value && term) {
+            hiddenInput.value = '';
+        }
+
+        if (!term) {
+            hideResults();
+            return;
+        }
+
+        const matches = normalizedProducts
+            .filter((product) =>
+                product.name.toLowerCase().includes(term) ||
+                product.sku.toLowerCase().includes(term)
+            )
+            .slice(0, 10);
+
+        renderResults(matches);
+    };
+
+    const selectProductFromList = (productId) => {
+        const product = normalizedProducts.find((item) => item.id === productId);
+        if (!product) {
+            clearSelection();
+            return;
+        }
+        hiddenInput.value = product.id;
+        searchInput.value = product.name;
+        searchInput.dataset.selectedId = product.id;
+        searchInput.dataset.selectedLabel = product.name.trim().toLowerCase();
+        hideResults();
+    };
+
+    if (hiddenInput.value) {
+        const existing = normalizedProducts.find((item) => item.id === hiddenInput.value);
+        if (existing && !searchInput.value) {
+            searchInput.value = existing.name;
+            searchInput.dataset.selectedId = existing.id;
+            searchInput.dataset.selectedLabel = existing.name.trim().toLowerCase();
+        }
+    }
+
+    searchInput.addEventListener('input', updateResults);
+    searchInput.addEventListener('focus', () => {
+        if (searchInput.value.trim()) {
+            updateResults();
+        }
+    });
+
+    searchInput.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' && resultsContainer.classList.contains('show')) {
+            const firstItem = resultsContainer.querySelector('.search-result-item');
+            if (firstItem && !firstItem.classList.contains('no-results')) {
+                event.preventDefault();
+                selectProductFromList(firstItem.dataset.productId);
+            }
+        }
+    });
+
+    resultsContainer.addEventListener('mousedown', (event) => {
+        // Prevent input from losing focus when clicking results
+        event.preventDefault();
+    });
+
+    resultsContainer.addEventListener('click', (event) => {
+        const item = event.target.closest('.search-result-item');
+        if (!item || item.classList.contains('no-results')) {
+            return;
+        }
+        selectProductFromList(item.dataset.productId);
+    });
+
+    document.addEventListener('click', (event) => {
+        if (!container.contains(event.target)) {
+            hideResults();
+        }
+    });
+});
+
 function setDateRange(period) {
     const from = document.getElementById('date_from');
     const to = document.getElementById('date_to');

@@ -423,6 +423,84 @@ class CargusService
         return $result;
     }
 
+    private function detectNormalProducts($orderId): int
+    {
+        if (empty($orderId)) {
+            return 0;
+        }
+
+        $query = "SELECT COUNT(*) as count FROM order_items oi JOIN products p ON oi.product_id = p.product_id WHERE oi.order_id = ? AND p.sku NOT LIKE '%.s' AND p.sku NOT LIKE '%.c'";
+        $stmt = $this->conn->prepare($query);
+        $stmt->execute([$orderId]);
+
+        $result = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        return (int)($result['count'] ?? 0);
+    }
+
+    private function loadNormalOrderItems(int $orderId): array
+    {
+        $query = "SELECT p.sku, oi.quantity FROM order_items oi JOIN products p ON oi.product_id = p.product_id WHERE oi.order_id = ? AND p.sku NOT LIKE '%.s' AND p.sku NOT LIKE '%.c'";
+        $stmt = $this->conn->prepare($query);
+        $stmt->execute([$orderId]);
+
+        $items = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $item) {
+            $items[] = [
+                'sku' => $item['sku'] ?? '',
+                'quantity' => (int)($item['quantity'] ?? 0),
+            ];
+        }
+
+        return $items;
+    }
+
+    private function isSpecialSku(string $sku): bool
+    {
+        $normalizedSku = strtolower($sku);
+
+        return substr($normalizedSku, -2) === '.s' || substr($normalizedSku, -2) === '.c';
+    }
+
+    private function extractItemSku(array $item): string
+    {
+        if (!empty($item['sku'])) {
+            return (string)$item['sku'];
+        }
+
+        if (!empty($item['product_code'])) {
+            return (string)$item['product_code'];
+        }
+
+        if (!empty($item['product']['sku'])) {
+            return (string)$item['product']['sku'];
+        }
+
+        return '';
+    }
+
+    private function filterOrderToNormalProducts(array $order): array
+    {
+        $normalOrder = $order;
+
+        if (!empty($order['items']) && is_array($order['items'])) {
+            $normalOrder['items'] = array_values(array_filter($order['items'], function ($item) {
+                $sku = $this->extractItemSku(is_array($item) ? $item : []);
+                if ($sku === '') {
+                    return true;
+                }
+
+                return !$this->isSpecialSku($sku);
+            }));
+        }
+
+        if ((empty($normalOrder['items']) || !is_array($normalOrder['items'])) && !empty($order['id'])) {
+            $normalOrder['items'] = $this->loadNormalOrderItems((int)$order['id']);
+        }
+
+        return $normalOrder;
+    }
+
     /**
      * Main method to generate AWB
      */
@@ -432,7 +510,21 @@ class CargusService
             if (($specialProducts['sprays'] ?? 0) > 0 || ($specialProducts['cartuse'] ?? 0) > 0) {
                 return $this->generateSpecialProductAWBs($order, $specialProducts);
             }
+            return $this->generateNormalAWB($order);
 
+        } catch (Exception $e) {
+            $this->logError('AWB generation exception', $e->getMessage(), $e->getTraceAsString());
+            return [
+                'success' => false,
+                'error' => 'Internal error: ' . $e->getMessage(),
+                'code' => 500
+            ];
+        }
+    }
+
+    private function generateNormalAWB($order, array $shippingOptions = [])
+    {
+        try {
             // Ensure order is eligible for AWB generation
             if (($order['status'] ?? '') !== 'picked') {
                 return [
@@ -452,7 +544,7 @@ class CargusService
             }
 
             // Calculate order weights and parcels
-            $calculatedData = $this->calculateOrderShipping($order);
+            $calculatedData = $this->calculateOrderShipping($order, $shippingOptions);
 
             // Ensure parcel count reflects all items in the order
             $totalItems = 0;
@@ -509,21 +601,21 @@ class CargusService
 
             if ($response['success']) {
                 $data = $response['data'] ?? [];
-            
+
                 // Robust numeric-only extraction (handles raw string and structured responses)
                 $barcode = $this->extractNumericBarcode($data);
                 if ($barcode === '') {
                     $this->debugLog("AWB created but no valid numeric barcode found. Full response: " . ($response['raw'] ?? json_encode($data)));
                 }
-            
+
                 $parcelCodes = is_array($data) ? ($data['ParcelCodes'] ?? []) : [];
                 $cargusOrderId = is_array($data) ? ($data['OrderId'] ?? '') : '';
-            
+
                 $this->logInfo('AWB generation result', [
                     'order_id' => $order['id'] ?? null,
                     'barcode' => $barcode ?: 'MISSING'
                 ]);
-            
+
                 return [
                     'success' => true,
                     'barcode' => $barcode,
@@ -531,7 +623,7 @@ class CargusService
                     'cargusOrderId' => $cargusOrderId,
                     'raw' => $response['raw'] ?? null
                 ];
-            }            
+            }
 
             $this->logError('AWB generation failed', $response['error'], $response['raw']);
             return [
@@ -553,6 +645,7 @@ class CargusService
 
     private function generateSpecialProductAWBs($order, array $specialProducts)
     {
+        $originalOrder = $order;
         if (($order['status'] ?? '') !== 'picked') {
             return [
                 'success' => false,
@@ -593,6 +686,7 @@ class CargusService
 
         $awbBarcodes = [];
         $allParcelCodes = [];
+        $warnings = [];
 
         try {
             if (($specialProducts['sprays'] ?? 0) > 0) {
@@ -614,6 +708,30 @@ class CargusService
                 'error' => 'Internal error: ' . $exception->getMessage(),
                 'code' => 500,
             ];
+        }
+
+        $normalProductCount = $this->detectNormalProducts($originalOrder['id'] ?? null);
+        if ($normalProductCount > 0) {
+            $normalOrder = $this->filterOrderToNormalProducts($originalOrder);
+            $normalResult = $this->generateNormalAWB($normalOrder, ['exclude_suffixes' => ['.s', '.c']]);
+
+            if (!empty($normalResult['success'])) {
+                $normalBarcode = $normalResult['barcode'] ?? '';
+                if (is_string($normalBarcode) && trim($normalBarcode) !== '') {
+                    $awbBarcodes[] = $normalBarcode;
+                }
+
+                if (!empty($normalResult['parcelCodes']) && is_array($normalResult['parcelCodes'])) {
+                    $allParcelCodes = array_merge($allParcelCodes, $normalResult['parcelCodes']);
+                }
+            } else {
+                $warningMessage = 'Normal products AWB generation failed';
+                if (!empty($normalResult['error'])) {
+                    $warningMessage .= ': ' . $normalResult['error'];
+                }
+                $warnings[] = $warningMessage;
+                $this->logError('Normal AWB generation failed for mixed order', $normalResult['error'] ?? 'Unknown error', $normalResult['raw'] ?? null);
+            }
         }
 
         $filteredBarcodes = array_values(array_filter($awbBarcodes, fn($code) => is_string($code) && trim($code) !== ''));
@@ -639,12 +757,18 @@ class CargusService
             }
         }
 
-        return [
+        $result = [
             'success' => true,
             'barcode' => $barcodeString,
             'barcodes' => $filteredBarcodes,
             'parcelCodes' => $allParcelCodes,
         ];
+
+        if (!empty($warnings)) {
+            $result['warning'] = implode(' ', $warnings);
+        }
+
+        return $result;
     }
 
     private function generateSprayAWBs(array $order, int $sprayCount, array $senderLocation): array
@@ -1151,9 +1275,9 @@ class CargusService
     /**
      * Calculate shipping data for order
      */
-    public function calculateOrderShipping($order) {
+    public function calculateOrderShipping($order, array $options = []) {
         $weightCalculator = new WeightCalculator($this->conn);
-        return $weightCalculator->calculateOrderShipping($order['id']);
+        return $weightCalculator->calculateOrderShipping($order['id'], $options);
     }
 
     /**

@@ -70,8 +70,8 @@ class WeightCalculator
     /**
      * Calculate complete shipping information for an order
      */
-    public function calculateOrderShipping($orderId) {
-        $orderItems = $this->getOrderItemsWithUnits($orderId);
+    public function calculateOrderShipping($orderId, array $options = []) {
+        $orderItems = $this->getOrderItemsWithUnits($orderId, $options);
 
         if (empty($orderItems)) {
             return $this->getDefaultShippingData();
@@ -139,12 +139,12 @@ class WeightCalculator
     /**
      * Get order items with their unit and weight data
      */
-    private function getOrderItemsWithUnits($orderId) {
+    private function getOrderItemsWithUnits($orderId, array $options = []) {
         $stmt = $this->conn->prepare("
-            SELECT 
+            SELECT
                 oi.quantity,
                 oi.unit_measure,
-                p.product_id as product_id,   
+                p.product_id as product_id,
                 p.name as product_name,
                 p.sku as product_code,        
                 p.category as product_category,
@@ -178,7 +178,27 @@ class WeightCalculator
         ");
         
         $stmt->execute([$orderId]);
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        if (!empty($options['exclude_suffixes']) && is_array($options['exclude_suffixes'])) {
+            $suffixes = array_filter(array_map('strtolower', $options['exclude_suffixes']), fn($suffix) => $suffix !== '');
+
+            if (!empty($suffixes)) {
+                $items = array_values(array_filter($items, function ($item) use ($suffixes) {
+                    $sku = strtolower($item['product_code'] ?? $item['sku'] ?? '');
+
+                    foreach ($suffixes as $suffix) {
+                        if ($suffix !== '' && substr($sku, -strlen($suffix)) === $suffix) {
+                            return false;
+                        }
+                    }
+
+                    return true;
+                }));
+            }
+        }
+
+        return $items;
     }
     
     /**

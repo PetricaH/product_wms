@@ -166,6 +166,92 @@ $productFilter = $_GET['product'] ?? '';
 $locationFilter = $_GET['location'] ?? '';
 $lowStockOnly = isset($_GET['low_stock']);
 
+$inventoryExportColumns = [
+    'location_code' => ['label' => 'Locație', 'default' => true],
+    'shelf_level' => ['label' => 'Raft', 'default' => true],
+    'subdivision_number' => ['label' => 'Subdiviziune', 'default' => false],
+    'product_name' => ['label' => 'Produs', 'default' => true],
+    'sku' => ['label' => 'SKU', 'default' => true],
+    'quantity' => ['label' => 'Cantitate', 'default' => true],
+    'batch_number' => ['label' => 'Batch', 'default' => false],
+    'lot_number' => ['label' => 'Lot', 'default' => false],
+    'received_at' => ['label' => 'Data Primirii', 'default' => false],
+    'expiry_date' => ['label' => 'Data Expirării', 'default' => false],
+];
+
+if (isset($_GET['export_inventory'])) {
+    $requestedColumns = isset($_GET['columns']) && is_array($_GET['columns'])
+        ? array_map('strval', $_GET['columns'])
+        : [];
+
+    $availableKeys = array_keys($inventoryExportColumns);
+    $selectedColumns = array_values(array_intersect($requestedColumns, $availableKeys));
+
+    if (empty($selectedColumns)) {
+        $selectedColumns = array_keys(array_filter(
+            $inventoryExportColumns,
+            static fn($cfg) => !empty($cfg['default'])
+        ));
+    }
+
+    $exportRows = $inventoryModel->getInventoryWithFilters($productFilter, $locationFilter, $lowStockOnly);
+
+    header('Content-Type: text/csv');
+    header('Content-Disposition: attachment; filename="inventory_export_' . date('Ymd_His') . '.csv"');
+
+    $out = fopen('php://output', 'w');
+    $headerRow = array_map(static function ($columnKey) use ($inventoryExportColumns) {
+        return $inventoryExportColumns[$columnKey]['label'];
+    }, $selectedColumns);
+    fputcsv($out, $headerRow);
+
+    foreach ($exportRows as $row) {
+        $dataRow = [];
+        foreach ($selectedColumns as $columnKey) {
+            switch ($columnKey) {
+                case 'location_code':
+                    $dataRow[] = $row['location_code'] ?? '';
+                    break;
+                case 'shelf_level':
+                    $level = $row['shelf_level'] ?? '';
+                    $dataRow[] = $level !== null && $level !== '' ? ('Raft ' . $level) : '';
+                    break;
+                case 'subdivision_number':
+                    $sub = $row['subdivision_number'] ?? '';
+                    $dataRow[] = $sub !== null && $sub !== '' ? ('Subdiviziune ' . $sub) : '';
+                    break;
+                case 'product_name':
+                    $dataRow[] = $row['product_name'] ?? ($row['name'] ?? '');
+                    break;
+                case 'sku':
+                    $dataRow[] = $row['sku'] ?? '';
+                    break;
+                case 'quantity':
+                    $dataRow[] = isset($row['quantity']) ? (string)$row['quantity'] : '';
+                    break;
+                case 'batch_number':
+                    $dataRow[] = $row['batch_number'] ?? '';
+                    break;
+                case 'lot_number':
+                    $dataRow[] = $row['lot_number'] ?? '';
+                    break;
+                case 'received_at':
+                    $dataRow[] = !empty($row['received_at']) ? date('Y-m-d', strtotime($row['received_at'])) : '';
+                    break;
+                case 'expiry_date':
+                    $dataRow[] = !empty($row['expiry_date']) ? date('Y-m-d', strtotime($row['expiry_date'])) : '';
+                    break;
+                default:
+                    $dataRow[] = '';
+            }
+        }
+        fputcsv($out, $dataRow);
+    }
+
+    fclose($out);
+    exit;
+}
+
 // Pagination
 $page = max(1, intval($_GET['page'] ?? 1));
 $pageSize = 25;
@@ -334,6 +420,10 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                         <button class="btn btn-secondary" onclick="openImportStockModal()" style="margin-left:10px;">
                             <span class="material-symbols-outlined">upload_file</span>
                             Import Stoc
+                        </button>
+                        <button class="btn btn-outline-secondary" onclick="openExportModal()" style="margin-left:10px;">
+                            <span class="material-symbols-outlined">download</span>
+                            Exportă Inventar
                         </button>
                     </div>
                 </header>
@@ -888,6 +978,55 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                     </div>
                 </div>
                 <?php endif; ?>
+            </div>
+        </div>
+    </div>
+
+    <!-- Inventory Export Modal -->
+    <div class="modal" id="exportInventoryModal">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 class="modal-title">Export Inventar</h3>
+                    <button class="modal-close" onclick="closeExportModal()">
+                        <span class="material-symbols-outlined">close</span>
+                    </button>
+                </div>
+                <form method="GET" id="inventory-export-form">
+                    <div class="modal-body">
+                        <input type="hidden" name="export_inventory" value="1">
+                        <input type="hidden" name="view" value="<?= htmlspecialchars($view) ?>">
+                        <?php if (!empty($productFilter)): ?>
+                            <input type="hidden" name="product" value="<?= htmlspecialchars($productFilter) ?>">
+                        <?php endif; ?>
+                        <?php if (!empty($locationFilter)): ?>
+                            <input type="hidden" name="location" value="<?= htmlspecialchars($locationFilter) ?>">
+                        <?php endif; ?>
+                        <?php if ($lowStockOnly): ?>
+                            <input type="hidden" name="low_stock" value="1">
+                        <?php endif; ?>
+
+                        <p>Selectează coloanele care vor fi incluse în fișierul exportat.</p>
+                        <div class="export-columns-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;">
+                            <?php foreach ($inventoryExportColumns as $key => $columnConfig): ?>
+                                <?php $isDefault = !empty($columnConfig['default']); ?>
+                                <label class="checkbox-label" style="margin:0;">
+                                    <input
+                                        type="checkbox"
+                                        name="columns[]"
+                                        value="<?= htmlspecialchars($key) ?>"
+                                        <?= $isDefault ? 'checked' : '' ?>
+                                    >
+                                    <?= htmlspecialchars($columnConfig['label']) ?>
+                                </label>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" onclick="closeExportModal()">Anulează</button>
+                        <button type="submit" class="btn btn-primary">Exportă</button>
+                    </div>
+                </form>
             </div>
         </div>
     </div>

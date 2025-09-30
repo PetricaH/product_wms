@@ -389,11 +389,50 @@ class CargusService
         return $date->format($expectedFormat);
     }
 
+    private function detectSpecialProducts($orderId): array
+    {
+        $result = [
+            'sprays' => 0,
+            'cartuse' => 0,
+        ];
+
+        if (empty($orderId)) {
+            return $result;
+        }
+
+        $query = "SELECT p.sku, oi.quantity FROM order_items oi JOIN products p ON oi.product_id = p.product_id WHERE oi.order_id = ? AND (p.sku LIKE '%.s' OR p.sku LIKE '%.c')";
+        $stmt = $this->conn->prepare($query);
+        $stmt->execute([$orderId]);
+
+        $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        foreach ($items as $item) {
+            $sku = strtolower($item['sku'] ?? '');
+            $quantity = (int)($item['quantity'] ?? 0);
+
+            if ($quantity <= 0 || $sku === '') {
+                continue;
+            }
+
+            if (substr($sku, -2) === '.s') {
+                $result['sprays'] += $quantity;
+            } elseif (substr($sku, -2) === '.c') {
+                $result['cartuse'] += $quantity;
+            }
+        }
+
+        return $result;
+    }
+
     /**
      * Main method to generate AWB
      */
     public function generateAWB($order) {
         try {
+            $specialProducts = $this->detectSpecialProducts($order['id'] ?? null);
+            if (($specialProducts['sprays'] ?? 0) > 0 || ($specialProducts['cartuse'] ?? 0) > 0) {
+                return $this->generateSpecialProductAWBs($order, $specialProducts);
+            }
+
             // Ensure order is eligible for AWB generation
             if (($order['status'] ?? '') !== 'picked') {
                 return [
@@ -510,6 +549,224 @@ class CargusService
                 'code' => 500
             ];
         }
+    }
+
+    private function generateSpecialProductAWBs($order, array $specialProducts)
+    {
+        if (($order['status'] ?? '') !== 'picked') {
+            return [
+                'success' => false,
+                'error' => 'Order status must be picked',
+                'code' => 400,
+            ];
+        }
+
+        if (!$this->authenticate()) {
+            return [
+                'success' => false,
+                'error' => 'Authentication failed',
+                'code' => 401,
+            ];
+        }
+
+        $senderLocation = $this->getSenderLocation();
+        if (!$senderLocation) {
+            return [
+                'success' => false,
+                'error' => 'No sender location configured',
+                'code' => 500,
+            ];
+        }
+
+        $addressMapping = $this->mapRecipientAddress($order);
+        if (!$addressMapping['success']) {
+            return [
+                'success' => false,
+                'error' => $addressMapping['error'],
+                'code' => 400,
+                'require_manual_input' => true,
+                'parsed_address' => $addressMapping['parsed_address'] ?? null,
+            ];
+        }
+
+        $order = array_merge($order, $addressMapping['mapped_data']);
+
+        $awbBarcodes = [];
+        $allParcelCodes = [];
+
+        try {
+            if (($specialProducts['sprays'] ?? 0) > 0) {
+                $sprayResult = $this->generateSprayAWBs($order, (int)$specialProducts['sprays'], $senderLocation);
+                $awbBarcodes = array_merge($awbBarcodes, $sprayResult['barcodes']);
+                $allParcelCodes = array_merge($allParcelCodes, $sprayResult['parcelCodes']);
+            }
+
+            if (($specialProducts['cartuse'] ?? 0) > 0) {
+                $cartuseResult = $this->generateCartuseAWBs($order, (int)$specialProducts['cartuse'], $senderLocation);
+                $awbBarcodes = array_merge($awbBarcodes, $cartuseResult['barcodes']);
+                $allParcelCodes = array_merge($allParcelCodes, $cartuseResult['parcelCodes']);
+            }
+        } catch (Exception $exception) {
+            $this->logError('Special product AWB generation failed', $exception->getMessage());
+
+            return [
+                'success' => false,
+                'error' => 'Internal error: ' . $exception->getMessage(),
+                'code' => 500,
+            ];
+        }
+
+        $filteredBarcodes = array_values(array_filter($awbBarcodes, fn($code) => is_string($code) && trim($code) !== ''));
+
+        if (empty($filteredBarcodes)) {
+            return [
+                'success' => false,
+                'error' => 'Unable to generate special product AWBs',
+                'code' => 500,
+            ];
+        }
+
+        $barcodeString = implode(',', $filteredBarcodes);
+
+        if (!empty($order['id']) && $barcodeString !== '') {
+            try {
+                $this->orderModel->updateOrderField($order['id'], [
+                    'awb_barcode' => $barcodeString,
+                    'awb_created_at' => date('Y-m-d H:i:s'),
+                ]);
+            } catch (Exception $exception) {
+                $this->logError('Failed to update order with special product AWBs', $exception->getMessage());
+            }
+        }
+
+        return [
+            'success' => true,
+            'barcode' => $barcodeString,
+            'barcodes' => $filteredBarcodes,
+            'parcelCodes' => $allParcelCodes,
+        ];
+    }
+
+    private function generateSprayAWBs(array $order, int $sprayCount, array $senderLocation): array
+    {
+        $barcodes = [];
+        $parcelCodes = [];
+
+        $maxPerAwb = 12;
+        $remaining = $sprayCount;
+
+        while ($remaining > 0) {
+            $itemsForAwb = min($maxPerAwb, $remaining);
+            $remaining -= $itemsForAwb;
+
+            $calculatedData = [
+                'parcels_count' => 1,
+                'envelopes_count' => 0,
+                'total_weight' => 5,
+                'package_length' => 27,
+                'package_width' => 20,
+                'package_height' => 20,
+            ];
+
+            $awbData = $this->buildAWBData($order, $calculatedData, $senderLocation);
+            $awbData['ParcelCodes'] = [[
+                'Code' => '0',
+                'Type' => 1,
+                'Weight' => 5,
+                'Length' => 27,
+                'Width' => 20,
+                'Height' => 20,
+                'ParcelContent' => sprintf('Spray - %d buc', $itemsForAwb),
+            ]];
+
+            $response = $this->makeRequest('POST', 'Awbs', $awbData);
+
+            if (!$response['success']) {
+                $errorMessage = $response['error'] ?? 'Unknown error';
+                throw new Exception('Failed to generate spray AWB: ' . $errorMessage);
+            }
+
+            $data = $response['data'] ?? [];
+            $barcode = $this->extractNumericBarcode($data);
+
+            if ($barcode === '') {
+                $this->debugLog('Spray AWB created but barcode missing.');
+            }
+
+            $barcodes[] = $barcode;
+
+            if (is_array($data) && !empty($data['ParcelCodes']) && is_array($data['ParcelCodes'])) {
+                $parcelCodes = array_merge($parcelCodes, $data['ParcelCodes']);
+            } else {
+                $parcelCodes = array_merge($parcelCodes, $awbData['ParcelCodes']);
+            }
+        }
+
+        return [
+            'barcodes' => $barcodes,
+            'parcelCodes' => $parcelCodes,
+        ];
+    }
+
+    private function generateCartuseAWBs(array $order, int $cartuseCount, array $senderLocation): array
+    {
+        $barcodes = [];
+        $parcelCodes = [];
+
+        $maxPerAwb = 24;
+        $remaining = $cartuseCount;
+
+        while ($remaining > 0) {
+            $itemsForAwb = min($maxPerAwb, $remaining);
+            $remaining -= $itemsForAwb;
+
+            $calculatedData = [
+                'parcels_count' => 1,
+                'envelopes_count' => 0,
+                'total_weight' => 10,
+                'package_length' => 22,
+                'package_width' => 25,
+                'package_height' => 37,
+            ];
+
+            $awbData = $this->buildAWBData($order, $calculatedData, $senderLocation);
+            $awbData['ParcelCodes'] = [[
+                'Code' => '0',
+                'Type' => 1,
+                'Weight' => 10,
+                'Length' => 22,
+                'Width' => 25,
+                'Height' => 37,
+                'ParcelContent' => sprintf('Cartus - %d buc', $itemsForAwb),
+            ]];
+
+            $response = $this->makeRequest('POST', 'Awbs', $awbData);
+
+            if (!$response['success']) {
+                $errorMessage = $response['error'] ?? 'Unknown error';
+                throw new Exception('Failed to generate cartuse AWB: ' . $errorMessage);
+            }
+
+            $data = $response['data'] ?? [];
+            $barcode = $this->extractNumericBarcode($data);
+
+            if ($barcode === '') {
+                $this->debugLog('Cartuse AWB created but barcode missing.');
+            }
+
+            $barcodes[] = $barcode;
+
+            if (is_array($data) && !empty($data['ParcelCodes']) && is_array($data['ParcelCodes'])) {
+                $parcelCodes = array_merge($parcelCodes, $data['ParcelCodes']);
+            } else {
+                $parcelCodes = array_merge($parcelCodes, $awbData['ParcelCodes']);
+            }
+        }
+
+        return [
+            'barcodes' => $barcodes,
+            'parcelCodes' => $parcelCodes,
+        ];
     }
 
     private function extractNumericBarcode(mixed $data): string

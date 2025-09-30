@@ -581,7 +581,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                     </div>
                 <?php else: ?>
                 <!-- View Controls -->
-                <div class="card">
+                <div class="card card--searchable">
                     <div class="card-header">
                         <h3 class="card-title">Control Inventar</h3>
                         <div class="card-actions">

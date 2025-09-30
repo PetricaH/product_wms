@@ -57,8 +57,22 @@ function addStockForProduct(productId) {
     openAddStockModal(productId);
 }
 
+function openExportModal() {
+    const modal = document.getElementById('exportInventoryModal');
+    if (modal) {
+        modal.classList.add('show');
+    }
+}
+
+function closeExportModal() {
+    const modal = document.getElementById('exportInventoryModal');
+    if (modal) {
+        modal.classList.remove('show');
+    }
+}
+
 window.onclick = function(event) {
-    ['addStockModal','removeStockModal','moveStockModal'].forEach(id => {
+    ['addStockModal','removeStockModal','moveStockModal','exportInventoryModal'].forEach(id => {
         const modal = document.getElementById(id);
         if (event.target === modal) modal.classList.remove('show');
     });
@@ -69,6 +83,7 @@ document.addEventListener('keydown', function(event) {
         closeAddStockModal();
         closeRemoveStockModal();
         closeMoveStockModal();
+        closeExportModal();
     }
 });
 
@@ -199,6 +214,19 @@ async function fetchProductLocation(productId) {
     }
     return false;
 }
+
+document.addEventListener('DOMContentLoaded', () => {
+    const exportForm = document.getElementById('inventory-export-form');
+    if (exportForm) {
+        exportForm.addEventListener('submit', (event) => {
+            const checked = exportForm.querySelectorAll('input[name="columns[]"]:checked');
+            if (!checked.length) {
+                event.preventDefault();
+                alert('Selectează cel puțin o coloană pentru export.');
+            }
+        });
+    }
+});
 
 // -------- Location Levels ---------
 async function loadLocationLevels(locationId) {

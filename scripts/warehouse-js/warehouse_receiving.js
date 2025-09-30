@@ -25,6 +25,7 @@ class WarehouseReceiving {
         this.activeBarcodeTask = null;
         this.barcodeCaptureSession = null;
         this.locationSuggestionCache = new Map();
+        this.productionLocationLookupId = 0;
 
         this.activeTab = 'standard';
         this.returnSearchAbortController = null;
@@ -170,7 +171,13 @@ class WarehouseReceiving {
 
         const prodSearch = document.getElementById('prod-search-input');
         if (prodSearch) {
-            prodSearch.addEventListener('input', (e) => this.searchProducts(e.target.value));
+            prodSearch.addEventListener('input', (e) => {
+                const value = e.target.value || '';
+                this.productionLocationLookupId += 1;
+                this.selectedProductId = null;
+                this.updateProductionLocationMessage('idle');
+                this.searchProducts(value);
+            });
         }
 
         const printBtn = document.getElementById('print-labels-btn');
@@ -303,6 +310,8 @@ class WarehouseReceiving {
         if (searchRes) searchRes.innerHTML = '';
         const searchInput = document.getElementById('prod-search-input');
         if (searchInput) searchInput.value = '';
+        this.productionLocationLookupId += 1;
+        this.updateProductionLocationMessage('idle');
     }
 
     async quickSearchPO(query) {
@@ -901,13 +910,14 @@ class WarehouseReceiving {
     }
 
     async searchProducts(query) {
-        if (!query) {
+        const searchTerm = (query || '').trim();
+        if (!searchTerm) {
             const c = document.getElementById('prod-search-results');
             if (c) c.innerHTML = '';
             return;
         }
         try {
-            const resp = await fetch(`${this.config.apiBase}/products.php?search=${encodeURIComponent(query)}`);
+            const resp = await fetch(`${this.config.apiBase}/products.php?search=${encodeURIComponent(searchTerm)}`);
             const data = await resp.json();
             if (resp.ok) {
                 const products = Array.isArray(data) ? data : data.data;
@@ -924,36 +934,162 @@ class WarehouseReceiving {
         const container = document.getElementById('prod-search-results');
         if (!container) return;
         
-        container.innerHTML = products.map(p => `
-            <div class="purchase-order-item" data-product-id="${p.id}" data-product-name="${this.escapeHtml(p.name)}">
+        container.innerHTML = products.map((p) => {
+            const productName = this.escapeHtml(p.name);
+            const productSku = this.escapeHtml(p.sku || p.code || '');
+            return `
+            <div class="purchase-order-item" data-product-id="${p.id}" data-product-name="${productName}" data-product-sku="${productSku}">
                 <div class="po-header">
-                    <div class="po-number">${this.escapeHtml(p.sku || p.code)}</div>
+                    <div class="po-number">${productSku || '—'}</div>
                 </div>
-                <div class="po-details">${this.escapeHtml(p.name)}</div>
-            </div>
-        `).join('');
-        
+                <div class="po-details">${productName}</div>
+            </div>`;
+        }).join('');
+
         // Add event listener for product selection
         container.querySelectorAll('.purchase-order-item').forEach(item => {
             item.addEventListener('click', () => {
                 const productId = item.getAttribute('data-product-id');
                 const productName = item.getAttribute('data-product-name');
-                this.selectProduct(productId, productName);
+                const productSku = item.getAttribute('data-product-sku') || '';
+                this.selectProduct(productId, productName, productSku);
             });
         });
     }
 
-    selectProduct(id, name) {
-        this.selectedProductId = id;
+    async selectProduct(id, name, sku = '') {
+        const numericId = parseInt(id, 10);
+        this.selectedProductId = Number.isNaN(numericId) ? null : numericId;
         const searchInput = document.getElementById('prod-search-input');
         if (searchInput) searchInput.value = name;
         const container = document.getElementById('prod-search-results');
         if (container) container.innerHTML = '';
+        if (!this.selectedProductId) {
+            this.updateProductionLocationMessage('error');
+            return;
+        }
+        await this.showProductionLocationForProduct({ product_id: this.selectedProductId, sku });
+    }
+
+    async showProductionLocationForProduct(productMeta) {
+        const lookupToken = ++this.productionLocationLookupId;
+        this.updateProductionLocationMessage('loading');
+
+        const effectiveMeta = {
+            product_id: productMeta?.product_id || productMeta?.id || null,
+            sku: productMeta?.sku || productMeta?.code || ''
+        };
+
+        if (!effectiveMeta.product_id) {
+            this.updateProductionLocationMessage('error');
+            return;
+        }
+
+        try {
+            const suggestion = await this.fetchSuggestedLocation(effectiveMeta);
+            if (lookupToken !== this.productionLocationLookupId) {
+                return;
+            }
+
+            if (suggestion && suggestion.location_code) {
+                this.updateProductionLocationMessage('found', suggestion);
+                return;
+            }
+
+            const fallbackLocation = (this.defaultLocation || '').trim();
+            if (fallbackLocation) {
+                this.updateProductionLocationMessage('fallback', {
+                    location_code: fallbackLocation,
+                    reason: 'missing'
+                });
+            } else {
+                this.updateProductionLocationMessage('missing');
+            }
+        } catch (error) {
+            console.error('Production location lookup failed:', error);
+            if (lookupToken !== this.productionLocationLookupId) {
+                return;
+            }
+
+            const fallbackLocation = (this.defaultLocation || '').trim();
+            if (fallbackLocation) {
+                this.updateProductionLocationMessage('fallback', {
+                    location_code: fallbackLocation,
+                    reason: 'error'
+                });
+            } else {
+                this.updateProductionLocationMessage('error');
+            }
+        }
+    }
+
+    updateProductionLocationMessage(state, details = {}) {
+        const infoElement = document.getElementById('prod-location-info');
+        if (!infoElement) {
+            return;
+        }
+
+        const validStates = ['idle', 'loading', 'found', 'fallback', 'missing', 'error'];
+        const normalizedState = validStates.includes(state) ? state : 'idle';
+        infoElement.dataset.state = normalizedState;
+
+        const fallbackLocation = (details.location_code || '').toString().trim();
+        const defaultMessage = 'Selectează un produs pentru a vedea locația sugerată de stocare.';
+        let message = defaultMessage;
+
+        switch (normalizedState) {
+            case 'loading':
+                message = 'Se verifică locația sugerată pentru produs...';
+                break;
+            case 'found': {
+                const extras = [];
+                const zone = details.zone ? String(details.zone).trim() : '';
+                const level = details.level_number ?? details.level;
+                const subdivision = details.subdivision_number ?? details.subdivision;
+
+                if (zone) {
+                    extras.push(`Zona ${this.escapeHtml(zone)}`);
+                }
+                if (level !== null && level !== undefined && level !== '') {
+                    extras.push(`Nivel ${this.escapeHtml(String(level))}`);
+                }
+                if (subdivision !== null && subdivision !== undefined && subdivision !== '') {
+                    extras.push(`Subdiviziune ${this.escapeHtml(String(subdivision))}`);
+                }
+
+                const extraText = extras.length ? ` <span class="location-extra">(${extras.join(' · ')})</span>` : '';
+                message = `Produsul va fi adăugat în locația <code>${this.escapeHtml(details.location_code || '')}</code>${extraText}.`;
+                break;
+            }
+            case 'fallback': {
+                const reasonText = details.reason === 'error'
+                    ? 'Nu am putut confirma locația dedicată.'
+                    : 'Produsul nu are o locație dedicată configurată.';
+                if (fallbackLocation) {
+                    message = `${reasonText} Va fi folosită locația implicită <code>${this.escapeHtml(fallbackLocation)}</code>.`;
+                } else {
+                    message = `${reasonText} Te rugăm să aloci o locație înainte de a continua.`;
+                }
+                break;
+            }
+            case 'missing':
+                message = 'Produsul nu are o locație configurată și nu există o locație implicită disponibilă. Te rugăm să aloci o locație înainte de a continua.';
+                break;
+            case 'error':
+                message = 'Nu am putut determina locația produsului. Încearcă din nou sau contactează un supervizor.';
+                break;
+            case 'idle':
+            default:
+                message = defaultMessage;
+                break;
+        }
+
+        infoElement.innerHTML = message;
     }
 
     async printProductionLabels() {
         if (!this.productionMode) return;
-        
+
         const qty = parseInt(document.getElementById('prod-qty').value) || 0;
         const batch = document.getElementById('prod-batch-number').value;
         const date = document.getElementById('prod-date').value;
@@ -1289,7 +1425,9 @@ class WarehouseReceiving {
                 const normalized = {
                     location_id: suggestion.location_id ?? suggestion.id ?? null,
                     location_code: suggestion.location_code,
-                    zone: suggestion.zone ?? suggestion.zone_name ?? null
+                    zone: suggestion.zone ?? suggestion.zone_name ?? null,
+                    level_number: suggestion.level_number ?? suggestion.level ?? null,
+                    subdivision_number: suggestion.subdivision_number ?? suggestion.subdivision ?? null
                 };
                 this.locationSuggestionCache.set(cacheKey, normalized);
                 return normalized;

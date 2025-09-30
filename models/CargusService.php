@@ -430,16 +430,21 @@ class CargusService
             // Calculate order weights and parcels
             $calculatedData = $this->calculateOrderShipping($order, $shippingOptions);
 
-            // Ensure parcel count reflects all items in the order
-            $totalItems = 0;
-            if (!empty($order['items']) && is_array($order['items'])) {
-                foreach ($order['items'] as $item) {
-                    $totalItems += (int)($item['quantity'] ?? 0);
+            // Ensure parcel count reflects the calculated parcel breakdown
+            $parcelDetails = $calculatedData['parcels_detail'] ?? [];
+            if (!empty($parcelDetails)) {
+                $calculatedData['parcels_count'] = count($parcelDetails);
+            } else {
+                $totalItems = 0;
+                if (!empty($order['items']) && is_array($order['items'])) {
+                    foreach ($order['items'] as $item) {
+                        $totalItems += (int)($item['quantity'] ?? 0);
+                    }
                 }
-            }
 
-            if ($totalItems > 1 && (!isset($calculatedData['parcels_count']) || $calculatedData['parcels_count'] < $totalItems)) {
-                $calculatedData['parcels_count'] = $totalItems;
+                if (empty($calculatedData['parcels_count']) || $calculatedData['parcels_count'] <= 0) {
+                    $calculatedData['parcels_count'] = max(1, $totalItems);
+                }
             }
 
             // Get sender location
@@ -992,217 +997,219 @@ class CargusService
      */
     private function buildAWBData($order, $calculatedData, $senderLocation) {
 
-    $parcelsCount = (int)($calculatedData['parcels_count'] ?? 1);
-    $envelopesValue = $calculatedData['envelopes_count'] ?? ($order['envelopes_count'] ?? 1);
-    $envelopesCount = (int)$envelopesValue;
-    if ($envelopesCount < 0) {
-        $envelopesCount = 0;
+        $parcelDetails = $calculatedData['parcels_detail'] ?? [];
+        if (!empty($parcelDetails)) {
+            $parcelsCount = count($parcelDetails);
+        } else {
+            $parcelsCount = max(1, (int)($calculatedData['parcels_count'] ?? 1));
+        }
+        $envelopesValue = $calculatedData['envelopes_count'] ?? ($order['envelopes_count'] ?? 1);
+        $envelopesCount = (int)$envelopesValue;
+        if ($envelopesCount < 0) {
+            $envelopesCount = 0;
+        }
+
+        $orderHasEnvelopeOverride = is_array($order) && array_key_exists('envelopes_count', $order);
+        $explicitEnvelopeOverride = array_key_exists('envelopes_count', $calculatedData) || $orderHasEnvelopeOverride;
+        if ($envelopesCount <= 0 && !$explicitEnvelopeOverride) {
+            $envelopesCount = 1;
+        }
+
+        $envelopesCount = max(1, (int)$envelopesCount);
+
+        $this->debugLog("=== CARGUS AWB DEBUG START ===");
+        $this->debugLog("Order Number: " . $order['order_number']);
+        $this->debugLog("Raw weight from calculator: " . $calculatedData['total_weight'] . " kg");
+
+        $totalWeightKg = (float)$calculatedData['total_weight'];
+        $totalWeight = (int)round($totalWeightKg); // send real kilograms
+
+        $this->debugLog("Processed weight: " . $totalWeightKg . " kg");
+        $this->debugLog("API weight (kg): " . $totalWeight);
+        $this->debugLog("Parcels: " . $parcelsCount);
+
+        if ($totalWeight > 31) {
+            $this->debugLog("🚨 PROBLEM: API weight " . $totalWeight . " exceeds 31kg limit!");
+        } else {
+            $this->debugLog("✅ API weight " . $totalWeight . " is within 31kg limit");
+        }
+
+        $serviceId = 34;
+        if ($totalWeightKg > 31) {
+            $serviceId = 35;
+        }
+
+        $this->debugLog("Service ID: " . $serviceId);
+        $this->debugLog("=== CARGUS AWB DEBUG END ===");
+
+        return [
+            'Sender' => [
+                'SenderClientId' => null,
+                'TertiaryClientId' => null,
+                'LocationId' => $senderLocation['cargus_location_id'],
+                'Name' => $senderLocation['company_name'],
+                'CountyId' => $senderLocation['county_id'],
+                'CountyName' => 'BUCURESTI',
+                'LocalityId' => $senderLocation['locality_id'],
+                'LocalityName' => 'BUCURESTI',
+                'StreetId' => $senderLocation['street_id'] ?? 0,
+                'StreetName' => $_ENV['CARGUS_SENDER_STREET'] ?? getenv('CARGUS_SENDER_STREET') ?? 'Strada Principala',
+                'BuildingNumber' => $senderLocation['building_number'],
+                'AddressText' => $senderLocation['address_text'],
+                'ContactPerson' => $senderLocation['contact_person'],
+                'PhoneNumber' => Phone::toLocal($senderLocation['phone']),
+                'Email' => $senderLocation['email'],
+                'CodPostal' => $_ENV['CARGUS_SENDER_POSTAL'] ?? getenv('CARGUS_SENDER_POSTAL') ?? '010001',
+                'CountryId' => 0
+            ],
+            'Recipient' => [
+                'Name' => $order['customer_name'],
+                'CountyId' => $order['recipient_county_id'],
+                'CountyName' => $order['recipient_county_name'] ?? '',
+                'LocalityId' => $order['recipient_locality_id'],
+                'LocalityName' => $order['recipient_locality_name'] ?? '',
+                'StreetId' => $order['recipient_street_id'] ?? 0,
+                'StreetName' => $order['recipient_street_name'] ?? '',
+                'BuildingNumber' => $order['recipient_building_number'] ?: '',
+                'AddressText' => $order['address_text'] ?? $order['shipping_address'],
+                'ContactPerson' => $order['recipient_contact_person'] ?: $order['customer_name'],
+                'PhoneNumber' => Phone::toLocal($order['recipient_phone']),
+                'Email' => $order['recipient_email'] ?: '',
+                'CodPostal' => $order['recipient_postal'] ?? '',
+                'CountryId' => 0
+            ],
+            'Parcels' => $parcelsCount,
+            'Envelopes' => $envelopesCount,
+            'TotalWeight' => $totalWeight,
+            // No declared value is sent for Cargus AWBs
+            'DeclaredValue' => 0,
+            'CashRepayment' => intval($order['cash_repayment'] ?? 0),
+            'BankRepayment' => intval($order['bank_repayment'] ?? 0),
+            'OtherRepayment' => '',
+            'BarCodeRepayment' => '',
+            'PaymentInstrumentId' => 0,
+            'PaymentInstrumentValue' => 0,
+            'HasTertReimbursement' => false,
+            'OpenPackage' => boolval($order['open_package'] ?? false),
+            'PriceTableId' => 0,
+            'ShipmentPayer' => 1,
+            'ShippingRepayment' => 0,
+            'SaturdayDelivery' => boolval($order['saturday_delivery'] ?? false),
+            'MorningDelivery' => boolval($order['morning_delivery'] ?? false),
+            'OtherRepayment' => 'RETUR FACTURA SEMNATA',
+            'Observations' => 'RETUR FACTURA SEMNATA FATA+VERSO',
+            'ReturnDocumentOrPackage' => true,
+            // 'PackageContent' => $calculatedData['package_content'] ?: 'Diverse produse',
+            'CustomString' => '',
+            'SenderReference1' => $order['order_number'] ?? '',
+            'RecipientReference1' => $order['recipient_reference1'] ?? '',
+            'RecipientReference2' => $order['recipient_reference2'] ?? '',
+            'InvoiceReference' => $order['invoice_reference'] ?? $order['invoice_number'] ?? '',
+            'ServiceId' => $serviceId,
+            'ParcelCodes' => $this->generateParcelCodes($parcelsCount, $envelopesCount, $totalWeight, $calculatedData)
+        ];
     }
-
-    $orderHasEnvelopeOverride = is_array($order) && array_key_exists('envelopes_count', $order);
-    $explicitEnvelopeOverride = array_key_exists('envelopes_count', $calculatedData) || $orderHasEnvelopeOverride;
-    if ($envelopesCount <= 0 && !$explicitEnvelopeOverride) {
-        $envelopesCount = 1;
-    }
-
-    $envelopesCount = max(1, (int)$envelopesCount);
-
-    $this->debugLog("=== CARGUS AWB DEBUG START ===");
-    $this->debugLog("Order Number: " . $order['order_number']);
-    $this->debugLog("Raw weight from calculator: " . $calculatedData['total_weight'] . " kg");
-
-    $totalWeightKg = (float)$calculatedData['total_weight'];
-    $totalWeight = (int)round($totalWeightKg); // send real kilograms
-
-    $this->debugLog("Processed weight: " . $totalWeightKg . " kg");
-    $this->debugLog("API weight (kg): " . $totalWeight);
-    $this->debugLog("Parcels: " . $parcelsCount);
-
-    if ($totalWeight > 31) {
-        $this->debugLog("🚨 PROBLEM: API weight " . $totalWeight . " exceeds 31kg limit!");
-    } else {
-        $this->debugLog("✅ API weight " . $totalWeight . " is within 31kg limit");
-    }
-
-    $serviceId = 34;
-    if ($totalWeightKg > 31) {
-        $serviceId = 35;
-    }
-
-    $this->debugLog("Service ID: " . $serviceId);
-    $this->debugLog("=== CARGUS AWB DEBUG END ===");
-
-    return [
-        'Sender' => [
-            'SenderClientId' => null,
-            'TertiaryClientId' => null,
-            'LocationId' => $senderLocation['cargus_location_id'],
-            'Name' => $senderLocation['company_name'],
-            'CountyId' => $senderLocation['county_id'],
-            'CountyName' => 'BUCURESTI',
-            'LocalityId' => $senderLocation['locality_id'],
-            'LocalityName' => 'BUCURESTI',
-            'StreetId' => $senderLocation['street_id'] ?? 0,
-            'StreetName' => $_ENV['CARGUS_SENDER_STREET'] ?? getenv('CARGUS_SENDER_STREET') ?? 'Strada Principala',
-            'BuildingNumber' => $senderLocation['building_number'],
-            'AddressText' => $senderLocation['address_text'],
-            'ContactPerson' => $senderLocation['contact_person'],
-            'PhoneNumber' => Phone::toLocal($senderLocation['phone']),
-            'Email' => $senderLocation['email'],
-            'CodPostal' => $_ENV['CARGUS_SENDER_POSTAL'] ?? getenv('CARGUS_SENDER_POSTAL') ?? '010001',
-            'CountryId' => 0
-        ],
-        'Recipient' => [
-            'Name' => $order['customer_name'],
-            'CountyId' => $order['recipient_county_id'],
-            'CountyName' => $order['recipient_county_name'] ?? '',
-            'LocalityId' => $order['recipient_locality_id'],
-            'LocalityName' => $order['recipient_locality_name'] ?? '',
-            'StreetId' => $order['recipient_street_id'] ?? 0,
-            'StreetName' => $order['recipient_street_name'] ?? '',
-            'BuildingNumber' => $order['recipient_building_number'] ?: '',
-            'AddressText' => $order['address_text'] ?? $order['shipping_address'],
-            'ContactPerson' => $order['recipient_contact_person'] ?: $order['customer_name'],
-            'PhoneNumber' => Phone::toLocal($order['recipient_phone']),
-            'Email' => $order['recipient_email'] ?: '',
-            'CodPostal' => $order['recipient_postal'] ?? '',
-            'CountryId' => 0
-        ],
-        'Parcels' => $parcelsCount,
-        'Envelopes' => $envelopesCount,
-        'TotalWeight' => $totalWeight,
-        // No declared value is sent for Cargus AWBs
-        'DeclaredValue' => 0,
-        'CashRepayment' => intval($order['cash_repayment'] ?? 0),
-        'BankRepayment' => intval($order['bank_repayment'] ?? 0),
-        'OtherRepayment' => '',
-        'BarCodeRepayment' => '',
-        'PaymentInstrumentId' => 0,
-        'PaymentInstrumentValue' => 0,
-        'HasTertReimbursement' => false,
-        'OpenPackage' => boolval($order['open_package'] ?? false),
-        'PriceTableId' => 0,
-        'ShipmentPayer' => 1,
-        'ShippingRepayment' => 0,
-        'SaturdayDelivery' => boolval($order['saturday_delivery'] ?? false),
-        'MorningDelivery' => boolval($order['morning_delivery'] ?? false),
-        'OtherRepayment' => 'RETUR FACTURA SEMNATA',
-        'Observations' => 'RETUR FACTURA SEMNATA FATA+VERSO',
-        'ReturnDocumentOrPackage' => true,
-        // 'PackageContent' => $calculatedData['package_content'] ?: 'Diverse produse',
-        'CustomString' => '',
-        'SenderReference1' => $order['order_number'] ?? '',
-        'RecipientReference1' => $order['recipient_reference1'] ?? '',
-        'RecipientReference2' => $order['recipient_reference2'] ?? '',
-        'InvoiceReference' => $order['invoice_reference'] ?? $order['invoice_number'] ?? '',
-        'ServiceId' => $serviceId,
-        'ParcelCodes' => $this->generateParcelCodes($parcelsCount, $envelopesCount, $totalWeight, $calculatedData)
-    ];
-}
     
-public function getAwbDocuments($awbCodes, $type = 'PDF', $format = 1, $printMainOnce = 1) {
-    try {
-        if (empty($awbCodes) || !is_array($awbCodes)) {
-            return ['success' => false, 'error' => 'Invalid AWB codes provided'];
-        }
-        
-        // Ensure all AWB codes are numeric strings
-        $cleanAwbCodes = array_map(function($awb) {
-            return preg_match('/^\d+$/', trim($awb)) ? trim($awb) : null;
-        }, $awbCodes);
-        
-        $cleanAwbCodes = array_filter($cleanAwbCodes);
-        
-        if (empty($cleanAwbCodes)) {
-            return ['success' => false, 'error' => 'No valid AWB codes provided'];
-        }
-        
-        // Prepare parameters
-        $jsonAwb = json_encode(array_values($cleanAwbCodes));
-        $params = [
-            'barCodes' => $jsonAwb,
-            'type' => strtoupper($type),
-            'format' => intval($format),
-            'printMainOnce' => intval($printMainOnce)
-        ];
-        
-        $queryString = http_build_query($params);
-        $endpoint = 'AwbDocuments?' . $queryString;
-        
-        error_log("Cargus AWB Documents request: {$endpoint}");
-        
-        // Ensure we have a valid authentication token
-        if (!$this->getAuthToken()) {
-            return ['success' => false, 'error' => 'Failed to authenticate with Cargus API'];
-        }
+    public function getAwbDocuments($awbCodes, $type = 'PDF', $format = 1, $printMainOnce = 1) {
+        try {
+            if (empty($awbCodes) || !is_array($awbCodes)) {
+                return ['success' => false, 'error' => 'Invalid AWB codes provided'];
+            }
 
-        // Make API request
-        $result = $this->makeRequest('GET', $endpoint, null, true);
+            // Ensure all AWB codes are numeric strings
+            $cleanAwbCodes = array_map(function ($awb) {
+                return preg_match('/^\d+$/', trim($awb)) ? trim($awb) : null;
+            }, $awbCodes);
 
-        error_log("Cargus AWB Documents response status: " . $result['code']);
+            $cleanAwbCodes = array_filter($cleanAwbCodes);
 
-        if (!$result['success'] || (int)$result['code'] !== 200) {
-            $errorMsg = 'AWB Documents API error: ' . ($result['error'] ?? 'Unknown error');
-            error_log($errorMsg . " (Status: {$result['code']})");
-            return ['success' => false, 'error' => $errorMsg];
-        }
+            if (empty($cleanAwbCodes)) {
+                return ['success' => false, 'error' => 'No valid AWB codes provided'];
+            }
 
+            // Prepare parameters
+            $jsonAwb = json_encode(array_values($cleanAwbCodes));
+            $params = [
+                'barCodes' => $jsonAwb,
+                'type' => strtoupper($type),
+                'format' => intval($format),
+                'printMainOnce' => intval($printMainOnce)
+            ];
 
-        // Validate API response and normalise to base64
-        $rawBody = (string)($result['raw'] ?? '');
+            $queryString = http_build_query($params);
+            $endpoint = 'AwbDocuments?' . $queryString;
 
-        // If API returned JSON, attempt to extract the document content
-        if (!empty($result['data'])) {
-            if (is_array($result['data'])) {
-                // Surface API errors rather than returning a corrupt document
-                $apiError = $result['data']['message'] ?? $result['data']['error'] ?? null;
-                if ($apiError) {
-                    return ['success' => false, 'error' => 'AWB Documents API error: ' . $apiError];
+            error_log("Cargus AWB Documents request: {$endpoint}");
+
+            // Ensure we have a valid authentication token
+            if (!$this->getAuthToken()) {
+                return ['success' => false, 'error' => 'Failed to authenticate with Cargus API'];
+            }
+
+            // Make API request
+            $result = $this->makeRequest('GET', $endpoint, null, true);
+
+            error_log("Cargus AWB Documents response status: " . $result['code']);
+
+            if (!$result['success'] || (int)$result['code'] !== 200) {
+                $errorMsg = 'AWB Documents API error: ' . ($result['error'] ?? 'Unknown error');
+                error_log($errorMsg . " (Status: {$result['code']})");
+                return ['success' => false, 'error' => $errorMsg];
+            }
+
+            // Validate API response and normalise to base64
+            $rawBody = (string)($result['raw'] ?? '');
+
+            // If API returned JSON, attempt to extract the document content
+            if (!empty($result['data'])) {
+                if (is_array($result['data'])) {
+                    // Surface API errors rather than returning a corrupt document
+                    $apiError = $result['data']['message'] ?? $result['data']['error'] ?? null;
+                    if ($apiError) {
+                        return ['success' => false, 'error' => 'AWB Documents API error: ' . $apiError];
+                    }
+
+                    // Some responses might wrap the base64 data in a field
+                    $rawBody = $result['data']['data'] ?? $result['data']['document'] ?? $result['data']['content'] ?? $rawBody;
+                } elseif (is_string($result['data'])) {
+                    $rawBody = $result['data'];
                 }
-
-                // Some responses might wrap the base64 data in a field
-                $rawBody = $result['data']['data'] ?? $result['data']['document'] ?? $result['data']['content'] ?? $rawBody;
-            } elseif (is_string($result['data'])) {
-                $rawBody = $result['data'];
             }
-        }
 
-        // Normalize whitespace that may break base64 detection
-        $rawBody = trim($rawBody);
+            // Normalize whitespace that may break base64 detection
+            $rawBody = trim($rawBody);
 
-        // If response is not valid base64, assume it's binary PDF and encode it
-        if (base64_decode($rawBody, true) === false) {
-            $compact = preg_replace('/\s+/', '', $rawBody);
-            if (base64_decode($compact, true) !== false) {
-                $rawBody = $compact;
-            } else {
-                $rawBody = base64_encode($rawBody);
+            // If response is not valid base64, assume it's binary PDF and encode it
+            if (base64_decode($rawBody, true) === false) {
+                $compact = preg_replace('/\s+/', '', $rawBody);
+                if (base64_decode($compact, true) !== false) {
+                    $rawBody = $compact;
+                } else {
+                    $rawBody = base64_encode($rawBody);
+                }
             }
+
+            // Final validation - ensure we now have valid base64 data
+            if (base64_decode($rawBody, true) === false) {
+                return ['success' => false, 'error' => 'Invalid document data received from Cargus API'];
+            }
+
+            error_log("Cargus AWB Documents success: " . strlen($rawBody) . " bytes base64 data");
+
+            // Return base64 encoded PDF data
+            return [
+                'success' => true,
+                'data' => $rawBody,
+                'error' => null
+            ];
+        } catch (Throwable $e) {
+            error_log('CargusService::getAwbDocuments error: ' . $e->getMessage());
+            return [
+                'success' => false,
+                'error' => 'Failed to get AWB documents: ' . $e->getMessage()
+            ];
         }
-
-        // Final validation - ensure we now have valid base64 data
-        if (base64_decode($rawBody, true) === false) {
-            return ['success' => false, 'error' => 'Invalid document data received from Cargus API'];
-        }
-
-
-        error_log("Cargus AWB Documents success: " . strlen($rawBody) . " bytes base64 data");
-
-        // Return base64 encoded PDF data
-        return [
-            'success' => true,
-            'data' => $rawBody,
-            'error' => null
-        ];
-        
-    } catch (Throwable $e) {
-        error_log('CargusService::getAwbDocuments error: ' . $e->getMessage());
-        return [
-            'success' => false,
-            'error' => 'Failed to get AWB documents: ' . $e->getMessage()
-        ];
     }
-}
 
     /**
      * Validate AWB data before sending to API

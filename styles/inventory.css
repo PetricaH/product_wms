@@ -451,6 +451,14 @@
             color: var(--text-primary);
         }
 /* ===== PRODUCT SEARCH COMPONENTS ===== */
+.card.card--searchable {
+    overflow: visible;
+}
+
+.card.card--searchable .card-body {
+    overflow: visible;
+}
+
 .product-search-container {
     position: relative;
 }

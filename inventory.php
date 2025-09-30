@@ -285,6 +285,22 @@ switch ($view) {
 $totalPages = ceil($totalCount / $pageSize);
 
 $allProducts = $productModel->getAllProductsForDropdown();
+$productSearchOptions = array_map(static function ($product) {
+    return [
+        'id' => (string)($product['product_id'] ?? ''),
+        'name' => $product['name'] ?? '',
+        'sku' => $product['sku'] ?? ''
+    ];
+}, $allProducts);
+$selectedProductName = '';
+if (!empty($productFilter)) {
+    foreach ($productSearchOptions as $option) {
+        if ($option['id'] === (string)$productFilter) {
+            $selectedProductName = $option['name'];
+            break;
+        }
+    }
+}
 $allLocations = $locationModel->getAllLocations();
 $lowStockItems = $inventoryModel->getLowStockItems();
 $expiringProducts = $inventoryModel->getExpiringProducts();
@@ -565,7 +581,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                     </div>
                 <?php else: ?>
                 <!-- View Controls -->
-                <div class="card">
+                <div class="card card--searchable">
                     <div class="card-header">
                         <h3 class="card-title">Control Inventar</h3>
                         <div class="card-actions">
@@ -602,15 +618,21 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                             <input type="hidden" name="view" value="detailed">
                             
                             <div class="form-group">
-                                <label class="form-label">Produs</label>
-                                <select name="product" class="form-control">
-                                    <option value="">Toate produsele</option>
-                                    <?php foreach ($allProducts as $product): ?>
-                                        <option value="<?= $product['product_id'] ?>" <?= $productFilter == $product['product_id'] ? 'selected' : '' ?>>
-                                            <?= htmlspecialchars($product['name']) ?>
-                                        </option>
-                                    <?php endforeach; ?>
-                                </select>
+                                <label class="form-label" for="product-search-input">Produs</label>
+                                <div class="product-search-container" data-product-search='<?= htmlspecialchars(json_encode($productSearchOptions, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP), ENT_QUOTES, 'UTF-8') ?>'>
+                                    <input
+                                        type="text"
+                                        id="product-search-input"
+                                        class="form-control product-search-input"
+                                        placeholder="Caută produs după nume sau SKU"
+                                        autocomplete="off"
+                                        value="<?= htmlspecialchars($selectedProductName) ?>"
+                                        data-selected-label="<?= htmlspecialchars(trim($selectedProductName)) ?>"
+                                        data-selected-id="<?= htmlspecialchars($productFilter) ?>"
+                                    >
+                                    <input type="hidden" name="product" id="product-search-id" value="<?= htmlspecialchars($productFilter) ?>">
+                                    <div id="product-search-results" class="product-search-results"></div>
+                                </div>
                             </div>
                             
                             <div class="form-group">

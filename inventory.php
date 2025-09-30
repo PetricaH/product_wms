@@ -398,6 +398,66 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
 <html lang="ro">
 <head>
     <?php require_once __DIR__ . '/includes/header.php'; ?>
+    <style>
+        #exportInventoryModal .export-columns-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 10px;
+        }
+
+        #exportInventoryModal .export-column-option {
+            margin: 0;
+            padding: 8px 10px;
+            border: 1px solid rgba(15, 23, 42, 0.16);
+            border-radius: 10px;
+            background: #f8fafc;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+            cursor: pointer;
+            min-height: 48px;
+        }
+
+        #exportInventoryModal .export-column-option:hover {
+            border-color: rgba(13, 110, 253, 0.5);
+            box-shadow: 0 2px 6px rgba(15, 23, 42, 0.08);
+        }
+
+        #exportInventoryModal .export-column-option input[type="checkbox"] {
+            margin: 0;
+        }
+
+        #exportInventoryModal .export-column-option .export-order-badge {
+            width: 26px;
+            height: 26px;
+            border-radius: 50%;
+            background: #0d6efd;
+            color: #fff;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 0.85rem;
+            visibility: hidden;
+        }
+
+        #exportInventoryModal .export-column-option.is-selected {
+            border-color: #0d6efd;
+            background: #eef4ff;
+            box-shadow: 0 0 0 1px rgba(13, 110, 253, 0.25);
+        }
+
+        #exportInventoryModal .export-column-option.is-selected .export-order-badge {
+            visibility: visible;
+        }
+
+        #exportInventoryModal .export-column-option .export-label-text {
+            flex: 1;
+            font-weight: 500;
+            color: #1f2937;
+        }
+    </style>
     <title>Gestionare Inventar - WMS</title>
 </head>
 <body>
@@ -1006,18 +1066,19 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                             <input type="hidden" name="low_stock" value="1">
                         <?php endif; ?>
 
-                        <p>Selectează coloanele care vor fi incluse în fișierul exportat.</p>
-                        <div class="export-columns-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;">
+                        <p>Selectează coloanele care vor fi incluse în fișierul exportat. Ordinea din CSV va urma numerele marcate pe fiecare câmp, în funcție de ordinea în care bifezi opțiunile.</p>
+                        <div class="export-columns-grid">
                             <?php foreach ($inventoryExportColumns as $key => $columnConfig): ?>
                                 <?php $isDefault = !empty($columnConfig['default']); ?>
-                                <label class="checkbox-label" style="margin:0;">
+                                <label class="export-column-option checkbox-label" data-column="<?= htmlspecialchars($key) ?>">
                                     <input
                                         type="checkbox"
                                         name="columns[]"
                                         value="<?= htmlspecialchars($key) ?>"
                                         <?= $isDefault ? 'checked' : '' ?>
                                     >
-                                    <?= htmlspecialchars($columnConfig['label']) ?>
+                                    <span class="export-order-badge" aria-hidden="true"></span>
+                                    <span class="export-label-text"><?= htmlspecialchars($columnConfig['label']) ?></span>
                                 </label>
                             <?php endforeach; ?>
                         </div>

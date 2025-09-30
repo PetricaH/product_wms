@@ -218,12 +218,85 @@ async function fetchProductLocation(productId) {
 document.addEventListener('DOMContentLoaded', () => {
     const exportForm = document.getElementById('inventory-export-form');
     if (exportForm) {
+        const columnCheckboxes = Array.from(exportForm.querySelectorAll('input[name="columns[]"]'));
+        const selectionOrder = [];
+
+        columnCheckboxes.forEach((checkbox) => {
+            if (checkbox.checked) {
+                selectionOrder.push(checkbox.value);
+            }
+
+            checkbox.addEventListener('change', () => {
+                const idx = selectionOrder.indexOf(checkbox.value);
+                if (checkbox.checked) {
+                    if (idx === -1) {
+                        selectionOrder.push(checkbox.value);
+                    }
+                } else if (idx !== -1) {
+                    selectionOrder.splice(idx, 1);
+                }
+                refreshColumnOrderUI();
+            });
+        });
+
+        const refreshColumnOrderUI = () => {
+            columnCheckboxes.forEach((checkbox) => {
+                const label = checkbox.closest('.export-column-option');
+                if (!label) return;
+                const badge = label.querySelector('.export-order-badge');
+                const orderIndex = selectionOrder.indexOf(checkbox.value);
+                if (checkbox.checked && orderIndex !== -1) {
+                    label.classList.add('is-selected');
+                    if (badge) {
+                        badge.textContent = orderIndex + 1;
+                    }
+                } else {
+                    label.classList.remove('is-selected');
+                    if (badge) {
+                        badge.textContent = '';
+                    }
+                }
+            });
+        };
+
+        refreshColumnOrderUI();
+
         exportForm.addEventListener('submit', (event) => {
-            const checked = exportForm.querySelectorAll('input[name="columns[]"]:checked');
+            const checked = columnCheckboxes.filter((checkbox) => checkbox.checked);
             if (!checked.length) {
                 event.preventDefault();
                 alert('Selectează cel puțin o coloană pentru export.');
+                return;
             }
+
+            const ordered = selectionOrder.filter((value) => checked.some((checkbox) => checkbox.value === value));
+            checked.forEach((checkbox) => {
+                if (!ordered.includes(checkbox.value)) {
+                    ordered.push(checkbox.value);
+                }
+            });
+
+            if (!ordered.length) {
+                event.preventDefault();
+                alert('Selectează cel puțin o coloană pentru export.');
+                return;
+            }
+
+            event.preventDefault();
+
+            const formData = new FormData(exportForm);
+            formData.delete('columns[]');
+            ordered.forEach((value) => formData.append('columns[]', value));
+
+            const params = new URLSearchParams();
+            for (const [key, value] of formData.entries()) {
+                params.append(key, value);
+            }
+
+            const actionAttr = exportForm.getAttribute('action');
+            const targetUrl = actionAttr ? new URL(actionAttr, window.location.href) : new URL(window.location.href);
+            targetUrl.search = params.toString();
+            window.location.href = targetUrl.toString();
         });
     }
 });

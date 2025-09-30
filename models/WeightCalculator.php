@@ -90,6 +90,7 @@ class WeightCalculator
 
         // Group items by packaging requirements
         $itemGroups = $this->groupItemsByPackaging($orderItems);
+        $normalProcessingItems = $this->filterNormalProcessingItems($orderItems);
         
         // Calculate parcels for each group
         $parcels = [];
@@ -134,7 +135,7 @@ class WeightCalculator
         return [
             'total_weight' => max($totalWeightValue, 0.1), // Minimum 100g
             'parcels_count' => count($optimizedParcels),
-            'envelopes_count' => $this->calculateEnvelopes($orderItems),
+            'envelopes_count' => $this->calculateEnvelopes($normalProcessingItems),
             'parcels_detail' => $optimizedParcels,
             'package_length' => $maxLength,
             'package_width' => $maxWidth,
@@ -224,14 +225,14 @@ class WeightCalculator
         ];
 
         foreach ($items as $item) {
-            $sku = strtolower($item['sku'] ?? $item['product_code'] ?? '');
+            $sku = $this->getNormalizedSku($item);
 
-            if ($sku !== '' && substr($sku, -2) === '.s') {
+            if ($this->isSpraySku($sku)) {
                 $groups['spray'][] = $item;
                 continue;
             }
 
-            if ($sku !== '' && substr($sku, -2) === '.c') {
+            if ($this->isCartuseSku($sku)) {
                 $groups['cartuse'][] = $item;
                 continue;
             }
@@ -621,12 +622,18 @@ class WeightCalculator
      */
     private function calculateEnvelopes($items) {
         $envelopeItems = 0;
-        
+
         foreach ($items as $item) {
+            $sku = $this->getNormalizedSku($item);
+
+            if ($this->isSpecialProductSku($sku)) {
+                continue;
+            }
+
             $itemWeight = $item['weight_per_unit'];
-            
+
             // Items under 100g and not fragile can go in envelopes
-            if ($itemWeight < 0.1 && !$item['fragile'] && !$item['hazardous'] && 
+            if ($itemWeight < 0.1 && !$item['fragile'] && !$item['hazardous'] &&
                 $item['packaging_type'] !== 'liquid') {
                 $envelopeItems += $item['quantity'];
             }
@@ -677,12 +684,59 @@ class WeightCalculator
      */
     private function getAppliedRules($itemGroups) {
         $rules = [];
-        
+
         foreach ($itemGroups as $groupType => $items) {
             $rules[] = $groupType . ' (' . count($items) . ' items)';
         }
-        
+
         return $rules;
+    }
+
+    private function filterNormalProcessingItems(array $items): array
+    {
+        return array_values(array_filter($items, function ($item) {
+            $sku = $this->getNormalizedSku($item);
+
+            return !$this->isSpecialProductSku($sku);
+        }));
+    }
+
+    private function getNormalizedSku($item): string
+    {
+        if (is_array($item)) {
+            $sku = $item['sku'] ?? $item['product_code'] ?? '';
+        } else {
+            $sku = (string)$item;
+        }
+
+        return strtolower(trim((string)$sku));
+    }
+
+    private function isSpecialProductSku(string $sku): bool
+    {
+        return $this->isSpraySku($sku) || $this->isCartuseSku($sku);
+    }
+
+    private function isSpraySku(string $sku): bool
+    {
+        return $this->skuHasSuffix($sku, '.s');
+    }
+
+    private function isCartuseSku(string $sku): bool
+    {
+        return $this->skuHasSuffix($sku, '.c');
+    }
+
+    private function skuHasSuffix(string $sku, string $suffix): bool
+    {
+        $sku = strtolower(trim($sku));
+        $suffix = strtolower($suffix);
+
+        if ($sku === '' || $suffix === '' || strlen($sku) < strlen($suffix)) {
+            return false;
+        }
+
+        return substr($sku, -strlen($suffix)) === $suffix;
     }
     
     /**

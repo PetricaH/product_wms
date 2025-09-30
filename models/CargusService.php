@@ -389,129 +389,13 @@ class CargusService
         return $date->format($expectedFormat);
     }
 
-    private function detectSpecialProducts($orderId): array
-    {
-        $result = [
-            'sprays' => 0,
-            'cartuse' => 0,
-        ];
-
-        if (empty($orderId)) {
-            return $result;
-        }
-
-        $query = "SELECT p.sku, oi.quantity FROM order_items oi JOIN products p ON oi.product_id = p.product_id WHERE oi.order_id = ? AND (p.sku LIKE '%.s' OR p.sku LIKE '%.c')";
-        $stmt = $this->conn->prepare($query);
-        $stmt->execute([$orderId]);
-
-        $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        foreach ($items as $item) {
-            $sku = strtolower($item['sku'] ?? '');
-            $quantity = (int)($item['quantity'] ?? 0);
-
-            if ($quantity <= 0 || $sku === '') {
-                continue;
-            }
-
-            if (substr($sku, -2) === '.s') {
-                $result['sprays'] += $quantity;
-            } elseif (substr($sku, -2) === '.c') {
-                $result['cartuse'] += $quantity;
-            }
-        }
-
-        return $result;
-    }
-
-    private function detectNormalProducts($orderId): int
-    {
-        if (empty($orderId)) {
-            return 0;
-        }
-
-        $query = "SELECT COUNT(*) as count FROM order_items oi JOIN products p ON oi.product_id = p.product_id WHERE oi.order_id = ? AND p.sku NOT LIKE '%.s' AND p.sku NOT LIKE '%.c'";
-        $stmt = $this->conn->prepare($query);
-        $stmt->execute([$orderId]);
-
-        $result = $stmt->fetch(PDO::FETCH_ASSOC);
-
-        return (int)($result['count'] ?? 0);
-    }
-
-    private function loadNormalOrderItems(int $orderId): array
-    {
-        $query = "SELECT p.sku, oi.quantity FROM order_items oi JOIN products p ON oi.product_id = p.product_id WHERE oi.order_id = ? AND p.sku NOT LIKE '%.s' AND p.sku NOT LIKE '%.c'";
-        $stmt = $this->conn->prepare($query);
-        $stmt->execute([$orderId]);
-
-        $items = [];
-        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $item) {
-            $items[] = [
-                'sku' => $item['sku'] ?? '',
-                'quantity' => (int)($item['quantity'] ?? 0),
-            ];
-        }
-
-        return $items;
-    }
-
-    private function isSpecialSku(string $sku): bool
-    {
-        $normalizedSku = strtolower($sku);
-
-        return substr($normalizedSku, -2) === '.s' || substr($normalizedSku, -2) === '.c';
-    }
-
-    private function extractItemSku(array $item): string
-    {
-        if (!empty($item['sku'])) {
-            return (string)$item['sku'];
-        }
-
-        if (!empty($item['product_code'])) {
-            return (string)$item['product_code'];
-        }
-
-        if (!empty($item['product']['sku'])) {
-            return (string)$item['product']['sku'];
-        }
-
-        return '';
-    }
-
-    private function filterOrderToNormalProducts(array $order): array
-    {
-        $normalOrder = $order;
-
-        if (!empty($order['items']) && is_array($order['items'])) {
-            $normalOrder['items'] = array_values(array_filter($order['items'], function ($item) {
-                $sku = $this->extractItemSku(is_array($item) ? $item : []);
-                if ($sku === '') {
-                    return true;
-                }
-
-                return !$this->isSpecialSku($sku);
-            }));
-        }
-
-        if ((empty($normalOrder['items']) || !is_array($normalOrder['items'])) && !empty($order['id'])) {
-            $normalOrder['items'] = $this->loadNormalOrderItems((int)$order['id']);
-        }
-
-        return $normalOrder;
-    }
 
     /**
      * Main method to generate AWB
      */
     public function generateAWB($order) {
         try {
-            $specialProducts = $this->detectSpecialProducts($order['id'] ?? null);
-            if (($specialProducts['sprays'] ?? 0) > 0 || ($specialProducts['cartuse'] ?? 0) > 0) {
-                return $this->generateSpecialProductAWBs($order, $specialProducts);
-            }
             return $this->generateNormalAWB($order);
-
         } catch (Exception $e) {
             $this->logError('AWB generation exception', $e->getMessage(), $e->getTraceAsString());
             return [
@@ -522,7 +406,7 @@ class CargusService
         }
     }
 
-    private function generateNormalAWB($order, array $shippingOptions = [], bool $includeEnvelope = true)
+    private function generateNormalAWB($order, array $shippingOptions = [])
     {
         try {
             // Ensure order is eligible for AWB generation
@@ -545,14 +429,6 @@ class CargusService
 
             // Calculate order weights and parcels
             $calculatedData = $this->calculateOrderShipping($order, $shippingOptions);
-
-            if ($includeEnvelope) {
-                if (!isset($calculatedData['envelopes_count']) || $calculatedData['envelopes_count'] <= 0) {
-                    $calculatedData['envelopes_count'] = 1;
-                }
-            } else {
-                $calculatedData['envelopes_count'] = 0;
-            }
 
             // Ensure parcel count reflects all items in the order
             $totalItems = 0;
@@ -650,311 +526,6 @@ class CargusService
             ];
         }
     }
-
-    private function generateSpecialProductAWBs($order, array $specialProducts)
-    {
-        $originalOrder = $order;
-        if (($order['status'] ?? '') !== 'picked') {
-            return [
-                'success' => false,
-                'error' => 'Order status must be picked',
-                'code' => 400,
-            ];
-        }
-
-        if (!$this->authenticate()) {
-            return [
-                'success' => false,
-                'error' => 'Authentication failed',
-                'code' => 401,
-            ];
-        }
-
-        $senderLocation = $this->getSenderLocation();
-        if (!$senderLocation) {
-            return [
-                'success' => false,
-                'error' => 'No sender location configured',
-                'code' => 500,
-            ];
-        }
-
-        $addressMapping = $this->mapRecipientAddress($order);
-        if (!$addressMapping['success']) {
-            return [
-                'success' => false,
-                'error' => $addressMapping['error'],
-                'code' => 400,
-                'require_manual_input' => true,
-                'parsed_address' => $addressMapping['parsed_address'] ?? null,
-            ];
-        }
-
-        $order = array_merge($order, $addressMapping['mapped_data']);
-
-        $awbBarcodes = [];
-        $allParcelCodes = [];
-        $envelopeUsed = false;
-        $warnings = [];
-
-        try {
-            if (($specialProducts['sprays'] ?? 0) > 0) {
-                $sprayResult = $this->generateSprayAWBs(
-                    $order,
-                    (int)$specialProducts['sprays'],
-                    $senderLocation,
-                    !$envelopeUsed
-                );
-                $awbBarcodes = array_merge($awbBarcodes, $sprayResult['barcodes']);
-                $allParcelCodes = array_merge($allParcelCodes, $sprayResult['parcelCodes']);
-                if (!$envelopeUsed) {
-                    $envelopeUsed = true;
-                }
-            }
-
-            if (($specialProducts['cartuse'] ?? 0) > 0) {
-                $cartuseResult = $this->generateCartuseAWBs(
-                    $order,
-                    (int)$specialProducts['cartuse'],
-                    $senderLocation,
-                    !$envelopeUsed
-                );
-                $awbBarcodes = array_merge($awbBarcodes, $cartuseResult['barcodes']);
-                $allParcelCodes = array_merge($allParcelCodes, $cartuseResult['parcelCodes']);
-                if (!$envelopeUsed) {
-                    $envelopeUsed = true;
-                }
-            }
-        } catch (Exception $exception) {
-            $this->logError('Special product AWB generation failed', $exception->getMessage());
-
-            return [
-                'success' => false,
-                'error' => 'Internal error: ' . $exception->getMessage(),
-                'code' => 500,
-            ];
-        }
-
-        $normalProductCount = $this->detectNormalProducts($originalOrder['id'] ?? null);
-        if ($normalProductCount > 0) {
-            $normalOrder = $this->filterOrderToNormalProducts($originalOrder);
-            $normalResult = $this->generateNormalAWB(
-                $normalOrder,
-                ['exclude_suffixes' => ['.s', '.c']],
-                !$envelopeUsed
-            );
-            if (!$envelopeUsed && !empty($normalResult['success'])) {
-                $envelopeUsed = true;
-            }
-
-            if (!empty($normalResult['success'])) {
-                $normalBarcode = $normalResult['barcode'] ?? '';
-                if (is_string($normalBarcode) && trim($normalBarcode) !== '') {
-                    $awbBarcodes[] = $normalBarcode;
-                }
-
-                if (!empty($normalResult['parcelCodes']) && is_array($normalResult['parcelCodes'])) {
-                    $allParcelCodes = array_merge($allParcelCodes, $normalResult['parcelCodes']);
-                }
-            } else {
-                $warningMessage = 'Normal products AWB generation failed';
-                if (!empty($normalResult['error'])) {
-                    $warningMessage .= ': ' . $normalResult['error'];
-                }
-                $warnings[] = $warningMessage;
-                $this->logError('Normal AWB generation failed for mixed order', $normalResult['error'] ?? 'Unknown error', $normalResult['raw'] ?? null);
-            }
-        }
-
-        $filteredBarcodes = array_values(array_filter($awbBarcodes, fn($code) => is_string($code) && trim($code) !== ''));
-
-        if (empty($filteredBarcodes)) {
-            return [
-                'success' => false,
-                'error' => 'Unable to generate special product AWBs',
-                'code' => 500,
-            ];
-        }
-
-        $barcodeString = implode(',', $filteredBarcodes);
-
-        if (!empty($order['id']) && $barcodeString !== '') {
-            try {
-                $this->orderModel->updateOrderField($order['id'], [
-                    'awb_barcode' => $barcodeString,
-                    'awb_created_at' => date('Y-m-d H:i:s'),
-                ]);
-            } catch (Exception $exception) {
-                $this->logError('Failed to update order with special product AWBs', $exception->getMessage());
-            }
-        }
-
-        $result = [
-            'success' => true,
-            'barcode' => $barcodeString,
-            'barcodes' => $filteredBarcodes,
-            'parcelCodes' => $allParcelCodes,
-        ];
-
-        if (!empty($warnings)) {
-            $result['warning'] = implode(' ', $warnings);
-        }
-
-        return $result;
-    }
-
-    private function generateSprayAWBs(array $order, int $sprayCount, array $senderLocation, bool $includeEnvelope): array
-    {
-        $barcodes = [];
-        $parcelCodes = [];
-
-        $maxPerAwb = 12;
-        $remaining = $sprayCount;
-        $isFirstAwb = true;
-
-        while ($remaining > 0) {
-            $itemsForAwb = min($maxPerAwb, $remaining);
-            $remaining -= $itemsForAwb;
-
-            $calculatedData = [
-                'parcels_count' => 1,
-                'envelopes_count' => ($includeEnvelope && $isFirstAwb) ? 1 : 0,
-                'total_weight' => 5,
-                'package_length' => 27,
-                'package_width' => 20,
-                'package_height' => 20,
-            ];
-
-            $awbData = $this->buildAWBData($order, $calculatedData, $senderLocation);
-            $awbData['ParcelCodes'] = [[
-                'Code' => '0',
-                'Type' => 1,
-                'Weight' => 5,
-                'Length' => 27,
-                'Width' => 20,
-                'Height' => 20,
-                'ParcelContent' => sprintf('Spray - %d buc', $itemsForAwb),
-            ]];
-
-            if ($includeEnvelope && $isFirstAwb) {
-                $awbData['ParcelCodes'][] = [
-                    'Code' => '1',
-                    'Type' => 0,
-                    'Weight' => 1,
-                    'Length' => 25,
-                    'Width' => 15,
-                    'Height' => 1,
-                    'ParcelContent' => 'Plic 1',
-                ];
-            }
-
-            $response = $this->makeRequest('POST', 'Awbs', $awbData);
-
-            if (!$response['success']) {
-                $errorMessage = $response['error'] ?? 'Unknown error';
-                throw new Exception('Failed to generate spray AWB: ' . $errorMessage);
-            }
-
-            $data = $response['data'] ?? [];
-            $barcode = $this->extractNumericBarcode($data);
-
-            if ($barcode === '') {
-                $this->debugLog('Spray AWB created but barcode missing.');
-            }
-
-            $barcodes[] = $barcode;
-
-            if (is_array($data) && !empty($data['ParcelCodes']) && is_array($data['ParcelCodes'])) {
-                $parcelCodes = array_merge($parcelCodes, $data['ParcelCodes']);
-            } else {
-                $parcelCodes = array_merge($parcelCodes, $awbData['ParcelCodes']);
-            }
-
-            $isFirstAwb = false;
-        }
-
-        return [
-            'barcodes' => $barcodes,
-            'parcelCodes' => $parcelCodes,
-        ];
-    }
-
-    private function generateCartuseAWBs(array $order, int $cartuseCount, array $senderLocation, bool $includeEnvelope): array
-    {
-        $barcodes = [];
-        $parcelCodes = [];
-
-        $maxPerAwb = 24;
-        $remaining = $cartuseCount;
-        $isFirstAwb = true;
-
-        while ($remaining > 0) {
-            $itemsForAwb = min($maxPerAwb, $remaining);
-            $remaining -= $itemsForAwb;
-
-            $calculatedData = [
-                'parcels_count' => 1,
-                'envelopes_count' => ($includeEnvelope && $isFirstAwb) ? 1 : 0,
-                'total_weight' => 10,
-                'package_length' => 22,
-                'package_width' => 25,
-                'package_height' => 37,
-            ];
-
-            $awbData = $this->buildAWBData($order, $calculatedData, $senderLocation);
-            $awbData['ParcelCodes'] = [[
-                'Code' => '0',
-                'Type' => 1,
-                'Weight' => 10,
-                'Length' => 22,
-                'Width' => 25,
-                'Height' => 37,
-                'ParcelContent' => sprintf('Cartus - %d buc', $itemsForAwb),
-            ]];
-
-            if ($includeEnvelope && $isFirstAwb) {
-                $awbData['ParcelCodes'][] = [
-                    'Code' => '1',
-                    'Type' => 0,
-                    'Weight' => 1,
-                    'Length' => 25,
-                    'Width' => 15,
-                    'Height' => 1,
-                    'ParcelContent' => 'Plic 1',
-                ];
-            }
-
-            $response = $this->makeRequest('POST', 'Awbs', $awbData);
-
-            if (!$response['success']) {
-                $errorMessage = $response['error'] ?? 'Unknown error';
-                throw new Exception('Failed to generate cartuse AWB: ' . $errorMessage);
-            }
-
-            $data = $response['data'] ?? [];
-            $barcode = $this->extractNumericBarcode($data);
-
-            if ($barcode === '') {
-                $this->debugLog('Cartuse AWB created but barcode missing.');
-            }
-
-            $barcodes[] = $barcode;
-
-            if (is_array($data) && !empty($data['ParcelCodes']) && is_array($data['ParcelCodes'])) {
-                $parcelCodes = array_merge($parcelCodes, $data['ParcelCodes']);
-            } else {
-                $parcelCodes = array_merge($parcelCodes, $awbData['ParcelCodes']);
-            }
-
-            $isFirstAwb = false;
-        }
-
-        return [
-            'barcodes' => $barcodes,
-            'parcelCodes' => $parcelCodes,
-        ];
-    }
-
     private function extractNumericBarcode(mixed $data): string
     {
         $candidates = [];
@@ -1099,84 +670,77 @@ class CargusService
      * Generate ParcelCodes array to match Parcels + Envelopes count
      */
     private function generateParcelCodes($parcelsCount, $envelopesCount, $totalWeightAPI, $calculatedData) {
-    $this->debugLog("=== PARCEL CODES DEBUG START ===");
-    $this->debugLog("Input - Parcels: {$parcelsCount}, Envelopes: {$envelopesCount}, Total API Weight: {$totalWeightAPI}");
+        $parcelCodes = [];
+        $parcelDetails = $calculatedData['parcels_detail'] ?? [];
+        $parcelIndex = 0;
 
-    $parcelCodes = [];
-    $parcelDetails = $calculatedData['parcels_detail'] ?? [];
+        if (!empty($parcelDetails)) {
+            foreach ($parcelDetails as $detail) {
+                $productType = strtolower($detail['product_type'] ?? 'normal');
 
-    // Parcels (Type = 1)
-    if ($parcelsCount > 0) {
-        $weightPerParcel = $parcelsCount > 0 ? ($totalWeightAPI / $parcelsCount) : 0;
-        for ($i = 0; $i < $parcelsCount; $i++) {
-            $detail = $parcelDetails[$i] ?? [];
+                $detailContent = $detail['content'] ?? $detail['ParcelContent'] ?? null;
 
-            $thisParcelWeight = $detail['weight'] ?? $weightPerParcel;
-            if ($i == $parcelsCount - 1 && !isset($detail['weight'])) {
-                $totalAssigned = (int)$weightPerParcel * ($parcelsCount - 1);
-                $thisParcelWeight = $totalWeightAPI - $totalAssigned;
+                if ($productType === 'spray') {
+                    $length = 27;
+                    $width = 20;
+                    $height = 20;
+                    $weight = 5;
+                    $content = $detailContent ?? sprintf('Spray - %d buc', $detail['items'] ?? $detail['quantity'] ?? 12);
+                } elseif ($productType === 'cartuse') {
+                    $length = 22;
+                    $width = 25;
+                    $height = 37;
+                    $weight = 10;
+                    $content = $detailContent ?? sprintf('Cartus - %d buc', $detail['items'] ?? $detail['quantity'] ?? 24);
+                } else {
+                    $length = $detail['length'] ?? $calculatedData['package_length'] ?? 20;
+                    $width = $detail['width'] ?? $calculatedData['package_width'] ?? 20;
+                    $height = $detail['height'] ?? $calculatedData['package_height'] ?? 20;
+                    $weight = $detail['weight'] ?? ($parcelsCount > 0 ? ($totalWeightAPI / max(1, $parcelsCount)) : $totalWeightAPI);
+                    $content = $detailContent ?? 'Colet ' . ($parcelIndex + 1);
+                }
+
+                $parcelCodes[] = [
+                    'Code' => (string)$parcelIndex,
+                    'Type' => 1,
+                    'Weight' => max(1, (int)round($weight)),
+                    'Length' => max(1, (int)round($length)),
+                    'Width' => max(1, (int)round($width)),
+                    'Height' => max(1, (int)round($height)),
+                    'ParcelContent' => $content
+                ];
+
+                $parcelIndex++;
             }
-
-            $length = $detail['length'] ?? $calculatedData['package_length'] ?? 20;
-            $width  = $detail['width'] ?? $calculatedData['package_width'] ?? 20;
-            $height = $detail['height'] ?? $calculatedData['package_height'] ?? 20;
-            $content = $detail['content'] ?? 'Colet ' . ($i + 1);
-
-            $thisParcelWeight = max(1, (int)round($thisParcelWeight));
-            $length = max(1, (int)round($length));
-            $width  = max(1, (int)round($width));
-            $height = max(1, (int)round($height));
-
-            $this->debugLog("Parcel {$i}: Weight = {$thisParcelWeight} kg, L={$length}, W={$width}, H={$height}");
-
-            $parcelCodes[] = [
-                'Code' => (string)$i,
-                'Type' => 1, // 1 = parcel
-                'Weight' => $thisParcelWeight,
-                'Length' => $length,
-                'Width' => $width,
-                'Height' => $height,
-                'ParcelContent' => $content
-            ];
         }
-    }
 
-    // Envelopes (Type = 0)
-    if ($envelopesCount > 0) {
-        for ($i = 0; $i < $envelopesCount; $i++) {
-            $envelopeWeight = 1;
-            $this->debugLog("Envelope {$i}: Weight = {$envelopeWeight} kg");
+        // Fallback when parcel details are missing but parcel count is provided
+        while ($parcelIndex < $parcelsCount) {
             $parcelCodes[] = [
-                'Code' => (string)($parcelsCount + $i),
-                'Type' => 0, // 0 = envelope
-                'Weight' => $envelopeWeight,
-                'Length' => 25,
-                'Width' => 15,
-                'Height' => 1,
-                'ParcelContent' => 'Plic ' . ($i + 1)
+                'Code' => (string)$parcelIndex,
+                'Type' => 1,
+                'Weight' => max(1, (int)round($totalWeightAPI / max(1, $parcelsCount))),
+                'Length' => max(1, (int)round($calculatedData['package_length'] ?? 20)),
+                'Width' => max(1, (int)round($calculatedData['package_width'] ?? 20)),
+                'Height' => max(1, (int)round($calculatedData['package_height'] ?? 20)),
+                'ParcelContent' => 'Colet ' . ($parcelIndex + 1)
             ];
+            $parcelIndex++;
         }
+
+        // Always append a single envelope for documents
+        $parcelCodes[] = [
+            'Code' => (string)$parcelIndex,
+            'Type' => 0,
+            'Weight' => 1,
+            'Length' => 25,
+            'Width' => 15,
+            'Height' => 1,
+            'ParcelContent' => 'Documente'
+        ];
+
+        return $parcelCodes;
     }
-
-    // Verification with updated type semantics
-    $actualParcels = array_filter($parcelCodes, fn($p) => $p['Type'] === 1);
-    $actualEnvelopes = array_filter($parcelCodes, fn($p) => $p['Type'] === 0);
-
-    $this->debugLog("Generated parcels (Type=1): " . count($actualParcels) . " (expected: {$parcelsCount})");
-    $this->debugLog("Generated envelopes (Type=0): " . count($actualEnvelopes) . " (expected: {$envelopesCount})");
-
-    if (count($actualParcels) != $parcelsCount) {
-        $this->debugLog("🚨 MISMATCH: Generated parcels != declared parcels");
-    }
-    if (count($actualEnvelopes) != $envelopesCount) {
-        $this->debugLog("🚨 MISMATCH: Generated envelopes != declared envelopes");
-    }
-
-    $this->debugLog("Total parcel codes generated: " . count($parcelCodes));
-    $this->debugLog("=== PARCEL CODES DEBUG END ===");
-
-    return array_values($parcelCodes);
-}
 
     /**
      * Map recipient address using address_location_mappings table
@@ -1440,6 +1004,8 @@ class CargusService
     if ($envelopesCount <= 0 && !$explicitEnvelopeOverride) {
         $envelopesCount = 1;
     }
+
+    $envelopesCount = max(1, (int)$envelopesCount);
 
     $this->debugLog("=== CARGUS AWB DEBUG START ===");
     $this->debugLog("Order Number: " . $order['order_number']);

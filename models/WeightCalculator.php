@@ -110,6 +110,17 @@ class WeightCalculator
         // Optimize parcels if possible
         $optimizedParcels = $this->optimizeParcels($parcels);
 
+        foreach ($optimizedParcels as &$parcel) {
+            if (!isset($parcel['product_type']) || $parcel['product_type'] === '') {
+                $parcel['product_type'] = 'normal';
+            }
+        }
+        unset($parcel);
+
+        $calculatedParcelsWeight = array_reduce($optimizedParcels, function ($carry, $parcel) {
+            return $carry + (float)($parcel['weight'] ?? 0);
+        }, 0.0);
+
         // Determine overall package dimensions
         $maxLength = $maxWidth = $maxHeight = 0;
         foreach ($optimizedParcels as $parcel) {
@@ -118,8 +129,10 @@ class WeightCalculator
             $maxHeight = max($maxHeight, $parcel['height'] ?? 0);
         }
 
+        $totalWeightValue = $calculatedParcelsWeight > 0 ? $calculatedParcelsWeight : $totalWeight;
+
         return [
-            'total_weight' => max($totalWeight, 0.1), // Minimum 100g
+            'total_weight' => max($totalWeightValue, 0.1), // Minimum 100g
             'parcels_count' => count($optimizedParcels),
             'envelopes_count' => $this->calculateEnvelopes($orderItems),
             'parcels_detail' => $optimizedParcels,
@@ -146,7 +159,8 @@ class WeightCalculator
                 oi.unit_measure,
                 p.product_id as product_id,
                 p.name as product_name,
-                p.sku as product_code,        
+                p.sku as sku,
+                p.sku as product_code,
                 p.category as product_category,
                 pu.weight_per_unit,
                 COALESCE(pu.volume_per_unit, 0) as volume_per_unit,
@@ -200,12 +214,50 @@ class WeightCalculator
 
         return $items;
     }
-    
+
+    private function groupItemsByProductType(array $items): array
+    {
+        $groups = [
+            'spray' => [],
+            'cartuse' => [],
+            'normal' => [],
+        ];
+
+        foreach ($items as $item) {
+            $sku = strtolower($item['sku'] ?? $item['product_code'] ?? '');
+
+            if ($sku !== '' && substr($sku, -2) === '.s') {
+                $groups['spray'][] = $item;
+                continue;
+            }
+
+            if ($sku !== '' && substr($sku, -2) === '.c') {
+                $groups['cartuse'][] = $item;
+                continue;
+            }
+
+            $groups['normal'][] = $item;
+        }
+
+        return $groups;
+    }
+
     /**
      * Group items by their packaging requirements
      */
     private function groupItemsByPackaging($items) {
-        $groups = [
+        $groups = [];
+        $productTypeGroups = $this->groupItemsByProductType($items);
+
+        if (!empty($productTypeGroups['spray'])) {
+            $groups['spray_products'] = $productTypeGroups['spray'];
+        }
+
+        if (!empty($productTypeGroups['cartuse'])) {
+            $groups['cartuse_products'] = $productTypeGroups['cartuse'];
+        }
+
+        $normalGroups = [
             'liquids_separate' => [],
             'hazardous_separate' => [],
             'fragile_separate' => [],
@@ -213,30 +265,33 @@ class WeightCalculator
             'temperature_controlled' => [],
             'standard_combinable' => []
         ];
-        
-        foreach ($items as $item) {
+
+        foreach ($productTypeGroups['normal'] as $item) {
             $itemWeight = $item['quantity'] * $item['weight_per_unit'];
-            
+
             // Apply packaging rules in priority order
             if ($item['requires_separate_parcel'] || $item['packaging_type'] === 'liquid') {
-                $groups['liquids_separate'][] = $item;
+                $normalGroups['liquids_separate'][] = $item;
             } elseif ($item['hazardous']) {
-                $groups['hazardous_separate'][] = $item;
+                $normalGroups['hazardous_separate'][] = $item;
             } elseif ($item['temperature_controlled']) {
-                $groups['temperature_controlled'][] = $item;
+                $normalGroups['temperature_controlled'][] = $item;
             } elseif ($item['fragile'] && $itemWeight > 2.0) {
-                $groups['fragile_separate'][] = $item;
+                $normalGroups['fragile_separate'][] = $item;
             } elseif ($itemWeight > 15.0) {
-                $groups['heavy_items'][] = $item;
+                $normalGroups['heavy_items'][] = $item;
             } else {
-                $groups['standard_combinable'][] = $item;
+                $normalGroups['standard_combinable'][] = $item;
             }
         }
-        
-        // Remove empty groups
-        return array_filter($groups, function($group) {
-            return !empty($group);
-        });
+
+        foreach ($normalGroups as $groupName => $groupItems) {
+            if (!empty($groupItems)) {
+                $groups[$groupName] = $groupItems;
+            }
+        }
+
+        return $groups;
     }
     
     /**
@@ -244,8 +299,30 @@ class WeightCalculator
      */
     private function calculateParcelsForGroup($items, $groupType) {
         $parcels = [];
-        
+
         switch ($groupType) {
+            case 'spray_products':
+                $parcels = $this->createSpecialProductParcels(
+                    $items,
+                    12,
+                    5,
+                    ['length' => 27, 'width' => 20, 'height' => 20],
+                    'spray',
+                    'Spray'
+                );
+                break;
+
+            case 'cartuse_products':
+                $parcels = $this->createSpecialProductParcels(
+                    $items,
+                    24,
+                    10,
+                    ['length' => 22, 'width' => 25, 'height' => 37],
+                    'cartuse',
+                    'Cartus'
+                );
+                break;
+
             case 'liquids_separate':
                 // Each liquid item gets its own parcel
                 foreach ($items as $item) {
@@ -257,6 +334,7 @@ class WeightCalculator
                             'width' => $item['dimensions_width'],
                             'height' => $item['dimensions_height'],
                             'type' => 'liquid',
+                            'product_type' => 'normal',
                             'content' => $item['product_name'],
                             'special_handling' => ['liquid', 'fragile']
                         ];
@@ -277,6 +355,7 @@ class WeightCalculator
                             'width' => $item['dimensions_width'],
                             'height' => $item['dimensions_height'] * $fit,
                             'type' => 'hazardous',
+                            'product_type' => 'normal',
                             'content' => $item['product_name'],
                             'special_handling' => ['hazardous']
                         ];
@@ -291,6 +370,7 @@ class WeightCalculator
                     'max_weight' => 20.0,
                     'max_items' => 15,
                     'type' => 'temperature_controlled',
+                    'product_type' => 'normal',
                     'special_handling' => ['temperature_controlled']
                 ]);
                 break;
@@ -308,6 +388,7 @@ class WeightCalculator
                             'width' => $item['dimensions_width'],
                             'height' => $item['dimensions_height'] * $fit,
                             'type' => 'fragile',
+                            'product_type' => 'normal',
                             'content' => $item['product_name'],
                             'special_handling' => ['fragile']
                         ];
@@ -322,21 +403,53 @@ class WeightCalculator
                     'max_weight' => 25.0,
                     'max_items' => 5,
                     'type' => 'heavy',
+                    'product_type' => 'normal',
                     'special_handling' => []
                 ]);
                 break;
-                
+
             case 'standard_combinable':
                 // Standard items can be combined efficiently
                 $parcels = $this->packItemsWithRules($items, [
                     'max_weight' => 20.0,
                     'max_items' => 25,
                     'type' => 'standard',
+                    'product_type' => 'normal',
                     'special_handling' => []
                 ]);
                 break;
         }
-        
+
+        return $parcels;
+    }
+
+    private function createSpecialProductParcels(array $items, int $maxPerParcel, float $parcelWeight, array $dimensions, string $productType, string $label): array
+    {
+        $totalQuantity = 0;
+        foreach ($items as $item) {
+            $totalQuantity += (int)($item['quantity'] ?? 0);
+        }
+
+        $parcels = [];
+        $remaining = $totalQuantity;
+
+        while ($remaining > 0) {
+            $itemsInParcel = min($maxPerParcel, $remaining);
+            $parcels[] = [
+                'weight' => $parcelWeight,
+                'items' => $itemsInParcel,
+                'quantity' => $itemsInParcel,
+                'length' => $dimensions['length'],
+                'width' => $dimensions['width'],
+                'height' => $dimensions['height'],
+                'type' => $productType,
+                'product_type' => $productType,
+                'content' => sprintf('%s - %d buc', $label, $itemsInParcel),
+                'special_handling' => []
+            ];
+            $remaining -= $itemsInParcel;
+        }
+
         return $parcels;
     }
     
@@ -352,6 +465,7 @@ class WeightCalculator
             'width' => 0,
             'height' => 0,
             'type' => $rules['type'],
+            'product_type' => $rules['product_type'] ?? 'normal',
             'content_items' => [],
             'special_handling' => $rules['special_handling']
         ];
@@ -374,7 +488,7 @@ class WeightCalculator
                         unset($currentParcel['content_items']);
                         $parcels[] = $currentParcel;
                     }
-                    
+
                     $currentParcel = [
                         'weight' => 0,
                         'items' => 0,
@@ -382,6 +496,7 @@ class WeightCalculator
                         'width' => 0,
                         'height' => 0,
                         'type' => $rules['type'],
+                        'product_type' => $rules['product_type'] ?? 'normal',
                         'content_items' => [],
                         'special_handling' => $rules['special_handling']
                     ];
@@ -422,7 +537,8 @@ class WeightCalculator
         
         // Separate parcels that can be combined from those that cannot
         foreach ($parcels as $parcel) {
-            if (in_array($parcel['type'], ['liquid', 'hazardous', 'temperature_controlled'])) {
+            $parcelProductType = $parcel['product_type'] ?? 'normal';
+            if (in_array($parcel['type'], ['liquid', 'hazardous', 'temperature_controlled', 'spray', 'cartuse']) || $parcelProductType !== 'normal') {
                 $optimized[] = $parcel; // Cannot be combined
             } else {
                 $combinableParcels[] = $parcel;
@@ -451,10 +567,14 @@ class WeightCalculator
             
             // Try to add to existing compatible parcel
             foreach ($combined as &$existingParcel) {
+                if (($existingParcel['product_type'] ?? 'normal') !== 'normal') {
+                    continue;
+                }
+
                 if ($this->canCombineParcels($existingParcel, $parcel) &&
                     ($existingParcel['weight'] + $parcel['weight']) <= $maxWeight &&
                     ($existingParcel['items'] + $parcel['items']) <= $maxItems) {
-                    
+
                     $existingParcel['weight'] += $parcel['weight'];
                     $existingParcel['items'] += $parcel['items'];
                     $existingParcel['length'] = max($existingParcel['length'] ?? 0, $parcel['length'] ?? 0);
@@ -464,16 +584,18 @@ class WeightCalculator
                     $existingParcel['special_handling'] = array_unique(
                         array_merge($existingParcel['special_handling'], $parcel['special_handling'])
                     );
+                    $existingParcel['product_type'] = 'normal';
                     $added = true;
                     break;
                 }
             }
-            
+
             if (!$added) {
+                $parcel['product_type'] = $parcel['product_type'] ?? 'normal';
                 $combined[] = $parcel;
             }
         }
-        
+
         return $combined;
     }
     

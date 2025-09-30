@@ -522,7 +522,7 @@ class CargusService
         }
     }
 
-    private function generateNormalAWB($order, array $shippingOptions = [])
+    private function generateNormalAWB($order, array $shippingOptions = [], bool $includeEnvelope = true)
     {
         try {
             // Ensure order is eligible for AWB generation
@@ -545,6 +545,14 @@ class CargusService
 
             // Calculate order weights and parcels
             $calculatedData = $this->calculateOrderShipping($order, $shippingOptions);
+
+            if ($includeEnvelope) {
+                if (!isset($calculatedData['envelopes_count']) || $calculatedData['envelopes_count'] <= 0) {
+                    $calculatedData['envelopes_count'] = 1;
+                }
+            } else {
+                $calculatedData['envelopes_count'] = 0;
+            }
 
             // Ensure parcel count reflects all items in the order
             $totalItems = 0;
@@ -686,19 +694,36 @@ class CargusService
 
         $awbBarcodes = [];
         $allParcelCodes = [];
+        $envelopeUsed = false;
         $warnings = [];
 
         try {
             if (($specialProducts['sprays'] ?? 0) > 0) {
-                $sprayResult = $this->generateSprayAWBs($order, (int)$specialProducts['sprays'], $senderLocation);
+                $sprayResult = $this->generateSprayAWBs(
+                    $order,
+                    (int)$specialProducts['sprays'],
+                    $senderLocation,
+                    !$envelopeUsed
+                );
                 $awbBarcodes = array_merge($awbBarcodes, $sprayResult['barcodes']);
                 $allParcelCodes = array_merge($allParcelCodes, $sprayResult['parcelCodes']);
+                if (!$envelopeUsed) {
+                    $envelopeUsed = true;
+                }
             }
 
             if (($specialProducts['cartuse'] ?? 0) > 0) {
-                $cartuseResult = $this->generateCartuseAWBs($order, (int)$specialProducts['cartuse'], $senderLocation);
+                $cartuseResult = $this->generateCartuseAWBs(
+                    $order,
+                    (int)$specialProducts['cartuse'],
+                    $senderLocation,
+                    !$envelopeUsed
+                );
                 $awbBarcodes = array_merge($awbBarcodes, $cartuseResult['barcodes']);
                 $allParcelCodes = array_merge($allParcelCodes, $cartuseResult['parcelCodes']);
+                if (!$envelopeUsed) {
+                    $envelopeUsed = true;
+                }
             }
         } catch (Exception $exception) {
             $this->logError('Special product AWB generation failed', $exception->getMessage());
@@ -713,7 +738,14 @@ class CargusService
         $normalProductCount = $this->detectNormalProducts($originalOrder['id'] ?? null);
         if ($normalProductCount > 0) {
             $normalOrder = $this->filterOrderToNormalProducts($originalOrder);
-            $normalResult = $this->generateNormalAWB($normalOrder, ['exclude_suffixes' => ['.s', '.c']]);
+            $normalResult = $this->generateNormalAWB(
+                $normalOrder,
+                ['exclude_suffixes' => ['.s', '.c']],
+                !$envelopeUsed
+            );
+            if (!$envelopeUsed && !empty($normalResult['success'])) {
+                $envelopeUsed = true;
+            }
 
             if (!empty($normalResult['success'])) {
                 $normalBarcode = $normalResult['barcode'] ?? '';
@@ -771,13 +803,14 @@ class CargusService
         return $result;
     }
 
-    private function generateSprayAWBs(array $order, int $sprayCount, array $senderLocation): array
+    private function generateSprayAWBs(array $order, int $sprayCount, array $senderLocation, bool $includeEnvelope): array
     {
         $barcodes = [];
         $parcelCodes = [];
 
         $maxPerAwb = 12;
         $remaining = $sprayCount;
+        $isFirstAwb = true;
 
         while ($remaining > 0) {
             $itemsForAwb = min($maxPerAwb, $remaining);
@@ -785,7 +818,7 @@ class CargusService
 
             $calculatedData = [
                 'parcels_count' => 1,
-                'envelopes_count' => 0,
+                'envelopes_count' => ($includeEnvelope && $isFirstAwb) ? 1 : 0,
                 'total_weight' => 5,
                 'package_length' => 27,
                 'package_width' => 20,
@@ -802,6 +835,18 @@ class CargusService
                 'Height' => 20,
                 'ParcelContent' => sprintf('Spray - %d buc', $itemsForAwb),
             ]];
+
+            if ($includeEnvelope && $isFirstAwb) {
+                $awbData['ParcelCodes'][] = [
+                    'Code' => '1',
+                    'Type' => 0,
+                    'Weight' => 1,
+                    'Length' => 25,
+                    'Width' => 15,
+                    'Height' => 1,
+                    'ParcelContent' => 'Plic 1',
+                ];
+            }
 
             $response = $this->makeRequest('POST', 'Awbs', $awbData);
 
@@ -824,6 +869,8 @@ class CargusService
             } else {
                 $parcelCodes = array_merge($parcelCodes, $awbData['ParcelCodes']);
             }
+
+            $isFirstAwb = false;
         }
 
         return [
@@ -832,13 +879,14 @@ class CargusService
         ];
     }
 
-    private function generateCartuseAWBs(array $order, int $cartuseCount, array $senderLocation): array
+    private function generateCartuseAWBs(array $order, int $cartuseCount, array $senderLocation, bool $includeEnvelope): array
     {
         $barcodes = [];
         $parcelCodes = [];
 
         $maxPerAwb = 24;
         $remaining = $cartuseCount;
+        $isFirstAwb = true;
 
         while ($remaining > 0) {
             $itemsForAwb = min($maxPerAwb, $remaining);
@@ -846,7 +894,7 @@ class CargusService
 
             $calculatedData = [
                 'parcels_count' => 1,
-                'envelopes_count' => 0,
+                'envelopes_count' => ($includeEnvelope && $isFirstAwb) ? 1 : 0,
                 'total_weight' => 10,
                 'package_length' => 22,
                 'package_width' => 25,
@@ -863,6 +911,18 @@ class CargusService
                 'Height' => 37,
                 'ParcelContent' => sprintf('Cartus - %d buc', $itemsForAwb),
             ]];
+
+            if ($includeEnvelope && $isFirstAwb) {
+                $awbData['ParcelCodes'][] = [
+                    'Code' => '1',
+                    'Type' => 0,
+                    'Weight' => 1,
+                    'Length' => 25,
+                    'Width' => 15,
+                    'Height' => 1,
+                    'ParcelContent' => 'Plic 1',
+                ];
+            }
 
             $response = $this->makeRequest('POST', 'Awbs', $awbData);
 
@@ -885,6 +945,8 @@ class CargusService
             } else {
                 $parcelCodes = array_merge($parcelCodes, $awbData['ParcelCodes']);
             }
+
+            $isFirstAwb = false;
         }
 
         return [
@@ -1367,8 +1429,15 @@ class CargusService
     private function buildAWBData($order, $calculatedData, $senderLocation) {
 
     $parcelsCount = (int)($calculatedData['parcels_count'] ?? 1);
-    $envelopesCount = (int)($calculatedData['envelopes_count'] ?? $order['envelopes_count'] ?? 1);
-    if ($envelopesCount <= 0) {
+    $envelopesValue = $calculatedData['envelopes_count'] ?? ($order['envelopes_count'] ?? 1);
+    $envelopesCount = (int)$envelopesValue;
+    if ($envelopesCount < 0) {
+        $envelopesCount = 0;
+    }
+
+    $orderHasEnvelopeOverride = is_array($order) && array_key_exists('envelopes_count', $order);
+    $explicitEnvelopeOverride = array_key_exists('envelopes_count', $calculatedData) || $orderHasEnvelopeOverride;
+    if ($envelopesCount <= 0 && !$explicitEnvelopeOverride) {
         $envelopesCount = 1;
     }
 

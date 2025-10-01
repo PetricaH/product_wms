@@ -7,6 +7,18 @@ class WarehouseHub {
         this.baseUrl = window.WMS_CONFIG?.baseUrl || '/';
         this.currentUser = null;
         this.stats = {};
+        this.pollInterval = 5000;
+        this.pollTimer = null;
+        this.isFetching = false;
+        this.hasQueuedFetch = false;
+        this.hasLoadedOnce = false;
+        this.skipNextNotification = false;
+        this.statsAbortController = null;
+        this.timeInterval = null;
+        this.toastTimeout = null;
+        this.visibilityHandler = this.handleVisibilityChange.bind(this);
+        this.cleanupHandler = this.cleanup.bind(this);
+        this.isDestroyed = false;
         this.init();
     }
 
@@ -14,10 +26,17 @@ class WarehouseHub {
         console.log('🏢 Initializing Warehouse Hub...');
         this.initEventListeners();
         this.updateTime();
-        setInterval(() => this.updateTime(), 1000);
+        this.timeInterval = setInterval(() => this.updateTime(), 1000);
         await this.loadUserInfo();
         await this.loadStatistics();
-        setInterval(() => this.loadStatistics(), 300000); // Refresh stats every 5 minutes
+
+        if (!document.hidden) {
+            this.scheduleNextPoll();
+        }
+
+        document.addEventListener('visibilitychange', this.visibilityHandler);
+        window.addEventListener('beforeunload', this.cleanupHandler);
+        window.addEventListener('pagehide', this.cleanupHandler);
         console.log('✅ Warehouse Hub initialized successfully');
     }
 
@@ -114,28 +133,70 @@ class WarehouseHub {
         }
     }
 
-    async loadStatistics() {
-        try {
-            console.log('📊 Loading dashboard statistics...');
+    async loadStatistics({ background = false } = {}) {
+        if (this.isFetching) {
+            this.hasQueuedFetch = true;
+            return;
+        }
+
+        const shouldShowLoading = !background && !this.hasLoadedOnce;
+
+        if (shouldShowLoading) {
             this.setLoadingState(true);
-            
-            // FIXED: Call .php file directly instead of going through API router  
-            const result = await this.fetchAPI('/warehouse/dashboard_stats.php');
-            
+        }
+
+        this.isFetching = true;
+        const controller = new AbortController();
+        this.statsAbortController = controller;
+
+        try {
+            if (!background) {
+                console.log('📊 Loading dashboard statistics...');
+            }
+
+            // FIXED: Call .php file directly instead of going through API router
+            const result = await this.fetchAPI('/warehouse/dashboard_stats.php', {
+                signal: controller.signal,
+                cache: 'no-store'
+            });
+
             if (result.status === 'success' && result.stats) {
-                this.stats = result.stats;
-                this.updateStatistics();
+                const previousStats = this.hasLoadedOnce ? { ...this.stats } : null;
+                this.stats = this.normalizeStats(result.stats);
+                this.updateStatistics(previousStats);
                 this.updateStatusIndicators();
+                this.checkForNotifications(previousStats, this.stats);
+                this.hasLoadedOnce = true;
                 console.log('✅ Statistics loaded successfully');
             } else {
                 throw new Error('Invalid statistics data received');
             }
         } catch (error) {
+            if (error.name === 'AbortError') {
+                console.log('ℹ️ Statistic update aborted');
+                return;
+            }
+
             console.warn('⚠️ Could not load statistics:', error.message);
-            // Show placeholder data
-            this.loadPlaceholderStats();
+
+            if (!this.hasLoadedOnce) {
+                this.loadPlaceholderStats();
+            }
         } finally {
-            this.setLoadingState(false);
+            if (this.statsAbortController === controller) {
+                this.statsAbortController = null;
+            }
+
+            this.isFetching = false;
+
+            if (shouldShowLoading) {
+                this.setLoadingState(false);
+            }
+
+            if (this.hasQueuedFetch && !document.hidden) {
+                this.hasQueuedFetch = false;
+                this.loadStatistics({ background: true });
+            }
         }
     }
 
@@ -148,7 +209,9 @@ class WarehouseHub {
 
     loadPlaceholderStats() {
         // Fallback stats when API is unavailable
-        this.stats = {
+        const previousStats = this.hasLoadedOnce ? { ...this.stats } : null;
+
+        this.stats = this.normalizeStats({
             pending_picks: Math.floor(Math.random() * 50) + 10,
             picks_today: Math.floor(Math.random() * 200) + 50,
             pending_receipts: Math.floor(Math.random() * 20) + 5,
@@ -161,49 +224,225 @@ class WarehouseHub {
             relocations_today: Math.floor(Math.random() * 20),
             pending_barcode_tasks: Math.floor(Math.random() * 10),
             barcode_tasks_today: Math.floor(Math.random() * 10)
-        };
-        
-        this.updateStatistics();
+        });
+
+        this.updateStatistics(previousStats);
         this.updateStatusIndicators();
+        this.hasLoadedOnce = true;
+        this.skipNextNotification = true;
         console.log('📊 Using placeholder statistics');
     }
 
-    updateStatistics() {
-        // Update picking stats
-        this.updateStatElement('pending-picks', this.stats.pending_picks);
-        this.updateStatElement('picks-today', this.stats.picks_today);
-        
-        // Update receiving stats
-        this.updateStatElement('pending-receipts', this.stats.pending_receipts);
-        this.updateStatElement('received-today', this.stats.received_today);
-        
-        // Update inventory stats
-        this.updateStatElement('total-products', this.stats.total_products);
-        this.updateStatElement('low-stock-items', this.stats.low_stock_items);
+    normalizeStats(rawStats = {}) {
+        const toNumber = (value) => {
+            if (value === null || value === undefined || value === '') {
+                return 0;
+            }
 
-        // Update cycle count stats
-        this.updateStatElement('scheduled-counts', this.stats.scheduled_counts);
-        this.updateStatElement('variance-items', this.stats.variance_items);
+            const numeric = Number(value);
+            return Number.isFinite(numeric) ? numeric : 0;
+        };
 
-        // Update relocation stats
-        this.updateStatElement('pending-relocations', this.stats.pending_relocations);
-        this.updateStatElement('relocated-today', this.stats.relocations_today);
+        const normalized = {
+            pending_picks: this.stats.pending_picks ?? 0,
+            picks_today: this.stats.picks_today ?? 0,
+            pending_receipts: this.stats.pending_receipts ?? 0,
+            received_today: this.stats.received_today ?? this.stats.receipts_today ?? 0,
+            total_products: this.stats.total_products ?? 0,
+            low_stock_items: this.stats.low_stock_items ?? 0,
+            scheduled_counts: this.stats.scheduled_counts ?? 0,
+            variance_items: this.stats.variance_items ?? 0,
+            pending_relocations: this.stats.pending_relocations ?? 0,
+            relocations_today: this.stats.relocations_today ?? 0,
+            pending_barcode_tasks: this.stats.pending_barcode_tasks ?? 0,
+            barcode_tasks_today: this.stats.barcode_tasks_today ?? 0,
+            receipts_today: this.stats.receipts_today ?? this.stats.received_today ?? 0
+        };
 
-        // Update barcode task stats
-        this.updateStatElement('pending-barcode-tasks', this.stats.pending_barcode_tasks);
-        this.updateStatElement('completed-barcode-tasks', this.stats.barcode_tasks_today);
+        const assignIfDefined = (key, value) => {
+            if (value !== undefined && value !== null && value !== '') {
+                normalized[key] = toNumber(value);
+            }
+        };
+
+        assignIfDefined('pending_picks', rawStats.pending_picks);
+        assignIfDefined('picks_today', rawStats.picks_today);
+        assignIfDefined('pending_receipts', rawStats.pending_receipts);
+        assignIfDefined('total_products', rawStats.total_products);
+        assignIfDefined('low_stock_items', rawStats.low_stock_items);
+        assignIfDefined('scheduled_counts', rawStats.scheduled_counts);
+        assignIfDefined('variance_items', rawStats.variance_items);
+        assignIfDefined('pending_relocations', rawStats.pending_relocations);
+        assignIfDefined('relocations_today', rawStats.relocations_today);
+        assignIfDefined('pending_barcode_tasks', rawStats.pending_barcode_tasks);
+        assignIfDefined('barcode_tasks_today', rawStats.barcode_tasks_today ?? rawStats.completed_barcode_tasks);
+
+        const receivedToday = rawStats.received_today ?? rawStats.receipts_today;
+        if (receivedToday !== undefined && receivedToday !== null && receivedToday !== '') {
+            normalized.received_today = toNumber(receivedToday);
+        }
+
+        normalized.receipts_today = normalized.received_today;
+
+        return normalized;
     }
 
-    updateStatElement(elementId, value) {
+    updateStatistics(previousStats = null) {
+        // Update picking stats
+        this.updateStatElement('pending-picks', this.stats.pending_picks, previousStats?.pending_picks);
+        this.updateStatElement('picks-today', this.stats.picks_today, previousStats?.picks_today);
+
+        // Update receiving stats
+        this.updateStatElement('pending-receipts', this.stats.pending_receipts, previousStats?.pending_receipts);
+        this.updateStatElement('received-today', this.stats.received_today, previousStats?.received_today ?? previousStats?.receipts_today);
+
+        // Update inventory stats
+        this.updateStatElement('total-products', this.stats.total_products, previousStats?.total_products);
+        this.updateStatElement('low-stock-items', this.stats.low_stock_items, previousStats?.low_stock_items);
+
+        // Update cycle count stats
+        this.updateStatElement('scheduled-counts', this.stats.scheduled_counts, previousStats?.scheduled_counts);
+        this.updateStatElement('variance-items', this.stats.variance_items, previousStats?.variance_items);
+
+        // Update relocation stats
+        this.updateStatElement('pending-relocations', this.stats.pending_relocations, previousStats?.pending_relocations);
+        this.updateStatElement('relocated-today', this.stats.relocations_today, previousStats?.relocations_today);
+
+        // Update barcode task stats
+        this.updateStatElement('pending-barcode-tasks', this.stats.pending_barcode_tasks, previousStats?.pending_barcode_tasks);
+        this.updateStatElement('completed-barcode-tasks', this.stats.barcode_tasks_today, previousStats?.barcode_tasks_today);
+    }
+
+    updateStatElement(elementId, value, previousValue) {
         const element = document.getElementById(elementId);
         if (element) {
-            element.textContent = this.formatNumber(value);
+            const formattedValue = this.formatNumber(value);
+            const hasPrevious = previousValue !== undefined && previousValue !== null;
+            const hasChanged = hasPrevious ? value !== previousValue : element.textContent !== formattedValue;
+
+            if (!hasChanged) {
+                return;
+            }
+
+            element.textContent = formattedValue;
+
+            if (hasPrevious) {
+                this.flashStatUpdate(element, value, previousValue);
+            }
         }
+    }
+
+    flashStatUpdate(element, newValue, oldValue) {
+        if (!element) {
+            return;
+        }
+
+        const isNumeric = typeof newValue === 'number' && typeof oldValue === 'number';
+        let directionClass = '';
+
+        if (isNumeric) {
+            if (newValue > oldValue) {
+                directionClass = 'stat-increase';
+            } else if (newValue < oldValue) {
+                directionClass = 'stat-decrease';
+            }
+        }
+
+        element.classList.remove('stat-changed', 'stat-increase', 'stat-decrease');
+
+        // Force reflow to restart animation
+        void element.offsetWidth; // eslint-disable-line no-unused-expressions
+
+        const classesToAdd = ['stat-changed'];
+        if (directionClass) {
+            classesToAdd.push(directionClass);
+        }
+
+        element.classList.add(...classesToAdd);
+
+        if (element._statTimeout) {
+            clearTimeout(element._statTimeout);
+        }
+
+        element._statTimeout = setTimeout(() => {
+            element.classList.remove('stat-changed', 'stat-increase', 'stat-decrease');
+            element._statTimeout = null;
+        }, 900);
+    }
+
+    checkForNotifications(previousStats, currentStats) {
+        if (!previousStats) {
+            return;
+        }
+
+        if (this.skipNextNotification) {
+            this.skipNextNotification = false;
+            return;
+        }
+
+        const deltas = (key) => {
+            const prevValue = typeof previousStats[key] === 'number' ? previousStats[key] : 0;
+            const currentValue = typeof currentStats[key] === 'number' ? currentStats[key] : 0;
+            return currentValue - prevValue;
+        };
+
+        const notifications = [];
+
+        const pendingPicksDelta = deltas('pending_picks');
+        if (pendingPicksDelta > 0) {
+            notifications.push(`Noi comenzi de picking disponibile (+${pendingPicksDelta}).`);
+        }
+
+        const pendingReceiptsDelta = deltas('pending_receipts');
+        if (pendingReceiptsDelta > 0) {
+            notifications.push(`Noi recepții de procesat (+${pendingReceiptsDelta}).`);
+        }
+
+        const pendingRelocationsDelta = deltas('pending_relocations');
+        if (pendingRelocationsDelta > 0) {
+            notifications.push(`Sarcini noi de relocare disponibile (+${pendingRelocationsDelta}).`);
+        }
+
+        const pendingBarcodeDelta = deltas('pending_barcode_tasks');
+        if (pendingBarcodeDelta > 0) {
+            notifications.push(`Sarcini noi de scanare coduri (+${pendingBarcodeDelta}).`);
+        }
+
+        if (notifications.length > 0) {
+            this.showToast(notifications[0], 'warning');
+        }
+    }
+
+    showToast(message, type = 'info') {
+        const toastElement = document.getElementById('dashboard-toast');
+
+        if (!toastElement) {
+            console.log(`${type.toUpperCase()}: ${message}`);
+            return;
+        }
+
+        toastElement.textContent = message;
+
+        const typeClasses = ['info', 'success', 'warning', 'error'];
+        toastElement.classList.remove('visible', ...typeClasses);
+
+        void toastElement.offsetWidth; // Restart transition
+
+        const toastType = typeClasses.includes(type) ? type : 'info';
+        toastElement.classList.add(toastType, 'visible');
+
+        if (this.toastTimeout) {
+            clearTimeout(this.toastTimeout);
+        }
+
+        this.toastTimeout = setTimeout(() => {
+            toastElement.classList.remove('visible');
+        }, 3200);
     }
 
     updateStatusIndicators() {
         // Update picking status
-        const pickingStatus = this.stats.pending_picks > 20 ? 'danger' : 
+        const pickingStatus = this.stats.pending_picks > 20 ? 'danger' :
                              this.stats.pending_picks > 10 ? 'warning' : 'success';
         this.updateStatusIndicator('picking-status', pickingStatus);
         
@@ -313,14 +552,21 @@ class WarehouseHub {
 
     async fetchAPI(endpoint, options = {}) {
         try {
-            const response = await fetch(`${this.apiBase}${endpoint}`, {
+            const { headers = {}, ...restOptions } = options;
+            const fetchOptions = {
+                cache: 'no-store',
+                ...restOptions,
                 headers: {
-                    'Content-Type': 'application/json',
                     'Accept': 'application/json',
-                    ...options.headers
-                },
-                ...options
-            });
+                    ...headers
+                }
+            };
+
+            if (fetchOptions.body && !fetchOptions.headers['Content-Type']) {
+                fetchOptions.headers['Content-Type'] = 'application/json';
+            }
+
+            const response = await fetch(`${this.apiBase}${endpoint}`, fetchOptions);
 
             if (!response.ok) {
                 throw new Error(`API Error: ${response.status} ${response.statusText}`);
@@ -346,13 +592,86 @@ class WarehouseHub {
 
     showNotification(message, type = 'info') {
         // Simple notification system
-        console.log(`${type.toUpperCase()}: ${message}`);
-        
-        // You can implement a toast notification system here
-        // For now, we'll use a simple alert for errors
         if (type === 'error') {
+            console.error(message);
             alert(message);
+            return;
         }
+
+        this.showToast(message, type);
+    }
+
+    scheduleNextPoll() {
+        this.stopPolling();
+
+        if (this.pollInterval <= 0 || this.isDestroyed) {
+            return;
+        }
+
+        this.pollTimer = setTimeout(() => this.executePoll(), this.pollInterval);
+    }
+
+    async executePoll() {
+        this.pollTimer = null;
+
+        if (this.isDestroyed || document.hidden) {
+            return;
+        }
+
+        await this.loadStatistics({ background: true });
+
+        if (!this.isDestroyed && !document.hidden) {
+            this.scheduleNextPoll();
+        }
+    }
+
+    stopPolling() {
+        if (this.pollTimer) {
+            clearTimeout(this.pollTimer);
+            this.pollTimer = null;
+        }
+    }
+
+    handleVisibilityChange() {
+        if (document.hidden) {
+            this.stopPolling();
+            this.hasQueuedFetch = false;
+
+            if (this.statsAbortController) {
+                this.statsAbortController.abort();
+            }
+        } else {
+            this.loadStatistics({ background: true });
+            this.scheduleNextPoll();
+        }
+    }
+
+    cleanup() {
+        if (this.isDestroyed) {
+            return;
+        }
+
+        this.isDestroyed = true;
+        this.stopPolling();
+
+        if (this.timeInterval) {
+            clearInterval(this.timeInterval);
+            this.timeInterval = null;
+        }
+
+        if (this.toastTimeout) {
+            clearTimeout(this.toastTimeout);
+            this.toastTimeout = null;
+        }
+
+        if (this.statsAbortController) {
+            this.statsAbortController.abort();
+            this.statsAbortController = null;
+        }
+
+        document.removeEventListener('visibilitychange', this.visibilityHandler);
+        window.removeEventListener('beforeunload', this.cleanupHandler);
+        window.removeEventListener('pagehide', this.cleanupHandler);
     }
 
     // Public method to refresh data

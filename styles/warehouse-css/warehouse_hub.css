@@ -224,6 +224,20 @@ body {
     line-height: 1;
 }
 
+.stat-number.stat-changed {
+    transition: background-color 0.4s ease, color 0.4s ease;
+    border-radius: 6px;
+    padding: 0.15rem 0.35rem;
+}
+
+.stat-number.stat-increase {
+    background-color: rgba(25, 135, 84, 0.25);
+}
+
+.stat-number.stat-decrease {
+    background-color: rgba(220, 53, 69, 0.25);
+}
+
 .stat-label {
     font-size: 0.75rem;
     color: var(--light-gray);
@@ -272,6 +286,45 @@ body {
 
 .status-indicator.info {
     background-color: var(--info-color);
+}
+
+/* ===== DASHBOARD TOAST ===== */
+.dashboard-toast {
+    position: fixed;
+    bottom: 1.5rem;
+    right: 1.5rem;
+    background-color: rgba(15, 16, 19, 0.92);
+    color: var(--white);
+    padding: 0.85rem 1.1rem;
+    border-radius: var(--border-radius);
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.35);
+    opacity: 0;
+    transform: translateY(16px);
+    transition: opacity 0.25s ease, transform 0.25s ease;
+    pointer-events: none;
+    z-index: 1200;
+    border-left: 4px solid var(--info-color);
+    max-width: 280px;
+    font-size: 0.85rem;
+    line-height: 1.4;
+}
+
+.dashboard-toast.visible {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+}
+
+.dashboard-toast.success {
+    border-left-color: var(--success-color);
+}
+
+.dashboard-toast.warning {
+    border-left-color: var(--warning-color);
+}
+
+.dashboard-toast.error {
+    border-left-color: var(--danger-color);
 }
 
 /* ===== LOADING STATES ===== */
@@ -388,6 +441,13 @@ body {
         flex-direction: column;
         gap: 1rem;
     }
+
+    .dashboard-toast {
+        left: 1rem;
+        right: 1rem;
+        bottom: 1rem;
+        max-width: none;
+    }
 }
 
 /* ===== ACCESSIBILITY ===== */
@@ -401,9 +461,14 @@ body {
     .operation-icon {
         transition: none;
     }
-    
+
     .loading::after {
         animation: none;
+    }
+
+    .stat-number.stat-changed,
+    .dashboard-toast {
+        transition: none;
     }
 }
 

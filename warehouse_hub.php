@@ -132,6 +132,8 @@ if (!isset($_SESSION['user_id'])) {
             </div>
 
         </div>
+
+        <div id="dashboard-toast" class="dashboard-toast" role="status" aria-live="polite" aria-atomic="true"></div>
     </div>
 
     <?php include_once 'includes/warehouse_footer.php'; ?>

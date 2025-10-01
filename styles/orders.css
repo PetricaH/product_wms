@@ -115,6 +115,123 @@
     gap: 4px;
 }
 
+/* ===== REALTIME UPDATES ===== */
+.orders-table .order-row-new {
+    animation: ordersNewRowFlash 2.2s ease-out;
+}
+
+.order-status-changed {
+    animation: ordersStatusFlash 1.8s ease-out;
+}
+
+.status-change-flash {
+    animation: ordersStatusBadgeFlash 1.6s ease-out;
+}
+
+.awb-update-flash {
+    animation: ordersAwbFlash 1.6s ease-out;
+}
+
+@keyframes ordersNewRowFlash {
+    0% {
+        background-color: rgba(76, 175, 80, 0.15);
+    }
+    100% {
+        background-color: transparent;
+    }
+}
+
+@keyframes ordersStatusFlash {
+    0% {
+        background-color: rgba(255, 193, 7, 0.18);
+    }
+    100% {
+        background-color: transparent;
+    }
+}
+
+@keyframes ordersStatusBadgeFlash {
+    0% {
+        background-color: rgba(255, 193, 7, 0.35);
+    }
+    50% {
+        background-color: rgba(255, 193, 7, 0.12);
+    }
+    100% {
+        background-color: transparent;
+    }
+}
+
+@keyframes ordersAwbFlash {
+    0% {
+        background-color: rgba(76, 175, 80, 0.18);
+    }
+    100% {
+        background-color: transparent;
+    }
+}
+
+.orders-toast-container {
+    position: fixed;
+    top: 1.5rem;
+    right: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    z-index: 1200;
+    pointer-events: none;
+}
+
+.orders-toast {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    background: var(--surface-background);
+    color: var(--text-primary);
+    border-radius: var(--border-radius);
+    padding: 0.75rem 1rem;
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.18);
+    border-left: 4px solid var(--primary-color);
+    opacity: 0;
+    transform: translateX(16px);
+    transition: opacity 0.25s ease, transform 0.25s ease;
+    pointer-events: auto;
+}
+
+.orders-toast .material-symbols-outlined {
+    font-size: 1.5rem;
+}
+
+.orders-toast.show {
+    opacity: 1;
+    transform: translateX(0);
+}
+
+.orders-toast.hide {
+    opacity: 0;
+    transform: translateX(16px);
+}
+
+.orders-toast-success {
+    border-left-color: var(--success-color, #2e7d32);
+}
+
+.orders-toast-success .material-symbols-outlined {
+    color: var(--success-color, #2e7d32);
+}
+
+.orders-toast-info {
+    border-left-color: var(--primary-color, #2563eb);
+}
+
+.orders-toast-warning {
+    border-left-color: var(--warning-color, #f59e0b);
+}
+
+.orders-toast-message {
+    font-weight: 500;
+}
+
 .modal-close:hover {
     background-color: var(--button-hover);
     color: var(--text-primary);

@@ -6,12 +6,18 @@
 document.addEventListener('DOMContentLoaded', function() {
     console.log('Orders page successfully loaded and scripts are running.');
     initRealtimeSearch();
+    initOrdersRealtimeUpdates();
 });
 
 const POLLING_INTERVAL_MS = 2000;
 let pollingTimer = null;
 let pollingOrderId = null;
 let pollingController = null;
+
+const ORDERS_REALTIME_INTERVAL_MS = 5000;
+let ordersRealtimeTimer = null;
+let ordersRealtimeController = null;
+let ordersLatestTimestamp = null;
 
 function initRealtimeSearch() {
     const searchInput = document.querySelector('.search-input');
@@ -24,6 +30,525 @@ function initRealtimeSearch() {
             row.style.display = text.includes(term) ? '' : 'none';
         });
     });
+}
+
+function initOrdersRealtimeUpdates() {
+    const table = document.querySelector('.orders-table');
+    const tbody = table ? table.querySelector('tbody') : null;
+
+    if (!table || !tbody) {
+        return;
+    }
+
+    ordersLatestTimestamp = table.dataset.lastUpdated || '';
+    if (!ordersLatestTimestamp) {
+        ordersLatestTimestamp = new Date().toISOString();
+    }
+
+    const handleVisibility = () => {
+        if (document.hidden) {
+            stopOrdersRealtimePolling();
+        } else {
+            startOrdersRealtimePolling();
+        }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('beforeunload', stopOrdersRealtimePolling);
+
+    document.addEventListener('orders:awb-generated', event => {
+        const detail = event.detail || {};
+        if (!detail.orderId) {
+            return;
+        }
+        const row = tbody.querySelector(`tr[data-order-id="${detail.orderId}"]`);
+        if (!row) {
+            return;
+        }
+        if (detail.awbCode) {
+            row.dataset.awb = detail.awbCode;
+            showOrdersToast('success', `AWB generat pentru comanda ${detail.orderNumber || detail.awbCode}.`);
+        }
+    });
+
+    startOrdersRealtimePolling();
+}
+
+function startOrdersRealtimePolling() {
+    if (ordersRealtimeTimer || document.hidden) {
+        return;
+    }
+
+    const poll = () => {
+        if (document.hidden) {
+            ordersRealtimeTimer = null;
+            return;
+        }
+
+        fetchOrderUpdates()
+            .catch(error => {
+                console.error('Order updates polling error:', error);
+            })
+            .finally(() => {
+                ordersRealtimeTimer = setTimeout(poll, ORDERS_REALTIME_INTERVAL_MS);
+            });
+    };
+
+    poll();
+}
+
+function stopOrdersRealtimePolling() {
+    if (ordersRealtimeTimer) {
+        clearTimeout(ordersRealtimeTimer);
+        ordersRealtimeTimer = null;
+    }
+    if (ordersRealtimeController) {
+        ordersRealtimeController.abort();
+        ordersRealtimeController = null;
+    }
+}
+
+function fetchOrderUpdates() {
+    const table = document.querySelector('.orders-table');
+    if (!table) {
+        return Promise.resolve();
+    }
+
+    const tbody = table.querySelector('tbody');
+    if (!tbody) {
+        return Promise.resolve();
+    }
+
+    const params = new URLSearchParams();
+    if (ordersLatestTimestamp) {
+        params.set('since', ordersLatestTimestamp);
+    }
+    params.set('status', table.dataset.statusFilter || '');
+    params.set('priority', table.dataset.priorityFilter || '');
+    params.set('search', table.dataset.search || '');
+    params.set('page', table.dataset.page || '1');
+    params.set('pageSize', table.dataset.pageSize || '25');
+
+    if (ordersRealtimeController) {
+        ordersRealtimeController.abort();
+    }
+    ordersRealtimeController = new AbortController();
+
+    return fetch(`api/orders/updates.php?${params.toString()}`, {
+        signal: ordersRealtimeController.signal,
+        credentials: 'same-origin'
+    })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+            return response.json();
+        })
+        .then(payload => {
+            if (payload.status !== 'success' || !payload.data) {
+                throw new Error(payload.message || 'Răspuns invalid de la server');
+            }
+
+            const updates = Array.isArray(payload.data.orders) ? payload.data.orders : [];
+            if (payload.data.latestTimestamp) {
+                ordersLatestTimestamp = payload.data.latestTimestamp;
+                table.dataset.lastUpdated = ordersLatestTimestamp;
+            }
+
+            if (updates.length) {
+                applyOrderUpdates(updates, tbody);
+            }
+        })
+        .catch(error => {
+            if (error.name === 'AbortError') {
+                return;
+            }
+            throw error;
+        });
+}
+
+function applyOrderUpdates(updates, tbody) {
+    const table = tbody.closest('.orders-table');
+    const scrollContainer = table ? table.closest('.table-responsive') : null;
+    const previousScrollTop = scrollContainer ? scrollContainer.scrollTop : 0;
+
+    const existingRows = new Map();
+    tbody.querySelectorAll('tr[data-order-id]').forEach(row => {
+        const id = Number(row.getAttribute('data-order-id'));
+        if (!Number.isNaN(id)) {
+            existingRows.set(id, row);
+        }
+    });
+
+    const newRows = [];
+
+    updates.forEach(order => {
+        const id = Number(order.id);
+        if (Number.isNaN(id)) {
+            return;
+        }
+
+        const existingRow = existingRows.get(id);
+        if (existingRow) {
+            const changes = updateOrderRow(existingRow, order);
+            if (changes.statusChanged) {
+                flashStatusChange(existingRow);
+                showOrdersToast('info', `Statusul comenzii ${order.order_number || `#${id}`} a devenit ${order.status_label || ''}.`);
+            }
+            if (changes.awbUpdated) {
+                showOrdersToast('success', `AWB generat pentru comanda ${order.order_number || `#${id}`}.`);
+            }
+        } else if (shouldRenderOrder(order, table)) {
+            const row = renderOrderRow(order);
+            newRows.push({ row, order });
+        }
+    });
+
+    if (newRows.length) {
+        newRows.sort((a, b) => {
+            const aDate = new Date(a.order.order_date || a.order.updated_at || 0).getTime();
+            const bDate = new Date(b.order.order_date || b.order.updated_at || 0).getTime();
+            return bDate - aDate;
+        });
+
+        newRows.forEach(({ row }) => {
+            tbody.insertBefore(row, tbody.firstChild);
+            flashNewOrder(row);
+        });
+
+        const firstOrder = newRows[0].order;
+        const toastMessage = newRows.length === 1
+            ? `A fost adăugată o comandă nouă: ${firstOrder.order_number || `#${firstOrder.id}`}.`
+            : `${newRows.length} comenzi noi au fost adăugate.`;
+        showOrdersToast('success', toastMessage);
+    }
+
+    if (scrollContainer) {
+        scrollContainer.scrollTop = previousScrollTop;
+    }
+}
+
+function shouldRenderOrder(order, table) {
+    const currentPage = Number(table.dataset.page || '1');
+    if (currentPage > 1) {
+        return false;
+    }
+    return true;
+}
+
+function updateOrderRow(row, order) {
+    const status = (order.status || '').toLowerCase();
+    const statusRaw = order.status_raw || capitalize(status);
+    const previousStatus = row.getAttribute('data-status') || '';
+    const result = { statusChanged: false, awbUpdated: false };
+
+    if (status && previousStatus !== status) {
+        result.statusChanged = true;
+        row.setAttribute('data-status', status);
+    }
+
+    if (order.updated_at) {
+        row.setAttribute('data-updated-at', order.updated_at);
+    }
+
+    const orderNumberEl = row.querySelector('.order-number');
+    if (orderNumberEl && order.order_number) {
+        orderNumberEl.textContent = order.order_number;
+    }
+
+    const customerInfo = row.querySelector('.customer-info');
+    if (customerInfo) {
+        const name = order.customer_name || '';
+        const email = order.customer_email || '';
+        customerInfo.innerHTML = `<strong>${escapeHtml(name)}</strong>${email ? `<br><small>${escapeHtml(email)}</small>` : ''}`;
+    }
+
+    const orderDateEl = row.querySelector('.order-date-value');
+    if (orderDateEl) {
+        const formattedDate = order.order_date_display || formatRomanianDate(order.order_date);
+        if (formattedDate) {
+            orderDateEl.textContent = formattedDate;
+        }
+    }
+
+    const statusBadge = row.querySelector('.status-badge');
+    if (statusBadge) {
+        statusBadge.textContent = order.status_label || capitalize(status);
+        statusBadge.dataset.status = status;
+        statusBadge.className = `status-badge status-${sanitizeStatus(status)}`;
+    }
+
+    const priorityBadge = row.querySelector('.priority-badge');
+    if (priorityBadge) {
+        const priority = (order.priority || 'normal').toLowerCase();
+        priorityBadge.textContent = order.priority_label || capitalize(priority);
+        priorityBadge.className = `priority-badge priority-${sanitizeStatus(priority)}`;
+    }
+
+    const totalValueEl = row.querySelector('.order-total-value');
+    if (totalValueEl) {
+        totalValueEl.textContent = `${formatCurrency(order.total_value)} Lei`;
+    }
+
+    const itemsCountEl = row.querySelector('.order-items-count');
+    if (itemsCountEl) {
+        const items = Number(order.total_items || 0);
+        itemsCountEl.textContent = `${items} ${items === 1 ? 'produs' : 'produse'}`;
+    }
+
+    const weightEl = row.querySelector('.order-weight');
+    if (weightEl) {
+        const weight = order.weight_display ? `${order.weight_display} kg` : '0.000 kg';
+        weightEl.textContent = weight;
+        if (order.weight_breakdown) {
+            weightEl.setAttribute('title', order.weight_breakdown);
+        } else {
+            weightEl.removeAttribute('title');
+        }
+    }
+
+    const previousAwb = row.getAttribute('data-awb') || '';
+    const newAwb = order.awb_barcode ? String(order.awb_barcode) : '';
+
+    const awbCell = row.querySelector('.awb-cell');
+    if (awbCell) {
+        awbCell.innerHTML = renderAwbCell(order);
+        if (previousAwb !== newAwb) {
+            awbCell.classList.add('awb-update-flash');
+            awbCell.addEventListener('animationend', () => awbCell.classList.remove('awb-update-flash'), { once: true });
+        }
+    }
+
+    if (previousAwb !== newAwb) {
+        result.awbUpdated = !!newAwb;
+        row.setAttribute('data-awb', newAwb);
+    }
+
+    const statusButton = row.querySelector('.btn-group .btn-outline-secondary');
+    if (statusButton) {
+        statusButton.setAttribute('onclick', `openStatusModal(${order.id}, '${escapeJsString(statusRaw)}')`);
+    }
+
+    return result;
+}
+
+function renderOrderRow(order) {
+    const row = document.createElement('tr');
+    row.className = 'order-row';
+    row.setAttribute('data-order-id', order.id);
+    const status = (order.status || '').toLowerCase();
+    row.setAttribute('data-status', status);
+    if (order.updated_at) {
+        row.setAttribute('data-updated-at', order.updated_at);
+    }
+    row.setAttribute('data-awb', order.awb_barcode ? String(order.awb_barcode) : '');
+
+    const priority = (order.priority || 'normal').toLowerCase();
+    const orderDateDisplay = order.order_date_display || formatRomanianDate(order.order_date);
+    const customerEmail = order.customer_email ? `<br><small>${escapeHtml(order.customer_email)}</small>` : '';
+
+    row.innerHTML = `
+        <td>
+            <code class="order-number">${escapeHtml(order.order_number || '')}</code>
+        </td>
+        <td>
+            <div class="customer-info">
+                <strong>${escapeHtml(order.customer_name || '')}</strong>
+                ${customerEmail}
+            </div>
+        </td>
+        <td class="order-date-cell">
+            <small class="order-date-value">${escapeHtml(orderDateDisplay || '')}</small>
+        </td>
+        <td>
+            <span class="status-badge status-${sanitizeStatus(status)}" data-status="${escapeHtml(status)}">${escapeHtml(order.status_label || capitalize(status))}</span>
+        </td>
+        <td>
+            <span class="priority-badge priority-${sanitizeStatus(priority)}">${escapeHtml(order.priority_label || capitalize(priority))}</span>
+        </td>
+        <td>
+            <strong class="order-total-value">${formatCurrency(order.total_value)} Lei</strong>
+        </td>
+        <td>
+            <span class="text-center order-items-count">${Number(order.total_items || 0)} ${Number(order.total_items || 0) === 1 ? 'produs' : 'produse'}</span>
+        </td>
+        <td>
+            <span class="order-weight"${order.weight_breakdown ? ` title="${escapeHtml(order.weight_breakdown)}"` : ''}>${order.weight_display ? escapeHtml(`${order.weight_display} kg`) : '0.000 kg'}</span>
+        </td>
+        <td class="awb-column awb-cell">
+            ${renderAwbCell(order)}
+        </td>
+        <td>
+            ${renderOrderActions(order, statusRaw)}
+        </td>
+    `;
+
+    return row;
+}
+
+function renderAwbCell(order) {
+    const attempts = Number(order.awb_generation_attempts || 0);
+    const awb = order.awb_barcode ? String(order.awb_barcode) : '';
+    const hasAwb = awb !== '';
+    const orderId = Number(order.id);
+    const orderNumber = order.order_number || `#${orderId}`;
+    const attemptMessage = !hasAwb && attempts > 0
+        ? `${attempts} ${attempts === 1 ? 'încercare efectuată' : 'încercări efectuate'}`
+        : '';
+
+    const attemptHtml = attemptMessage ? `<div class="awb-attempts">${escapeHtml(attemptMessage)}</div>` : '';
+
+    if (hasAwb) {
+        const trackingUrl = `https://www.cargus.ro/personal/urmareste-coletul/?tracking_number=${encodeURIComponent(awb)}&Urm%C4%83re%C8%99te=Urm%C4%83re%C8%99te`;
+        const awbDate = order.awb_created_at ? formatRomanianDate(order.awb_created_at) : '';
+        const escapedOrderNumber = escapeJsString(orderNumber);
+        const escapedAwb = escapeJsString(awb);
+        return `
+            ${attemptHtml}
+            <div class="awb-info">
+                <span class="awb-barcode">${escapeHtml(awb)}</span>
+                ${awbDate ? `<small>${escapeHtml(awbDate)}</small>` : ''}
+                <a href="${trackingUrl}" class="btn btn-sm btn-outline-secondary track-awb-link" target="_blank" rel="noopener noreferrer">
+                    <span class="material-symbols-outlined">open_in_new</span> Urmărește AWB
+                </a>
+                <button type="button" class="btn btn-sm btn-outline-success print-awb-btn" onclick="printAWB(${orderId}, '${escapedAwb}', '${escapedOrderNumber}')">
+                    <span class="material-symbols-outlined">print</span> Printează AWB
+                </button>
+            </div>
+        `;
+    }
+
+    return `
+        ${attemptHtml}
+        <button type="button" class="btn btn-sm btn-outline-primary generate-awb-btn" data-order-id="${orderId}" title="Generează AWB">
+            <span class="material-symbols-outlined">local_shipping</span>
+            Generează AWB
+        </button>
+    `;
+}
+
+function renderOrderActions(order, statusRawValue) {
+    const id = Number(order.id);
+    const orderNumber = order.order_number || `#${id}`;
+    const escapedOrderNumber = escapeJsString(orderNumber);
+    const status = escapeJsString(statusRawValue || order.status || '');
+
+    return `
+        <div class="btn-group">
+            <button class="btn btn-sm btn-outline-primary" onclick="viewOrderDetails(${id})" title="Vezi detalii">
+                <span class="material-symbols-outlined">visibility</span>
+            </button>
+            <button class="btn btn-sm btn-outline-secondary" onclick="openStatusModal(${id}, '${status}')" title="Schimbă status">
+                <span class="material-symbols-outlined">edit</span>
+            </button>
+            <button class="btn btn-sm btn-outline-info" onclick="printInvoiceWithSelection(${id})" title="Printează Factura">
+                <span class="material-symbols-outlined">print</span>
+            </button>
+            <button class="btn btn-sm btn-outline-danger" onclick="openDeleteModal(${id}, '${escapedOrderNumber}')" title="Șterge">
+                <span class="material-symbols-outlined">delete</span>
+            </button>
+        </div>
+    `;
+}
+
+function flashNewOrder(row) {
+    row.classList.add('order-row-new');
+    row.addEventListener('animationend', () => row.classList.remove('order-row-new'), { once: true });
+}
+
+function flashStatusChange(row) {
+    row.classList.add('order-status-changed');
+    row.addEventListener('animationend', () => row.classList.remove('order-status-changed'), { once: true });
+    const badge = row.querySelector('.status-badge');
+    if (badge) {
+        badge.classList.add('status-change-flash');
+        badge.addEventListener('animationend', () => badge.classList.remove('status-change-flash'), { once: true });
+    }
+}
+
+function showOrdersToast(type, message) {
+    if (!message) {
+        return;
+    }
+
+    const container = document.querySelector('.orders-toast-container');
+    if (!container) {
+        return;
+    }
+
+    const toast = document.createElement('div');
+    toast.className = `orders-toast orders-toast-${type || 'info'}`;
+
+    const icon = document.createElement('span');
+    icon.className = 'material-symbols-outlined';
+    icon.textContent = type === 'success' ? 'check_circle' : type === 'warning' ? 'warning' : 'info';
+
+    const messageEl = document.createElement('div');
+    messageEl.className = 'orders-toast-message';
+    messageEl.textContent = message;
+
+    toast.appendChild(icon);
+    toast.appendChild(messageEl);
+
+    container.appendChild(toast);
+
+    requestAnimationFrame(() => {
+        toast.classList.add('show');
+    });
+
+    setTimeout(() => {
+        toast.classList.remove('show');
+        toast.classList.add('hide');
+        toast.addEventListener('animationend', () => toast.remove(), { once: true });
+    }, 3000);
+}
+
+function sanitizeStatus(value) {
+    return (value || '').toLowerCase().replace(/[^a-z0-9_-]/g, '-');
+}
+
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+function escapeJsString(value) {
+    return String(value ?? '')
+        .replace(/\\/g, '\\\\')
+        .replace(/'/g, "\\'")
+        .replace(/"/g, '\\"');
+}
+
+function formatCurrency(value) {
+    const number = Number(value || 0);
+    return number.toLocaleString('ro-RO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function formatRomanianDate(value) {
+    if (!value) {
+        return '';
+    }
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+        return '';
+    }
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = date.getFullYear();
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    return `${day}.${month}.${year} ${hours}:${minutes}`;
+}
+
+function capitalize(value) {
+    if (!value) {
+        return '';
+    }
+    return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
 let itemCounter = 1;

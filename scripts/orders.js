@@ -8,6 +8,11 @@ document.addEventListener('DOMContentLoaded', function() {
     initRealtimeSearch();
 });
 
+const POLLING_INTERVAL_MS = 2000;
+let pollingTimer = null;
+let pollingOrderId = null;
+let pollingController = null;
+
 function initRealtimeSearch() {
     const searchInput = document.querySelector('.search-input');
     if (!searchInput) return;
@@ -120,7 +125,7 @@ function viewOrderDetails(orderId) {
         })
         .catch(error => {
             console.error('Error loading order details:', error);
-            
+
             content.innerHTML = `
                 <div class="error-message" style="text-align: center; padding: 2rem;">
                     <h3 style="color: #dc3545; margin-bottom: 1rem;">Eroare la încărcarea detaliilor comenzii</h3>
@@ -163,7 +168,7 @@ function displayOrderDetails(order) {
         itemsTableHtml = `
             <div class="items-section" style="margin-top: 2rem;">
                 <h4>Produse comandate</h4>
-                <table style="width: 100%; border-collapse: collapse;">
+                <table class="order-items-table" style="width: 100%; border-collapse: collapse;">
                     <thead>
                         <tr style="background-color: #f5f5f5;">
                             <th style="padding: 8px; border: 1px solid #ddd;">Produs</th>
@@ -176,11 +181,13 @@ function displayOrderDetails(order) {
                     </thead>
                     <tbody>
                         ${items.map(item => `
-                            <tr>
+                            <tr class="order-item-row${item.is_complete ? ' item-complete' : ''}" data-order-item-id="${item.order_item_id}" data-quantity-ordered="${item.quantity_ordered || item.quantity || 0}">
                                 <td style="padding: 8px; border: 1px solid #ddd;">${item.product_name || 'Produs necunoscut'}</td>
                                 <td style="padding: 8px; border: 1px solid #ddd;">${item.sku || '-'}</td>
                                 <td style="padding: 8px; border: 1px solid #ddd;">${item.quantity_ordered || item.quantity || '0'}</td>
-                                <td style="padding: 8px; border: 1px solid #ddd;">${item.picked_quantity || '0'}</td>
+                                <td class="picked-quantity-cell" style="padding: 8px; border: 1px solid #ddd;">
+                                    <span class="picked-quantity-value">${item.picked_quantity || '0'}</span>
+                                </td>
                                 <td style="padding: 8px; border: 1px solid #ddd;">${parseFloat(item.unit_price || 0).toFixed(2)} RON</td>
                                 <td style="padding: 8px; border: 1px solid #ddd;">${(parseFloat(item.quantity_ordered || item.quantity || 0) * parseFloat(item.unit_price || 0)).toFixed(2)} RON</td>
                             </tr>
@@ -209,6 +216,10 @@ function displayOrderDetails(order) {
         }
     }
     
+    const trackingLink = order.tracking_number
+        ? `https://www.cargus.ro/personal/urmareste-coletul/?tracking_number=${encodeURIComponent(order.tracking_number)}&Urm%C4%83re%C8%99te=Urm%C4%83re%C8%99te`
+        : null;
+
     const content = `
         <div class="order-details">
             <div class="details-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">
@@ -218,7 +229,7 @@ function displayOrderDetails(order) {
                     <p><strong>Data:</strong> ${formattedDate}</p>
                     <p><strong>Status:</strong> ${order.status_label || order.status || 'N/A'}</p>
                     <p><strong>Valoare:</strong> ${parseFloat(order.total_value || 0).toFixed(2)} RON</p>
-                    ${order.tracking_number ? `<p><strong>AWB:</strong> ${order.tracking_number}</p>` : ''}
+                    ${order.tracking_number ? `<p><strong>AWB:</strong> <a href="${trackingLink}" target="_blank" rel="noopener noreferrer" class="order-awb-link">${order.tracking_number}</a></p>` : ''}
                 </div>
                 <div class="detail-section">
                     <h4>Informații Client</h4>
@@ -231,23 +242,11 @@ function displayOrderDetails(order) {
             ${order.progress ? `
                 <div class="progress-section" style="margin-top: 2rem;">
                     <h4>Progres comandă</h4>
-                    <p><strong>Total articole:</strong> ${order.progress.total_items || 0}</p>
-                    <p><strong>Cantitate comandată:</strong> ${order.progress.total_quantity_ordered || 0}</p>
-                    <p><strong>Cantitate ridicată:</strong> ${order.progress.total_quantity_picked || 0}</p>
-                    <p><strong>Rămas de ridicat:</strong> ${order.progress.total_remaining || 0}</p>
-                    <p><strong>Progres:</strong> ${order.progress.progress_percent || 0}%</p>
-                </div>
-            ` : ''}
-
-            ${order.tracking ? `
-                <div class="tracking-section" style="margin-top:2rem;">
-                    <h4>Tracking AWB</h4>
-                    <p><strong>Status curent:</strong> ${order.tracking.current_status || 'N/A'}${order.tracking.current_location && order.tracking.current_location.location ? ' - ' + order.tracking.current_location.location : ''}</p>
-                    <div class="tracking-progress" style="height:8px;background:#e9ecef;border-radius:4px;overflow:hidden;">
-                        <div id="trackingProgressBar" style="height:100%;background:#28a745;width:${order.tracking.progress_percent || 0}%;"></div>
-                    </div>
-                    <div id="order-tracking-map" style="height:300px;margin-top:1rem;"></div>
-                    <ul id="trackingEventsList" style="list-style:none;margin-top:1rem;padding:0;"></ul>
+                    <p><strong>Total articole:</strong> <span id="progress-total-items">${order.progress.total_items || 0}</span></p>
+                    <p><strong>Cantitate comandată:</strong> <span id="progress-total-ordered">${order.progress.total_quantity_ordered || 0}</span></p>
+                    <p><strong>Cantitate ridicată:</strong> <span id="progress-total-picked">${order.progress.total_quantity_picked || 0}</span></p>
+                    <p><strong>Rămas de ridicat:</strong> <span id="progress-total-remaining">${order.progress.total_remaining || 0}</span></p>
+                    <p><strong>Progres:</strong> <span id="progress-percent">${order.progress.progress_percent || 0}</span>%</p>
                 </div>
             ` : ''}
 
@@ -264,8 +263,9 @@ function displayOrderDetails(order) {
 
     document.getElementById('orderDetailsContent').innerHTML = content;
 
-    if (order.tracking && order.tracking.events) {
-        renderTracking(order.tracking);
+    applyOrderItemsState(items);
+    if (order.id) {
+        startOrderPolling(order.id);
     }
 }
 
@@ -274,63 +274,188 @@ function closeOrderDetailsModal() {
     if (modal) {
         modal.style.display = 'none';
     }
+    stopOrderPolling();
 }
 
-function loadLeaflet(callback) {
-    if (window.L) {
-        callback();
-        return;
-    }
-    const existing = document.querySelector('script[src*="leaflet"]');
-    if (existing) {
-        existing.addEventListener('load', callback);
-        return;
-    }
-    const link = document.createElement('link');
-    link.rel = 'stylesheet';
-    link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-    document.head.appendChild(link);
-
-    const script = document.createElement('script');
-    script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
-    script.onload = callback;
-    document.body.appendChild(script);
-}
-
-function renderTracking(tracking) {
-    const eventsList = document.getElementById('trackingEventsList');
-    if (eventsList) {
-        eventsList.innerHTML = tracking.events.map(ev => {
-            const time = ev.time ? new Date(ev.time).toLocaleString('ro-RO') : '';
-            const loc = ev.location ? ` - ${ev.location}` : '';
-            return `<li><strong>${time}</strong>: ${ev.status}${loc}</li>`;
-        }).join('');
-    }
-
-    const progressEl = document.getElementById('trackingProgressBar');
-    if (progressEl) {
-        progressEl.style.width = `${tracking.progress_percent || 0}%`;
-    }
-
-    const coords = (tracking.events || []).filter(e => e.lat && e.lng).map(e => [e.lat, e.lng]);
-    if (!coords.length) {
+function applyOrderItemsState(items) {
+    if (!Array.isArray(items)) {
         return;
     }
 
-    loadLeaflet(() => {
-        const map = L.map('order-tracking-map');
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            maxZoom: 19
-        }).addTo(map);
+    items.forEach(item => {
+        const row = document.querySelector(`#orderDetailsContent tr[data-order-item-id="${item.order_item_id}"]`);
+        if (!row) {
+            return;
+        }
 
-        const poly = L.polyline(coords, {color: '#007bff'}).addTo(map);
-        coords.forEach((c, idx) => {
-            const ev = tracking.events[idx];
-            const popup = `${ev.status}${ev.location ? '<br>' + ev.location : ''}`;
-            L.marker(c).addTo(map).bindPopup(popup);
-        });
-        map.fitBounds(poly.getBounds(), {padding: [20, 20]});
+        const pickedSpan = row.querySelector('.picked-quantity-value');
+        const pickedQty = Number(item.picked_quantity) || 0;
+        const orderedQty = Number(item.quantity_ordered) || 0;
+
+        if (pickedSpan) {
+            pickedSpan.textContent = pickedQty;
+        }
+
+        row.dataset.quantityOrdered = orderedQty;
+        toggleCompletionState(row, pickedQty, orderedQty);
     });
+
+    updateProgressSummary(items);
+}
+
+function toggleCompletionState(row, picked, ordered) {
+    if (!row) {
+        return;
+    }
+    if (Number(picked) >= Number(ordered) && Number(ordered) > 0) {
+        row.classList.add('item-complete');
+    } else {
+        row.classList.remove('item-complete');
+    }
+}
+
+function updateProgressSummary(items) {
+    if (!Array.isArray(items) || !items.length) {
+        return;
+    }
+
+    const totals = items.reduce((acc, item) => {
+        acc.items += 1;
+        acc.ordered += Number(item.quantity_ordered) || 0;
+        acc.picked += Number(item.picked_quantity) || 0;
+        return acc;
+    }, { items: 0, ordered: 0, picked: 0 });
+
+    const remaining = Math.max(totals.ordered - totals.picked, 0);
+    const percent = totals.ordered > 0 ? ((totals.picked / totals.ordered) * 100) : 0;
+
+    const totalItemsEl = document.getElementById('progress-total-items');
+    const totalOrderedEl = document.getElementById('progress-total-ordered');
+    const totalPickedEl = document.getElementById('progress-total-picked');
+    const totalRemainingEl = document.getElementById('progress-total-remaining');
+    const progressPercentEl = document.getElementById('progress-percent');
+
+    if (totalItemsEl) totalItemsEl.textContent = totals.items;
+    if (totalOrderedEl) totalOrderedEl.textContent = totals.ordered;
+    if (totalPickedEl) totalPickedEl.textContent = totals.picked;
+    if (totalRemainingEl) totalRemainingEl.textContent = remaining;
+    if (progressPercentEl) progressPercentEl.textContent = percent.toFixed(1).replace(/\.0$/, '');
+}
+
+function startOrderPolling(orderId) {
+    if (!orderId) {
+        return;
+    }
+
+    stopOrderPolling();
+    pollingOrderId = orderId;
+
+    const poll = () => {
+        if (pollingOrderId !== orderId) {
+            return;
+        }
+
+        if (pollingController) {
+            pollingController.abort();
+        }
+        pollingController = new AbortController();
+
+        fetch(`api/warehouse/get_picking_status.php?order_id=${orderId}`, { signal: pollingController.signal })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.status !== 'success' || !data.data || !Array.isArray(data.data.items)) {
+                    throw new Error(data.message || 'Răspuns invalid de la server');
+                }
+                updatePickedQuantities(data.data.items);
+            })
+            .catch(error => {
+                if (error.name === 'AbortError') {
+                    return;
+                }
+                console.error('Polling error:', error);
+            })
+            .finally(() => {
+                if (pollingOrderId === orderId) {
+                    pollingTimer = setTimeout(poll, POLLING_INTERVAL_MS);
+                }
+            });
+    };
+
+    poll();
+}
+
+function stopOrderPolling() {
+    if (pollingTimer) {
+        clearTimeout(pollingTimer);
+        pollingTimer = null;
+    }
+    if (pollingController) {
+        pollingController.abort();
+        pollingController = null;
+    }
+    pollingOrderId = null;
+}
+
+function updatePickedQuantities(items) {
+    if (!Array.isArray(items)) {
+        return;
+    }
+
+    const totals = { items: 0, ordered: 0, picked: 0 };
+
+    items.forEach(item => {
+        const row = document.querySelector(`#orderDetailsContent tr[data-order-item-id="${item.order_item_id}"]`);
+        if (!row) {
+            return;
+        }
+
+        totals.items += 1;
+        totals.ordered += Number(item.quantity_ordered) || 0;
+        totals.picked += Number(item.picked_quantity) || 0;
+
+        const pickedSpan = row.querySelector('.picked-quantity-value');
+        if (!pickedSpan) {
+            return;
+        }
+
+        const currentValue = Number(pickedSpan.textContent) || 0;
+        const newValue = Number(item.picked_quantity) || 0;
+
+        if (currentValue !== newValue) {
+            pickedSpan.textContent = newValue;
+            pickedSpan.classList.remove('quantity-flash');
+            // Force reflow to restart animation
+            void pickedSpan.offsetWidth;
+            pickedSpan.classList.add('quantity-flash');
+            pickedSpan.addEventListener('animationend', () => {
+                pickedSpan.classList.remove('quantity-flash');
+            }, { once: true });
+        }
+
+        const orderedQuantity = Number(row.dataset.quantityOrdered) || Number(item.quantity_ordered) || 0;
+        row.dataset.quantityOrdered = orderedQuantity;
+        toggleCompletionState(row, newValue, orderedQuantity);
+    });
+
+    const remaining = Math.max(totals.ordered - totals.picked, 0);
+    const percent = totals.ordered > 0 ? ((totals.picked / totals.ordered) * 100) : 0;
+
+    const totalItemsEl = document.getElementById('progress-total-items');
+    const totalOrderedEl = document.getElementById('progress-total-ordered');
+    const totalPickedEl = document.getElementById('progress-total-picked');
+    const totalRemainingEl = document.getElementById('progress-total-remaining');
+    const progressPercentEl = document.getElementById('progress-percent');
+
+    if (totalItemsEl) totalItemsEl.textContent = totals.items;
+    if (totalOrderedEl) totalOrderedEl.textContent = totals.ordered;
+    if (totalPickedEl) totalPickedEl.textContent = totals.picked;
+    if (totalRemainingEl) totalRemainingEl.textContent = remaining;
+    if (progressPercentEl) progressPercentEl.textContent = percent.toFixed(1).replace(/\.0$/, '');
 }
 
 /**

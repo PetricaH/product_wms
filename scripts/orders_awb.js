@@ -3,7 +3,6 @@
 
 document.addEventListener('DOMContentLoaded', function() {
     initializeAWBGeneration();
-    initializeAWBStatus();
     loadAvailablePrinters();
 });
 
@@ -747,22 +746,19 @@ function updateOrderAWBStatus(orderId, barcode, generateBtn) {
 
     const awbCell = generateBtn.closest('.awb-column');
     if (awbCell) {
+        const trackingUrl = `https://www.cargus.ro/personal/urmareste-coletul/?tracking_number=${encodeURIComponent(barcode)}&Urm%C4%83re%C8%99te=Urm%C4%83re%C8%99te`;
         awbCell.innerHTML = `
             <div class="awb-info">
                 <span class="awb-barcode">${barcode}</span>
-                <div class="awb-status awb-status-unknown" data-awb="${barcode}">Status necunoscut</div>
-                <button type="button" class="btn btn-sm btn-outline-secondary refresh-status-btn" data-awb="${barcode}">
-                    <span class="material-symbols-outlined">refresh</span> Track AWB
-                </button>
+                <a href="${trackingUrl}" class="btn btn-sm btn-outline-secondary track-awb-link" target="_blank" rel="noopener noreferrer">
+                    <span class="material-symbols-outlined">open_in_new</span> Urmărește AWB
+                </a>
                 <button type="button" class="btn btn-sm btn-outline-success print-awb-btn" onclick="printAWB(${orderId}, '${barcode}', '${escapedOrderNumber}')">
                     <span class="material-symbols-outlined">print</span> Printează AWB
                 </button>
             </div>
         `;
         
-        // Keep your existing logic to automatically fetch status
-        const statusEl = awbCell.querySelector('.awb-status');
-        fetchAwbStatus(barcode, statusEl);
     }
 }
 

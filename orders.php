@@ -494,15 +494,17 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                         </div>
                                                     <?php endif; ?>
                                                     <?php if ($hasValidAwb): ?>
+                                                        <?php
+                                                            $trackingUrl = 'https://www.cargus.ro/personal/urmareste-coletul/?tracking_number=' . urlencode($awbBarcode) . '&Urm%C4%83re%C8%99te=Urm%C4%83re%C8%99te';
+                                                        ?>
                                                         <div class="awb-info">
                                                             <span class="awb-barcode"><?= htmlspecialchars($awbBarcode) ?></span>
                                                             <?php if (!empty($order['awb_created_at'])): ?>
                                                                 <small><?= date('d.m.Y H:i', strtotime($order['awb_created_at'])) ?></small>
                                                             <?php endif; ?>
-                                                            <div class="awb-status" data-awb="<?= htmlspecialchars($awbBarcode) ?>">Se verifică...</div>
-                                                            <button type="button" class="btn btn-sm btn-outline-secondary refresh-status-btn" data-awb="<?= htmlspecialchars($awbBarcode) ?>">
-                                                                <span class="material-symbols-outlined">refresh</span> Track AWB
-                                                            </button>
+                                                            <a href="<?= htmlspecialchars($trackingUrl) ?>" class="btn btn-sm btn-outline-secondary track-awb-link" target="_blank" rel="noopener noreferrer">
+                                                                <span class="material-symbols-outlined">open_in_new</span> Urmărește AWB
+                                                            </a>
                                                             <button type="button" class="btn btn-sm btn-outline-success print-awb-btn" onclick="printAWB(<?= $order['id'] ?>, '<?= htmlspecialchars($awbBarcode) ?>', '<?= htmlspecialchars(addslashes($order['order_number'])) ?>')" title="Printează AWB">
                                                                 <span class="material-symbols-outlined">print</span> Printează AWB
                                                             </button>

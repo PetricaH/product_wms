@@ -92,6 +92,8 @@ try {
             o.priority,
             o.type,
             o.notes,
+            o.assigned_to,
+            o.assigned_at,
             COALESCE(o.total_value, 0) AS total_value,
             COALESCE((
                 SELECT COUNT(*)
@@ -135,7 +137,10 @@ try {
             'notes' => $order['notes'],
             'total_items' => (int)$order['total_items'],
             'total_locations' => 1,
-            'remaining_items' => max(1, (int)$order['remaining_items'])
+            'remaining_items' => max(1, (int)$order['remaining_items']),
+            'assigned_to' => $order['assigned_to'] !== null ? (int)$order['assigned_to'] : null,
+            'assigned_at' => $order['assigned_at'],
+            'updated_at' => $order['updated_at']
         ];
     }, $orders);
 

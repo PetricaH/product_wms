@@ -139,10 +139,14 @@ async function generateAWBDirect(orderId, manualData = {}) {
             if (window.IS_PICKING_INTERFACE) {
                 document.dispatchEvent(new CustomEvent('awbGenerated', { detail: { orderId, awbCode } }));
             } else {
-                updateOrderAWBStatus(orderId, awbCode, button);
-                setTimeout(() => {
-                    window.location.reload();
-                }, 2000);
+                const generatedForOrder = updateOrderAWBStatus(orderId, awbCode, button);
+                document.dispatchEvent(new CustomEvent('orders:awb-generated', {
+                    detail: {
+                        orderId: Number(orderId),
+                        awbCode,
+                        orderNumber: generatedForOrder
+                    }
+                }));
             }
 
         } else {
@@ -758,8 +762,15 @@ function updateOrderAWBStatus(orderId, barcode, generateBtn) {
                 </button>
             </div>
         `;
-        
+        awbCell.classList.add('awb-update-flash');
+        awbCell.addEventListener('animationend', () => awbCell.classList.remove('awb-update-flash'), { once: true });
     }
+
+    if (row) {
+        row.setAttribute('data-awb', barcode);
+    }
+
+    return orderNumber;
 }
 
 /**

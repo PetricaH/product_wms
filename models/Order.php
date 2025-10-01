@@ -202,7 +202,7 @@ class Order
         try {
             $stmt = $this->conn->prepare($query);
             $stmt->bindValue(':awb_date', $targetDate);
-            $stmt->bindValue(':status', 'picked');
+            $stmt->bindValue(':status', 'ready_to_ship');
             $stmt->execute();
             return $stmt->fetchAll(PDO::FETCH_ASSOC);
         } catch (PDOException $e) {

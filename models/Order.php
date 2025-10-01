@@ -135,14 +135,14 @@ class Order
      * @return array
      */
     public function getOrdersPaginated($pageSize, $offset, $statusFilter = '', $priorityFilter = '', $search = '') {
-        $query = "SELECT o.*, 
+        $query = "SELECT o.*,
                          COALESCE((SELECT SUM(oi.quantity * oi.unit_price) FROM {$this->itemsTable} oi WHERE oi.order_id = o.id), 0) as total_value,
                          COALESCE((SELECT COUNT(*) FROM {$this->itemsTable} oi WHERE oi.order_id = o.id), 0) as total_items
                   FROM {$this->table} o
                   WHERE 1=1";
-        
+
         $params = [];
-        
+
         if (!empty($statusFilter)) {
             $query .= " AND o.status = :status";
             $params[':status'] = $statusFilter;
@@ -171,6 +171,42 @@ class Order
             return $stmt->fetchAll(PDO::FETCH_ASSOC);
         } catch (PDOException $e) {
             error_log("Error getting paginated orders: " . $e->getMessage());
+            return [];
+        }
+    }
+
+    /**
+     * Get orders with AWB generated on a specific date and ready to ship
+     *
+     * @param string|null $date Date in Y-m-d format. Defaults to today if null.
+     * @return array
+     */
+    public function getOrdersReadyToShipWithAwbByDate(?string $date = null): array {
+        $targetDate = $date ?? date('Y-m-d');
+
+        $query = "SELECT
+                    o.id,
+                    o.order_number,
+                    o.customer_name,
+                    o.awb_barcode,
+                    COALESCE(SUM(oi.quantity), 0) AS total_products
+                FROM {$this->table} o
+                LEFT JOIN {$this->itemsTable} oi ON oi.order_id = o.id
+                WHERE o.awb_barcode IS NOT NULL
+                  AND o.awb_barcode != ''
+                  AND DATE(o.awb_created_at) = :awb_date
+                  AND LOWER(o.status) = :status
+                GROUP BY o.id, o.order_number, o.customer_name, o.awb_barcode
+                ORDER BY o.order_date ASC";
+
+        try {
+            $stmt = $this->conn->prepare($query);
+            $stmt->bindValue(':awb_date', $targetDate);
+            $stmt->bindValue(':status', 'ready_to_ship');
+            $stmt->execute();
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (PDOException $e) {
+            error_log('Error fetching ready-to-ship orders with AWB: ' . $e->getMessage());
             return [];
         }
     }

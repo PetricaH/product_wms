@@ -135,6 +135,121 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
+if (isset($_GET['export_awb_pdf']) && $_GET['export_awb_pdf'] === '1') {
+    $exportDate = date('Y-m-d');
+    $exportRedirectParams = $_GET;
+    unset($exportRedirectParams['export_awb_pdf']);
+    $exportRedirectUrl = $_SERVER['PHP_SELF'];
+    if (!empty($exportRedirectParams)) {
+        $exportRedirectUrl .= '?' . http_build_query($exportRedirectParams);
+    }
+
+    try {
+        $ordersForExport = $orderModel->getOrdersReadyToShipWithAwbByDate($exportDate);
+
+        if (empty($ordersForExport)) {
+            $_SESSION['orders_export_message'] = [
+                'type' => 'warning',
+                'text' => 'Nu există comenzi cu AWB generate astăzi și status „Pregătit pentru expediere”.'
+            ];
+            header('Location: ' . $exportRedirectUrl);
+            exit;
+        }
+
+        if (!class_exists('FPDF')) {
+            require_once BASE_PATH . '/lib/fpdf.php';
+        }
+
+        if (!class_exists('FPDF')) {
+            throw new RuntimeException('Biblioteca FPDF nu este disponibilă pentru generarea PDF-ului.');
+        }
+
+        $convertText = static function ($text) {
+            $converted = @iconv('UTF-8', 'ISO-8859-1//TRANSLIT', (string)$text);
+            if ($converted === false) {
+                $converted = @iconv('UTF-8', 'ASCII//TRANSLIT', (string)$text);
+            }
+            return $converted === false ? (string)$text : $converted;
+        };
+
+        $truncateText = static function ($text, $maxLength) {
+            $text = (string)$text;
+            if (strlen($text) <= $maxLength) {
+                return $text;
+            }
+            $trimLength = max(0, $maxLength - 3);
+            return substr($text, 0, $trimLength) . '...';
+        };
+
+        $pdf = new FPDF('P', 'mm', 'A4');
+        $pdf->SetTitle('Comenzi cu AWB - ' . date('d.m.Y'));
+        $pdf->SetMargins(10, 15, 10);
+        $pdf->SetAutoPageBreak(true, 20);
+        $pdf->AddPage();
+
+        $pdf->SetFont('Arial', 'B', 14);
+        $pdf->Cell(0, 10, $convertText('Comenzi cu AWB generate astăzi'), 0, 1, 'C');
+        $pdf->SetFont('Arial', '', 11);
+        $pdf->Cell(0, 6, $convertText('Data: ' . date('d.m.Y', strtotime($exportDate))), 0, 1, 'C');
+        $pdf->Ln(6);
+
+        $columnWidths = [35, 55, 25, 45, 30];
+
+        $renderTableHeader = static function () use ($pdf, $columnWidths, $convertText) {
+            $pdf->SetFont('Arial', 'B', 11);
+            $pdf->SetFillColor(240, 240, 240);
+            $pdf->Cell($columnWidths[0], 8, $convertText('Numar comanda'), 1, 0, 'C', true);
+            $pdf->Cell($columnWidths[1], 8, $convertText('Client'), 1, 0, 'C', true);
+            $pdf->Cell($columnWidths[2], 8, $convertText('Nr. produse'), 1, 0, 'C', true);
+            $pdf->Cell($columnWidths[3], 8, $convertText('AWB'), 1, 0, 'C', true);
+            $pdf->Cell($columnWidths[4], 8, $convertText('Semnatura curier'), 1, 1, 'C', true);
+            $pdf->SetFont('Arial', '', 10);
+        };
+
+        $renderTableHeader();
+
+        foreach ($ordersForExport as $order) {
+            if ($pdf->GetY() > $pdf->GetPageHeight() - 30) {
+                $pdf->AddPage();
+                $renderTableHeader();
+            }
+
+            $orderNumber = $truncateText($convertText($order['order_number'] ?? ''), 28);
+            $customerName = $truncateText($convertText($order['customer_name'] ?? ''), 40);
+            $totalProducts = (int)($order['total_products'] ?? 0);
+            $awbCode = $truncateText($convertText($order['awb_barcode'] ?? ''), 32);
+
+            $pdf->Cell($columnWidths[0], 8, $orderNumber, 1);
+            $pdf->Cell($columnWidths[1], 8, $customerName, 1);
+            $pdf->Cell($columnWidths[2], 8, $totalProducts > 0 ? (string)$totalProducts : '0', 1, 0, 'C');
+            $pdf->Cell($columnWidths[3], 8, $awbCode, 1);
+            $pdf->Cell($columnWidths[4], 8, '', 1);
+            $pdf->Ln();
+        }
+
+        $pdf->Ln(8);
+        $pdf->SetFont('Arial', 'B', 10);
+        $pdf->Cell(0, 8, $convertText('Total comenzi: ' . count($ordersForExport)), 0, 1, 'L');
+
+        while (ob_get_level() > 0) {
+            ob_end_clean();
+        }
+
+        header('Content-Type: application/pdf');
+        header('Content-Disposition: inline; filename="comenzi_awb_' . $exportDate . '.pdf"');
+        $pdf->Output('I', 'comenzi_awb_' . $exportDate . '.pdf');
+        exit;
+    } catch (Throwable $e) {
+        error_log('Order AWB PDF export error: ' . $e->getMessage());
+        $_SESSION['orders_export_message'] = [
+            'type' => 'error',
+            'text' => 'A apărut o eroare la generarea PDF-ului. Încearcă din nou.'
+        ];
+        header('Location: ' . $exportRedirectUrl);
+        exit;
+    }
+}
+
 // Get filters and search
 $statusFilter = $_GET['status'] ?? '';
 $priorityFilter = $_GET['priority'] ?? '';
@@ -159,6 +274,27 @@ $priorityLabels = [
     'urgent' => 'Urgentă'
 ];
 $allProducts = $productModel->getAllProducts();
+
+// Alert messages (POST + export feedback)
+$alertMessages = [];
+if (!empty($message)) {
+    $alertMessages[] = [
+        'type' => $messageType,
+        'text' => $message
+    ];
+}
+
+if (!empty($_SESSION['orders_export_message'])) {
+    $alertMessages[] = $_SESSION['orders_export_message'];
+    unset($_SESSION['orders_export_message']);
+}
+
+// Export button URL with current filters
+$exportQueryParams = $_GET;
+unset($exportQueryParams['export_awb_pdf']);
+$exportQueryParams['export_awb_pdf'] = 1;
+$exportQueryString = http_build_query($exportQueryParams);
+$exportButtonUrl = $_SERVER['PHP_SELF'] . ($exportQueryString !== '' ? '?' . $exportQueryString : '');
 
 // Define current page for footer
 $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
@@ -186,21 +322,38 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                             <span class="material-symbols-outlined">shopping_cart</span>
                             Gestionare Comenzi
                         </h1>
-                        <!-- <button class="btn btn-primary" onclick="openCreateModal()">
-                            <span class="material-symbols-outlined">add_shopping_cart</span>
-                            Comandă Nouă
-                        </button> -->
+                        <a href="<?= htmlspecialchars($exportButtonUrl) ?>" class="btn btn-primary">
+                            <span class="material-symbols-outlined">picture_as_pdf</span>
+                            Exportă AWB-uri de azi (PDF)
+                        </a>
                     </div>
                 </header>
                 
                 <!-- Alert Messages -->
-                <?php if (!empty($message)): ?>
-                    <div class="alert alert-<?= $messageType === 'success' ? 'success' : 'danger' ?>" role="alert">
-                        <span class="material-symbols-outlined">
-                            <?= $messageType === 'success' ? 'check_circle' : 'error' ?>
-                        </span>
-                        <?= htmlspecialchars($message) ?>
-                    </div>
+                <?php if (!empty($alertMessages)): ?>
+                    <?php foreach ($alertMessages as $alert): ?>
+                        <?php
+                            $type = strtolower($alert['type'] ?? 'info');
+                            $text = $alert['text'] ?? '';
+                            $alertClass = 'info';
+                            $icon = 'info';
+
+                            if ($type === 'success') {
+                                $alertClass = 'success';
+                                $icon = 'check_circle';
+                            } elseif ($type === 'warning') {
+                                $alertClass = 'warning';
+                                $icon = 'warning';
+                            } elseif ($type === 'error' || $type === 'danger') {
+                                $alertClass = 'danger';
+                                $icon = 'error';
+                            }
+                        ?>
+                        <div class="alert alert-<?= $alertClass ?>" role="alert">
+                            <span class="material-symbols-outlined"><?= $icon ?></span>
+                            <?= htmlspecialchars($text) ?>
+                        </div>
+                    <?php endforeach; ?>
                 <?php endif; ?>
 
                 <!-- Filters -->

@@ -267,6 +267,35 @@ $orders = $orderModel->getOrdersPaginated($pageSize, $offset, $statusFilter, $pr
 
 // Get unique statuses and priorities for filters
 $statuses = $orderModel->getStatuses();
+$statusDisplayLabels = array_merge($statuses, [
+    'processing' => 'În procesare',
+    'picked' => 'Ridicat',
+    'ready' => 'Pregătit',
+    'ready_to_ship' => 'Pregătit',
+    'shipped' => 'Expediat',
+    'completed' => 'Finalizat'
+]);
+
+$latestUpdatedIso = '';
+$latestUpdatedAt = null;
+foreach ($orders as $orderRow) {
+    $candidate = $orderRow['updated_at'] ?? $orderRow['created_at'] ?? $orderRow['order_date'] ?? null;
+    if ($candidate === null || $candidate === '') {
+        continue;
+    }
+
+    if ($latestUpdatedAt === null || strtotime($candidate) > strtotime($latestUpdatedAt)) {
+        $latestUpdatedAt = $candidate;
+    }
+}
+
+if ($latestUpdatedAt !== null) {
+    try {
+        $latestUpdatedIso = (new DateTimeImmutable($latestUpdatedAt))->format(DateTimeInterface::ATOM);
+    } catch (Exception $e) {
+        $latestUpdatedIso = '';
+    }
+}
 $priorities = $orderModel->getPriorities();
 $priorityLabels = [
     'normal' => 'Normal',
@@ -328,6 +357,8 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                         </a>
                     </div>
                 </header>
+
+                <div class="orders-toast-container" aria-live="polite" aria-atomic="true"></div>
                 
                 <!-- Alert Messages -->
                 <?php if (!empty($alertMessages)): ?>
@@ -412,7 +443,13 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                         <?php if (!empty($orders)): ?>
                             <div class="table-container">
                                 <div class="table-responsive">
-                                <table class="table">
+                                <table class="table orders-table"
+                                       data-last-updated="<?= htmlspecialchars($latestUpdatedIso) ?>"
+                                       data-status-filter="<?= htmlspecialchars($statusFilter) ?>"
+                                       data-priority-filter="<?= htmlspecialchars($priorityFilter) ?>"
+                                       data-search="<?= htmlspecialchars($search) ?>"
+                                       data-page="<?= $page ?>"
+                                       data-page-size="<?= $pageSize ?>">
                                     <thead>
                                         <tr>
                                             <th>Număr Comandă</th>
@@ -441,8 +478,25 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                 }
                                                 $displayWeight = $order['total_weight'] > 0 ? $order['total_weight'] : $calculatedWeight;
                                                 $weightBreakdown = htmlspecialchars(implode(' + ', $weightParts));
+                                                $statusKey = strtolower((string)$order['status']);
+                                                $statusLabel = $statusDisplayLabels[$statusKey] ?? ($statuses[$statusKey] ?? ucfirst((string)$order['status']));
+                                                $statusClass = preg_replace('/[^a-z0-9_-]/', '-', $statusKey);
+                                                $awbBarcode = trim((string)($order['awb_barcode'] ?? ''));
+                                                $rowUpdatedAt = $order['updated_at'] ?? $order['created_at'] ?? $order['order_date'] ?? null;
+                                                $rowUpdatedIso = '';
+                                                if (!empty($rowUpdatedAt)) {
+                                                    try {
+                                                        $rowUpdatedIso = (new DateTimeImmutable($rowUpdatedAt))->format(DateTimeInterface::ATOM);
+                                                    } catch (Exception $e) {
+                                                        $rowUpdatedIso = '';
+                                                    }
+                                                }
                                             ?>
-                                            <tr>
+                                            <tr class="order-row"
+                                                data-order-id="<?= (int)$order['id'] ?>"
+                                                data-status="<?= htmlspecialchars($statusKey) ?>"
+                                                data-awb="<?= htmlspecialchars($awbBarcode) ?>"
+                                                data-updated-at="<?= htmlspecialchars($rowUpdatedIso) ?>">
                                                 <td>
                                                     <code class="order-number"><?= htmlspecialchars($order['order_number']) ?></code>
                                                 </td>
@@ -454,12 +508,13 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                         <?php endif; ?>
                                                     </div>
                                                 </td>
-                                                <td>
-                                                    <small><?= date('d.m.Y H:i', strtotime($order['order_date'])) ?></small>
+                                                <td class="order-date-cell">
+                                                    <small class="order-date-value"><?= date('d.m.Y H:i', strtotime($order['order_date'])) ?></small>
                                                 </td>
                                                 <td>
-                                                    <span class="status-badge status-<?= strtolower($order['status']) ?>">
-                                                        <?= htmlspecialchars($order['status']) ?>
+                                                    <span class="status-badge status-<?= htmlspecialchars($statusClass) ?>"
+                                                          data-status="<?= htmlspecialchars($statusKey) ?>">
+                                                        <?= htmlspecialchars($statusLabel) ?>
                                                     </span>
                                                 </td>
                                                 <td>
@@ -468,15 +523,15 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                     </span>
                                                 </td>
                                                 <td>
-                                                    <strong><?= number_format($order['total_value'] ?? 0, 2) ?> Lei</strong>
+                                                    <strong class="order-total-value"><?= number_format($order['total_value'] ?? 0, 2) ?> Lei</strong>
                                                 </td>
                                                 <td>
-                                                    <span class="text-center"><?= $order['total_items'] ?? 0 ?> produse</span>
+                                                    <span class="text-center order-items-count"><?= $order['total_items'] ?? 0 ?> produse</span>
                                                 </td>
                                                 <td>
-                                                    <span title="<?= $weightBreakdown ?>"><?= number_format($displayWeight, 3, '.', '') ?> kg</span>
+                                                    <span class="order-weight" title="<?= $weightBreakdown ?>"><?= number_format($displayWeight, 3, '.', '') ?> kg</span>
                                                 </td>
-                                                <td class="awb-column">
+                                                <td class="awb-column awb-cell">
                                                     <?php
                                                     $attempts = (int)($order['awb_generation_attempts'] ?? 0);
                                                     $awbBarcode = trim($order['awb_barcode'] ?? '');

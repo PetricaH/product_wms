@@ -974,13 +974,77 @@ class Order
     public function getStatuses() {
         return [
             'pending' => 'În așteptare',
+            'processing' => 'În procesare',
             'confirmed' => 'Confirmat',
-            'picked' => 'Pregătit pentru expediere',
+            'picked' => 'Ridicat',
+            'ready' => 'Pregătit',
+            'ready_to_ship' => 'Pregătit pentru expediere',
             'shipped' => 'Expediat',
+            'completed' => 'Finalizat',
             'delivered' => 'Livrat',
             'cancelled' => 'Anulat',
             'returned' => 'Returnat'
         ];
+    }
+
+    /**
+     * Fetch orders updated after the provided timestamp.
+     *
+     * @param string|null $since ISO/DB timestamp threshold.
+     * @param string $statusFilter
+     * @param string $priorityFilter
+     * @param string $search
+     * @param int $limit
+     * @return array
+     */
+    public function getOrdersUpdatedSince(?string $since, string $statusFilter = '', string $priorityFilter = '', string $search = '', int $limit = 100): array
+    {
+        $limit = max(1, min($limit, 200));
+
+        $query = "SELECT o.*, 
+                         COALESCE((SELECT SUM(oi.quantity * oi.unit_price) FROM {$this->itemsTable} oi WHERE oi.order_id = o.id), 0) AS total_value,
+                         COALESCE((SELECT COUNT(*) FROM {$this->itemsTable} oi WHERE oi.order_id = o.id), 0) AS total_items
+                  FROM {$this->table} o
+                  WHERE 1=1";
+
+        $params = [];
+
+        if (!empty($statusFilter)) {
+            $query .= " AND (LOWER(o.status) = LOWER(:status) OR LOWER(o.status) = LOWER(:alt_status))";
+            $params[':status'] = $statusFilter;
+            // Allow compatibility with ready_to_ship vs ready, etc.
+            $params[':alt_status'] = $statusFilter === 'ready' ? 'ready_to_ship' : $statusFilter;
+        }
+
+        if (!empty($priorityFilter)) {
+            $query .= " AND o.priority = :priority";
+            $params[':priority'] = $priorityFilter;
+        }
+
+        if (!empty($search)) {
+            $query .= " AND (o.order_number LIKE :search OR o.customer_name LIKE :search OR o.customer_email LIKE :search)";
+            $params[':search'] = '%' . $search . '%';
+        }
+
+        if (!empty($since)) {
+            $query .= " AND COALESCE(o.updated_at, o.created_at, o.order_date) > :since";
+            $params[':since'] = $since;
+        }
+
+        $query .= " ORDER BY COALESCE(o.updated_at, o.created_at, o.order_date) ASC LIMIT :limit";
+
+        try {
+            $stmt = $this->conn->prepare($query);
+            foreach ($params as $key => $value) {
+                $stmt->bindValue($key, $value);
+            }
+            $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+            $stmt->execute();
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (PDOException $e) {
+            error_log('Error fetching order updates: ' . $e->getMessage());
+            return [];
+        }
     }
     
     /**

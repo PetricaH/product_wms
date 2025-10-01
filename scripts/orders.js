@@ -238,7 +238,7 @@ function shouldRenderOrder(order, table) {
 
 function updateOrderRow(row, order) {
     const status = (order.status || '').toLowerCase();
-    const statusRaw = order.status_raw || capitalize(status);
+    const statusRaw = order.status_raw || order.status || status;
     const previousStatus = row.getAttribute('data-status') || '';
     const result = { statusChanged: false, awbUpdated: false };
 
@@ -337,6 +337,7 @@ function renderOrderRow(order) {
     row.className = 'order-row';
     row.setAttribute('data-order-id', order.id);
     const status = (order.status || '').toLowerCase();
+    const statusRaw = order.status_raw || order.status || status;
     row.setAttribute('data-status', status);
     if (order.updated_at) {
         row.setAttribute('data-updated-at', order.updated_at);

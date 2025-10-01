@@ -7,6 +7,16 @@ let currentOrderId = null;
 let currentOrderDetails = null;
 let activeStatusFilter = '';
 let modalKeyboardShortcutsInitialized = false;
+let isInitialLoadComplete = false;
+let isFetchingOrders = false;
+let fetchAbortController = null;
+let pollTimeoutId = null;
+let isPollingActive = false;
+let lastErrorNotification = 0;
+
+const POLL_INTERVAL_MS = 3000;
+const ERROR_NOTIFICATION_THROTTLE_MS = 15000;
+const orderCardCache = new Map();
 
 // Use PHP-provided configuration
 const API_BASE = window.WMS_CONFIG?.apiBase || '/api';
@@ -23,8 +33,8 @@ document.addEventListener('DOMContentLoaded', function() {
     console.log('DOM loaded, initializing warehouse orders dashboard');
     initializeEventListeners();
     setDefaultFilter();
-    loadOrders();
-    setInterval(loadOrders, 30000); // Auto-refresh every 30 seconds
+    initializeVisibilityHandling();
+    startOrderPolling({ immediate: true });
 });
 
 function setDefaultFilter() {
@@ -33,6 +43,71 @@ function setDefaultFilter() {
     if (processingCard) {
         processingCard.classList.add('active');
     }
+}
+
+function initializeVisibilityHandling() {
+    document.addEventListener('visibilitychange', handleVisibilityChange, { passive: true });
+    window.addEventListener('focus', handleWindowFocus, { passive: true });
+}
+
+function handleVisibilityChange() {
+    if (document.visibilityState === 'hidden') {
+        stopOrderPolling();
+    } else {
+        startOrderPolling({ immediate: true });
+    }
+}
+
+function handleWindowFocus() {
+    if (!document.hidden && !isPollingActive) {
+        startOrderPolling({ immediate: true });
+    }
+}
+
+function startOrderPolling({ immediate = false } = {}) {
+    if (isPollingActive) {
+        if (immediate) {
+            loadOrders({ showLoading: !isInitialLoadComplete, force: true });
+        }
+        return;
+    }
+
+    isPollingActive = true;
+
+    if (immediate) {
+        loadOrders({ showLoading: !isInitialLoadComplete, force: true });
+    } else {
+        scheduleNextPoll();
+    }
+}
+
+function stopOrderPolling() {
+    isPollingActive = false;
+
+    if (pollTimeoutId) {
+        clearTimeout(pollTimeoutId);
+        pollTimeoutId = null;
+    }
+
+    if (fetchAbortController) {
+        fetchAbortController.abort();
+        fetchAbortController = null;
+    }
+}
+
+function scheduleNextPoll(delay = POLL_INTERVAL_MS) {
+    if (!isPollingActive) {
+        return;
+    }
+
+    if (pollTimeoutId) {
+        clearTimeout(pollTimeoutId);
+    }
+
+    pollTimeoutId = setTimeout(() => {
+        pollTimeoutId = null;
+        loadOrders({ showLoading: false });
+    }, delay);
 }
 
 /**
@@ -147,73 +222,227 @@ function isModalActionButtonVisible(button) {
 /**
  * Load orders from API
  */
-async function loadOrders() {
-    const loadingEl = document.getElementById('loading');
-    const ordersGrid = document.getElementById('orders-grid');
-    const noOrdersEl = document.getElementById('no-orders');
+async function loadOrders(options = {}) {
+    const { showLoading: shouldShowLoading = !isInitialLoadComplete, force = false } = options;
 
-    showLoading(true);
-    hideOrdersGrid();
+    if (pollTimeoutId) {
+        clearTimeout(pollTimeoutId);
+        pollTimeoutId = null;
+    }
+
+    if (!force && document.visibilityState === 'hidden') {
+        return;
+    }
+
+    if (isFetchingOrders) {
+        return;
+    }
+
+    const endpoint = `${API_BASE}/warehouse/get_orders.php`;
+
+    if (shouldShowLoading) {
+        showLoading(true);
+        hideOrdersGrid();
+        hideNoOrders();
+    }
+
+    isFetchingOrders = true;
+
+    if (fetchAbortController) {
+        fetchAbortController.abort();
+    }
+
+    fetchAbortController = new AbortController();
+    const { signal } = fetchAbortController;
 
     try {
-        console.log('🔍 Loading orders from API...');
-        
-        const endpoint = `${API_BASE}/warehouse/get_orders.php`;
-        console.log(`🚀 API endpoint: ${endpoint}`);
-        
-        const response = await fetch(endpoint);
+        const response = await fetch(endpoint, {
+            signal,
+            cache: 'no-cache'
+        });
         const responseText = await response.text();
-        
-        console.log('Response status:', response.status);
-        console.log('Response preview:', responseText.substring(0, 200));
-        
+
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}: ${responseText}`);
         }
-        
+
         if (responseText.trim().startsWith('<')) {
-            throw new Error('API returned HTML instead of JSON. Check server configuration and PHP errors.');
+            throw new Error('API returned HTML instead of JSON. Verifică erorile PHP.');
         }
 
         const data = JSON.parse(responseText);
-        console.log('Parsed response:', data);
-        
+
         if (data.status !== 'success') {
             throw new Error(data.message || 'API returned error status');
         }
 
-        allOrders = data.orders || [];
-        console.log(`✅ Loaded ${allOrders.length} orders`);
-        
-        applyFilters();
-        
+        syncOrders(Array.isArray(data.orders) ? data.orders : []);
+        updateStatsCounters(allOrders);
+
+        if (!isInitialLoadComplete) {
+            isInitialLoadComplete = true;
+        }
+
     } catch (error) {
+        if (error.name === 'AbortError') {
+            console.log('ℹ️ Order fetch aborted');
+            return;
+        }
+
         console.error('❌ Error loading orders:', error);
-        showError('Error Loading Orders', error.message, endpoint);
-        hideLoading();
-        hideOrdersGrid();
-        hideNoOrders();
+
+        if (!isInitialLoadComplete) {
+            showError('Error Loading Orders', error.message, endpoint);
+        } else {
+            const now = Date.now();
+            if (now - lastErrorNotification > ERROR_NOTIFICATION_THROTTLE_MS) {
+                showErrorMessage('Nu s-au putut sincroniza comenzile. Reîncercăm automat...');
+                lastErrorNotification = now;
+            }
+        }
+
+    } finally {
+        if (shouldShowLoading) {
+            hideLoading();
+        }
+
+        isFetchingOrders = false;
+
+        if (fetchAbortController && fetchAbortController.signal === signal) {
+            fetchAbortController = null;
+        }
+
+        if (isPollingActive && !document.hidden) {
+            scheduleNextPoll();
+        }
     }
+}
+
+function syncOrders(orders) {
+    const normalizedOrders = Array.isArray(orders)
+        ? orders.map(normalizeOrderData)
+        : [];
+
+    const newOrderIds = new Set(normalizedOrders.map(order => order.id));
+
+    orderCardCache.forEach((card, id) => {
+        if (!newOrderIds.has(id)) {
+            if (card && card.parentNode) {
+                card.parentNode.removeChild(card);
+            } else if (card && typeof card.remove === 'function') {
+                card.remove();
+            }
+            orderCardCache.delete(id);
+        }
+    });
+
+    allOrders = normalizedOrders;
+    applyFilters();
+}
+
+function normalizeOrderData(order) {
+    const id = Number(order.id);
+    const normalizedStatus = String(order.status || '').toLowerCase();
+    const normalizedPriority = String(order.priority || 'normal').toLowerCase();
+    let assignedTo = order.assigned_to;
+
+    if (assignedTo === null || assignedTo === undefined || assignedTo === '') {
+        assignedTo = null;
+    } else {
+        const numericAssigned = Number(assignedTo);
+        assignedTo = Number.isNaN(numericAssigned) ? assignedTo : numericAssigned;
+    }
+
+    return {
+        ...order,
+        id: Number.isNaN(id) ? order.id : id,
+        status: normalizedStatus,
+        priority: normalizedPriority,
+        order_number: order.order_number || '',
+        customer_name: order.customer_name || 'Client necunoscut',
+        total_value: order.total_value ?? '0.00',
+        updated_at: order.updated_at || order.order_date || '',
+        assigned_to: assignedTo
+    };
+}
+
+function filterOrdersList(orders) {
+    const filtered = orders.filter(order => {
+        const status = String(order.status || '').toLowerCase();
+
+        if (activeStatusFilter === 'processing') {
+            return status === 'processing' || status === 'assigned';
+        }
+        if (activeStatusFilter === 'completed') {
+            return ['completed', 'ready', 'ready_to_ship', 'picked', 'shipped'].includes(status);
+        }
+        return !activeStatusFilter || status === activeStatusFilter;
+    });
+
+    filtered.sort((a, b) => {
+        const diff = getOrderSortTimestamp(a) - getOrderSortTimestamp(b);
+        if (diff !== 0) {
+            return diff;
+        }
+        const orderNumberA = String(a.order_number || '');
+        const orderNumberB = String(b.order_number || '');
+        return orderNumberA.localeCompare(orderNumberB);
+    });
+    return filtered;
+}
+
+function getOrderSortTimestamp(order) {
+    const candidates = [order.order_date, order.updated_at, order.assigned_at];
+    for (const value of candidates) {
+        const time = Date.parse(value || '');
+        if (!Number.isNaN(time)) {
+            return time;
+        }
+    }
+    return 0;
+}
+
+function updateStatsCounters(orders) {
+    if (!Array.isArray(orders)) {
+        return;
+    }
+
+    const counters = {
+        pending: 0,
+        processing: 0,
+        completed: 0
+    };
+
+    orders.forEach(order => {
+        const status = String(order.status || '').toLowerCase();
+
+        if (status === 'pending') {
+            counters.pending += 1;
+        }
+
+        if (status === 'processing' || status === 'assigned') {
+            counters.processing += 1;
+        }
+
+        if (['completed', 'ready', 'ready_to_ship', 'picked', 'shipped'].includes(status)) {
+            counters.completed += 1;
+        }
+    });
+
+    const pendingEl = document.querySelector('.stat-card[data-status="pending"] .stat-number');
+    const processingEl = document.querySelector('.stat-card[data-status="processing"] .stat-number');
+    const completedEl = document.querySelector('.stat-card[data-status="completed"] .stat-number');
+
+    if (pendingEl) pendingEl.textContent = counters.pending;
+    if (processingEl) processingEl.textContent = counters.processing;
+    if (completedEl) completedEl.textContent = counters.completed;
 }
 
 /**
  * Apply current filters to orders
  */
 function applyFilters() {
-    filteredOrders = allOrders.filter(order => {
-        if (activeStatusFilter === 'processing') {
-            return order.status === 'processing' || order.status === 'assigned';
-        }
-        if (activeStatusFilter === 'completed') {
-            return ['completed', 'ready', 'picked'].includes(order.status);
-        }
-        return !activeStatusFilter || order.status === activeStatusFilter;
-    });
-
-    // Ensure orders are sorted from oldest to newest
-    filteredOrders.sort((a, b) => new Date(a.order_date) - new Date(b.order_date));
-
-    console.log(`Filtered to ${filteredOrders.length} orders`);
+    filteredOrders = filterOrdersList(allOrders);
     displayOrders();
 }
 
@@ -221,33 +450,63 @@ function applyFilters() {
  * Display orders in the grid
  */
 function displayOrders() {
-    hideLoading();
-    
     const ordersGrid = document.getElementById('orders-grid');
-    const noOrdersEl = document.getElementById('no-orders');
-    
+
     if (!ordersGrid) {
         console.error('Orders grid element not found');
         return;
     }
-    
+
+    Array.from(ordersGrid.children).forEach(child => {
+        if (!child.dataset || typeof child.dataset.orderId === 'undefined') {
+            child.remove();
+        }
+    });
+
     if (filteredOrders.length === 0) {
+        Array.from(ordersGrid.children).forEach(child => child.remove());
         hideOrdersGrid();
         showNoOrders();
         return;
     }
-    
+
     hideNoOrders();
     showOrdersGrid();
-    
-    ordersGrid.innerHTML = '';
-    
-    filteredOrders.forEach(order => {
-        const orderCard = createOrderCard(order);
-        ordersGrid.appendChild(orderCard);
+
+    const filteredIds = new Set();
+
+    filteredOrders.forEach((order, index) => {
+        const orderId = String(order.id);
+        filteredIds.add(orderId);
+
+        let orderCard = orderCardCache.get(order.id);
+
+        if (!orderCard) {
+            orderCard = createOrderCard(order);
+            orderCardCache.set(order.id, orderCard);
+        } else {
+            updateOrderCard(orderCard, order);
+        }
+
+        const referenceNode = ordersGrid.children[index];
+
+        if (orderCard.parentNode !== ordersGrid) {
+            ordersGrid.insertBefore(orderCard, referenceNode || null);
+        } else if (referenceNode !== orderCard) {
+            ordersGrid.insertBefore(orderCard, referenceNode || null);
+        }
     });
-    
-    console.log(`✅ Displayed ${filteredOrders.length} orders`);
+
+    Array.from(ordersGrid.children).forEach(child => {
+        if (!child.dataset) {
+            return;
+        }
+
+        const orderId = child.dataset.orderId;
+        if (!orderId || !filteredIds.has(orderId)) {
+            child.remove();
+        }
+    });
 }
 
 /**
@@ -298,24 +557,30 @@ async function assignOrderForPicking(orderNumber) {
     }
 }
 
-/**
- * Create order card element
- */
-function createOrderCard(order) {
-    const card = document.createElement('div');
-    card.className = 'order-card';
-    card.onclick = () => openOrderDetails(order.id);
-    
-    const statusClass = order.status.toLowerCase();
-    const priorityClass = order.priority.toLowerCase();
-    
-    // Determine what actions are available based on order status
-    const statusLower = order.status.toLowerCase();
-    const isProcessing = statusLower === 'processing' || statusLower === 'assigned';
+function buildOrderCardSignature(order) {
+    return JSON.stringify({
+        id: order.id,
+        status: order.status,
+        priority: order.priority,
+        total_items: order.total_items,
+        total_value: order.total_value,
+        remaining_items: order.remaining_items,
+        updated_at: order.updated_at,
+        assigned_to: order.assigned_to,
+        order_number: order.order_number,
+        customer_name: order.customer_name
+    });
+}
+
+function buildOrderCardMarkup(order) {
+    const statusClass = String(order.status || '').toLowerCase();
+    const priorityClass = String(order.priority || 'normal').toLowerCase();
+    const statusLower = statusClass;
+    const encodedOrderNumber = encodeURIComponent(order.order_number || '');
     let actionButtons = '';
 
-    if (isProcessing) {
-        actionButtons = `<button class="btn btn-success" onclick="event.stopPropagation(); continuePicking('${order.order_number}')">
+    if (statusLower === 'processing' || statusLower === 'assigned') {
+        actionButtons = `<button class="btn btn-success" onclick="event.stopPropagation(); continuePicking(decodeURIComponent('${encodedOrderNumber}'))">
                 <span class="material-symbols-outlined">play_arrow</span>
                 Continuă Picking
             </button>`;
@@ -325,13 +590,13 @@ function createOrderCard(order) {
                 Începe Procesarea
             </button>`;
     }
-    
-    card.innerHTML = `
+
+    return `
         <div class="order-header">
             <div class="order-number">${escapeHtml(order.order_number)}</div>
             <div class="order-status ${statusClass}">${getStatusText(order.status)}</div>
         </div>
-        
+
         <div class="order-info">
             <div class="order-customer">${escapeHtml(order.customer_name)}</div>
             <div class="order-details">
@@ -340,7 +605,7 @@ function createOrderCard(order) {
                 <span class="order-priority ${priorityClass}">${getPriorityText(order.priority)}</span>
             </div>
         </div>
-        
+
         <div class="order-actions">
             ${actionButtons}
             <button class="btn btn-secondary" onclick="event.stopPropagation(); openOrderDetails(${order.id})">
@@ -349,7 +614,32 @@ function createOrderCard(order) {
             </button>
         </div>
     `;
-    
+}
+
+function updateOrderCard(card, order) {
+    const signature = buildOrderCardSignature(order);
+
+    if (card.dataset.cardSignature === signature) {
+        return;
+    }
+
+    card.dataset.cardSignature = signature;
+    card.dataset.lastUpdated = order.updated_at || '';
+    card.dataset.orderId = String(order.id);
+    card.innerHTML = buildOrderCardMarkup(order);
+}
+
+/**
+ * Create order card element
+ */
+function createOrderCard(order) {
+    const card = document.createElement('div');
+    card.className = 'order-card';
+    card.dataset.orderId = String(order.id);
+    card.dataset.cardSignature = buildOrderCardSignature(order);
+    card.dataset.lastUpdated = order.updated_at || '';
+    card.onclick = () => openOrderDetails(order.id);
+    card.innerHTML = buildOrderCardMarkup(order);
     return card;
 }
 
@@ -362,9 +652,13 @@ function getStatusText(status) {
         'processing': 'În procesare',
         'assigned': 'Asignat',
         'ready': 'Gata',
+        'ready_to_ship': 'Pregătită de livrare',
+        'picked': 'Culesă',
+        'shipped': 'Expediată',
         'completed': 'Finalizat'
     };
-    return statusMap[status.toLowerCase()] || status;
+    const normalizedStatus = String(status || '').toLowerCase();
+    return statusMap[normalizedStatus] || status;
 }
 
 /**
@@ -752,7 +1046,7 @@ document.addEventListener('awbGenerated', event => {
             return;
         }
         orders.forEach(order => {
-            if (order && order.id === orderId) {
+            if (order && String(order.id) === String(orderId)) {
                 applyAwbToOrder(order, awbCode);
             }
         });
@@ -761,7 +1055,7 @@ document.addEventListener('awbGenerated', event => {
     updateList(allOrders);
     updateList(filteredOrders);
 
-    if (currentOrderDetails && currentOrderDetails.id === orderId) {
+    if (currentOrderDetails && String(currentOrderDetails.id) === String(orderId)) {
         applyAwbToOrder(currentOrderDetails, awbCode);
         updateModalActions(currentOrderDetails);
         showSuccessMessage('AWB generat cu succes. Poți să îl printezi din această fereastră.');

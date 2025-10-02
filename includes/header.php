@@ -30,6 +30,7 @@ $pageSpecificCSS = [
     'sellers' => 'sellers.css',
     'purchase_orders' => 'purchase_orders.css',
     'product-units' => 'product-units.css',
+    'cargus_mappings' => 'cargus_mappings.css',
     'printer-management' => 'printer-management.css',
     'qc_management' => 'qc-management.css',
     'returns_dashboard' => 'returns_dashboard.css',

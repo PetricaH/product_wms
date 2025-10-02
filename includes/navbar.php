@@ -203,12 +203,22 @@ if ($incidentSidebarCount === null) {
             </a>
         </li>
         <li class="sidebar__item">
-            <a href="<?= getNavUrl('product-units.php') ?>" 
+            <a href="<?= getNavUrl('product-units.php') ?>"
                class="sidebar__link <?= getActiveClass('product-units.php') ?>"
                data-tooltip="Unități Produse">
                 <span class="material-symbols-outlined">rule_settings</span> <span class="link-text">Setări Produse</span>
             </a>
         </li>
+        <?php if (isset($_SESSION['role']) && $_SESSION['role'] === 'admin'): ?>
+        <li class="sidebar__item">
+            <a href="<?= getNavUrl('cargus_mappings.php') ?>"
+               class="sidebar__link <?= getActiveClass('cargus_mappings.php') ?>"
+               data-tooltip="Mapări Cargus">
+                <span class="material-symbols-outlined">pin_drop</span>
+                <span class="link-text">Mapări Cargus</span>
+            </a>
+        </li>
+        <?php endif; ?>
         <li class="sidebar__item">
             <a href="<?= getNavUrl('printer-management.php') ?>"
                class="sidebar__link <?= getActiveClass('printer-management.php') ?>"

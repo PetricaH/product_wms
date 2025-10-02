@@ -268,23 +268,9 @@ class WeightCalculator
         ];
 
         foreach ($productTypeGroups['normal'] as $item) {
-            $itemWeight = $item['quantity'] * $item['weight_per_unit'];
-
-            // Apply packaging rules in priority order
-            if ($item['requires_separate_parcel'] || $item['packaging_type'] === 'liquid') {
-                $normalGroups['liquids_separate'][] = $item;
-            } elseif ($item['hazardous']) {
-                $normalGroups['hazardous_separate'][] = $item;
-            } elseif ($item['temperature_controlled']) {
-                $normalGroups['temperature_controlled'][] = $item;
-            } elseif ($item['fragile'] && $itemWeight > 2.0) {
-                $normalGroups['fragile_separate'][] = $item;
-            } elseif ($itemWeight > 15.0) {
-                $normalGroups['heavy_items'][] = $item;
-            } else {
-                $normalGroups['standard_combinable'][] = $item;
-            }
-        }
+        // ALL normal products get individual labels
+        $normalGroups['liquids_separate'][] = $item;
+    }
 
         foreach ($normalGroups as $groupName => $groupItems) {
             if (!empty($groupItems)) {

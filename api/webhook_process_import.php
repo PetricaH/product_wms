@@ -287,8 +287,8 @@ class ImportProcessor {
             case 'RAMBURS':
                 // Cash on delivery - customer pays cash to courier
                 return [
-                    'cash_repayment' => $totalValue,
-                    'bank_repayment' => 0.00
+                    'cash_repayment' => 0.00,
+                    'bank_repayment' => $totalValue
                 ];
                 
             case 'OP':

@@ -50,6 +50,7 @@ $pageSpecificJS = [
     'sellers' => ['sellers.js', 'sellers-import.js'],
     'purchase_orders' => 'purchase_orders.js',
     'product-units' => 'product-units.js',
+    'cargus_mappings' => 'cargus_mappings.js',
     'printer-management' => 'printer-management.js',
     'qc_management' => 'qc-management.js',
     'returns_dashboard' => 'returns_dashboard.js',

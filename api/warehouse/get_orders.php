@@ -78,6 +78,9 @@ try {
     $dbFactory = $config['connection_factory'];
     $db = $dbFactory();
 
+    require_once BASE_PATH . '/models/Order.php';
+    $orderModel = new Order($db);
+
     // Query for warehouse orders (including today's completed)
     $query = "
         SELECT
@@ -120,6 +123,18 @@ try {
     $stmt = $db->prepare($query);
     $stmt->execute();
     $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $orderIds = array_map(static function ($orderRow) {
+        return (int)($orderRow['id'] ?? 0);
+    }, $orders);
+    $ordersStockIssues = !empty($orderIds) ? $orderModel->getOrdersStockIssues($orderIds) : [];
+
+    if (!empty($ordersStockIssues)) {
+        $orders = array_values(array_filter($orders, static function ($orderRow) use ($ordersStockIssues) {
+            $orderId = (int)($orderRow['id'] ?? 0);
+            return $orderId > 0 && !isset($ordersStockIssues[$orderId]);
+        }));
+    }
 
     // Format the data for frontend
     $formattedOrders = array_map(function($order) {

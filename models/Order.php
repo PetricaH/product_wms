@@ -462,7 +462,7 @@ class Order
      */
     public function getOrderItems($orderId) {
         $query = "
-            SELECT 
+            SELECT
                 oi.*,
                 p.name as product_name,
                 p.sku as product_code,
@@ -472,18 +472,97 @@ class Order
                 ut.unit_name,
                 ut.packaging_type,
                 COALESCE(pu.fragile, 0) as fragile,
-                COALESCE(pu.hazardous, 0) as hazardous
+                COALESCE(pu.hazardous, 0) as hazardous,
+                COALESCE(inv.available_inventory, 0) AS available_inventory,
+                GREATEST(oi.quantity - COALESCE(oi.picked_quantity, 0), 0) AS remaining_quantity
             FROM order_items oi
             JOIN products p ON oi.product_id = p.product_id
             LEFT JOIN product_units pu ON p.product_id = pu.product_id
             LEFT JOIN unit_types ut ON pu.unit_type_id = ut.id AND ut.unit_code = oi.unit_measure
+            LEFT JOIN (
+                SELECT product_id, SUM(quantity) AS available_inventory
+                FROM inventory
+                GROUP BY product_id
+            ) inv ON inv.product_id = oi.product_id
             WHERE oi.order_id = ?
             ORDER BY oi.id ASC
         ";
-        
+
         $stmt = $this->conn->prepare($query);
         $stmt->execute([$orderId]);
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    /**
+     * Get products from the provided orders that have insufficient inventory
+     * compared to the outstanding quantities that still need to be picked.
+     *
+     * @param array<int> $orderIds
+     * @return array<int, array<int, array<string, int>>> Map of order ID => list of issues
+     */
+    public function getOrdersStockIssues(array $orderIds): array
+    {
+        $orderIds = array_values(array_filter(array_map('intval', $orderIds), static function ($value) {
+            return $value > 0;
+        }));
+
+        if (empty($orderIds)) {
+            return [];
+        }
+
+        $placeholders = implode(',', array_fill(0, count($orderIds), '?'));
+
+        $query = "
+            SELECT
+                req.order_id,
+                req.product_id,
+                req.required_quantity,
+                COALESCE(inv.available_quantity, 0) AS available_quantity
+            FROM (
+                SELECT
+                    oi.order_id,
+                    oi.product_id,
+                    SUM(GREATEST(oi.quantity - COALESCE(oi.picked_quantity, 0), 0)) AS required_quantity
+                FROM order_items oi
+                WHERE oi.order_id IN ($placeholders)
+                GROUP BY oi.order_id, oi.product_id
+            ) AS req
+            LEFT JOIN (
+                SELECT product_id, SUM(quantity) AS available_quantity
+                FROM inventory
+                GROUP BY product_id
+            ) AS inv ON inv.product_id = req.product_id
+            WHERE req.required_quantity > COALESCE(inv.available_quantity, 0)
+        ";
+
+        try {
+            $stmt = $this->conn->prepare($query);
+            foreach ($orderIds as $index => $orderId) {
+                $stmt->bindValue($index + 1, $orderId, PDO::PARAM_INT);
+            }
+            $stmt->execute();
+
+            $issues = [];
+            while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+                $orderId = (int)($row['order_id'] ?? 0);
+                $productId = (int)($row['product_id'] ?? 0);
+
+                if ($orderId <= 0 || $productId <= 0) {
+                    continue;
+                }
+
+                $issues[$orderId][] = [
+                    'product_id' => $productId,
+                    'required_quantity' => (int)($row['required_quantity'] ?? 0),
+                    'available_quantity' => (int)($row['available_quantity'] ?? 0)
+                ];
+            }
+
+            return $issues;
+        } catch (PDOException $e) {
+            error_log('Error fetching order stock issues: ' . $e->getMessage());
+            return [];
+        }
     }
     
     /**

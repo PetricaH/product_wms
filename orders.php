@@ -49,7 +49,7 @@ $messageType = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
-    
+
     try {
         switch ($action) {
             case 'create':
@@ -134,6 +134,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $messageType = 'error';
     }
 }
+
+$exportOrdersStartDate = $_GET['export_start_date'] ?? '';
+$exportOrdersEndDate = $_GET['export_end_date'] ?? '';
 
 if (isset($_GET['export_awb_pdf']) && $_GET['export_awb_pdf'] === '1') {
     $exportDate = date('Y-m-d');
@@ -250,6 +253,187 @@ if (isset($_GET['export_awb_pdf']) && $_GET['export_awb_pdf'] === '1') {
     }
 }
 
+if (isset($_GET['export_orders_pdf']) && $_GET['export_orders_pdf'] === '1') {
+    $exportRedirectParams = $_GET;
+    unset($exportRedirectParams['export_orders_pdf']);
+    $exportRedirectUrl = $_SERVER['PHP_SELF'];
+    if (!empty($exportRedirectParams)) {
+        $exportRedirectUrl .= '?' . http_build_query($exportRedirectParams);
+    }
+
+    $startDateInput = trim((string)$exportOrdersStartDate);
+    $endDateInput = trim((string)$exportOrdersEndDate);
+
+    $startDateObject = DateTimeImmutable::createFromFormat('Y-m-d', $startDateInput) ?: null;
+    $endDateObject = DateTimeImmutable::createFromFormat('Y-m-d', $endDateInput) ?: null;
+
+    $startDateIsValid = $startDateObject !== null && $startDateObject->format('Y-m-d') === $startDateInput;
+    $endDateIsValid = $endDateObject !== null && $endDateObject->format('Y-m-d') === $endDateInput;
+
+    if (!$startDateIsValid || !$endDateIsValid) {
+        $_SESSION['orders_export_message'] = [
+            'type' => 'warning',
+            'text' => 'Selectează o dată de început și o dată de sfârșit valide pentru export.'
+        ];
+        header('Location: ' . $exportRedirectUrl);
+        exit;
+    }
+
+    if ($startDateObject > $endDateObject) {
+        $_SESSION['orders_export_message'] = [
+            'type' => 'warning',
+            'text' => 'Data de început nu poate fi mai mare decât data de sfârșit.'
+        ];
+        header('Location: ' . $exportRedirectUrl);
+        exit;
+    }
+
+    try {
+        $ordersForPeriod = $orderModel->getOrdersByDateRangeForExport(
+            $startDateObject->format('Y-m-d'),
+            $endDateObject->format('Y-m-d')
+        );
+
+        if (empty($ordersForPeriod)) {
+            $_SESSION['orders_export_message'] = [
+                'type' => 'warning',
+                'text' => 'Nu au fost găsite comenzi în perioada selectată.'
+            ];
+            header('Location: ' . $exportRedirectUrl);
+            exit;
+        }
+
+        if (!class_exists('FPDF')) {
+            require_once BASE_PATH . '/lib/fpdf.php';
+        }
+
+        if (!class_exists('FPDF')) {
+            throw new RuntimeException('Biblioteca FPDF nu este disponibilă pentru generarea PDF-ului.');
+        }
+
+        $convertText = static function ($text) {
+            $converted = @iconv('UTF-8', 'ISO-8859-1//TRANSLIT', (string)$text);
+            if ($converted === false) {
+                $converted = @iconv('UTF-8', 'ASCII//TRANSLIT', (string)$text);
+            }
+            return $converted === false ? (string)$text : $converted;
+        };
+
+        $truncateText = static function ($text, $maxLength) {
+            $text = (string)$text;
+            if (strlen($text) <= $maxLength) {
+                return $text;
+            }
+            $trimLength = max(0, $maxLength - 3);
+            return substr($text, 0, $trimLength) . '...';
+        };
+
+        $formatDate = static function ($date) use ($convertText) {
+            if (empty($date)) {
+                return $convertText('-');
+            }
+
+            try {
+                $dateTime = new DateTimeImmutable($date);
+                return $convertText($dateTime->format('d.m.Y'));
+            } catch (Exception $e) {
+                return $convertText('-');
+            }
+        };
+
+        $pdf = new FPDF('L', 'mm', 'A4');
+        $pdf->SetTitle('Raport comenzi WMS');
+        $pdf->SetMargins(12, 15, 12);
+        $pdf->SetAutoPageBreak(true, 18);
+        $pdf->AddPage();
+
+        $pdf->SetFont('Arial', 'B', 14);
+        $pdf->Cell(0, 10, $convertText('Raport comenzi WMS'), 0, 1, 'C');
+
+        $periodText = $startDateObject->format('Y-m-d') === $endDateObject->format('Y-m-d')
+            ? 'Data: ' . $startDateObject->format('d.m.Y')
+            : 'Perioadă: ' . $startDateObject->format('d.m.Y') . ' - ' . $endDateObject->format('d.m.Y');
+
+        $pdf->SetFont('Arial', '', 11);
+        $pdf->Cell(0, 7, $convertText($periodText), 0, 1, 'C');
+        $pdf->Ln(4);
+
+        $columnWidths = [
+            'check' => 12,
+            'order_number' => 36,
+            'order_date' => 36,
+            'customer' => 80,
+            'invoice' => 50,
+            'type' => 20,
+            'status' => 24,
+            'items' => 18,
+        ];
+
+        $renderTableHeader = static function () use ($pdf, $columnWidths, $convertText) {
+            $pdf->SetFont('Arial', 'B', 10);
+            $pdf->SetFillColor(240, 240, 240);
+            $pdf->Cell($columnWidths['check'], 8, $convertText('Bifat'), 1, 0, 'C', true);
+            $pdf->Cell($columnWidths['order_number'], 8, $convertText('Număr comandă'), 1, 0, 'C', true);
+            $pdf->Cell($columnWidths['order_date'], 8, $convertText('Dată'), 1, 0, 'C', true);
+            $pdf->Cell($columnWidths['customer'], 8, $convertText('Client'), 1, 0, 'C', true);
+            $pdf->Cell($columnWidths['invoice'], 8, $convertText('Număr factură'), 1, 0, 'C', true);
+            $pdf->Cell($columnWidths['type'], 8, $convertText('Tip'), 1, 0, 'C', true);
+            $pdf->Cell($columnWidths['status'], 8, $convertText('Status'), 1, 0, 'C', true);
+            $pdf->Cell($columnWidths['items'], 8, $convertText('Total buc.'), 1, 1, 'C', true);
+            $pdf->SetFont('Arial', '', 9);
+        };
+
+        $renderTableHeader();
+
+        foreach ($ordersForPeriod as $orderRow) {
+            if ($pdf->GetY() > $pdf->GetPageHeight() - 25) {
+                $pdf->AddPage();
+                $renderTableHeader();
+            }
+
+            $orderNumber = $truncateText($convertText($orderRow['order_number'] ?? ''), 28);
+            $customerName = $truncateText($convertText($orderRow['customer_name'] ?? ''), 55);
+            $invoiceNumber = $truncateText($convertText($orderRow['invoice_reference'] ?? ''), 40);
+            $orderDate = $formatDate($orderRow['order_date'] ?? '');
+            $orderType = $truncateText($convertText(ucfirst(strtolower((string)($orderRow['type'] ?? '')))), 16);
+            $orderStatus = $truncateText($convertText(ucfirst(strtolower((string)($orderRow['status'] ?? '')))), 18);
+            $totalItems = (int)($orderRow['total_items'] ?? 0);
+
+            $pdf->Cell($columnWidths['check'], 8, '', 1, 0, 'C');
+            $pdf->Cell($columnWidths['order_number'], 8, $orderNumber, 1);
+            $pdf->Cell($columnWidths['order_date'], 8, $orderDate, 1);
+            $pdf->Cell($columnWidths['customer'], 8, $customerName, 1);
+            $pdf->Cell($columnWidths['invoice'], 8, $invoiceNumber !== '' ? $invoiceNumber : $convertText('-'), 1);
+            $pdf->Cell($columnWidths['type'], 8, $orderType !== '' ? $orderType : $convertText('-'), 1);
+            $pdf->Cell($columnWidths['status'], 8, $orderStatus !== '' ? $orderStatus : $convertText('-'), 1);
+            $pdf->Cell($columnWidths['items'], 8, (string)$totalItems, 1, 0, 'C');
+            $pdf->Ln();
+        }
+
+        $pdf->Ln(6);
+        $pdf->SetFont('Arial', 'B', 10);
+        $pdf->Cell(0, 8, $convertText('Total comenzi: ' . count($ordersForPeriod)), 0, 1, 'L');
+
+        while (ob_get_level() > 0) {
+            ob_end_clean();
+        }
+
+        header('Content-Type: application/pdf');
+        $fileName = 'comenzi_wms_' . $startDateObject->format('Ymd') . '_' . $endDateObject->format('Ymd') . '.pdf';
+        header('Content-Disposition: inline; filename="' . $fileName . '"');
+        $pdf->Output('I', $fileName);
+        exit;
+    } catch (Throwable $e) {
+        error_log('Order PDF export error: ' . $e->getMessage());
+        $_SESSION['orders_export_message'] = [
+            'type' => 'error',
+            'text' => 'A apărut o eroare la generarea PDF-ului de comenzi. Încearcă din nou.'
+        ];
+        header('Location: ' . $exportRedirectUrl);
+        exit;
+    }
+}
+
 // Get filters and search
 $statusFilter = $_GET['status'] ?? '';
 $priorityFilter = $_GET['priority'] ?? '';
@@ -358,8 +542,41 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                     </div>
                 </header>
 
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">Export comenzi PDF</h3>
+                    </div>
+                    <div class="card-body">
+                        <form method="GET" class="export-orders-form">
+                            <input type="hidden" name="export_orders_pdf" value="1">
+                            <?php if ($statusFilter !== ''): ?>
+                                <input type="hidden" name="status" value="<?= htmlspecialchars($statusFilter) ?>">
+                            <?php endif; ?>
+                            <?php if ($priorityFilter !== ''): ?>
+                                <input type="hidden" name="priority" value="<?= htmlspecialchars($priorityFilter) ?>">
+                            <?php endif; ?>
+                            <?php if ($search !== ''): ?>
+                                <input type="hidden" name="search" value="<?= htmlspecialchars($search) ?>">
+                            <?php endif; ?>
+
+                            <div class="form-group">
+                                <label for="export_start_date" class="form-label">Data început</label>
+                                <input type="date" id="export_start_date" name="export_start_date" class="form-control" value="<?= htmlspecialchars($exportOrdersStartDate) ?>" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="export_end_date" class="form-label">Data sfârșit</label>
+                                <input type="date" id="export_end_date" name="export_end_date" class="form-control" value="<?= htmlspecialchars($exportOrdersEndDate) ?>" required>
+                            </div>
+                            <button type="submit" class="btn btn-secondary">
+                                <span class="material-symbols-outlined">print</span>
+                                Exportă comenzi (PDF)
+                            </button>
+                        </form>
+                    </div>
+                </div>
+
                 <div class="orders-toast-container" aria-live="polite" aria-atomic="true"></div>
-                
+
                 <!-- Alert Messages -->
                 <?php if (!empty($alertMessages)): ?>
                     <?php foreach ($alertMessages as $alert): ?>

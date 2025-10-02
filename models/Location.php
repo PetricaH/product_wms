@@ -267,7 +267,7 @@ class Location {
      */
     public function getActiveLocations() {
         $query = "SELECT * FROM {$this->table} WHERE status = 'active' ORDER BY zone, location_code";
-        
+
         try {
             $stmt = $this->conn->prepare($query);
             $stmt->execute();
@@ -276,6 +276,89 @@ class Location {
             error_log("Error getting active locations: " . $e->getMessage());
             return [];
         }
+    }
+
+    /**
+     * Get all active locations with their level information (without subdivisions)
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function getActiveLocationLevels(): array {
+        try {
+            $stmt = $this->conn->prepare("SELECT id, location_code, zone, type FROM {$this->table} WHERE status = 'active' ORDER BY zone, location_code");
+            $stmt->execute();
+            $locations = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (PDOException $e) {
+            error_log("Error getting active location levels: " . $e->getMessage());
+            return [];
+        }
+
+        $levels = [];
+
+        foreach ($locations as $location) {
+            $locationId = (int)($location['id'] ?? 0);
+            if (!$locationId) {
+                continue;
+            }
+
+            $levelSettings = $this->levelSettings->getLevelSettings($locationId);
+
+            if (!empty($levelSettings)) {
+                foreach ($levelSettings as $level) {
+                    $levelNumber = isset($level['level_number']) ? (int)$level['level_number'] : null;
+                    $levelName = $level['level_name'] ?? null;
+                    if ($levelNumber !== null && ($levelName === null || $levelName === '')) {
+                        $levelName = 'Nivel ' . $levelNumber;
+                    }
+
+                    $levels[] = [
+                        'location_id'   => $locationId,
+                        'location_code' => $location['location_code'] ?? '',
+                        'zone'          => $location['zone'] ?? null,
+                        'type'          => $location['type'] ?? null,
+                        'level_number'  => $levelNumber,
+                        'level_name'    => $levelName,
+                        'display_code'  => trim(($location['location_code'] ?? '') . ($levelName ? ' · ' . $levelName : ''))
+                    ];
+                }
+            } else {
+                $levels[] = [
+                    'location_id'   => $locationId,
+                    'location_code' => $location['location_code'] ?? '',
+                    'zone'          => $location['zone'] ?? null,
+                    'type'          => $location['type'] ?? null,
+                    'level_number'  => null,
+                    'level_name'    => null,
+                    'display_code'  => $location['location_code'] ?? ''
+                ];
+            }
+        }
+
+        usort($levels, function ($a, $b) {
+            $codeCompare = strnatcasecmp($a['location_code'] ?? '', $b['location_code'] ?? '');
+            if ($codeCompare !== 0) {
+                return $codeCompare;
+            }
+
+            $aLevel = $a['level_number'];
+            $bLevel = $b['level_number'];
+
+            if ($aLevel === $bLevel) {
+                return 0;
+            }
+
+            if ($aLevel === null) {
+                return 1;
+            }
+
+            if ($bLevel === null) {
+                return -1;
+            }
+
+            return $aLevel <=> $bLevel;
+        });
+
+        return $levels;
     }
 
     /**

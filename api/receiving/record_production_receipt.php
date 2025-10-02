@@ -161,6 +161,17 @@ $requestedPrintCopies = (int)($input['print_copies'] ?? 0);
 $batchNumber = trim($input['batch_number'] ?? '');
 $producedAt = $input['produced_at'] ?? date('Y-m-d H:i:s');
 $locationInput = $input['location_id'] ?? null;
+$levelNumberInput = isset($input['level_number']) && $input['level_number'] !== '' ? (int)$input['level_number'] : null;
+$shelfLevelInput = $input['shelf_level'] ?? null;
+if (is_string($shelfLevelInput)) {
+    $shelfLevelInput = trim($shelfLevelInput);
+    if ($shelfLevelInput === '') {
+        $shelfLevelInput = null;
+    }
+}
+$subdivisionInput = isset($input['subdivision_number']) && $input['subdivision_number'] !== ''
+    ? (int)$input['subdivision_number']
+    : null;
 $printer   = $input['printer'] ?? null;
 $photoDescription = trim($input['photo_description'] ?? '');
 
@@ -265,6 +276,11 @@ try {
         }
     }
 
+    $shelfLevelValue = $shelfLevelInput !== null ? $shelfLevelInput : $levelNumberInput;
+    if ($shelfLevelValue !== null && is_numeric($shelfLevelValue)) {
+        $shelfLevelValue = (int)$shelfLevelValue;
+    }
+
     // Format the produced_at date properly
     if ($producedAt && $producedAt !== date('Y-m-d H:i:s')) {
         try {
@@ -286,6 +302,8 @@ try {
             'quantity'     => (int)$quantity,
             'batch_number' => $batchNumber ?: null,
             'received_at'  => $producedAt,
+            'shelf_level'  => $shelfLevelValue,
+            'subdivision_number' => $subdivisionInput,
             'reference_type' => 'production_receipt',
             'reason'         => 'Recepție producție',
             'notes'          => $photoDescription !== '' ? $photoDescription : null,
@@ -303,7 +321,9 @@ try {
                     'reference_type' => 'production_receipt',
                     'reason' => 'Recepție producție - completare lot',
                     'notes' => $photoDescription !== '' ? $photoDescription : null,
-                    'user_id' => (int)($_SESSION['user_id'] ?? 0)
+                    'user_id' => (int)($_SESSION['user_id'] ?? 0),
+                    'shelf_level' => $shelfLevelValue,
+                    'subdivision_number' => $subdivisionInput
                 ];
                 $result = $inventoryModel->increaseInventoryQuantity((int)$existing['id'], (int)$quantity, $increaseOptions);
                 if (!$result) { throw new Exception('Failed to update existing inventory record'); }
@@ -405,7 +425,10 @@ try {
             'location_id' => $doAddStock ? $finalLocationId : null,
             'quantity' => $quantity,
             'batch_number' => $batchNumber,
-            'produced_at' => $producedAt
+            'produced_at' => $producedAt,
+            'level_number' => $levelNumberInput,
+            'shelf_level' => $shelfLevelValue,
+            'subdivision_number' => $subdivisionInput
         ]
     ]);
     

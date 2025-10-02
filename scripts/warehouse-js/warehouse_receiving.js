@@ -10,6 +10,9 @@
 class WarehouseReceiving {
     constructor() {
         this.config = window.WMS_CONFIG || { baseUrl: '', apiBase: '/api' };
+        if (!Array.isArray(this.config.locationLevels)) {
+            this.config.locationLevels = [];
+        }
         this.defaultLocation = this.config.defaultLocation || (this.config.locations && this.config.locations.length ? this.config.locations[0].location_code : '');
         this.currentStep = 1;
         this.currentReceivingSession = null;
@@ -26,6 +29,8 @@ class WarehouseReceiving {
         this.barcodeCaptureSession = null;
         this.locationSuggestionCache = new Map();
         this.productionLocationLookupId = 0;
+        this.productionLocationSelect = null;
+        this.selectedProductionLocation = null;
 
         this.activeTab = 'standard';
         this.returnSearchAbortController = null;
@@ -120,6 +125,12 @@ class WarehouseReceiving {
     }
 
     bindEvents() {
+        this.productionLocationSelect = document.getElementById('prod-location-select');
+        if (this.productionLocationSelect) {
+            this.populateProductionLocationOptions();
+            this.productionLocationSelect.addEventListener('change', () => this.updateProductionLocationSelection(true));
+        }
+
         // Search purchase order by number
         const poSearchInput = document.getElementById('po-search-input');
         if (poSearchInput) {
@@ -311,6 +322,10 @@ class WarehouseReceiving {
         const searchInput = document.getElementById('prod-search-input');
         if (searchInput) searchInput.value = '';
         this.productionLocationLookupId += 1;
+        if (this.productionLocationSelect) {
+            this.populateProductionLocationOptions('');
+        }
+        this.selectedProductionLocation = null;
         this.updateProductionLocationMessage('idle');
     }
 
@@ -968,6 +983,11 @@ class WarehouseReceiving {
             this.updateProductionLocationMessage('error');
             return;
         }
+        if (this.productionLocationSelect) {
+            this.productionLocationSelect.value = '';
+        }
+        this.selectedProductionLocation = null;
+        this.updateProductionLocationSelection(false);
         await this.showProductionLocationForProduct({ product_id: this.selectedProductId, sku });
     }
 
@@ -992,6 +1012,9 @@ class WarehouseReceiving {
             }
 
             if (suggestion && suggestion.location_code) {
+                this.ensureLocationInConfig(suggestion);
+                this.ensureLocationLevelInConfig(suggestion);
+                this.applySuggestedProductionLocation(suggestion);
                 this.updateProductionLocationMessage('found', suggestion);
                 return;
             }
@@ -1002,6 +1025,7 @@ class WarehouseReceiving {
                     location_code: fallbackLocation,
                     reason: 'missing'
                 });
+                this.applyFallbackProductionLocation(fallbackLocation);
             } else {
                 this.updateProductionLocationMessage('missing');
             }
@@ -1017,6 +1041,7 @@ class WarehouseReceiving {
                     location_code: fallbackLocation,
                     reason: 'error'
                 });
+                this.applyFallbackProductionLocation(fallbackLocation);
             } else {
                 this.updateProductionLocationMessage('error');
             }
@@ -1044,21 +1069,20 @@ class WarehouseReceiving {
             case 'found': {
                 const extras = [];
                 const zone = details.zone ? String(details.zone).trim() : '';
+                const levelName = details.level_name ? String(details.level_name).trim() : '';
                 const level = details.level_number ?? details.level;
-                const subdivision = details.subdivision_number ?? details.subdivision;
 
                 if (zone) {
                     extras.push(`Zona ${this.escapeHtml(zone)}`);
                 }
-                if (level !== null && level !== undefined && level !== '') {
+                if (levelName) {
+                    extras.push(this.escapeHtml(levelName));
+                } else if (level !== null && level !== undefined && level !== '') {
                     extras.push(`Nivel ${this.escapeHtml(String(level))}`);
-                }
-                if (subdivision !== null && subdivision !== undefined && subdivision !== '') {
-                    extras.push(`Subdiviziune ${this.escapeHtml(String(subdivision))}`);
                 }
 
                 const extraText = extras.length ? ` <span class="location-extra">(${extras.join(' · ')})</span>` : '';
-                message = `Produsul va fi adăugat în locația <code>${this.escapeHtml(details.location_code || '')}</code>${extraText}.`;
+                message = `Locație selectată: <code>${this.escapeHtml(details.location_code || '')}</code>${extraText}. Poți modifica locația folosind selectorul de mai sus.`;
                 break;
             }
             case 'fallback': {
@@ -1066,14 +1090,14 @@ class WarehouseReceiving {
                     ? 'Nu am putut confirma locația dedicată.'
                     : 'Produsul nu are o locație dedicată configurată.';
                 if (fallbackLocation) {
-                    message = `${reasonText} Va fi folosită locația implicită <code>${this.escapeHtml(fallbackLocation)}</code>.`;
+                    message = `${reasonText} Va fi folosită locația implicită <code>${this.escapeHtml(fallbackLocation)}</code>. Poți alege altă locație din selectorul de mai sus.`;
                 } else {
-                    message = `${reasonText} Te rugăm să aloci o locație înainte de a continua.`;
+                    message = `${reasonText} Te rugăm să aloci o locație înainte de a continua folosind selectorul de mai sus.`;
                 }
                 break;
             }
             case 'missing':
-                message = 'Produsul nu are o locație configurată și nu există o locație implicită disponibilă. Te rugăm să aloci o locație înainte de a continua.';
+                message = 'Produsul nu are o locație configurată și nu există o locație implicită disponibilă. Selectează manual locația potrivită înainte de a continua.';
                 break;
             case 'error':
                 message = 'Nu am putut determina locația produsului. Încearcă din nou sau contactează un supervizor.';
@@ -1206,12 +1230,25 @@ class WarehouseReceiving {
             return;
         }
 
+        const locationChoice = this.getSelectedProductionLocation();
+        if (!locationChoice || !locationChoice.location_id) {
+            this.showError('Selectează o locație înainte de a adăuga produsul în stoc.');
+            return;
+        }
+
         const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content') || this.config.csrfToken;
 
         try {
             const formData = new FormData();
             Object.entries(this.lastPrintData).forEach(([k, v]) => formData.append(k, v));
             formData.append('action', 'add_stock');
+            formData.append('location_id', locationChoice.location_id);
+            if (locationChoice.level_number !== null && locationChoice.level_number !== undefined && locationChoice.level_number !== '') {
+                formData.append('level_number', locationChoice.level_number);
+            }
+            if (locationChoice.level_name) {
+                formData.append('shelf_level', locationChoice.level_name);
+            }
 
             const response = await fetch(`${this.config.apiBase}/receiving/record_production_receipt.php`, {
                 method: 'POST',
@@ -1458,6 +1495,270 @@ class WarehouseReceiving {
                 zone: location.zone || '---',
                 type: 'warehouse'
             });
+        }
+    }
+
+    buildLocationLevelDisplay(locationCode, levelName, levelNumber) {
+        const code = (locationCode || '').toString().trim();
+        let levelText = '';
+        if (levelName && levelName.toString().trim()) {
+            levelText = levelName.toString().trim();
+        } else if (levelNumber !== null && levelNumber !== undefined && levelNumber !== '') {
+            levelText = `Nivel ${levelNumber}`;
+        }
+        return levelText ? `${code} · ${levelText}` : code;
+    }
+
+    createLocationLevelValue(locationId, levelNumber) {
+        const idPart = Number.isFinite(Number(locationId)) ? String(Number(locationId)) : String(locationId ?? '');
+        const levelPart = levelNumber === null || levelNumber === undefined || levelNumber === ''
+            ? ''
+            : String(levelNumber);
+        return `${idPart}|${levelPart}`;
+    }
+
+    findLocationLevelByValue(value) {
+        if (!value) {
+            return null;
+        }
+        const [locationPart, levelPart = ''] = value.split('|');
+        const locationId = parseInt(locationPart, 10);
+        if (Number.isNaN(locationId)) {
+            return null;
+        }
+        const hasLevel = levelPart !== '';
+        const targetLevel = hasLevel ? parseInt(levelPart, 10) : null;
+        if (hasLevel && Number.isNaN(targetLevel)) {
+            return null;
+        }
+
+        if (!Array.isArray(this.config.locationLevels)) {
+            return null;
+        }
+
+        return this.config.locationLevels.find(level => {
+            if (parseInt(level.location_id, 10) !== locationId) {
+                return false;
+            }
+            const storedLevel = level.level_number;
+            const normalizedStored = storedLevel === null || storedLevel === undefined
+                ? null
+                : parseInt(storedLevel, 10);
+            return normalizedStored === (hasLevel ? targetLevel : null);
+        }) || null;
+    }
+
+    sortLocationLevels() {
+        if (!Array.isArray(this.config.locationLevels)) {
+            this.config.locationLevels = [];
+            return;
+        }
+
+        this.config.locationLevels.sort((a, b) => {
+            const codeA = (a.location_code || '').toString();
+            const codeB = (b.location_code || '').toString();
+            const codeCompare = codeA.localeCompare(codeB, undefined, { sensitivity: 'base', numeric: true });
+            if (codeCompare !== 0) {
+                return codeCompare;
+            }
+
+            const aLevel = a.level_number;
+            const bLevel = b.level_number;
+
+            if (aLevel === bLevel) {
+                return 0;
+            }
+
+            if (aLevel === null || aLevel === undefined) {
+                return 1;
+            }
+
+            if (bLevel === null || bLevel === undefined) {
+                return -1;
+            }
+
+            return aLevel - bLevel;
+        });
+    }
+
+    populateProductionLocationOptions(selectedValue = '') {
+        if (!this.productionLocationSelect) {
+            return;
+        }
+
+        const select = this.productionLocationSelect;
+        const placeholder = select.dataset.placeholder || 'Selectează nivelul de depozitare';
+        const previousValue = select.value;
+
+        select.innerHTML = '';
+        const placeholderOption = document.createElement('option');
+        placeholderOption.value = '';
+        placeholderOption.textContent = placeholder;
+        select.appendChild(placeholderOption);
+
+        if (!Array.isArray(this.config.locationLevels)) {
+            this.config.locationLevels = [];
+        } else {
+            this.sortLocationLevels();
+            this.config.locationLevels.forEach(level => {
+                const option = document.createElement('option');
+                const value = this.createLocationLevelValue(level.location_id, level.level_number);
+                option.value = value;
+                option.textContent = level.display_code || this.buildLocationLevelDisplay(level.location_code, level.level_name, level.level_number);
+                option.dataset.locationId = level.location_id;
+                if (level.level_number !== null && level.level_number !== undefined) {
+                    option.dataset.levelNumber = level.level_number;
+                }
+                if (level.level_name) {
+                    option.dataset.levelName = level.level_name;
+                }
+                select.appendChild(option);
+            });
+        }
+
+        const valueToApply = selectedValue !== undefined && selectedValue !== null && selectedValue !== ''
+            ? selectedValue
+            : (previousValue || '');
+        select.value = valueToApply;
+        this.updateProductionLocationSelection(false);
+    }
+
+    updateProductionLocationSelection(shouldUpdateMessage = false) {
+        if (!this.productionLocationSelect) {
+            this.selectedProductionLocation = null;
+            return;
+        }
+
+        const selectedValue = this.productionLocationSelect.value;
+        this.selectedProductionLocation = this.findLocationLevelByValue(selectedValue);
+
+        if (shouldUpdateMessage) {
+            if (this.selectedProductionLocation) {
+                const details = {
+                    location_code: this.selectedProductionLocation.location_code,
+                    zone: this.selectedProductionLocation.zone,
+                    level_number: this.selectedProductionLocation.level_number,
+                    level_name: this.selectedProductionLocation.level_name
+                };
+                this.updateProductionLocationMessage('found', details);
+            } else if (!selectedValue) {
+                this.updateProductionLocationMessage('idle');
+            }
+        }
+    }
+
+    getSelectedProductionLocation() {
+        return this.selectedProductionLocation;
+    }
+
+    ensureLocationLevelInConfig(details) {
+        if (!details || details.location_id === undefined || details.location_id === null) {
+            return;
+        }
+
+        const locationId = parseInt(details.location_id, 10);
+        if (Number.isNaN(locationId)) {
+            return;
+        }
+
+        const rawLevel = details.level_number ?? details.level ?? null;
+        const levelNumber = rawLevel === null || rawLevel === undefined || rawLevel === ''
+            ? null
+            : parseInt(rawLevel, 10);
+
+        if (!Array.isArray(this.config.locationLevels)) {
+            this.config.locationLevels = [];
+        }
+
+        const index = this.config.locationLevels.findIndex(level => {
+            if (parseInt(level.location_id, 10) !== locationId) {
+                return false;
+            }
+            const storedLevel = level.level_number;
+            const normalizedStored = storedLevel === null || storedLevel === undefined ? null : parseInt(storedLevel, 10);
+            return normalizedStored === levelNumber;
+        });
+
+        const levelName = details.level_name || (levelNumber !== null ? `Nivel ${levelNumber}` : null);
+
+        if (index >= 0) {
+            const existing = this.config.locationLevels[index];
+            const updated = { ...existing };
+            if ((!updated.level_name || !updated.level_name.toString().trim()) && levelName) {
+                updated.level_name = levelName;
+            }
+            if ((!updated.location_code || !updated.location_code.toString().trim()) && details.location_code) {
+                updated.location_code = details.location_code;
+            }
+            if ((!updated.zone || !updated.zone.toString().trim()) && details.zone) {
+                updated.zone = details.zone;
+            }
+            if ((!updated.type || !updated.type.toString().trim()) && details.type) {
+                updated.type = details.type;
+            }
+            updated.level_number = levelNumber;
+            updated.display_code = this.buildLocationLevelDisplay(updated.location_code || '', updated.level_name, levelNumber);
+            this.config.locationLevels[index] = updated;
+            return;
+        }
+
+        const entry = {
+            location_id: locationId,
+            location_code: details.location_code || '',
+            zone: details.zone || null,
+            type: details.type || null,
+            level_number: levelNumber,
+            level_name: levelName,
+            display_code: this.buildLocationLevelDisplay(details.location_code || '', levelName, levelNumber)
+        };
+        this.config.locationLevels.push(entry);
+        this.sortLocationLevels();
+    }
+
+    applySuggestedProductionLocation(details) {
+        if (!details || !this.productionLocationSelect) {
+            return;
+        }
+
+        this.ensureLocationLevelInConfig(details);
+        const value = this.createLocationLevelValue(details.location_id, details.level_number ?? details.level ?? null);
+        this.populateProductionLocationOptions(value);
+        this.updateProductionLocationSelection(false);
+    }
+
+    applyFallbackProductionLocation(locationCode) {
+        if (!this.productionLocationSelect) {
+            return;
+        }
+
+        this.populateProductionLocationOptions(this.productionLocationSelect.value || '');
+
+        if (!locationCode) {
+            this.updateProductionLocationSelection(false);
+            return;
+        }
+
+        const normalized = locationCode.toString().trim().toLowerCase();
+        let match = (this.config.locationLevels || []).find(level => (level.location_code || '').toString().trim().toLowerCase() === normalized);
+
+        if (!match && Array.isArray(this.config.locations)) {
+            const fallbackBase = this.config.locations.find(loc => (loc.location_code || '').toString().trim().toLowerCase() === normalized);
+            if (fallbackBase && fallbackBase.id) {
+                this.ensureLocationLevelInConfig({
+                    location_id: fallbackBase.id,
+                    location_code: fallbackBase.location_code,
+                    zone: fallbackBase.zone,
+                    type: fallbackBase.type,
+                    level_number: null
+                });
+                match = (this.config.locationLevels || []).find(level => (level.location_code || '').toString().trim().toLowerCase() === normalized);
+            }
+        }
+
+        if (match) {
+            const value = this.createLocationLevelValue(match.location_id, match.level_number);
+            this.productionLocationSelect.value = value;
+            this.updateProductionLocationSelection(false);
         }
     }
 

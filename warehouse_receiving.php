@@ -76,6 +76,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 // Get active locations for dropdown
 $locations = $locationModel->getActiveLocations();
+$locationLevels = $locationModel->getActiveLocationLevels();
 
 // Get recent receiving sessions for quick access
 $recentSessions = [];
@@ -220,6 +221,9 @@ $currentPage = 'warehouse_receiving';
                                 </div>
                                 <div class="form-group">
                                     <label class="form-label">Locație de depozitare</label>
+                                    <select id="prod-location-select" class="form-input" data-placeholder="Selectează nivelul de depozitare">
+                                        <option value="">Selectează nivelul de depozitare</option>
+                                    </select>
                                     <div id="prod-location-info" class="production-location-info" data-state="idle">
                                         Selectează un produs pentru a vedea locația sugerată de stocare.
                                     </div>
@@ -501,6 +505,17 @@ $currentPage = 'warehouse_receiving';
                     'type' => $loc['type']
                 ];
             }, $locations)) ?>,
+            locationLevels: <?= json_encode(array_map(function($level) {
+                return [
+                    'location_id' => $level['location_id'],
+                    'location_code' => $level['location_code'],
+                    'zone' => $level['zone'],
+                    'type' => $level['type'],
+                    'level_number' => $level['level_number'],
+                    'level_name' => $level['level_name'],
+                    'display_code' => $level['display_code']
+                ];
+            }, $locationLevels)) ?>,
             defaultLocation: '<?= htmlspecialchars($locations[0]['location_code'] ?? '') ?>'
         };
     </script>

@@ -29,6 +29,8 @@ class CargusService
     private $config;
     private $conn;
     private $orderModel;
+    private array $countyCache = [];
+    private array $localityCache = [];
 
     // Add this simple debug method
     private function debugLog($message) {
@@ -894,13 +896,221 @@ class CargusService
      */
     private function updateMappingUsage(int $mappingId): void {
         $query = "
-            UPDATE address_location_mappings 
+            UPDATE address_location_mappings
             SET usage_count = usage_count + 1, last_used_at = NOW()
             WHERE id = ?
         ";
-        
+
         $stmt = $this->conn->prepare($query);
         $stmt->execute([$mappingId]);
+    }
+
+    /**
+     * Retrieve Cargus counties list with simple caching.
+     */
+    public function getCounties(bool $forceRefresh = false): array
+    {
+        if (!$forceRefresh && !empty($this->countyCache)) {
+            return $this->countyCache;
+        }
+
+        if (!$this->authenticate()) {
+            return [];
+        }
+
+        $response = $this->makeRequest('GET', 'Counties?countryId=1', null, true);
+        if (!$response['success'] || !is_array($response['data'])) {
+            return [];
+        }
+
+        $this->countyCache = $response['data'];
+        return $this->countyCache;
+    }
+
+    /**
+     * Retrieve localities for a specific county with caching.
+     */
+    public function getLocalitiesByCounty(int $countyId, bool $forceRefresh = false): array
+    {
+        if ($countyId <= 0) {
+            return [];
+        }
+
+        if (!$forceRefresh && isset($this->localityCache[$countyId])) {
+            return $this->localityCache[$countyId];
+        }
+
+        if (!$this->authenticate()) {
+            return [];
+        }
+
+        $endpoint = sprintf('Localities?countryId=1&countyId=%d', $countyId);
+        $response = $this->makeRequest('GET', $endpoint, null, true);
+
+        if (!$response['success'] || !is_array($response['data'])) {
+            return [];
+        }
+
+        $this->localityCache[$countyId] = $response['data'];
+        return $this->localityCache[$countyId];
+    }
+
+    /**
+     * Normalize Romanian text (diacritics, spacing, punctuation) for comparison.
+     */
+    private function normalizeText(string $text): string
+    {
+        $text = trim(mb_strtolower($text, 'UTF-8'));
+        $replacements = [
+            'ă' => 'a', 'â' => 'a', 'î' => 'i', 'ș' => 's', 'ş' => 's', 'ț' => 't', 'ţ' => 't',
+            'Ă' => 'a', 'Â' => 'a', 'Î' => 'i', 'Ș' => 's', 'Ş' => 's', 'Ț' => 't', 'Ţ' => 't',
+            '-' => ' ', '_' => ' '
+        ];
+        $text = strtr($text, $replacements);
+        $text = preg_replace('/[^a-z0-9]+/u', ' ', $text);
+        $text = preg_replace('/\s+/', ' ', $text);
+
+        return trim($text);
+    }
+
+    /**
+     * Calculate a similarity score between two normalized strings.
+     */
+    private function calculateSimilarity(string $reference, string $candidate): float
+    {
+        if ($reference === '' || $candidate === '') {
+            return 0.0;
+        }
+
+        similar_text($reference, $candidate, $percent);
+        $distance = levenshtein($reference, $candidate);
+        $maxLength = max(strlen($reference), strlen($candidate));
+        $distanceScore = $maxLength > 0 ? (1 - min($distance, $maxLength) / $maxLength) * 100 : 0;
+
+        return round(($percent * 0.6) + ($distanceScore * 0.4), 2);
+    }
+
+    /**
+     * Search Cargus localities using fuzzy matching for Romanian names.
+     */
+    public function searchLocalities(string $countyName, string $localityName): array
+    {
+        $countyName = trim($countyName);
+        $localityName = trim($localityName);
+
+        if ($countyName === '' || $localityName === '') {
+            return [
+                'success' => false,
+                'error' => 'Județul și localitatea sunt obligatorii pentru căutare',
+                'matches' => []
+            ];
+        }
+
+        $normalizedCounty = $this->normalizeText($countyName);
+        $normalizedLocality = $this->normalizeText($localityName);
+
+        $counties = $this->getCounties();
+        if (empty($counties)) {
+            return [
+                'success' => false,
+                'error' => 'Nu am putut obține lista de județe din API-ul Cargus',
+                'matches' => []
+            ];
+        }
+
+        $countyCandidates = [];
+        foreach ($counties as $county) {
+            $name = $county['Name'] ?? '';
+            $normalizedName = $this->normalizeText($name);
+            $score = $this->calculateSimilarity($normalizedCounty, $normalizedName);
+
+            if ($normalizedCounty !== '' && str_contains($normalizedName, $normalizedCounty)) {
+                $score += 10;
+            }
+
+            if ($normalizedName === $normalizedCounty) {
+                $score += 15;
+            }
+
+            $countyCandidates[] = [
+                'id' => (int)($county['CountyId'] ?? 0),
+                'name' => $name,
+                'normalized' => $normalizedName,
+                'score' => round($score, 2)
+            ];
+        }
+
+        usort($countyCandidates, static function ($a, $b) {
+            return $b['score'] <=> $a['score'];
+        });
+
+        $topCandidates = array_values(array_filter(
+            array_slice($countyCandidates, 0, 5),
+            static fn($candidate) => !empty($candidate['id'])
+        ));
+
+        $matches = [];
+        foreach ($topCandidates as $candidate) {
+            $localities = $this->getLocalitiesByCounty($candidate['id']);
+            if (empty($localities)) {
+                continue;
+            }
+
+            foreach ($localities as $locality) {
+                $name = $locality['Name'] ?? '';
+                $normalizedName = $this->normalizeText($name);
+                $localityScore = $this->calculateSimilarity($normalizedLocality, $normalizedName);
+
+                if ($normalizedLocality !== '' && str_contains($normalizedName, $normalizedLocality)) {
+                    $localityScore += 10;
+                }
+
+                if ($normalizedName === $normalizedLocality) {
+                    $localityScore += 15;
+                }
+
+                $combinedScore = ($localityScore * 0.7) + ($candidate['score'] * 0.3);
+
+                if ($combinedScore < 25) {
+                    continue;
+                }
+
+                $matches[] = [
+                    'county_id' => $candidate['id'],
+                    'county_name' => $candidate['name'],
+                    'locality_id' => (int)($locality['LocalityId'] ?? 0),
+                    'locality_name' => $name,
+                    'postal_code' => $locality['CodPostal'] ?? null,
+                    'score' => min(100, round($combinedScore, 2))
+                ];
+            }
+        }
+
+        if (empty($matches)) {
+            return [
+                'success' => false,
+                'error' => 'Nu am găsit potriviri în Cargus pentru această localitate',
+                'matches' => []
+            ];
+        }
+
+        usort($matches, static function ($a, $b) {
+            return $b['score'] <=> $a['score'];
+        });
+
+        $matches = array_slice($matches, 0, 25);
+
+        return [
+            'success' => true,
+            'matches' => $matches,
+            'debug' => [
+                'normalized' => [
+                    'county' => $normalizedCounty,
+                    'locality' => $normalizedLocality
+                ],
+                'county_candidates' => array_slice($countyCandidates, 0, 10)
+            ]
+        ];
     }
     
     /**

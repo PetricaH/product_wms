@@ -212,6 +212,42 @@ class Order
     }
 
     /**
+     * Retrieve orders within a date range for PDF exports.
+     * Includes customer information, order metadata and aggregated item counts.
+     *
+     * @param string $startDate Start date in Y-m-d format.
+     * @param string $endDate   End date in Y-m-d format.
+     * @return array<int, array<string, mixed>>
+     */
+    public function getOrdersByDateRangeForExport(string $startDate, string $endDate): array {
+        $query = "SELECT
+                    o.id,
+                    o.order_number,
+                    o.customer_name,
+                    o.order_date,
+                    o.status,
+                    o.type,
+                    o.invoice_reference,
+                    COALESCE(SUM(oi.quantity), 0) AS total_items
+                FROM {$this->table} o
+                LEFT JOIN {$this->itemsTable} oi ON oi.order_id = o.id
+                WHERE DATE(o.order_date) BETWEEN :start_date AND :end_date
+                GROUP BY o.id, o.order_number, o.customer_name, o.order_date, o.status, o.type, o.invoice_reference
+                ORDER BY o.order_date ASC, o.order_number ASC";
+
+        try {
+            $stmt = $this->conn->prepare($query);
+            $stmt->bindValue(':start_date', $startDate);
+            $stmt->bindValue(':end_date', $endDate);
+            $stmt->execute();
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (PDOException $e) {
+            error_log('Error fetching orders for export: ' . $e->getMessage());
+            return [];
+        }
+    }
+
+    /**
      * Get unique priorities
      * @return array
      */

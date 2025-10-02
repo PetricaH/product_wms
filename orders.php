@@ -448,6 +448,10 @@ $offset = ($page - 1) * $pageSize;
 $totalCount = $orderModel->getTotalCount($statusFilter, $priorityFilter, $search);
 $totalPages = max(1, ceil($totalCount / $pageSize));
 $orders = $orderModel->getOrdersPaginated($pageSize, $offset, $statusFilter, $priorityFilter, $search);
+$orderIds = array_map(static function ($orderRow) {
+    return (int)($orderRow['id'] ?? 0);
+}, $orders);
+$ordersStockIssues = !empty($orderIds) ? $orderModel->getOrdersStockIssues($orderIds) : [];
 
 // Get unique statuses and priorities for filters
 $statuses = $orderModel->getStatuses();
@@ -500,6 +504,16 @@ if (!empty($message)) {
 if (!empty($_SESSION['orders_export_message'])) {
     $alertMessages[] = $_SESSION['orders_export_message'];
     unset($_SESSION['orders_export_message']);
+}
+
+if (!empty($ordersStockIssues)) {
+    $alertMessages[] = [
+        'type' => 'warning',
+        'text' => sprintf(
+            'Există %d comenzi cu stoc insuficient în pagina curentă. Aceste comenzi sunt evidențiate mai jos și nu sunt vizibile în interfața de picking până la refacerea stocului.',
+            count($ordersStockIssues)
+        )
+    ];
 }
 
 // Export button URL with current filters
@@ -677,6 +691,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                             <th>Valoare</th>
                                             <th>Produse</th>
                                             <th>Greutate</th>
+                                            <th>Stoc</th>
                                             <th>AWB</th>
                                             <th>Acțiuni</th>
                                         </tr>
@@ -687,14 +702,68 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                 $orderItems = $orderModel->getOrderItems($order['id']);
                                                 $weightParts = [];
                                                 $calculatedWeight = 0;
+                                                $orderId = (int)($order['id'] ?? 0);
+                                                $orderProductsById = [];
                                                 foreach ($orderItems as $item) {
                                                     $itemWeightPerUnit = (float)($item['weight_per_unit'] ?? 0);
-                                                    $itemWeight = $itemWeightPerUnit * (int)$item['quantity'];
+                                                    $itemQuantity = (int)($item['quantity'] ?? 0);
+                                                    $itemWeight = $itemWeightPerUnit * $itemQuantity;
                                                     $calculatedWeight += $itemWeight;
-                                                    $weightParts[] = $item['product_name'] . ' (' . $item['quantity'] . '×' . number_format($itemWeightPerUnit, 3, '.', '') . 'kg)';
+                                                    $weightParts[] = $item['product_name'] . ' (' . $itemQuantity . '×' . number_format($itemWeightPerUnit, 3, '.', '') . 'kg)';
+
+                                                    $productId = (int)($item['product_id'] ?? 0);
+                                                    if ($productId > 0) {
+                                                        $productName = $item['product_name'] ?? ('Produs #' . $productId);
+                                                        $remainingQty = (int)($item['remaining_quantity'] ?? max(0, $itemQuantity - (int)($item['picked_quantity'] ?? 0)));
+
+                                                        if (!isset($orderProductsById[$productId])) {
+                                                            $orderProductsById[$productId] = [
+                                                                'name' => $productName,
+                                                                'remaining' => 0,
+                                                                'available' => (int)($item['available_inventory'] ?? 0)
+                                                            ];
+                                                        }
+
+                                                        $orderProductsById[$productId]['remaining'] += max(0, $remainingQty);
+
+                                                        if (isset($item['available_inventory'])) {
+                                                            $orderProductsById[$productId]['available'] = (int)$item['available_inventory'];
+                                                        }
+                                                    }
                                                 }
                                                 $displayWeight = $order['total_weight'] > 0 ? $order['total_weight'] : $calculatedWeight;
                                                 $weightBreakdown = htmlspecialchars(implode(' + ', $weightParts));
+                                                $stockIssuesForOrder = $ordersStockIssues[$orderId] ?? [];
+                                                $hasStockIssue = !empty($stockIssuesForOrder);
+                                                $stockIssueMessages = [];
+
+                                                if ($hasStockIssue) {
+                                                    foreach ($stockIssuesForOrder as $issue) {
+                                                        $issueProductId = (int)($issue['product_id'] ?? 0);
+                                                        $issueRequired = (int)($issue['required_quantity'] ?? 0);
+                                                        $issueAvailable = (int)($issue['available_quantity'] ?? 0);
+                                                        $issueShortage = max(0, $issueRequired - $issueAvailable);
+                                                        $issueName = $orderProductsById[$issueProductId]['name'] ?? ('Produs #' . $issueProductId);
+
+                                                        $detailParts = [
+                                                            $issueName . ': necesar ' . $issueRequired,
+                                                            'disponibil ' . $issueAvailable
+                                                        ];
+
+                                                        if ($issueShortage > 0) {
+                                                            $detailParts[] = 'lipsă ' . $issueShortage;
+                                                        }
+
+                                                        $stockIssueMessages[] = implode(', ', $detailParts);
+                                                    }
+                                                    if (empty($stockIssueMessages)) {
+                                                        $stockIssueMessages[] = 'Stoc insuficient pentru unul sau mai multe produse.';
+                                                    }
+                                                }
+
+                                                $stockStatusTitle = $hasStockIssue
+                                                    ? implode(' • ', $stockIssueMessages)
+                                                    : 'Stoc disponibil pentru toate produsele din comandă.';
                                                 $statusKey = strtolower((string)$order['status']);
                                                 $statusLabel = $statusDisplayLabels[$statusKey] ?? ($statuses[$statusKey] ?? ucfirst((string)$order['status']));
                                                 $statusClass = preg_replace('/[^a-z0-9_-]/', '-', $statusKey);
@@ -709,10 +778,11 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                     }
                                                 }
                                             ?>
-                                            <tr class="order-row"
+                                            <tr class="order-row<?= $hasStockIssue ? ' has-stock-issue' : '' ?>"
                                                 data-order-id="<?= (int)$order['id'] ?>"
                                                 data-status="<?= htmlspecialchars($statusKey) ?>"
                                                 data-awb="<?= htmlspecialchars($awbBarcode) ?>"
+                                                data-stock-issue="<?= $hasStockIssue ? '1' : '0' ?>"
                                                 data-updated-at="<?= htmlspecialchars($rowUpdatedIso) ?>">
                                                 <td>
                                                     <code class="order-number"><?= htmlspecialchars($order['order_number']) ?></code>
@@ -747,6 +817,26 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                 </td>
                                                 <td>
                                                     <span class="order-weight" title="<?= $weightBreakdown ?>"><?= number_format($displayWeight, 3, '.', '') ?> kg</span>
+                                                </td>
+                                                <td class="stock-status-cell">
+                                                    <?php if ($hasStockIssue): ?>
+                                                        <span class="stock-status stock-missing" title="<?= htmlspecialchars($stockStatusTitle) ?>">
+                                                            <span class="material-symbols-outlined">report</span>
+                                                            Stoc insuficient
+                                                        </span>
+                                                        <?php if (!empty($stockIssueMessages)): ?>
+                                                            <div class="stock-status-details">
+                                                                <?php foreach ($stockIssueMessages as $detail): ?>
+                                                                    <div><?= htmlspecialchars($detail) ?></div>
+                                                                <?php endforeach; ?>
+                                                            </div>
+                                                        <?php endif; ?>
+                                                    <?php else: ?>
+                                                        <span class="stock-status stock-ok" title="<?= htmlspecialchars($stockStatusTitle) ?>">
+                                                            <span class="material-symbols-outlined">check_circle</span>
+                                                            Stoc disponibil
+                                                        </span>
+                                                    <?php endif; ?>
                                                 </td>
                                                 <td class="awb-column awb-cell">
                                                     <?php

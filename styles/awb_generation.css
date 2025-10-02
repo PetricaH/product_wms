@@ -148,3 +148,51 @@
     from { transform: translateY(0); opacity: 1; }
     to { transform: translateY(-20px); opacity: 0; }
 }
+
+.orders-table tr.has-stock-issue {
+    background-color: #fff6f6;
+}
+
+.orders-table tr.has-stock-issue:hover {
+    background-color: #ffecec;
+}
+
+.stock-status-cell {
+    min-width: 180px;
+}
+
+.stock-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.35rem 0.6rem;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+}
+
+.stock-status .material-symbols-outlined {
+    font-size: 1rem;
+}
+
+.stock-status.stock-ok {
+    background-color: #e8f5e9;
+    color: #1b5e20;
+}
+
+.stock-status.stock-missing {
+    background-color: #fdecea;
+    color: #c62828;
+}
+
+.stock-status-details {
+    margin-top: 0.35rem;
+    font-size: 0.75rem;
+    color: #9c1f1f;
+    line-height: 1.35;
+}
+
+.stock-status-details div + div {
+    margin-top: 0.2rem;
+}

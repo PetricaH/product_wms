@@ -413,6 +413,8 @@ function updateStatsCounters(orders) {
         completed: 0
     };
 
+    const today = new Date();
+
     orders.forEach(order => {
         const status = String(order.status || '').toLowerCase();
 
@@ -424,7 +426,7 @@ function updateStatsCounters(orders) {
             counters.processing += 1;
         }
 
-        if (['completed', 'ready', 'ready_to_ship', 'picked', 'shipped'].includes(status)) {
+        if (isCompletedStatus(status) && isTimestampToday(getOrderCompletionTimestamp(order), today)) {
             counters.completed += 1;
         }
     });
@@ -436,6 +438,40 @@ function updateStatsCounters(orders) {
     if (pendingEl) pendingEl.textContent = counters.pending;
     if (processingEl) processingEl.textContent = counters.processing;
     if (completedEl) completedEl.textContent = counters.completed;
+}
+
+function isCompletedStatus(status) {
+    return ['completed', 'ready', 'ready_to_ship', 'picked', 'shipped'].includes(status);
+}
+
+function getOrderCompletionTimestamp(order) {
+    return order?.updated_at || order?.order_date || '';
+}
+
+function isTimestampToday(timestamp, referenceDate = new Date()) {
+    const parsed = parseTimestamp(timestamp);
+    if (!parsed) {
+        return false;
+    }
+
+    return parsed.getFullYear() === referenceDate.getFullYear()
+        && parsed.getMonth() === referenceDate.getMonth()
+        && parsed.getDate() === referenceDate.getDate();
+}
+
+function parseTimestamp(value) {
+    if (!value) {
+        return null;
+    }
+
+    const normalized = String(value).replace(' ', 'T');
+    const parsed = new Date(normalized);
+
+    if (Number.isNaN(parsed.getTime())) {
+        return null;
+    }
+
+    return parsed;
 }
 
 /**

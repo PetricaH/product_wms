@@ -75,6 +75,20 @@
     padding-bottom: 0.75rem;
 }
 
+.receiving-entries-card .table-container {
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+
+.receiving-entries-card .table-container::-webkit-scrollbar {
+    height: 8px;
+}
+
+.receiving-entries-card .table-container::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.6);
+    border-radius: 4px;
+}
+
 .receiving-entries-filters .form-row {
     display: flex;
     flex-wrap: wrap;
@@ -133,6 +147,7 @@
 .receiving-entries-table {
     width: 100%;
     border-collapse: collapse;
+    min-width: 1100px;
 }
 
 .receiving-entries-table th,
@@ -158,6 +173,27 @@
     gap: 0.1rem;
 }
 
+.po-link {
+    color: var(--text-secondary);
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    transition: color 0.2s ease;
+}
+
+.po-link::before {
+    content: '\e8b5';
+    font-family: 'Material Symbols Outlined';
+    font-size: 1rem;
+    line-height: 1;
+}
+
+.po-link:hover,
+.po-link:focus {
+    color: var(--accent-color, #2563eb);
+}
+
 .supplier-name,
 .product-name {
     font-weight: 600;
@@ -175,19 +211,6 @@
 
 .invoice-link:hover {
     text-decoration: underline;
-}
-
-.invoice-verified-label {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-weight: 500;
-}
-
-.invoice-verified-label input[type="checkbox"] {
-    width: 18px;
-    height: 18px;
-    cursor: pointer;
 }
 
 .invoice-verified-meta {
@@ -333,9 +356,135 @@
     cursor: pointer;
 }
 
-.entry-notes {
-    max-width: 320px;
-    white-space: pre-line;
+.entry-session-note {
+    margin-bottom: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    background: rgba(15, 23, 42, 0.04);
+    border-radius: 6px;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    white-space: pre-wrap;
+}
+
+.entry-notes-editor {
+    width: 100%;
+    min-height: 72px;
+    padding: 0.65rem 0.75rem;
+    border: 1px dashed transparent;
+    border-radius: 8px;
+    background: rgba(15, 23, 42, 0.02);
+    white-space: pre-wrap;
+    outline: none;
+    transition: border-color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.entry-notes-editor[contenteditable="true"]:empty::before {
+    content: attr(data-placeholder);
+    color: var(--text-muted);
+    pointer-events: none;
+}
+
+.entry-notes-editor:focus {
+    border-color: rgba(37, 99, 235, 0.5);
+    background: rgba(37, 99, 235, 0.05);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.entry-notes-editor.is-dirty {
+    border-color: rgba(251, 191, 36, 0.6);
+}
+
+.entry-notes-editor.is-saving {
+    border-color: rgba(37, 99, 235, 0.6);
+}
+
+.entry-notes-editor.is-error {
+    border-color: rgba(239, 68, 68, 0.7);
+    background: rgba(239, 68, 68, 0.05);
+}
+
+.entry-notes-editor.is-success {
+    border-color: rgba(34, 197, 94, 0.6);
+    background: rgba(34, 197, 94, 0.08);
+}
+
+.entry-notes-status {
+    margin-top: 0.35rem;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    min-height: 1em;
+}
+
+.entry-notes-status.is-saving {
+    color: rgba(37, 99, 235, 0.9);
+}
+
+.entry-notes-status.is-error {
+    color: rgba(239, 68, 68, 0.9);
+}
+
+.entry-notes-status.is-success {
+    color: rgba(34, 197, 94, 0.9);
+}
+
+.invoice-verified-toggle-wrapper {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: 1px solid var(--border-color);
+    background: var(--surface-background);
+    cursor: pointer;
+    transition: border-color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.invoice-verified-toggle-wrapper input {
+    position: absolute;
+    inset: 0;
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    cursor: pointer;
+}
+
+.invoice-verified-check {
+    font-family: 'Material Symbols Outlined';
+    font-size: 1.5rem;
+    line-height: 1;
+    color: var(--text-muted);
+    pointer-events: none;
+}
+
+.invoice-verified-toggle-wrapper:hover {
+    border-color: rgba(37, 99, 235, 0.5);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.invoice-verified-toggle-wrapper.is-verified {
+    border-color: rgba(34, 197, 94, 0.7);
+    background: rgba(34, 197, 94, 0.12);
+}
+
+.invoice-verified-toggle-wrapper.is-verified .invoice-verified-check {
+    color: rgba(34, 197, 94, 1);
+}
+
+.invoice-verified-toggle-wrapper.is-disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+    box-shadow: none;
+}
+
+.invoice-verified-toggle-wrapper.is-disabled:hover {
+    border-color: var(--border-color);
+}
+
+.invoice-verified-toggle-wrapper.is-disabled input {
+    cursor: not-allowed;
 }
 
 @media (max-width: 1024px) {

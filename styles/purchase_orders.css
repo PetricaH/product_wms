@@ -1614,6 +1614,17 @@ input[type="file"]:hover {
     border-left: 3px solid #2196f3;
 }
 
+.focused-order {
+    position: relative;
+    outline: 2px solid rgba(37, 99, 235, 0.65);
+    box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.18);
+    transition: box-shadow 0.3s ease, outline-color 0.3s ease;
+}
+
+.focused-order td {
+    background-color: rgba(37, 99, 235, 0.04);
+}
+
 .order-number-cell {
     display: flex;
     flex-direction: column;

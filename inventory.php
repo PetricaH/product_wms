@@ -816,6 +816,9 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                     Intrări Stoc
                                 </a>
                             </div>
+                            <button type="button" class="receiving-photo-modal__nav receiving-photo-modal__nav--next" data-modal-nav="next" aria-label="Imagine următoare">
+                                <span class="material-symbols-outlined">chevron_right</span>
+                            </button>
                         </div>
                     </div>
                     <div class="card-body">
@@ -928,14 +931,6 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                 $photoData = $entry['photos'] ?? [];
                                                 $photoCount = count($photoData);
                                                 $photosJson = htmlspecialchars(json_encode($photoData, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), ENT_QUOTES, 'UTF-8');
-                                                $notesSegments = [];
-                                                if (!empty($entry['description_text'])) {
-                                                    $notesSegments[] = $entry['description_text'];
-                                                }
-                                                if (!empty($entry['item_notes'])) {
-                                                    $notesSegments[] = $entry['item_notes'];
-                                                }
-                                                $combinedNotes = trim(implode("\n\n", $notesSegments));
                                                 $invoicePath = $entry['invoice_file_path'] ?? '';
                                                 $invoiceUrl = '';
                                                 if (!empty($invoicePath)) {
@@ -960,12 +955,16 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                         <small><?= $entry['received_at'] ? date('H:i', strtotime($entry['received_at'])) : '' ?></small>
                                                     </div>
                                                     <div class="text-muted small">Sesiune <?= htmlspecialchars($entry['session_number'] ?? '-') ?></div>
+                                                    <?php if (!empty($entry['purchase_order_id']) && !empty($entry['order_number'])): ?>
+                                                        <div class="text-muted small">
+                                                            <a class="po-link" href="<?= htmlspecialchars(getNavUrl('purchase_orders.php')) ?>?focus_order=<?= (int)$entry['purchase_order_id'] ?>#po-<?= (int)$entry['purchase_order_id'] ?>">
+                                                                Comandă <?= htmlspecialchars($entry['order_number']) ?>
+                                                            </a>
+                                                        </div>
+                                                    <?php endif; ?>
                                                 </td>
                                                 <td>
                                                     <div class="supplier-name"><?= htmlspecialchars($entry['supplier_name'] ?? '-') ?></div>
-                                                    <?php if (!empty($entry['order_number'])): ?>
-                                                        <div class="text-muted small">PO: <?= htmlspecialchars($entry['order_number']) ?></div>
-                                                    <?php endif; ?>
                                                 </td>
                                                 <td>
                                                     <div class="product-name"><?= htmlspecialchars($entry['product_name'] ?? '-') ?></div>
@@ -974,7 +973,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                     <strong><?= $quantityFormatted ?></strong> <span class="text-muted"><?= htmlspecialchars($unitLabel) ?></span>
                                                 </td>
                                                 <td><code class="sku-code"><?= htmlspecialchars($entry['sku'] ?? '-') ?></code></td>
-                                                <td>
+                                                <td class="receiving-entry-cell receiving-entry-cell--invoice">
                                                     <?php if (!empty($invoiceUrl)): ?>
                                                         <a href="<?= htmlspecialchars($invoiceUrl) ?>" target="_blank" class="invoice-link">
                                                             <span class="material-symbols-outlined">description</span>
@@ -989,13 +988,18 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                         <span class="text-muted">Fără comandă</span>
                                                     <?php endif; ?>
                                                 </td>
-                                                <td>
-                                                    <label class="invoice-verified-label">
-                                                        <input type="checkbox" class="invoice-verified-toggle" data-order-id="<?= $entry['purchase_order_id'] ?>"
-                                                               data-invoice-present="<?= !empty($invoiceUrl) ? '1' : '0' ?>"
-                                                               <?= (empty($invoiceUrl) || empty($entry['purchase_order_id'])) ? 'disabled' : '' ?> <?= $verified ? 'checked' : '' ?>>
-                                                        <span><?= $verified ? 'Verificată' : 'Neverificată' ?></span>
-                                                    </label>
+                                                <td class="receiving-entry-cell receiving-entry-cell--verification">
+                                                    <?php if (!empty($entry['purchase_order_id'])): ?>
+                                                        <label class="invoice-verified-toggle-wrapper <?= $verified ? 'is-verified' : '' ?> <?= empty($invoiceUrl) ? 'is-disabled' : '' ?>" title="Marchează factura ca verificată">
+                                                            <input type="checkbox" class="invoice-verified-toggle" data-order-id="<?= $entry['purchase_order_id'] ?>"
+                                                                   data-invoice-present="<?= !empty($invoiceUrl) ? '1' : '0' ?>"
+                                                                   <?= (empty($invoiceUrl) ? 'disabled' : '') ?> <?= $verified ? 'checked' : '' ?>>
+                                                            <span class="invoice-verified-check" aria-hidden="true">task_alt</span>
+                                                            <span class="sr-only">Marchează factura ca verificată</span>
+                                                        </label>
+                                                    <?php else: ?>
+                                                        <span class="text-muted">-</span>
+                                                    <?php endif; ?>
                                                     <?php if ($verified && !empty($entry['invoice_verified_at'])): ?>
                                                         <div class="invoice-verified-meta">
                                                             <span class="material-symbols-outlined">task_alt</span>
@@ -1006,14 +1010,20 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                         </div>
                                                     <?php endif; ?>
                                                 </td>
-                                                <td>
-                                                    <?php if (!empty($combinedNotes)): ?>
-                                                        <div class="entry-notes"><?= nl2br(htmlspecialchars($combinedNotes)) ?></div>
-                                                    <?php else: ?>
-                                                        <span class="text-muted">Fără observații</span>
+                                                <td class="receiving-entry-cell receiving-entry-cell--notes">
+                                                    <?php if (!empty(trim($entry['description_text'] ?? ''))): ?>
+                                                        <div class="entry-session-note">
+                                                            <?= nl2br(htmlspecialchars(trim($entry['description_text']))) ?>
+                                                        </div>
                                                     <?php endif; ?>
+                                                    <div class="entry-notes-editor"
+                                                         contenteditable="true"
+                                                         data-item-id="<?= (int)$entry['receiving_item_id'] ?>"
+                                                         data-original-value="<?= htmlspecialchars(trim((string)($entry['item_notes'] ?? '')), ENT_QUOTES, 'UTF-8') ?>"
+                                                         data-placeholder="Adaugă observații"><?php echo htmlspecialchars(trim((string)($entry['item_notes'] ?? ''))); ?></div>
+                                                    <div class="entry-notes-status" data-item-id="<?= (int)$entry['receiving_item_id'] ?>" aria-live="polite"></div>
                                                 </td>
-                                                <td>
+                                                <td class="receiving-entry-cell receiving-entry-cell--photos">
                                                     <?php if ($photoCount > 0): ?>
                                                         <div class="receiving-entry-photos">
                                                             <?php foreach (array_slice($photoData, 0, 3) as $index => $photo): ?>
@@ -1029,7 +1039,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                         <span class="text-muted">-</span>
                                                     <?php endif; ?>
                                                 </td>
-                                                <td>
+                                                <td class="receiving-entry-cell receiving-entry-cell--actions">
                                                     <div class="entries-actions">
                                                         <a class="btn btn-outline-secondary btn-sm" href="receiving_history.php?session_id=<?= $entry['receiving_session_id'] ?>" target="_blank">
                                                             <span class="material-symbols-outlined">visibility</span>

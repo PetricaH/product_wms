@@ -1111,6 +1111,9 @@ function updateInvoiceTotal() {
 class PurchaseOrdersReceivingManager {
     constructor() {
         this.initializeInvoiceUpload();
+        const params = new URLSearchParams(window.location.search);
+        this.focusOrderId = params.has('focus_order') ? Number(params.get('focus_order')) || null : null;
+        this.hasAppliedFocus = false;
     }
 
     // NEW: Initialize invoice upload functionality
@@ -1132,7 +1135,7 @@ class PurchaseOrdersReceivingManager {
         submitButton.innerHTML = '<span class="material-symbols-outlined spinning">sync</span> Încarcă...';
         
         try {
-            const response = await fetch('api/receiving/upload_invoice.php', {
+            const response = await fetch('api/purchase_orders/upload_invoice.php', {
                 method: 'POST',
                 body: formData
             });
@@ -1203,6 +1206,16 @@ class PurchaseOrdersReceivingManager {
             const invoiceUrl = order.invoice_file_path.startsWith('storage/')
                 ? order.invoice_file_path
                 : `storage/${order.invoice_file_path}`;
+            const verificationBadge = order.invoice_verified
+                ? `
+                    <div class="invoice-verified-indicator">
+                        <span class="material-symbols-outlined">task_alt</span>
+                        <span>Verificată</span>
+                        ${order.invoice_verified_at ? `<span class="invoice-verified-time">${this.formatDateTime(order.invoice_verified_at)}</span>` : ''}
+                        ${order.invoice_verified_by ? `<span class="invoice-verified-user">de ${this.escapeHtml(order.invoice_verified_by)}</span>` : ''}
+                    </div>
+                `
+                : '';
             invoiceDisplay = `
                 <div class="invoice-container">
                     <div class="invoice-date-badge">
@@ -1212,6 +1225,7 @@ class PurchaseOrdersReceivingManager {
                         <span class="material-symbols-outlined">description</span>
                         Factura
                     </a>
+                    ${verificationBadge}
                 </div>
             `;
         } else if (order.po_status !== 'draft') {
@@ -1226,7 +1240,7 @@ class PurchaseOrdersReceivingManager {
         }
 
         return `
-            <tr data-order-id="${order.id}" class="${rowClass}">
+            <tr data-order-id="${order.id}" id="po-${order.id}" class="${rowClass}">
                 <td>
                     <button class="expand-btn" onclick="purchaseOrdersManager.toggleRowExpansion(${order.id})">
                         <span class="material-symbols-outlined">expand_more</span>
@@ -1592,6 +1606,26 @@ class PurchaseOrdersReceivingManager {
         }
 
         tbody.innerHTML = orders.map(order => this.renderOrderRow(order)).join('');
+        window.requestAnimationFrame(() => this.applyFocusOrder());
+    }
+
+    applyFocusOrder() {
+        if (!this.focusOrderId || this.hasAppliedFocus) {
+            return;
+        }
+
+        const targetRow = document.getElementById(`po-${this.focusOrderId}`);
+        if (!targetRow) {
+            return;
+        }
+
+        targetRow.classList.add('focused-order');
+        targetRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        this.hasAppliedFocus = true;
+
+        window.setTimeout(() => {
+            targetRow.classList.remove('focused-order');
+        }, 4000);
     }
 
     async refreshAutoOrderStats() {

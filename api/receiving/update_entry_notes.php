@@ -73,17 +73,46 @@ try {
         $normalizedNotes = mb_substr($normalizedNotes, 0, 2000);
     }
 
-    $stmt = $db->prepare('UPDATE receiving_items SET notes = :notes WHERE id = :id');
+if (empty($_SESSION['user_id'])) {
+    throw new RuntimeException('Utilizatorul autentificat este necesar pentru actualizarea observațiilor.');
+}
+
+$adminId = (int)$_SESSION['user_id'];
+
+if ($normalizedNotes === '') {
+    $stmt = $db->prepare('UPDATE receiving_items SET admin_notes = NULL, admin_notes_updated_by = NULL, admin_notes_updated_at = NULL WHERE id = :id');
+    $stmt->execute([':id' => $itemId]);
+} else {
+    $stmt = $db->prepare('UPDATE receiving_items SET admin_notes = :notes, admin_notes_updated_by = :admin_id, admin_notes_updated_at = NOW() WHERE id = :id');
     $stmt->execute([
-        ':notes' => $normalizedNotes === '' ? null : $normalizedNotes,
+        ':notes' => $normalizedNotes,
+        ':admin_id' => $adminId,
         ':id' => $itemId,
     ]);
+}
 
-    echo json_encode([
-        'success' => true,
-        'message' => $normalizedNotes === '' ? 'Observațiile au fost eliminate.' : 'Observațiile au fost actualizate.',
-        'notes' => $normalizedNotes,
-    ]);
+$metaStmt = $db->prepare('
+    SELECT ri.admin_notes, ri.admin_notes_updated_at, u.username AS admin_notes_updated_by_name
+    FROM receiving_items ri
+    LEFT JOIN users u ON ri.admin_notes_updated_by = u.id
+    WHERE ri.id = :id
+    LIMIT 1
+');
+$metaStmt->execute([':id' => $itemId]);
+$meta = $metaStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+
+$updatedAt = null;
+if (!empty($meta['admin_notes_updated_at'])) {
+    $updatedAt = date('d.m.Y H:i', strtotime($meta['admin_notes_updated_at']));
+}
+
+echo json_encode([
+    'success' => true,
+    'message' => $normalizedNotes === '' ? 'Observațiile au fost eliminate.' : 'Observațiile au fost actualizate.',
+    'notes' => $meta['admin_notes'] ?? '',
+    'updated_at' => $updatedAt,
+    'updated_by' => $meta['admin_notes_updated_by_name'] ?? null,
+]);
 } catch (Throwable $exception) {
     http_response_code(400);
     echo json_encode([

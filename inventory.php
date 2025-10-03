@@ -947,6 +947,22 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                 }
                                                 $unitLabel = $entry['unit_of_measure'] ?? 'buc';
                                                 $verified = !empty($entry['invoice_verified']);
+                                                $workerNoteSegments = [];
+                                                $descriptionText = trim((string)($entry['description_text'] ?? ''));
+                                                if ($descriptionText !== '') {
+                                                    $workerNoteSegments[] = $descriptionText;
+                                                }
+                                                $itemNotes = trim((string)($entry['item_notes'] ?? ''));
+                                                if ($itemNotes !== '') {
+                                                    $workerNoteSegments[] = $itemNotes;
+                                                }
+                                                $workerNotes = implode("\n\n", $workerNoteSegments);
+                                                $adminNotes = trim((string)($entry['admin_notes'] ?? ''));
+                                                $adminNoteAuthor = trim((string)($entry['admin_notes_updated_by_name'] ?? ''));
+                                                $adminNoteTimestamp = '';
+                                                if (!empty($entry['admin_notes_updated_at']) && $entry['admin_notes_updated_at'] !== '0000-00-00 00:00:00') {
+                                                    $adminNoteTimestamp = date('d.m.Y H:i', strtotime($entry['admin_notes_updated_at']));
+                                                }
                                             ?>
                                             <tr data-receiving-item="<?= $entry['receiving_item_id'] ?>">
                                                 <td>
@@ -975,9 +991,9 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                 <td><code class="sku-code"><?= htmlspecialchars($entry['sku'] ?? '-') ?></code></td>
                                                 <td class="receiving-entry-cell receiving-entry-cell--invoice">
                                                     <?php if (!empty($invoiceUrl)): ?>
-                                                        <a href="<?= htmlspecialchars($invoiceUrl) ?>" target="_blank" class="invoice-link">
-                                                            <span class="material-symbols-outlined">description</span>
-                                                            <?= htmlspecialchars(basename($invoicePath)) ?>
+                                                        <a href="<?= htmlspecialchars($invoiceUrl) ?>" target="_blank" class="btn btn-outline-primary btn-sm invoice-view-btn">
+                                                            <span class="material-symbols-outlined">visibility</span>
+                                                            Vezi Factură
                                                         </a>
                                                     <?php elseif (!empty($entry['purchase_order_id'])): ?>
                                                         <button type="button" class="btn btn-sm btn-success entry-upload-invoice-btn" data-order-id="<?= $entry['purchase_order_id'] ?>">
@@ -990,12 +1006,12 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                 </td>
                                                 <td class="receiving-entry-cell receiving-entry-cell--verification">
                                                     <?php if (!empty($entry['purchase_order_id'])): ?>
-                                                        <label class="invoice-verified-toggle-wrapper <?= $verified ? 'is-verified' : '' ?> <?= empty($invoiceUrl) ? 'is-disabled' : '' ?>" title="Marchează factura ca verificată">
+                                                        <label class="invoice-verified-toggle-wrapper <?= $verified ? 'is-verified' : '' ?> <?= empty($invoiceUrl) ? 'is-disabled' : '' ?>">
                                                             <input type="checkbox" class="invoice-verified-toggle" data-order-id="<?= $entry['purchase_order_id'] ?>"
                                                                    data-invoice-present="<?= !empty($invoiceUrl) ? '1' : '0' ?>"
+                                                                   aria-label="Factura verificată"
                                                                    <?= (empty($invoiceUrl) ? 'disabled' : '') ?> <?= $verified ? 'checked' : '' ?>>
                                                             <span class="invoice-verified-check" aria-hidden="true">task_alt</span>
-                                                            <span class="sr-only">Marchează factura ca verificată</span>
                                                         </label>
                                                     <?php else: ?>
                                                         <span class="text-muted">-</span>
@@ -1011,17 +1027,32 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                     <?php endif; ?>
                                                 </td>
                                                 <td class="receiving-entry-cell receiving-entry-cell--notes">
-                                                    <?php if (!empty(trim($entry['description_text'] ?? ''))): ?>
-                                                        <div class="entry-session-note">
-                                                            <?= nl2br(htmlspecialchars(trim($entry['description_text']))) ?>
+                                                    <?php if ($workerNotes !== ''): ?>
+                                                        <div class="entry-note-block entry-note-block--worker">
+                                                            <div class="entry-note-meta">
+                                                                <span class="entry-note-role">Magazie</span>
+                                                                <?php if (!empty($entry['received_by_username'])): ?>
+                                                                    <span class="entry-note-author"><?= htmlspecialchars($entry['received_by_username']) ?></span>
+                                                                <?php endif; ?>
+                                                            </div>
+                                                            <div class="entry-note-content">
+                                                                <?= nl2br(htmlspecialchars($workerNotes)) ?>
+                                                            </div>
                                                         </div>
                                                     <?php endif; ?>
-                                                    <div class="entry-notes-editor"
-                                                         contenteditable="true"
-                                                         data-item-id="<?= (int)$entry['receiving_item_id'] ?>"
-                                                         data-original-value="<?= htmlspecialchars(trim((string)($entry['item_notes'] ?? '')), ENT_QUOTES, 'UTF-8') ?>"
-                                                         data-placeholder="Adaugă observații"><?php echo htmlspecialchars(trim((string)($entry['item_notes'] ?? ''))); ?></div>
-                                                    <div class="entry-notes-status" data-item-id="<?= (int)$entry['receiving_item_id'] ?>" aria-live="polite"></div>
+                                                    <div class="entry-note-block entry-note-block--admin" data-item-id="<?= (int)$entry['receiving_item_id'] ?>">
+                                                        <div class="entry-note-meta entry-note-meta--admin" data-item-id="<?= (int)$entry['receiving_item_id'] ?>">
+                                                            <span class="entry-note-role">Admin</span>
+                                                            <span class="entry-note-author admin-note-author<?= $adminNoteAuthor === '' ? ' is-empty' : '' ?>" data-item-id="<?= (int)$entry['receiving_item_id'] ?>"><?= $adminNoteAuthor !== '' ? htmlspecialchars($adminNoteAuthor) : '' ?></span>
+                                                            <span class="entry-note-timestamp admin-note-timestamp<?= $adminNoteTimestamp === '' ? ' is-empty' : '' ?>" data-item-id="<?= (int)$entry['receiving_item_id'] ?>"><?= $adminNoteTimestamp !== '' ? htmlspecialchars($adminNoteTimestamp) : '' ?></span>
+                                                        </div>
+                                                        <div class="entry-notes-editor"
+                                                             contenteditable="true"
+                                                             data-item-id="<?= (int)$entry['receiving_item_id'] ?>"
+                                                             data-original-value="<?= htmlspecialchars($adminNotes, ENT_QUOTES, 'UTF-8') ?>"
+                                                             data-placeholder="Adaugă observații admin"><?php echo htmlspecialchars($adminNotes); ?></div>
+                                                        <div class="entry-notes-status" data-item-id="<?= (int)$entry['receiving_item_id'] ?>" aria-live="polite"></div>
+                                                    </div>
                                                 </td>
                                                 <td class="receiving-entry-cell receiving-entry-cell--photos">
                                                     <?php if ($photoCount > 0): ?>
@@ -1048,7 +1079,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                         <?php if (!empty($invoiceUrl)): ?>
                                                             <a class="btn btn-outline-primary btn-sm" href="<?= htmlspecialchars($invoiceUrl) ?>" target="_blank" download>
                                                                 <span class="material-symbols-outlined">download</span>
-                                                                Descarcă
+                                                                Descarcă FC
                                                             </a>
                                                         <?php endif; ?>
                                                         <?php if (empty($invoiceUrl) && !empty($entry['purchase_order_id'])): ?>

@@ -83,14 +83,12 @@
 
         const { row, invoiceCell, actionsContainer } = context;
         const invoiceUrl = result.invoice_url || '';
-        const invoiceFilename = result.invoice_filename || 'Factura';
-
         if (invoiceCell && invoiceUrl) {
             const link = document.createElement('a');
             link.href = invoiceUrl;
             link.target = '_blank';
-            link.className = 'invoice-link';
-            link.innerHTML = `<span class="material-symbols-outlined">description</span>${invoiceFilename}`;
+            link.className = 'btn btn-outline-primary btn-sm invoice-view-btn';
+            link.innerHTML = '<span class="material-symbols-outlined">visibility</span>Vezi Factură';
             invoiceCell.innerHTML = '';
             invoiceCell.appendChild(link);
         }
@@ -104,10 +102,6 @@
                 wrapper.classList.remove('is-disabled');
                 checkbox.disabled = false;
                 checkbox.dataset.invoicePresent = '1';
-                const srOnly = wrapper.querySelector('.sr-only');
-                if (srOnly) {
-                    srOnly.textContent = 'Marchează factura ca verificată';
-                }
             }
 
             if (actionsContainer && invoiceUrl && !actionsContainer.querySelector('.entries-download-invoice')) {
@@ -115,7 +109,7 @@
                 downloadLink.href = invoiceUrl;
                 downloadLink.target = '_blank';
                 downloadLink.className = 'btn btn-outline-primary btn-sm entries-download-invoice';
-                downloadLink.innerHTML = '<span class="material-symbols-outlined">download</span>Descarcă';
+                downloadLink.innerHTML = '<span class="material-symbols-outlined">download</span>Descarcă FC';
                 actionsContainer.appendChild(downloadLink);
             }
         }
@@ -228,12 +222,6 @@
                     const wrapper = checkbox.closest('.invoice-verified-toggle-wrapper');
                     if (wrapper) {
                         wrapper.classList.toggle('is-verified', Boolean(result.verified));
-                        const srOnly = wrapper.querySelector('.sr-only');
-                        if (srOnly) {
-                            srOnly.textContent = result.verified
-                                ? 'Debifează marcarea facturii ca verificată'
-                                : 'Marchează factura ca verificată';
-                        }
                     }
 
                     const cell = checkbox.closest('td');
@@ -249,9 +237,8 @@
                     }
 
                     if (metaContainer) {
+                        metaContainer.innerHTML = '';
                         if (result.verified) {
-                            metaContainer.innerHTML = '';
-
                             const icon = document.createElement('span');
                             icon.className = 'material-symbols-outlined';
                             icon.textContent = 'task_alt';
@@ -268,8 +255,6 @@
                                 userSpan.textContent = `de ${result.verified_by}`;
                                 metaContainer.appendChild(userSpan);
                             }
-                        } else {
-                            metaContainer.innerHTML = '';
                         }
                     }
                 } catch (error) {
@@ -297,6 +282,9 @@
             }
 
             const statusEl = document.querySelector(`.entry-notes-status[data-item-id="${itemId}"]`);
+            const adminMeta = document.querySelector(`.entry-note-meta--admin[data-item-id="${itemId}"]`);
+            const adminAuthorEl = adminMeta ? adminMeta.querySelector('.admin-note-author') : null;
+            const adminTimestampEl = adminMeta ? adminMeta.querySelector('.admin-note-timestamp') : null;
             let saveTimeout = null;
             let isSaving = false;
             let pendingValue = null;
@@ -383,6 +371,18 @@
                         statusEl.textContent = lastSavedValue ? 'Observații salvate.' : 'Fără observații';
                         statusEl.classList.remove('is-saving', 'is-error');
                         statusEl.classList.add('is-success');
+                    }
+
+                    if (adminAuthorEl) {
+                        const name = typeof result.updated_by === 'string' ? result.updated_by : '';
+                        adminAuthorEl.textContent = name;
+                        adminAuthorEl.classList.toggle('is-empty', name === '');
+                    }
+
+                    if (adminTimestampEl) {
+                        const when = typeof result.updated_at === 'string' ? result.updated_at : '';
+                        adminTimestampEl.textContent = when;
+                        adminTimestampEl.classList.toggle('is-empty', when === '');
                     }
 
                     if (pendingValue !== null && pendingValue !== lastSavedValue) {

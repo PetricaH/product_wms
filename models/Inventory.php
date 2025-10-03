@@ -1414,6 +1414,8 @@ public function getCriticalStockAlerts(int $limit = 10): array {
             LEFT JOIN sellers sr ON rs.supplier_id = sr.id
             LEFT JOIN products p ON ri.product_id = p.product_id
             LEFT JOIN users uv ON po.invoice_verified_by = uv.id
+            LEFT JOIN users ur ON rs.received_by = ur.id
+            LEFT JOIN users ua ON ri.admin_notes_updated_by = ua.id
         ";
 
         $whereSql = $conditions ? 'WHERE ' . implode(' AND ', $conditions) : '';
@@ -1433,6 +1435,8 @@ public function getCriticalStockAlerts(int $limit = 10): array {
                     ri.product_id,
                     ri.received_quantity,
                     ri.notes AS item_notes,
+                    ri.admin_notes,
+                    ri.admin_notes_updated_at,
                     COALESCE(rs.completed_at, ri.created_at) AS received_at,
                     rs.completed_at AS session_completed_at,
                     rs.session_number,
@@ -1451,7 +1455,9 @@ public function getCriticalStockAlerts(int $limit = 10): array {
                     p.name AS product_name,
                     p.sku,
                     p.unit_of_measure,
-                    uv.username AS invoice_verified_by_name
+                    uv.username AS invoice_verified_by_name,
+                    ur.username AS received_by_username,
+                    ua.username AS admin_notes_updated_by_name
                 $baseQuery
                 $whereSql
                 ORDER BY COALESCE(rs.completed_at, ri.created_at) DESC, ri.id DESC
@@ -1476,6 +1482,9 @@ public function getCriticalStockAlerts(int $limit = 10): array {
 
                 $row['photos'] = $this->loadReceivingEntryPhotos($sessionId, $itemId);
                 $row['description_text'] = $this->loadReceivingEntryDescription($sessionId, $itemId);
+                if (isset($row['admin_notes_updated_at']) && $row['admin_notes_updated_at'] === '0000-00-00 00:00:00') {
+                    $row['admin_notes_updated_at'] = null;
+                }
                 $row['invoice_verified'] = !empty($row['invoice_verified']);
             }
 

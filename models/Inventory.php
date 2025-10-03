@@ -1346,6 +1346,153 @@ public function getCriticalStockAlerts(int $limit = 10): array {
 }
 
     /**
+     * Get receiving entries with full details for stock entry history
+     */
+    public function getReceivingEntriesWithDetails(array $filters = [], int $page = 1, int $pageSize = 25): array {
+        $page = max(1, $page);
+        $pageSize = max(1, $pageSize);
+        $offset = ($page - 1) * $pageSize;
+
+        $conditions = [];
+        $params = [];
+
+        if (!empty($filters['date_from'])) {
+            $conditions[] = "DATE(COALESCE(rs.completed_at, ri.created_at)) >= :entries_date_from";
+            $params[':entries_date_from'] = $filters['date_from'];
+        }
+
+        if (!empty($filters['date_to'])) {
+            $conditions[] = "DATE(COALESCE(rs.completed_at, ri.created_at)) <= :entries_date_to";
+            $params[':entries_date_to'] = $filters['date_to'];
+        }
+
+        if (!empty($filters['seller_id'])) {
+            $conditions[] = "(po.seller_id = :entries_seller_id OR rs.supplier_id = :entries_seller_id)";
+            $params[':entries_seller_id'] = (int)$filters['seller_id'];
+        }
+
+        if (!empty($filters['product_id'])) {
+            $conditions[] = "ri.product_id = :entries_product_id";
+            $params[':entries_product_id'] = (int)$filters['product_id'];
+        }
+
+        if (!empty($filters['invoice_status'])) {
+            if ($filters['invoice_status'] === 'with') {
+                $conditions[] = "(po.invoice_file_path IS NOT NULL AND po.invoice_file_path <> '')";
+            } elseif ($filters['invoice_status'] === 'without') {
+                $conditions[] = "(po.invoice_file_path IS NULL OR po.invoice_file_path = '')";
+            }
+        }
+
+        if (!empty($filters['verification_status'])) {
+            if ($filters['verification_status'] === 'verified') {
+                $conditions[] = "po.invoice_verified = 1";
+            } elseif ($filters['verification_status'] === 'unverified') {
+                $conditions[] = "(po.invoice_verified = 0 OR po.invoice_verified IS NULL)";
+            }
+        }
+
+        if (!empty($filters['search'])) {
+            $params[':entries_search'] = '%' . $filters['search'] . '%';
+            $conditions[] = "(
+                p.name LIKE :entries_search OR
+                p.sku LIKE :entries_search OR
+                s.supplier_name LIKE :entries_search OR
+                sr.supplier_name LIKE :entries_search OR
+                po.order_number LIKE :entries_search OR
+                rs.session_number LIKE :entries_search OR
+                po.invoice_file_path LIKE :entries_search OR
+                ri.notes LIKE :entries_search
+            )";
+        }
+
+        $baseQuery = "
+            FROM receiving_items ri
+            INNER JOIN receiving_sessions rs ON ri.receiving_session_id = rs.id
+            LEFT JOIN purchase_orders po ON rs.purchase_order_id = po.id
+            LEFT JOIN sellers s ON po.seller_id = s.id
+            LEFT JOIN sellers sr ON rs.supplier_id = sr.id
+            LEFT JOIN products p ON ri.product_id = p.product_id
+            LEFT JOIN users uv ON po.invoice_verified_by = uv.id
+        ";
+
+        $whereSql = $conditions ? 'WHERE ' . implode(' AND ', $conditions) : '';
+
+        try {
+            $countSql = "SELECT COUNT(DISTINCT ri.id) $baseQuery $whereSql";
+            $countStmt = $this->conn->prepare($countSql);
+            foreach ($params as $key => $value) {
+                $countStmt->bindValue($key, $value);
+            }
+            $countStmt->execute();
+            $total = (int)$countStmt->fetchColumn();
+
+            $dataSql = "SELECT
+                    ri.id AS receiving_item_id,
+                    ri.receiving_session_id,
+                    ri.product_id,
+                    ri.received_quantity,
+                    ri.notes AS item_notes,
+                    COALESCE(rs.completed_at, ri.created_at) AS received_at,
+                    rs.completed_at AS session_completed_at,
+                    rs.session_number,
+                    rs.supplier_document_number,
+                    rs.supplier_document_type,
+                    po.id AS purchase_order_id,
+                    po.order_number,
+                    po.invoice_file_path,
+                    po.invoiced,
+                    po.invoiced_at,
+                    po.invoice_verified,
+                    po.invoice_verified_at,
+                    po.invoice_verified_by,
+                    s.supplier_name,
+                    sr.supplier_name AS fallback_supplier_name,
+                    p.name AS product_name,
+                    p.sku,
+                    p.unit_of_measure,
+                    uv.username AS invoice_verified_by_name
+                $baseQuery
+                $whereSql
+                ORDER BY COALESCE(rs.completed_at, ri.created_at) DESC, ri.id DESC
+                LIMIT :entries_limit OFFSET :entries_offset";
+
+            $stmt = $this->conn->prepare($dataSql);
+            foreach ($params as $key => $value) {
+                $stmt->bindValue($key, $value);
+            }
+            $stmt->bindValue(':entries_limit', $pageSize, PDO::PARAM_INT);
+            $stmt->bindValue(':entries_offset', $offset, PDO::PARAM_INT);
+            $stmt->execute();
+
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+            foreach ($rows as &$row) {
+                $row['supplier_name'] = $row['supplier_name'] ?: ($row['fallback_supplier_name'] ?? null);
+                unset($row['fallback_supplier_name']);
+
+                $sessionId = (int)($row['receiving_session_id'] ?? 0);
+                $itemId = (int)($row['receiving_item_id'] ?? 0);
+
+                $row['photos'] = $this->loadReceivingEntryPhotos($sessionId, $itemId);
+                $row['description_text'] = $this->loadReceivingEntryDescription($sessionId, $itemId);
+                $row['invoice_verified'] = !empty($row['invoice_verified']);
+            }
+
+            return [
+                'data' => $rows,
+                'total' => $total,
+            ];
+        } catch (PDOException $e) {
+            error_log('Error loading receiving entries: ' . $e->getMessage());
+            return [
+                'data' => [],
+                'total' => 0,
+            ];
+        }
+    }
+
+    /**
      * Fetch inventory transactions with filters and pagination
      */
     public function getStockMovements(array $filters = [], int $page = 1, int $pageSize = 25,
@@ -2677,6 +2824,90 @@ HTML;
             'success' => false,
             'message' => $dispatchResult['message'] ?? 'Trimiterea emailului de test a eșuat.'
         ];
+    }
+
+    private function loadReceivingEntryPhotos(int $sessionId, int $itemId): array {
+        $directories = [
+            BASE_PATH . '/storage/receiving/factory',
+            BASE_PATH . '/storage/receiving/sellers',
+        ];
+        $patterns = [
+            "session_{$sessionId}_*",
+            "receipt_{$itemId}_*",
+        ];
+        $extensions = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
+        $photos = [];
+
+        foreach ($directories as $directory) {
+            if (!is_dir($directory)) {
+                continue;
+            }
+
+            foreach ($patterns as $pattern) {
+                foreach ($extensions as $extension) {
+                    $globPattern = $directory . '/' . $pattern . '.' . $extension;
+                    foreach (glob($globPattern) as $filePath) {
+                        $relative = ltrim(str_replace(BASE_PATH . '/', '', $filePath), '/');
+                        if (!isset($photos[$relative])) {
+                            $photos[$relative] = [
+                                'path' => $relative,
+                                'url' => $this->buildStorageUrl($relative),
+                                'thumbnail_url' => $this->buildStorageUrl($relative),
+                                'filename' => basename($filePath),
+                            ];
+                        }
+                    }
+                }
+            }
+        }
+
+        return array_values($photos);
+    }
+
+    private function loadReceivingEntryDescription(int $sessionId, int $itemId): ?string {
+        $directories = [
+            BASE_PATH . '/storage/receiving/descriptions',
+            BASE_PATH . '/storage/receiving/factory',
+            BASE_PATH . '/storage/receiving/sellers',
+            BASE_PATH . '/storage/receiving',
+        ];
+
+        $candidates = [
+            "session_{$sessionId}_desc.txt",
+            "receipt_{$itemId}_desc.txt",
+        ];
+
+        foreach ($directories as $dir) {
+            if (!is_dir($dir)) {
+                continue;
+            }
+
+            foreach ($candidates as $filename) {
+                $path = rtrim($dir, '/') . '/' . $filename;
+                if (is_file($path)) {
+                    $contents = trim((string)@file_get_contents($path));
+                    if ($contents !== '') {
+                        return $contents;
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private function buildStorageUrl(string $relativePath): string {
+        $normalized = ltrim($relativePath, '/');
+        if (strpos($normalized, 'storage/') !== 0) {
+            $normalized = 'storage/' . $normalized;
+        }
+
+        $baseUrl = defined('BASE_URL') ? rtrim(BASE_URL, '/') : '';
+        if ($baseUrl) {
+            return $baseUrl . '/' . $normalized;
+        }
+
+        return '/' . $normalized;
     }
 
     /**

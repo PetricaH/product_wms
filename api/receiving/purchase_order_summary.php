@@ -56,12 +56,15 @@ try {
             po.invoiced,
             po.invoice_file_path,
             po.invoiced_at,
+            po.invoice_verified,
+            po.invoice_verified_at,
             po.email_sent_at,
             po.notes,
             
             -- Supplier info
             s.supplier_name,
             s.id as supplier_id,
+            uv.username AS invoice_verified_by_name,
             
             -- Creator info
             u.username as created_by_name,
@@ -111,6 +114,7 @@ try {
         FROM purchase_orders po
         LEFT JOIN sellers s ON po.seller_id = s.id
         LEFT JOIN users u ON po.created_by = u.id
+        LEFT JOIN users uv ON po.invoice_verified_by = uv.id
         LEFT JOIN purchase_order_items poi ON po.id = poi.purchase_order_id
         LEFT JOIN receiving_sessions rs ON po.id = rs.purchase_order_id AND rs.status = 'completed'
         LEFT JOIN receiving_items ri ON poi.id = ri.purchase_order_item_id
@@ -134,8 +138,9 @@ try {
     // Fixed: Corrected column name (was total_ammount)
     $sql .= " GROUP BY po.id, po.order_number, po.status, po.total_amount, po.currency,
                      po.expected_delivery_date, po.actual_delivery_date, po.created_at, po.updated_at,
-                     po.invoiced, po.invoice_file_path, po.invoiced_at, po.email_sent_at, po.notes,
-                     s.supplier_name, s.id, u.username";
+                     po.invoiced, po.invoice_file_path, po.invoiced_at, po.invoice_verified, po.invoice_verified_at,
+                     po.email_sent_at, po.notes,
+                     s.supplier_name, s.id, u.username, uv.username";
     
     // apply receiving status filter after grouping
     if (!empty($receivingStatusFilter)) {
@@ -200,6 +205,9 @@ try {
             'invoiced' => (bool)$order['invoiced'],
             'invoice_file_path' => $order['invoice_file_path'],
             'invoiced_at' => $order['invoiced_at'],
+            'invoice_verified' => (bool)$order['invoice_verified'],
+            'invoice_verified_at' => $order['invoice_verified_at'],
+            'invoice_verified_by' => $order['invoice_verified_by_name'],
             
             // Supplier info
             'supplier_name' => $order['supplier_name'],

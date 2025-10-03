@@ -36,12 +36,14 @@ require_once BASE_PATH . '/models/Location.php';
 require_once BASE_PATH . '/models/LocationLevelSettings.php';
 require_once BASE_PATH . '/models/User.php';
 require_once BASE_PATH . '/models/BarcodeCaptureTask.php';
+require_once BASE_PATH . '/models/Seller.php';
 
 $inventoryModel = new Inventory($db);
 $productModel = new Product($db);
 $locationModel = new Location($db);
 $userModel = new Users($db);
 $barcodeTaskModel = new BarcodeCaptureTask($db);
+$sellerModel = new Seller($db);
 
 $transactionTypes = [
     'receive' => ['label' => 'Primire', 'color' => 'success', 'icon' => '📦'],
@@ -256,9 +258,62 @@ if (isset($_GET['export_inventory'])) {
 $page = max(1, intval($_GET['page'] ?? 1));
 $pageSize = 25;
 $offset = ($page - 1) * $pageSize;
+$receivingEntries = [];
+$entriesBaseParams = [];
+$entriesPageLink = static function(int $pageNumber): string {
+    return '?view=entries&page=' . max($pageNumber, 1);
+};
+$entriesFilters = [];
 
 // Get data based on view
 switch ($view) {
+    case 'entries':
+        $pageSize = isset($_GET['page_size']) && in_array((int)$_GET['page_size'], [25, 50, 100], true)
+            ? (int)$_GET['page_size']
+            : 25;
+        $offset = ($page - 1) * $pageSize;
+        $entriesFilters = [
+            'date_from' => $_GET['entries_date_from'] ?? date('Y-m-d', strtotime('-30 days')),
+            'date_to' => $_GET['entries_date_to'] ?? date('Y-m-d'),
+            'seller_id' => isset($_GET['entries_seller']) && $_GET['entries_seller'] !== '' ? (int)$_GET['entries_seller'] : '',
+            'product_id' => isset($_GET['entries_product']) && $_GET['entries_product'] !== '' ? (int)$_GET['entries_product'] : '',
+            'invoice_status' => $_GET['entries_invoice_status'] ?? 'all',
+            'verification_status' => $_GET['entries_invoice_verification'] ?? 'all',
+            'search' => trim($_GET['entries_search'] ?? ''),
+        ];
+
+        $entriesQueryFilters = [
+            'date_from' => $entriesFilters['date_from'],
+            'date_to' => $entriesFilters['date_to'],
+            'seller_id' => $entriesFilters['seller_id'],
+            'product_id' => $entriesFilters['product_id'],
+            'invoice_status' => $entriesFilters['invoice_status'],
+            'verification_status' => $entriesFilters['verification_status'],
+            'search' => $entriesFilters['search'],
+        ];
+
+        $entriesData = $inventoryModel->getReceivingEntriesWithDetails($entriesQueryFilters, $page, $pageSize);
+        $receivingEntries = $entriesData['data'];
+        $totalCount = $entriesData['total'];
+
+        $entriesBaseParams = [
+            'view' => 'entries',
+            'page_size' => $pageSize,
+            'entries_date_from' => $entriesFilters['date_from'],
+            'entries_date_to' => $entriesFilters['date_to'],
+            'entries_seller' => $entriesFilters['seller_id'],
+            'entries_product' => $entriesFilters['product_id'],
+            'entries_invoice_status' => $entriesFilters['invoice_status'],
+            'entries_invoice_verification' => $entriesFilters['verification_status'],
+            'entries_search' => $entriesFilters['search'],
+        ];
+
+        $entriesPageLink = static function(int $pageNumber) use ($entriesBaseParams): string {
+            $params = $entriesBaseParams;
+            $params['page'] = max($pageNumber, 1);
+            return '?' . http_build_query(array_filter($params, static fn($value) => $value !== '' && $value !== null));
+        };
+        break;
     case 'summary':
         $allInventory = $inventoryModel->getStockSummary();
         $totalCount = count($allInventory);
@@ -390,6 +445,7 @@ if (!empty($productFilter)) {
 $allLocations = $locationModel->getAllLocations();
 $lowStockItems = $inventoryModel->getLowStockItems();
 $expiringProducts = $inventoryModel->getExpiringProducts();
+$allSellersList = $sellerModel->getAllSellers();
 
 // Define current page for footer
 $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
@@ -554,6 +610,10 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                     <a href="?view=movements" class="toggle-link <?= $view === 'movements' ? 'active' : '' ?>">
                                         <span class="material-symbols-outlined">swap_horiz</span>
                                         Mișcări Stocuri
+                                    </a>
+                                    <a href="?view=entries" class="toggle-link <?= $view === 'entries' ? 'active' : '' ?>">
+                                        <span class="material-symbols-outlined">receipt_long</span>
+                                        Intrări Stoc
                                     </a>
                                 </div>
                             </div>
@@ -726,9 +786,327 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                 <?php else: ?>
                                     <p>Nu există mișcări de stoc</p>
                                 <?php endif; ?>
+                    </div>
+                </div>
+            </div>
+                <?php elseif ($view === 'entries'): ?>
+                <div class="card card--searchable receiving-entries-card">
+                    <div class="card-header">
+                        <h3 class="card-title">Intrări Stoc</h3>
+                        <div class="card-actions">
+                            <div class="view-toggle">
+                                <a href="?view=detailed" class="toggle-link <?= $view === 'detailed' ? 'active' : '' ?>">
+                                    <span class="material-symbols-outlined">table_view</span>
+                                    Detaliat
+                                </a>
+                                <a href="?view=summary" class="toggle-link <?= $view === 'summary' ? 'active' : '' ?>">
+                                    <span class="material-symbols-outlined">dashboard</span>
+                                    Sumar
+                                </a>
+                                <a href="?view=low-stock" class="toggle-link <?= $view === 'low-stock' ? 'active' : '' ?>">
+                                    <span class="material-symbols-outlined">warning</span>
+                                    Stoc Scăzut
+                                </a>
+                                <a href="?view=movements" class="toggle-link <?= $view === 'movements' ? 'active' : '' ?>">
+                                    <span class="material-symbols-outlined">swap_horiz</span>
+                                    Mișcări Stocuri
+                                </a>
+                                <a href="?view=entries" class="toggle-link <?= $view === 'entries' ? 'active' : '' ?>">
+                                    <span class="material-symbols-outlined">receipt_long</span>
+                                    Intrări Stoc
+                                </a>
                             </div>
                         </div>
                     </div>
+                    <div class="card-body">
+                        <form method="GET" class="filter-form receiving-entries-filters">
+                            <input type="hidden" name="view" value="entries">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label class="form-label" for="entries-date-from">De la</label>
+                                    <input type="date" id="entries-date-from" name="entries_date_from" class="form-control"
+                                           value="<?= htmlspecialchars($entriesFilters['date_from'] ?? '') ?>">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label" for="entries-date-to">Până la</label>
+                                    <input type="date" id="entries-date-to" name="entries_date_to" class="form-control"
+                                           value="<?= htmlspecialchars($entriesFilters['date_to'] ?? '') ?>">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label" for="entries-seller">Furnizor</label>
+                                    <select id="entries-seller" name="entries_seller" class="form-control">
+                                        <option value="">Toți furnizorii</option>
+                                        <?php foreach ($allSellersList as $seller): ?>
+                                            <option value="<?= $seller['id'] ?>" <?= (string)$entriesFilters['seller_id'] === (string)$seller['id'] ? 'selected' : '' ?>>
+                                                <?= htmlspecialchars($seller['supplier_name'] ?? $seller['name'] ?? '') ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label" for="entries-product">Produs</label>
+                                    <select id="entries-product" name="entries_product" class="form-control">
+                                        <option value="">Toate produsele</option>
+                                        <?php foreach ($allProducts as $product): ?>
+                                            <option value="<?= $product['product_id'] ?>" <?= (string)$entriesFilters['product_id'] === (string)$product['product_id'] ? 'selected' : '' ?>>
+                                                <?= htmlspecialchars($product['name'] ?? '') ?>
+                                                <?php if (!empty($product['sku'])): ?>
+                                                    (<?= htmlspecialchars($product['sku']) ?>)
+                                                <?php endif; ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label" for="entries-invoice-status">Status Factură</label>
+                                    <select id="entries-invoice-status" name="entries_invoice_status" class="form-control">
+                                        <option value="all" <?= ($entriesFilters['invoice_status'] ?? 'all') === 'all' ? 'selected' : '' ?>>Toate</option>
+                                        <option value="with" <?= ($entriesFilters['invoice_status'] ?? 'all') === 'with' ? 'selected' : '' ?>>Cu factură</option>
+                                        <option value="without" <?= ($entriesFilters['invoice_status'] ?? 'all') === 'without' ? 'selected' : '' ?>>Fără factură</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label" for="entries-invoice-verification">Verificare</label>
+                                    <select id="entries-invoice-verification" name="entries_invoice_verification" class="form-control">
+                                        <option value="all" <?= ($entriesFilters['verification_status'] ?? 'all') === 'all' ? 'selected' : '' ?>>Toate</option>
+                                        <option value="verified" <?= ($entriesFilters['verification_status'] ?? 'all') === 'verified' ? 'selected' : '' ?>>Verificate</option>
+                                        <option value="unverified" <?= ($entriesFilters['verification_status'] ?? 'all') === 'unverified' ? 'selected' : '' ?>>Neverificate</option>
+                                    </select>
+                                </div>
+                                <div class="form-group stretch">
+                                    <label class="form-label" for="entries-search">Căutare</label>
+                                    <input type="text" id="entries-search" name="entries_search" class="form-control"
+                                           placeholder="Caută în furnizori, produse, sesiuni, facturi" value="<?= htmlspecialchars($entriesFilters['search'] ?? '') ?>">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label" for="entries-page-size">Înregistrări</label>
+                                    <select id="entries-page-size" name="page_size" class="form-control">
+                                        <?php foreach ([25, 50, 100] as $ps): ?>
+                                            <option value="<?= $ps ?>" <?= (int)$pageSize === (int)$ps ? 'selected' : '' ?>><?= $ps ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="form-actions">
+                                <button type="submit" class="btn btn-secondary">
+                                    <span class="material-symbols-outlined">filter_alt</span>
+                                    Filtrează
+                                </button>
+                                <a href="?view=entries" class="btn btn-outline-secondary">
+                                    <span class="material-symbols-outlined">refresh</span>
+                                    Reset
+                                </a>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <div id="entries-notification" class="entries-notification" role="status" aria-live="polite"></div>
+
+                <div class="card table-card">
+                    <div class="card-body">
+                        <?php if (!empty($receivingEntries)): ?>
+                            <div class="table-container">
+                                <table class="inventory-table receiving-entries-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Data</th>
+                                            <th>Furnizor</th>
+                                            <th>Produs</th>
+                                            <th>Cantitate</th>
+                                            <th>SKU</th>
+                                            <th>Factură</th>
+                                            <th>Verificată</th>
+                                            <th>Observații</th>
+                                            <th>Poze</th>
+                                            <th>Acțiuni</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <?php foreach ($receivingEntries as $entry): ?>
+                                            <?php
+                                                $photoData = $entry['photos'] ?? [];
+                                                $photoCount = count($photoData);
+                                                $photosJson = htmlspecialchars(json_encode($photoData, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), ENT_QUOTES, 'UTF-8');
+                                                $notesSegments = [];
+                                                if (!empty($entry['description_text'])) {
+                                                    $notesSegments[] = $entry['description_text'];
+                                                }
+                                                if (!empty($entry['item_notes'])) {
+                                                    $notesSegments[] = $entry['item_notes'];
+                                                }
+                                                $combinedNotes = trim(implode("\n\n", $notesSegments));
+                                                $invoicePath = $entry['invoice_file_path'] ?? '';
+                                                $invoiceUrl = '';
+                                                if (!empty($invoicePath)) {
+                                                    $normalized = ltrim($invoicePath, '/');
+                                                    if (strpos($normalized, 'storage/') !== 0) {
+                                                        $normalized = 'storage/' . $normalized;
+                                                    }
+                                                    $invoiceUrl = (defined('BASE_URL') ? rtrim(BASE_URL, '/') . '/' : '') . $normalized;
+                                                }
+                                                $quantityFormatted = number_format((float)$entry['received_quantity'], 3, '.', '');
+                                                $quantityFormatted = rtrim(rtrim($quantityFormatted, '0'), '.');
+                                                if ($quantityFormatted === '') {
+                                                    $quantityFormatted = '0';
+                                                }
+                                                $unitLabel = $entry['unit_of_measure'] ?? 'buc';
+                                                $verified = !empty($entry['invoice_verified']);
+                                            ?>
+                                            <tr data-receiving-item="<?= $entry['receiving_item_id'] ?>">
+                                                <td>
+                                                    <div class="table-date">
+                                                        <strong><?= $entry['received_at'] ? date('d.m.Y', strtotime($entry['received_at'])) : '-' ?></strong>
+                                                        <small><?= $entry['received_at'] ? date('H:i', strtotime($entry['received_at'])) : '' ?></small>
+                                                    </div>
+                                                    <div class="text-muted small">Sesiune <?= htmlspecialchars($entry['session_number'] ?? '-') ?></div>
+                                                </td>
+                                                <td>
+                                                    <div class="supplier-name"><?= htmlspecialchars($entry['supplier_name'] ?? '-') ?></div>
+                                                    <?php if (!empty($entry['order_number'])): ?>
+                                                        <div class="text-muted small">PO: <?= htmlspecialchars($entry['order_number']) ?></div>
+                                                    <?php endif; ?>
+                                                </td>
+                                                <td>
+                                                    <div class="product-name"><?= htmlspecialchars($entry['product_name'] ?? '-') ?></div>
+                                                </td>
+                                                <td>
+                                                    <strong><?= $quantityFormatted ?></strong> <span class="text-muted"><?= htmlspecialchars($unitLabel) ?></span>
+                                                </td>
+                                                <td><code class="sku-code"><?= htmlspecialchars($entry['sku'] ?? '-') ?></code></td>
+                                                <td>
+                                                    <?php if (!empty($invoiceUrl)): ?>
+                                                        <a href="<?= htmlspecialchars($invoiceUrl) ?>" target="_blank" class="invoice-link">
+                                                            <span class="material-symbols-outlined">description</span>
+                                                            <?= htmlspecialchars(basename($invoicePath)) ?>
+                                                        </a>
+                                                    <?php elseif (!empty($entry['purchase_order_id'])): ?>
+                                                        <button type="button" class="btn btn-sm btn-success entry-upload-invoice-btn" data-order-id="<?= $entry['purchase_order_id'] ?>">
+                                                            <span class="material-symbols-outlined">upload</span>
+                                                            Încarcă Factură
+                                                        </button>
+                                                    <?php else: ?>
+                                                        <span class="text-muted">Fără comandă</span>
+                                                    <?php endif; ?>
+                                                </td>
+                                                <td>
+                                                    <label class="invoice-verified-label">
+                                                        <input type="checkbox" class="invoice-verified-toggle" data-order-id="<?= $entry['purchase_order_id'] ?>"
+                                                               data-invoice-present="<?= !empty($invoiceUrl) ? '1' : '0' ?>"
+                                                               <?= (empty($invoiceUrl) || empty($entry['purchase_order_id'])) ? 'disabled' : '' ?> <?= $verified ? 'checked' : '' ?>>
+                                                        <span><?= $verified ? 'Verificată' : 'Neverificată' ?></span>
+                                                    </label>
+                                                    <?php if ($verified && !empty($entry['invoice_verified_at'])): ?>
+                                                        <div class="invoice-verified-meta">
+                                                            <span class="material-symbols-outlined">task_alt</span>
+                                                            <span><?= date('d.m.Y H:i', strtotime($entry['invoice_verified_at'])) ?></span>
+                                                            <?php if (!empty($entry['invoice_verified_by_name'])): ?>
+                                                                <span>de <?= htmlspecialchars($entry['invoice_verified_by_name']) ?></span>
+                                                            <?php endif; ?>
+                                                        </div>
+                                                    <?php endif; ?>
+                                                </td>
+                                                <td>
+                                                    <?php if (!empty($combinedNotes)): ?>
+                                                        <div class="entry-notes"><?= nl2br(htmlspecialchars($combinedNotes)) ?></div>
+                                                    <?php else: ?>
+                                                        <span class="text-muted">Fără observații</span>
+                                                    <?php endif; ?>
+                                                </td>
+                                                <td>
+                                                    <?php if ($photoCount > 0): ?>
+                                                        <div class="receiving-entry-photos">
+                                                            <?php foreach (array_slice($photoData, 0, 3) as $index => $photo): ?>
+                                                                <button type="button" class="entry-photo-thumb" data-photos='<?= $photosJson ?>' data-index="<?= $index ?>" title="Deschide galeria">
+                                                                    <img src="<?= htmlspecialchars($photo['thumbnail_url'] ?? $photo['url']) ?>" alt="Poză recepție">
+                                                                    <?php if ($index === 0 && $photoCount > 1): ?>
+                                                                        <span class="photo-count-badge">+<?= $photoCount - 1 ?></span>
+                                                                    <?php endif; ?>
+                                                                </button>
+                                                            <?php endforeach; ?>
+                                                        </div>
+                                                    <?php else: ?>
+                                                        <span class="text-muted">-</span>
+                                                    <?php endif; ?>
+                                                </td>
+                                                <td>
+                                                    <div class="entries-actions">
+                                                        <a class="btn btn-outline-secondary btn-sm" href="receiving_history.php?session_id=<?= $entry['receiving_session_id'] ?>" target="_blank">
+                                                            <span class="material-symbols-outlined">visibility</span>
+                                                            Detalii
+                                                        </a>
+                                                        <?php if (!empty($invoiceUrl)): ?>
+                                                            <a class="btn btn-outline-primary btn-sm" href="<?= htmlspecialchars($invoiceUrl) ?>" target="_blank" download>
+                                                                <span class="material-symbols-outlined">download</span>
+                                                                Descarcă
+                                                            </a>
+                                                        <?php endif; ?>
+                                                        <?php if (empty($invoiceUrl) && !empty($entry['purchase_order_id'])): ?>
+                                                            <button type="button" class="btn btn-outline-success btn-sm entry-upload-invoice-btn" data-order-id="<?= $entry['purchase_order_id'] ?>">
+                                                                <span class="material-symbols-outlined">upload_file</span>
+                                                                Factură
+                                                            </button>
+                                                        <?php endif; ?>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <?php if ($totalPages > 1): ?>
+                                <div class="pagination-container">
+                                    <div class="pagination-info">
+                                        Afișare <?= ($offset + 1) ?>-<?= min($offset + $pageSize, $totalCount) ?> din <?= number_format($totalCount) ?> intrări
+                                    </div>
+                                    <div class="pagination-controls">
+                                        <?php if ($page > 1): ?>
+                                            <a href="<?= $entriesPageLink($page - 1) ?>" class="pagination-btn">
+                                                <span class="material-symbols-outlined">chevron_left</span>
+                                                Anterior
+                                            </a>
+                                        <?php endif; ?>
+                                        <span class="pagination-current">Pagina <?= $page ?> din <?= $totalPages ?></span>
+                                        <?php if ($page < $totalPages): ?>
+                                            <a href="<?= $entriesPageLink($page + 1) ?>" class="pagination-btn">
+                                                Următor
+                                                <span class="material-symbols-outlined">chevron_right</span>
+                                            </a>
+                                        <?php endif; ?>
+                                    </div>
+                                </div>
+                            <?php endif; ?>
+                        <?php else: ?>
+                            <p>Nu există intrări de stoc pentru criteriile selectate.</p>
+                        <?php endif; ?>
+                    </div>
+                </div>
+
+                <input type="file" id="entries-invoice-upload" accept=".pdf,.jpg,.jpeg,.png" style="display:none;">
+
+                <div id="receiving-photo-modal" class="receiving-photo-modal" aria-hidden="true">
+                    <div class="receiving-photo-modal__backdrop" data-modal-dismiss></div>
+                    <div class="receiving-photo-modal__dialog" role="dialog" aria-modal="true">
+                        <button type="button" class="receiving-photo-modal__close" data-modal-dismiss aria-label="Închide">
+                            <span class="material-symbols-outlined">close</span>
+                        </button>
+                        <div class="receiving-photo-modal__image-wrapper">
+                            <img id="receiving-photo-modal-image" src="" alt="Imagine recepție">
+                        </div>
+                        <div class="receiving-photo-modal__footer">
+                            <button type="button" class="receiving-photo-modal__nav receiving-photo-modal__nav--prev" data-modal-nav="prev" aria-label="Imagine anterioară">
+                                <span class="material-symbols-outlined">chevron_left</span>
+                            </button>
+                            <div class="receiving-photo-modal__caption">
+                                <span id="receiving-photo-modal-filename"></span>
+                                <span id="receiving-photo-modal-counter"></span>
+                            </div>
+                            <button type="button" class="receiving-photo-modal__nav receiving-photo-modal__nav--next" data-modal-nav="next" aria-label="Imagine următoare">
+                                <span class="material-symbols-outlined">chevron_right</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
                 <?php else: ?>
                 <!-- View Controls -->
                 <div class="card card--searchable">
@@ -756,6 +1134,11 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                    class="toggle-link <?= $view === 'movements' ? 'active' : '' ?>">
                                     <span class="material-symbols-outlined">swap_horiz</span>
                                     Mișcări Stocuri
+                                </a>
+                                <a href="?view=entries"
+                                   class="toggle-link <?= $view === 'entries' ? 'active' : '' ?>">
+                                    <span class="material-symbols-outlined">receipt_long</span>
+                                    Intrări Stoc
                                 </a>
                             </div>
                         </div>

@@ -816,6 +816,9 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                     Intrări Stoc
                                 </a>
                             </div>
+                            <button type="button" class="receiving-photo-modal__nav receiving-photo-modal__nav--next" data-modal-nav="next" aria-label="Imagine următoare">
+                                <span class="material-symbols-outlined">chevron_right</span>
+                            </button>
                         </div>
                     </div>
                     <div class="card-body">

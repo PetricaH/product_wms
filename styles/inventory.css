@@ -306,7 +306,6 @@
 }
 
 .receiving-photo-modal__dialog {
-    background: var(--container-background);
     border-radius: 12px;
     width: min(90vw, 720px);
     box-shadow: 0 20px 40px rgba(15, 23, 42, 0.35);
@@ -331,11 +330,12 @@
     position: absolute;
     top: 0.75rem;
     right: 0.75rem;
-    background: rgba(15, 23, 42, 0.05);
+    color: whitesmoke;
     border: none;
     border-radius: 999px;
     padding: 0.4rem;
     cursor: pointer;
+    background-color: transparent;
 }
 
 .receiving-photo-modal__footer {
@@ -364,6 +364,7 @@
     align-items: center;
     justify-content: center;
     cursor: pointer;
+    color: whitesmoke;
 }
 
 .entry-session-note {

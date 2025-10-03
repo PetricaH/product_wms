@@ -152,10 +152,6 @@
             cursor: pointer;
         }
 
-        main {
-            padding-top: 88px;
-        }
-
         section {
             padding: 5rem 1.5rem;
         }

@@ -71,23 +71,32 @@ if (
 
     try {
         if (!empty($skus)) {
-            $lookupStatement = $db->prepare(
-                'SELECT l.code AS location_code, l.name AS location_name
-                 FROM inventory i
-                 JOIN locations l ON i.location_id = l.id
-                 WHERE i.sku = ?
-                 LIMIT 1'
-            );
+            $placeholders = implode(',', array_fill(0, count($skus), '?'));
+            $lookupQuery = <<<SQL
+                SELECT
+                    TRIM(COALESCE(p.sku, '')) AS sku,
+                    COALESCE(l.location_code, '') AS location_code,
+                    COALESCE(l.name, '') AS location_name
+                FROM inventory i
+                INNER JOIN products p ON i.product_id = p.product_id
+                INNER JOIN locations l ON i.location_id = l.id
+                WHERE p.sku IN ($placeholders)
+                ORDER BY i.quantity DESC, i.received_at DESC
+            SQL;
 
-            foreach ($skus as $sku) {
-                $lookupStatement->execute([$sku]);
-                $row = $lookupStatement->fetch(PDO::FETCH_ASSOC);
-                if ($row) {
-                    $locations[$sku] = [
-                        'location_code' => $row['location_code'] ?? '',
-                        'location_name' => $row['location_name'] ?? ''
-                    ];
+            $lookupStatement = $db->prepare($lookupQuery);
+            $lookupStatement->execute($skus);
+
+            while ($row = $lookupStatement->fetch(PDO::FETCH_ASSOC)) {
+                $sku = $row['sku'] ?? '';
+                if ($sku === '' || isset($locations[$sku])) {
+                    continue;
                 }
+
+                $locations[$sku] = [
+                    'location_code' => $row['location_code'] ?? '',
+                    'location_name' => $row['location_name'] ?? ''
+                ];
             }
         }
 
@@ -671,7 +680,50 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
             flex-wrap: wrap;
         }
 
+        .invoice-process-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            transition: background-color 0.2s ease, opacity 0.2s ease;
+        }
+
+        .invoice-process-btn[disabled] {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .invoice-process-btn .material-symbols-outlined {
+            transition: transform 0.3s ease;
+        }
+
+        .invoice-process-btn.is-loading .material-symbols-outlined {
+            animation: invoice-spin 1s linear infinite;
+        }
+
+        .invoice-process-hint {
+            font-size: 0.9rem;
+            color: var(--text-muted, #64748b);
+        }
+
+        .invoice-process-hint[hidden] {
+            display: none;
+        }
+
+        .invoice-reset-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+        .invoice-reset-btn[disabled] {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
         .invoice-status {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
             min-height: 1.5rem;
             font-size: 0.95rem;
             color: var(--text-secondary, #475569);
@@ -679,6 +731,16 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
 
         .invoice-status.invoice-status--loading {
             color: #2563eb;
+        }
+
+        .invoice-status.invoice-status--loading::before {
+            content: '';
+            width: 1rem;
+            height: 1rem;
+            border-radius: 999px;
+            border: 2px solid rgba(37, 99, 235, 0.2);
+            border-top-color: rgba(37, 99, 235, 0.85);
+            animation: invoice-spin 0.9s linear infinite;
         }
 
         .invoice-status.invoice-status--success {
@@ -804,6 +866,15 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
         .invoice-tag--new {
             background: rgba(37, 99, 235, 0.08);
             color: #1d4ed8;
+        }
+
+        @keyframes invoice-spin {
+            from {
+                transform: rotate(0deg);
+            }
+            to {
+                transform: rotate(360deg);
+            }
         }
 
         @media (max-width: 768px) {
@@ -1152,12 +1223,17 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                             </div>
                         </div>
                         <div class="invoice-actions">
-                            <button type="button" class="btn btn-primary" id="invoice-process-btn" disabled>
-                                <span class="material-symbols-outlined">auto_awesome</span>
-                                Procesează Factură
+                            <button type="button" class="btn btn-primary invoice-process-btn" id="invoice-process-btn" disabled>
+                                <span class="material-symbols-outlined invoice-process-btn__icon" aria-hidden="true">auto_awesome</span>
+                                <span class="invoice-process-btn__label">Procesează Factură</span>
+                            </button>
+                            <button type="button" class="btn btn-outline-secondary invoice-reset-btn" id="invoice-reset-btn" disabled>
+                                <span class="material-symbols-outlined" aria-hidden="true">close</span>
+                                Renunță
                             </button>
                         </div>
-                        <p id="invoice-process-status" class="invoice-status" role="status"></p>
+                        <p id="invoice-process-hint" class="invoice-process-hint">Încarcă o factură pentru a activa procesarea.</p>
+                        <p id="invoice-process-status" class="invoice-status" role="status" aria-live="polite"></p>
                         <div id="invoice-feedback" class="invoice-feedback" role="alert"></div>
                         <div id="invoice-result" class="invoice-result" hidden>
                             <div class="invoice-summary" id="invoice-summary"></div>
@@ -1603,6 +1679,11 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                    class="toggle-link <?= $view === 'entries' ? 'active' : '' ?>">
                                     <span class="material-symbols-outlined">receipt_long</span>
                                     Intrări Stoc
+                                </a>
+                                <a href="?view=invoice-ai"
+                                   class="toggle-link <?= $view === 'invoice-ai' ? 'active' : '' ?>">
+                                    <span class="material-symbols-outlined">smart_toy</span>
+                                    Procesare Facturi
                                 </a>
                             </div>
                         </div>
@@ -2207,7 +2288,10 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
             const selectedFileName = document.getElementById('invoice-selected-file-name');
             const removeFileBtn = document.getElementById('invoice-remove-file');
             const processBtn = document.getElementById('invoice-process-btn');
-            const processBtnInitialContent = processBtn ? processBtn.innerHTML : '';
+            const processBtnIcon = processBtn ? processBtn.querySelector('.invoice-process-btn__icon') : null;
+            const processBtnLabel = processBtn ? processBtn.querySelector('.invoice-process-btn__label') : null;
+            const processHint = document.getElementById('invoice-process-hint');
+            const resetBtn = document.getElementById('invoice-reset-btn');
             const statusEl = document.getElementById('invoice-process-status');
             const feedbackEl = document.getElementById('invoice-feedback');
             const resultSection = document.getElementById('invoice-result');
@@ -2227,24 +2311,82 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
             let extractedData = null;
             let productLocations = {};
             let pendingAction = null;
+            let isProcessing = false;
+            let isSubmittingAction = false;
+
+            function updateProcessHint() {
+                if (!processHint) {
+                    return;
+                }
+                if (selectedFile) {
+                    processHint.setAttribute('hidden', 'hidden');
+                    processHint.setAttribute('aria-hidden', 'true');
+                } else {
+                    processHint.removeAttribute('hidden');
+                    processHint.setAttribute('aria-hidden', 'false');
+                }
+            }
+
+            function updateResetBtnState() {
+                if (!resetBtn) {
+                    return;
+                }
+                const hasFile = Boolean(selectedFile);
+                const hasResult = Boolean(extractedData) || (resultSection && !resultSection.hidden);
+                const hasFeedback = Boolean(feedbackEl && feedbackEl.textContent && feedbackEl.textContent.trim().length);
+                const hasStatus = Boolean(statusEl && statusEl.textContent && statusEl.textContent.trim().length);
+                const shouldEnable = hasFile || hasResult || hasFeedback || hasStatus;
+                resetBtn.disabled = !shouldEnable || isProcessing || isSubmittingAction;
+            }
+
+            function setProcessButtonState(options = {}) {
+                if (!processBtn) {
+                    return;
+                }
+                const { loading = false, enabled = true } = options;
+                if (loading) {
+                    processBtn.disabled = true;
+                    processBtn.classList.add('is-loading');
+                    processBtn.setAttribute('aria-busy', 'true');
+                    if (processBtnIcon) {
+                        processBtnIcon.textContent = 'autorenew';
+                    }
+                    if (processBtnLabel) {
+                        processBtnLabel.textContent = 'Se procesează...';
+                    }
+                } else {
+                    processBtn.classList.remove('is-loading');
+                    processBtn.removeAttribute('aria-busy');
+                    if (processBtnIcon) {
+                        processBtnIcon.textContent = 'auto_awesome';
+                    }
+                    if (processBtnLabel) {
+                        processBtnLabel.textContent = 'Procesează Factură';
+                    }
+                    processBtn.disabled = !enabled;
+                }
+            }
 
             function setStatus(message, variant) {
                 if (!statusEl) return;
                 const baseClass = 'invoice-status';
                 statusEl.textContent = message || '';
                 statusEl.className = variant ? `${baseClass} invoice-status--${variant}` : baseClass;
+                updateResetBtnState();
             }
 
             function clearFeedback() {
                 if (!feedbackEl) return;
                 feedbackEl.textContent = '';
                 feedbackEl.className = 'invoice-feedback';
+                updateResetBtnState();
             }
 
             function setFeedback(message, type) {
                 if (!feedbackEl) return;
                 feedbackEl.textContent = message || '';
                 feedbackEl.className = message ? `invoice-feedback invoice-feedback--${type}` : 'invoice-feedback';
+                updateResetBtnState();
             }
 
             function formatFileSize(bytes) {
@@ -2297,6 +2439,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                 productLocations = {};
                 pendingAction = null;
                 setStatus('', '');
+                updateResetBtnState();
             }
 
             function clearFile() {
@@ -2310,11 +2453,10 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                 if (selectedFileName) {
                     selectedFileName.textContent = '';
                 }
-                if (processBtn) {
-                    processBtn.disabled = true;
-                    processBtn.innerHTML = processBtnInitialContent;
-                }
                 clearResult();
+                setProcessButtonState({ loading: false, enabled: false });
+                updateProcessHint();
+                updateResetBtnState();
             }
 
             function isValidFile(file) {
@@ -2349,11 +2491,12 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                     selectedFileName.textContent = sizeLabel ? `${file.name} (${sizeLabel})` : file.name;
                 }
                 if (processBtn) {
-                    processBtn.disabled = false;
-                    processBtn.innerHTML = processBtnInitialContent;
+                    setProcessButtonState({ loading: false, enabled: true });
                 }
                 clearResult();
                 setStatus('Fișier pregătit pentru procesare.', '');
+                updateProcessHint();
+                updateResetBtnState();
             }
 
             if (removeFileBtn) {
@@ -2406,6 +2549,25 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                     handleSelectedFile(file);
                 });
             }
+
+            if (resetBtn) {
+                resetBtn.addEventListener('click', function () {
+                    if (isProcessing || isSubmittingAction) {
+                        return;
+                    }
+                    closeConfirmModal();
+                    clearFeedback();
+                    clearFile();
+                    setStatus('', '');
+                    updateProcessHint();
+                    updateResetBtnState();
+                    dropZone.focus();
+                });
+            }
+
+            updateProcessHint();
+            updateResetBtnState();
+            setProcessButtonState({ loading: false, enabled: Boolean(selectedFile) });
 
             async function lookupProductLocations(products) {
                 const skus = Array.from(new Set((products || []).map(function (product) {
@@ -2534,6 +2696,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                 actionButtons.forEach(function (button) {
                     button.disabled = products.length === 0;
                 });
+                updateResetBtnState();
             }
 
             async function processInvoice() {
@@ -2541,9 +2704,10 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                     return;
                 }
                 clearFeedback();
+                isProcessing = true;
+                updateResetBtnState();
                 setStatus('AI procesează factura...', 'loading');
-                processBtn.disabled = true;
-                processBtn.innerHTML = '<span class="material-symbols-outlined">autorenew</span> Se procesează...';
+                setProcessButtonState({ loading: true });
 
                 try {
                     const formData = new FormData();
@@ -2576,13 +2740,11 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                 } catch (error) {
                     console.error(error);
                     clearResult();
-                    setStatus('', '');
                     setFeedback(error.message || 'A apărut o eroare la procesarea facturii.', 'error');
                 } finally {
-                    if (processBtn) {
-                        processBtn.disabled = !selectedFile;
-                        processBtn.innerHTML = processBtnInitialContent;
-                    }
+                    isProcessing = false;
+                    setProcessButtonState({ loading: false, enabled: Boolean(selectedFile) });
+                    updateResetBtnState();
                 }
             }
 
@@ -2676,6 +2838,8 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                     confirmBtn.textContent = 'Se procesează...';
                 }
                 setStatus('Se aplică actualizarea de stoc...', 'loading');
+                isSubmittingAction = true;
+                updateResetBtnState();
 
                 try {
                     const payload = {
@@ -2708,10 +2872,12 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                     console.error(error);
                     setFeedback(error.message || 'A apărut o eroare la actualizarea stocului.', 'error');
                 } finally {
+                    isSubmittingAction = false;
                     if (confirmBtn) {
                         confirmBtn.disabled = false;
                         confirmBtn.textContent = 'Confirmă';
                     }
+                    updateResetBtnState();
                 }
             }
 

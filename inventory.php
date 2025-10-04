@@ -45,6 +45,76 @@ $userModel = new Users($db);
 $barcodeTaskModel = new BarcodeCaptureTask($db);
 $sellerModel = new Seller($db);
 
+if (
+    $_SERVER['REQUEST_METHOD'] === 'POST'
+    && ($_POST['ajax_action'] ?? '') === 'lookup_invoice_locations'
+) {
+    header('Content-Type: application/json; charset=utf-8');
+
+    $skuPayload = $_POST['skus'] ?? '[]';
+    $decodedSkus = json_decode($skuPayload, true);
+
+    if (json_last_error() !== JSON_ERROR_NONE || !is_array($decodedSkus)) {
+        http_response_code(400);
+        echo json_encode([
+            'success' => false,
+            'message' => 'Lista de SKU-uri este invalidă.'
+        ]);
+        exit;
+    }
+
+    $skus = array_values(array_unique(array_filter(array_map(static function ($value) {
+        return is_string($value) ? trim($value) : '';
+    }, $decodedSkus))));
+
+    $locations = [];
+
+    try {
+        if (!empty($skus)) {
+            $placeholders = implode(',', array_fill(0, count($skus), '?'));
+            $lookupQuery = <<<SQL
+                SELECT
+                    TRIM(COALESCE(p.sku, '')) AS sku,
+                    COALESCE(l.location_code, '') AS location_code,
+                    COALESCE(l.name, '') AS location_name
+                FROM inventory i
+                INNER JOIN products p ON i.product_id = p.product_id
+                INNER JOIN locations l ON i.location_id = l.id
+                WHERE p.sku IN ($placeholders)
+                ORDER BY i.quantity DESC, i.received_at DESC
+            SQL;
+
+            $lookupStatement = $db->prepare($lookupQuery);
+            $lookupStatement->execute($skus);
+
+            while ($row = $lookupStatement->fetch(PDO::FETCH_ASSOC)) {
+                $sku = $row['sku'] ?? '';
+                if ($sku === '' || isset($locations[$sku])) {
+                    continue;
+                }
+
+                $locations[$sku] = [
+                    'location_code' => $row['location_code'] ?? '',
+                    'location_name' => $row['location_name'] ?? ''
+                ];
+            }
+        }
+
+        echo json_encode([
+            'success' => true,
+            'locations' => $locations
+        ]);
+    } catch (Throwable $exception) {
+        http_response_code(500);
+        echo json_encode([
+            'success' => false,
+            'message' => 'Nu s-au putut prelua locațiile produselor.'
+        ]);
+    }
+
+    exit;
+}
+
 $transactionTypes = [
     'receive' => ['label' => 'Primire', 'color' => 'success', 'icon' => '📦'],
     'move' => ['label' => 'Mutare', 'color' => 'info', 'icon' => '🔄'],
@@ -329,6 +399,10 @@ switch ($view) {
         $totalCount = count($allInventory);
         $inventory = array_slice($allInventory, $offset, $pageSize);
         break;
+    case 'invoice-ai':
+        $inventory = [];
+        $totalCount = 0;
+        break;
     case 'movements':
         $pageSize = isset($_GET['page_size']) && in_array((int)$_GET['page_size'], [25,50,100])
             ? (int)$_GET['page_size'] : 25;
@@ -513,6 +587,310 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
             font-weight: 500;
             color: #1f2937;
         }
+
+        .invoice-processing-card .card-body {
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        .invoice-processing-intro {
+            font-size: 1rem;
+            line-height: 1.6;
+            color: var(--text-secondary, #475569);
+            margin: 0;
+        }
+
+        .invoice-upload-wrapper {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        .invoice-drop-zone {
+            border: 2px dashed rgba(37, 99, 235, 0.35);
+            border-radius: 18px;
+            padding: 2.25rem 1.5rem;
+            text-align: center;
+            background: var(--surface-background, #f8fafc);
+            transition: border-color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease;
+            cursor: pointer;
+            outline: none;
+        }
+
+        .invoice-drop-zone .material-symbols-outlined {
+            font-size: 3rem;
+            display: block;
+            margin-bottom: 0.75rem;
+            color: rgba(37, 99, 235, 0.75);
+        }
+
+        .invoice-drop-zone strong {
+            display: block;
+            color: var(--text-primary, #0f172a);
+            margin-bottom: 0.25rem;
+            font-size: 1.05rem;
+        }
+
+        .invoice-drop-zone p {
+            margin: 0.25rem 0;
+            color: var(--text-secondary, #475569);
+        }
+
+        .invoice-file-hint {
+            font-size: 0.9rem;
+            color: var(--text-muted, #64748b);
+        }
+
+        .invoice-drop-zone:focus,
+        .invoice-drop-zone.dragover {
+            border-color: rgba(37, 99, 235, 0.8);
+            background: rgba(37, 99, 235, 0.08);
+            box-shadow: 0 10px 30px rgba(37, 99, 235, 0.15);
+        }
+
+        .invoice-selected-file {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            background: rgba(37, 99, 235, 0.08);
+            border-radius: 12px;
+            padding: 0.75rem 1rem;
+            color: var(--text-primary, #0f172a);
+        }
+
+        .invoice-selected-file .material-symbols-outlined {
+            font-size: 1.5rem;
+            color: rgba(37, 99, 235, 0.8);
+        }
+
+        .invoice-selected-file button {
+            margin-left: auto;
+            border: none;
+            background: none;
+            color: rgba(220, 38, 38, 0.9);
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .invoice-actions {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .invoice-process-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            transition: background-color 0.2s ease, opacity 0.2s ease;
+        }
+
+        .invoice-process-btn[disabled] {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .invoice-process-btn .material-symbols-outlined {
+            transition: transform 0.3s ease;
+        }
+
+        .invoice-process-btn.is-loading .material-symbols-outlined {
+            animation: invoice-spin 1s linear infinite;
+        }
+
+        .invoice-process-hint {
+            font-size: 0.9rem;
+            color: var(--text-muted, #64748b);
+        }
+
+        .invoice-process-hint[hidden] {
+            display: none;
+        }
+
+        .invoice-reset-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+        .invoice-reset-btn[disabled] {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .invoice-status {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            min-height: 1.5rem;
+            font-size: 0.95rem;
+            color: var(--text-secondary, #475569);
+        }
+
+        .invoice-status.invoice-status--loading {
+            color: #2563eb;
+        }
+
+        .invoice-status.invoice-status--loading::before {
+            content: '';
+            width: 1rem;
+            height: 1rem;
+            border-radius: 999px;
+            border: 2px solid rgba(37, 99, 235, 0.2);
+            border-top-color: rgba(37, 99, 235, 0.85);
+            animation: invoice-spin 0.9s linear infinite;
+        }
+
+        .invoice-status.invoice-status--success {
+            color: #16a34a;
+        }
+
+        .invoice-status.invoice-status--error {
+            color: #dc2626;
+        }
+
+        .invoice-feedback {
+            border-radius: 12px;
+            padding: 0.85rem 1rem;
+            border: 1px solid transparent;
+            display: none;
+            font-weight: 500;
+        }
+
+        .invoice-feedback.invoice-feedback--success {
+            display: block;
+            background: rgba(22, 163, 74, 0.12);
+            border-color: rgba(22, 163, 74, 0.35);
+            color: #166534;
+        }
+
+        .invoice-feedback.invoice-feedback--error {
+            display: block;
+            background: rgba(220, 38, 38, 0.12);
+            border-color: rgba(220, 38, 38, 0.35);
+            color: #b91c1c;
+        }
+
+        .invoice-feedback.invoice-feedback--warning {
+            display: block;
+            background: rgba(234, 179, 8, 0.12);
+            border-color: rgba(234, 179, 8, 0.35);
+            color: #b45309;
+        }
+
+        .invoice-result {
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        .invoice-summary {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        .invoice-summary-item {
+            flex: 1 1 200px;
+            background: var(--surface-background, #f8fafc);
+            border-radius: 12px;
+            padding: 1rem 1.25rem;
+            border: 1px solid var(--border-color, rgba(148, 163, 184, 0.35));
+        }
+
+        .invoice-summary-label {
+            font-size: 0.8rem;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            color: var(--text-muted, #64748b);
+            display: block;
+            margin-bottom: 0.35rem;
+        }
+
+        .invoice-summary-value {
+            font-size: 1.15rem;
+            font-weight: 600;
+            color: var(--text-primary, #0f172a);
+        }
+
+        .invoice-supplier {
+            font-size: 1rem;
+            color: var(--text-secondary, #475569);
+            font-weight: 500;
+        }
+
+        .invoice-table td {
+            vertical-align: middle;
+        }
+
+        .invoice-quantity {
+            font-weight: 600;
+            color: var(--text-primary, #0f172a);
+        }
+
+        .invoice-unit {
+            font-size: 0.85rem;
+            color: var(--text-muted, #64748b);
+            margin-left: 0.35rem;
+        }
+
+        .invoice-action-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+            justify-content: flex-start;
+        }
+
+        .invoice-action-btn {
+            min-width: 210px;
+            font-size: 1rem;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            padding: 0.85rem 1.5rem;
+        }
+
+        .invoice-tag {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.35rem 0.65rem;
+            border-radius: 999px;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+
+        .invoice-tag--new {
+            background: rgba(37, 99, 235, 0.08);
+            color: #1d4ed8;
+        }
+
+        @keyframes invoice-spin {
+            from {
+                transform: rotate(0deg);
+            }
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        @media (max-width: 768px) {
+            .invoice-drop-zone {
+                padding: 1.75rem 1rem;
+            }
+
+            .invoice-action-buttons {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .invoice-action-btn {
+                width: 100%;
+            }
+        }
     </style>
     <title>Gestionare Inventar - WMS</title>
 </head>
@@ -614,6 +992,10 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                     <a href="?view=entries" class="toggle-link <?= $view === 'entries' ? 'active' : '' ?>">
                                         <span class="material-symbols-outlined">receipt_long</span>
                                         Intrări Stoc
+                                    </a>
+                                    <a href="?view=invoice-ai" class="toggle-link <?= $view === 'invoice-ai' ? 'active' : '' ?>">
+                                        <span class="material-symbols-outlined">smart_toy</span>
+                                        Procesare Facturi
                                     </a>
                                 </div>
                             </div>
@@ -789,6 +1171,119 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                     </div>
                 </div>
             </div>
+                <?php elseif ($view === 'invoice-ai'): ?>
+                <div class="card invoice-processing-card">
+                    <div class="card-header">
+                        <h3 class="card-title">Procesare Facturi cu AI</h3>
+                        <div class="card-actions">
+                            <div class="view-toggle">
+                                <a href="?view=detailed" class="toggle-link <?= $view === 'detailed' ? 'active' : '' ?>">
+                                    <span class="material-symbols-outlined">table_view</span>
+                                    Detaliat
+                                </a>
+                                <a href="?view=summary" class="toggle-link <?= $view === 'summary' ? 'active' : '' ?>">
+                                    <span class="material-symbols-outlined">dashboard</span>
+                                    Sumar
+                                </a>
+                                <a href="?view=low-stock" class="toggle-link <?= $view === 'low-stock' ? 'active' : '' ?>">
+                                    <span class="material-symbols-outlined">warning</span>
+                                    Stoc Scăzut
+                                </a>
+                                <a href="?view=movements" class="toggle-link <?= $view === 'movements' ? 'active' : '' ?>">
+                                    <span class="material-symbols-outlined">swap_horiz</span>
+                                    Mișcări Stocuri
+                                </a>
+                                <a href="?view=entries" class="toggle-link <?= $view === 'entries' ? 'active' : '' ?>">
+                                    <span class="material-symbols-outlined">receipt_long</span>
+                                    Intrări Stoc
+                                </a>
+                                <a href="?view=invoice-ai" class="toggle-link <?= $view === 'invoice-ai' ? 'active' : '' ?>">
+                                    <span class="material-symbols-outlined">smart_toy</span>
+                                    Procesare Facturi
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <p class="invoice-processing-intro">
+                            Încarcă o factură pentru procesare automată cu AI. Sistemul va extrage produsele și cantitățile automat.
+                        </p>
+                        <div class="invoice-upload-wrapper">
+                            <div id="invoice-drop-zone" class="invoice-drop-zone" tabindex="0" role="button" aria-label="Încarcă factură">
+                                <span class="material-symbols-outlined">cloud_upload</span>
+                                <strong>Trage și plasează fișierul aici</strong>
+                                <p>sau apasă pentru a selecta din calculator</p>
+                                <p class="invoice-file-hint">Formate acceptate: PDF, JPG, PNG</p>
+                                <input type="file" id="invoice-file-input" accept=".pdf,.jpg,.jpeg,.png" hidden>
+                            </div>
+                            <div id="invoice-selected-file" class="invoice-selected-file" hidden>
+                                <span class="material-symbols-outlined">description</span>
+                                <span id="invoice-selected-file-name"></span>
+                                <button type="button" id="invoice-remove-file">Șterge</button>
+                            </div>
+                        </div>
+                        <div class="invoice-actions">
+                            <button type="button" class="btn btn-primary invoice-process-btn" id="invoice-process-btn" disabled>
+                                <span class="material-symbols-outlined invoice-process-btn__icon" aria-hidden="true">auto_awesome</span>
+                                <span class="invoice-process-btn__label">Procesează Factură</span>
+                            </button>
+                            <button type="button" class="btn btn-outline-secondary invoice-reset-btn" id="invoice-reset-btn" disabled>
+                                <span class="material-symbols-outlined" aria-hidden="true">close</span>
+                                Renunță
+                            </button>
+                        </div>
+                        <p id="invoice-process-hint" class="invoice-process-hint">Încarcă o factură pentru a activa procesarea.</p>
+                        <p id="invoice-process-status" class="invoice-status" role="status" aria-live="polite"></p>
+                        <div id="invoice-feedback" class="invoice-feedback" role="alert"></div>
+                        <div id="invoice-result" class="invoice-result" hidden>
+                            <div class="invoice-summary" id="invoice-summary"></div>
+                            <div class="invoice-supplier" id="invoice-supplier"></div>
+                            <div class="table-container">
+                                <table class="table invoice-table">
+                                    <thead>
+                                        <tr>
+                                            <th>SKU</th>
+                                            <th>Produs</th>
+                                            <th>Cantitate</th>
+                                            <th>Preț</th>
+                                            <th>Locație</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="invoice-products-body"></tbody>
+                                </table>
+                            </div>
+                            <div class="invoice-action-buttons">
+                                <button type="button" class="btn btn-success invoice-action-btn" data-action="add_stock" disabled>
+                                    ✓ Adaugă în Stoc
+                                </button>
+                                <button type="button" class="btn btn-danger invoice-action-btn" data-action="remove_stock" disabled>
+                                    ✗ Scade din Stoc
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="modal" id="invoice-confirm-modal" aria-hidden="true">
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h3 class="modal-title">Confirmă acțiunea</h3>
+                                <button class="modal-close" type="button" id="invoice-modal-close">
+                                    <span class="material-symbols-outlined">close</span>
+                                </button>
+                            </div>
+                            <div class="modal-body">
+                                <p id="invoice-confirm-message"></p>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" id="invoice-modal-cancel">Anulează</button>
+                                <button type="button" class="btn btn-primary" id="invoice-modal-confirm">Confirmă</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <?php elseif ($view === 'entries'): ?>
                 <div class="card card--searchable receiving-entries-card">
                     <div class="card-header">
@@ -814,6 +1309,10 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                 <a href="?view=entries" class="toggle-link <?= $view === 'entries' ? 'active' : '' ?>">
                                     <span class="material-symbols-outlined">receipt_long</span>
                                     Intrări Stoc
+                                </a>
+                                <a href="?view=invoice-ai" class="toggle-link <?= $view === 'invoice-ai' ? 'active' : '' ?>">
+                                    <span class="material-symbols-outlined">smart_toy</span>
+                                    Procesare Facturi
                                 </a>
                             </div>
                             <button type="button" class="receiving-photo-modal__nav receiving-photo-modal__nav--next" data-modal-nav="next" aria-label="Imagine următoare">
@@ -1180,6 +1679,11 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                    class="toggle-link <?= $view === 'entries' ? 'active' : '' ?>">
                                     <span class="material-symbols-outlined">receipt_long</span>
                                     Intrări Stoc
+                                </a>
+                                <a href="?view=invoice-ai"
+                                   class="toggle-link <?= $view === 'invoice-ai' ? 'active' : '' ?>">
+                                    <span class="material-symbols-outlined">smart_toy</span>
+                                    Procesare Facturi
                                 </a>
                             </div>
                         </div>
@@ -1771,5 +2275,626 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
             </div>
         </div>
     </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const dropZone = document.getElementById('invoice-drop-zone');
+            if (!dropZone) {
+                return;
+            }
+
+            const fileInput = document.getElementById('invoice-file-input');
+            const selectedFileContainer = document.getElementById('invoice-selected-file');
+            const selectedFileName = document.getElementById('invoice-selected-file-name');
+            const removeFileBtn = document.getElementById('invoice-remove-file');
+            const processBtn = document.getElementById('invoice-process-btn');
+            const processBtnIcon = processBtn ? processBtn.querySelector('.invoice-process-btn__icon') : null;
+            const processBtnLabel = processBtn ? processBtn.querySelector('.invoice-process-btn__label') : null;
+            const processHint = document.getElementById('invoice-process-hint');
+            const resetBtn = document.getElementById('invoice-reset-btn');
+            const statusEl = document.getElementById('invoice-process-status');
+            const feedbackEl = document.getElementById('invoice-feedback');
+            const resultSection = document.getElementById('invoice-result');
+            const summaryContainer = document.getElementById('invoice-summary');
+            const supplierEl = document.getElementById('invoice-supplier');
+            const productsBody = document.getElementById('invoice-products-body');
+            const actionButtons = Array.from(document.querySelectorAll('.invoice-action-btn'));
+            const confirmModal = document.getElementById('invoice-confirm-modal');
+            const confirmMessage = document.getElementById('invoice-confirm-message');
+            const confirmBtn = document.getElementById('invoice-modal-confirm');
+            const cancelBtn = document.getElementById('invoice-modal-cancel');
+            const closeBtn = document.getElementById('invoice-modal-close');
+            const csrfMeta = document.querySelector('meta[name="csrf-token"]');
+            const csrfToken = csrfMeta ? csrfMeta.getAttribute('content') : '';
+
+            let selectedFile = null;
+            let extractedData = null;
+            let productLocations = {};
+            let pendingAction = null;
+            let isProcessing = false;
+            let isSubmittingAction = false;
+
+            function updateProcessHint() {
+                if (!processHint) {
+                    return;
+                }
+                if (selectedFile) {
+                    processHint.setAttribute('hidden', 'hidden');
+                    processHint.setAttribute('aria-hidden', 'true');
+                } else {
+                    processHint.removeAttribute('hidden');
+                    processHint.setAttribute('aria-hidden', 'false');
+                }
+            }
+
+            function updateResetBtnState() {
+                if (!resetBtn) {
+                    return;
+                }
+                const hasFile = Boolean(selectedFile);
+                const hasResult = Boolean(extractedData) || (resultSection && !resultSection.hidden);
+                const hasFeedback = Boolean(feedbackEl && feedbackEl.textContent && feedbackEl.textContent.trim().length);
+                const hasStatus = Boolean(statusEl && statusEl.textContent && statusEl.textContent.trim().length);
+                const shouldEnable = hasFile || hasResult || hasFeedback || hasStatus;
+                resetBtn.disabled = !shouldEnable || isProcessing || isSubmittingAction;
+            }
+
+            function setProcessButtonState(options = {}) {
+                if (!processBtn) {
+                    return;
+                }
+                const { loading = false, enabled = true } = options;
+                if (loading) {
+                    processBtn.disabled = true;
+                    processBtn.classList.add('is-loading');
+                    processBtn.setAttribute('aria-busy', 'true');
+                    if (processBtnIcon) {
+                        processBtnIcon.textContent = 'autorenew';
+                    }
+                    if (processBtnLabel) {
+                        processBtnLabel.textContent = 'Se procesează...';
+                    }
+                } else {
+                    processBtn.classList.remove('is-loading');
+                    processBtn.removeAttribute('aria-busy');
+                    if (processBtnIcon) {
+                        processBtnIcon.textContent = 'auto_awesome';
+                    }
+                    if (processBtnLabel) {
+                        processBtnLabel.textContent = 'Procesează Factură';
+                    }
+                    processBtn.disabled = !enabled;
+                }
+            }
+
+            function setStatus(message, variant) {
+                if (!statusEl) return;
+                const baseClass = 'invoice-status';
+                statusEl.textContent = message || '';
+                statusEl.className = variant ? `${baseClass} invoice-status--${variant}` : baseClass;
+                updateResetBtnState();
+            }
+
+            function clearFeedback() {
+                if (!feedbackEl) return;
+                feedbackEl.textContent = '';
+                feedbackEl.className = 'invoice-feedback';
+                updateResetBtnState();
+            }
+
+            function setFeedback(message, type) {
+                if (!feedbackEl) return;
+                feedbackEl.textContent = message || '';
+                feedbackEl.className = message ? `invoice-feedback invoice-feedback--${type}` : 'invoice-feedback';
+                updateResetBtnState();
+            }
+
+            function formatFileSize(bytes) {
+                if (!Number.isFinite(bytes)) return '';
+                if (bytes >= 1024 * 1024) {
+                    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+                }
+                if (bytes >= 1024) {
+                    return `${(bytes / 1024).toFixed(1)} KB`;
+                }
+                return `${bytes} B`;
+            }
+
+            function formatQuantity(value) {
+                const numeric = Number(value);
+                if (Number.isFinite(numeric)) {
+                    if (Number.isInteger(numeric)) {
+                        return numeric.toLocaleString('ro-RO');
+                    }
+                    return numeric.toLocaleString('ro-RO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                }
+                return value !== undefined && value !== null ? String(value) : '-';
+            }
+
+            function formatPrice(value) {
+                const numeric = Number(value);
+                if (Number.isFinite(numeric)) {
+                    return `${numeric.toLocaleString('ro-RO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} RON`;
+                }
+                return value !== undefined && value !== null && value !== '' ? String(value) : '-';
+            }
+
+            function clearResult() {
+                if (resultSection) {
+                    resultSection.hidden = true;
+                }
+                if (summaryContainer) {
+                    summaryContainer.innerHTML = '';
+                }
+                if (supplierEl) {
+                    supplierEl.textContent = '';
+                }
+                if (productsBody) {
+                    productsBody.innerHTML = '';
+                }
+                actionButtons.forEach(function (button) {
+                    button.disabled = true;
+                });
+                extractedData = null;
+                productLocations = {};
+                pendingAction = null;
+                setStatus('', '');
+                updateResetBtnState();
+            }
+
+            function clearFile() {
+                selectedFile = null;
+                if (fileInput) {
+                    fileInput.value = '';
+                }
+                if (selectedFileContainer) {
+                    selectedFileContainer.hidden = true;
+                }
+                if (selectedFileName) {
+                    selectedFileName.textContent = '';
+                }
+                clearResult();
+                setProcessButtonState({ loading: false, enabled: false });
+                updateProcessHint();
+                updateResetBtnState();
+            }
+
+            function isValidFile(file) {
+                if (!file) return false;
+                const allowedMime = ['application/pdf', 'image/jpeg', 'image/png'];
+                if (file.type && allowedMime.includes(file.type)) {
+                    return true;
+                }
+                let extension = '';
+                if (file.name) {
+                    const parts = file.name.split('.');
+                    extension = parts.length > 1 ? parts.pop().toLowerCase() : '';
+                }
+                return ['pdf', 'jpg', 'jpeg', 'png'].includes(extension || '');
+            }
+
+            function handleSelectedFile(file) {
+                if (!file) {
+                    return;
+                }
+                if (!isValidFile(file)) {
+                    setFeedback('Format de fișier neacceptat. Te rugăm să încarci un PDF sau o imagine (JPG, PNG).', 'error');
+                    return;
+                }
+                clearFeedback();
+                selectedFile = file;
+                if (selectedFileContainer) {
+                    selectedFileContainer.hidden = false;
+                }
+                if (selectedFileName) {
+                    const sizeLabel = formatFileSize(file.size);
+                    selectedFileName.textContent = sizeLabel ? `${file.name} (${sizeLabel})` : file.name;
+                }
+                if (processBtn) {
+                    setProcessButtonState({ loading: false, enabled: true });
+                }
+                clearResult();
+                setStatus('Fișier pregătit pentru procesare.', '');
+                updateProcessHint();
+                updateResetBtnState();
+            }
+
+            if (removeFileBtn) {
+                removeFileBtn.addEventListener('click', function () {
+                    clearFile();
+                    clearFeedback();
+                });
+            }
+
+            dropZone.addEventListener('click', function () {
+                if (fileInput) {
+                    fileInput.click();
+                }
+            });
+
+            dropZone.addEventListener('keydown', function (event) {
+                if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    if (fileInput) {
+                        fileInput.click();
+                    }
+                }
+            });
+
+            ['dragenter', 'dragover'].forEach(function (eventName) {
+                dropZone.addEventListener(eventName, function (event) {
+                    event.preventDefault();
+                    dropZone.classList.add('dragover');
+                });
+            });
+
+            ['dragleave', 'dragend'].forEach(function (eventName) {
+                dropZone.addEventListener(eventName, function (event) {
+                    event.preventDefault();
+                    dropZone.classList.remove('dragover');
+                });
+            });
+
+            dropZone.addEventListener('drop', function (event) {
+                event.preventDefault();
+                dropZone.classList.remove('dragover');
+                if (event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0]) {
+                    handleSelectedFile(event.dataTransfer.files[0]);
+                }
+            });
+
+            if (fileInput) {
+                fileInput.addEventListener('change', function (event) {
+                    const file = event.target.files && event.target.files[0] ? event.target.files[0] : null;
+                    handleSelectedFile(file);
+                });
+            }
+
+            if (resetBtn) {
+                resetBtn.addEventListener('click', function () {
+                    if (isProcessing || isSubmittingAction) {
+                        return;
+                    }
+                    closeConfirmModal();
+                    clearFeedback();
+                    clearFile();
+                    setStatus('', '');
+                    updateProcessHint();
+                    updateResetBtnState();
+                    dropZone.focus();
+                });
+            }
+
+            updateProcessHint();
+            updateResetBtnState();
+            setProcessButtonState({ loading: false, enabled: Boolean(selectedFile) });
+
+            async function lookupProductLocations(products) {
+                const skus = Array.from(new Set((products || []).map(function (product) {
+                    return product && product.code ? String(product.code).trim() : '';
+                }).filter(Boolean)));
+                if (!skus.length) {
+                    return {};
+                }
+                const formData = new FormData();
+                formData.append('ajax_action', 'lookup_invoice_locations');
+                formData.append('skus', JSON.stringify(skus));
+                if (csrfToken) {
+                    formData.append('csrf_token', csrfToken);
+                }
+                const response = await fetch('inventory.php', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    body: formData
+                });
+                if (!response.ok) {
+                    throw new Error('Nu s-au putut prelua locațiile produselor.');
+                }
+                const data = await response.json();
+                if (!data || data.success === false) {
+                    const errorMessage = data && data.message ? data.message : 'Nu s-au putut prelua locațiile produselor.';
+                    throw new Error(errorMessage);
+                }
+                return data.locations || {};
+            }
+
+            function renderInvoice(data, locationsMap) {
+                if (!resultSection) {
+                    return;
+                }
+
+                resultSection.hidden = false;
+                const info = data && data.invoice_info ? data.invoice_info : {};
+                const products = Array.isArray(info.ordered_products) ? info.ordered_products : [];
+
+                if (summaryContainer) {
+                    summaryContainer.innerHTML = '';
+                    const summaryItems = [
+                        { label: 'Număr factură', value: info.invoice_number || 'N/A' },
+                        { label: 'Data facturii', value: info.invoice_date || '-' },
+                        { label: 'Total poziții', value: products.length }
+                    ];
+                    summaryItems.forEach(function (item) {
+                        const wrapper = document.createElement('div');
+                        wrapper.className = 'invoice-summary-item';
+
+                        const label = document.createElement('span');
+                        label.className = 'invoice-summary-label';
+                        label.textContent = item.label;
+
+                        const value = document.createElement('span');
+                        value.className = 'invoice-summary-value';
+                        value.textContent = item.value === 0 ? '0' : (item.value || '-');
+
+                        wrapper.appendChild(label);
+                        wrapper.appendChild(value);
+                        summaryContainer.appendChild(wrapper);
+                    });
+                }
+
+                if (supplierEl) {
+                    supplierEl.textContent = info.seller_name ? `Furnizor: ${info.seller_name}` : '';
+                }
+
+                if (productsBody) {
+                    productsBody.innerHTML = '';
+                    products.forEach(function (product) {
+                        const row = document.createElement('tr');
+
+                        const skuCell = document.createElement('td');
+                        const productCode = product && product.code ? product.code : '';
+                        skuCell.textContent = productCode || '-';
+                        row.appendChild(skuCell);
+
+                        const nameCell = document.createElement('td');
+                        nameCell.textContent = product && product.name ? product.name : '-';
+                        row.appendChild(nameCell);
+
+                        const quantityCell = document.createElement('td');
+                        const qtyValue = document.createElement('span');
+                        qtyValue.className = 'invoice-quantity';
+                        const quantityValue = product && typeof product.quantity !== 'undefined' ? product.quantity : null;
+                        qtyValue.textContent = formatQuantity(quantityValue);
+                        quantityCell.appendChild(qtyValue);
+                        if (product && product.unit) {
+                            const unitSpan = document.createElement('span');
+                            unitSpan.className = 'invoice-unit';
+                            unitSpan.textContent = product.unit;
+                            quantityCell.appendChild(unitSpan);
+                        }
+                        row.appendChild(quantityCell);
+
+                        const priceCell = document.createElement('td');
+                        const productPrice = product && typeof product.price !== 'undefined' ? product.price : null;
+                        priceCell.textContent = formatPrice(productPrice);
+                        row.appendChild(priceCell);
+
+                        const locationCell = document.createElement('td');
+                        const sku = productCode || '';
+                        const locationData = sku && locationsMap ? locationsMap[sku] : null;
+                        if (locationData && (locationData.location_code || locationData.location_name)) {
+                            const locationText = document.createElement('div');
+                            const code = locationData.location_code ? String(locationData.location_code) : '';
+                            const name = locationData.location_name ? String(locationData.location_name) : '';
+                            locationText.textContent = code && name ? `${code} – ${name}` : (code || name);
+                            locationCell.appendChild(locationText);
+                        } else {
+                            const badge = document.createElement('span');
+                            badge.className = 'invoice-tag invoice-tag--new';
+                            badge.textContent = 'Produs nou - va fi adăugat';
+                            locationCell.appendChild(badge);
+                        }
+                        row.appendChild(locationCell);
+
+                        productsBody.appendChild(row);
+                    });
+                }
+
+                actionButtons.forEach(function (button) {
+                    button.disabled = products.length === 0;
+                });
+                updateResetBtnState();
+            }
+
+            async function processInvoice() {
+                if (!selectedFile || !processBtn) {
+                    return;
+                }
+                clearFeedback();
+                isProcessing = true;
+                updateResetBtnState();
+                setStatus('AI procesează factura...', 'loading');
+                setProcessButtonState({ loading: true });
+
+                try {
+                    const formData = new FormData();
+                    formData.append('data', selectedFile);
+                    const response = await fetch('https://wartung.app.n8n.cloud/webhook/7793b2cd-efd4-4a42-8cd2-b4bc64d745d2', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    if (!response.ok) {
+                        throw new Error('Nu am putut procesa factura. Încearcă din nou.');
+                    }
+                    const payload = await response.json();
+                    if (!payload || !payload.invoice_info) {
+                        throw new Error('Răspunsul AI nu conține informațiile necesare.');
+                    }
+
+                    const products = Array.isArray(payload.invoice_info.ordered_products) ? payload.invoice_info.ordered_products : [];
+                    let locations = {};
+                    try {
+                        locations = await lookupProductLocations(products);
+                    } catch (lookupError) {
+                        console.warn(lookupError);
+                        setFeedback('Factura a fost procesată, dar nu s-au putut încărca locațiile produselor.', 'warning');
+                    }
+
+                    extractedData = payload;
+                    productLocations = locations || {};
+                    renderInvoice(payload, productLocations);
+                    setStatus('Procesarea a fost finalizată.', 'success');
+                } catch (error) {
+                    console.error(error);
+                    clearResult();
+                    setFeedback(error.message || 'A apărut o eroare la procesarea facturii.', 'error');
+                } finally {
+                    isProcessing = false;
+                    setProcessButtonState({ loading: false, enabled: Boolean(selectedFile) });
+                    updateResetBtnState();
+                }
+            }
+
+            if (processBtn) {
+                processBtn.addEventListener('click', function () {
+                    if (!selectedFile) {
+                        setFeedback('Încarcă mai întâi o factură pentru procesare.', 'error');
+                        return;
+                    }
+                    processInvoice();
+                });
+            }
+
+            function openConfirmModal(action) {
+                if (!confirmModal) {
+                    return;
+                }
+                const invoiceInfo = extractedData && extractedData.invoice_info ? extractedData.invoice_info : {};
+                const invoiceNumber = invoiceInfo.invoice_number || 'fără număr';
+                const productCount = Array.isArray(invoiceInfo.ordered_products) ? invoiceInfo.ordered_products.length : 0;
+                const actionLabel = action === 'remove_stock' ? 'scăderea din stoc' : 'adăugarea în stoc';
+
+                if (confirmMessage) {
+                    confirmMessage.textContent = `Confirmi ${actionLabel} pentru ${productCount} produse din factura ${invoiceNumber}?`;
+                }
+                if (confirmBtn) {
+                    confirmBtn.dataset.action = action;
+                    confirmBtn.disabled = false;
+                    confirmBtn.textContent = 'Confirmă';
+                }
+                confirmModal.classList.add('show');
+                confirmModal.setAttribute('aria-hidden', 'false');
+            }
+
+            function closeConfirmModal() {
+                if (!confirmModal) {
+                    return;
+                }
+                confirmModal.classList.remove('show');
+                confirmModal.setAttribute('aria-hidden', 'true');
+                if (confirmBtn) {
+                    confirmBtn.dataset.action = '';
+                    confirmBtn.disabled = false;
+                    confirmBtn.textContent = 'Confirmă';
+                }
+            }
+
+            actionButtons.forEach(function (button) {
+                button.addEventListener('click', function () {
+                    if (!extractedData) {
+                        return;
+                    }
+                    const action = button.dataset.action === 'remove_stock' ? 'remove_stock' : 'add_stock';
+                    pendingAction = action;
+                    openConfirmModal(action);
+                });
+            });
+
+            if (cancelBtn) {
+                cancelBtn.addEventListener('click', function () {
+                    closeConfirmModal();
+                });
+            }
+
+            if (closeBtn) {
+                closeBtn.addEventListener('click', function () {
+                    closeConfirmModal();
+                });
+            }
+
+            if (confirmModal) {
+                confirmModal.addEventListener('click', function (event) {
+                    if (event.target === confirmModal) {
+                        closeConfirmModal();
+                    }
+                });
+            }
+
+            document.addEventListener('keydown', function (event) {
+                if (event.key === 'Escape' && confirmModal && confirmModal.classList.contains('show')) {
+                    closeConfirmModal();
+                }
+            });
+
+            async function submitInventoryAction(action) {
+                if (!extractedData) {
+                    return;
+                }
+                if (confirmBtn) {
+                    confirmBtn.disabled = true;
+                    confirmBtn.textContent = 'Se procesează...';
+                }
+                setStatus('Se aplică actualizarea de stoc...', 'loading');
+                isSubmittingAction = true;
+                updateResetBtnState();
+
+                try {
+                    const payload = {
+                        json_data: extractedData ? JSON.stringify(extractedData) : '{}',
+                        action: action === 'remove_stock' ? 'remove_stock' : 'add_stock',
+                        source: 'ai_invoice_processing'
+                    };
+                    const response = await fetch('/api/webhook_process_import.php', {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Requested-With': 'XMLHttpRequest',
+                            ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {})
+                        },
+                        body: JSON.stringify(payload)
+                    });
+                    const responseData = await response.json().catch(function () {
+                        return null;
+                    });
+                    if (!response.ok || (responseData && responseData.success === false)) {
+                        const responseMessage = responseData && responseData.message ? responseData.message : 'Actualizarea stocului a eșuat.';
+                        throw new Error(responseMessage);
+                    }
+                    setFeedback('Stocul a fost actualizat cu succes!', 'success');
+                    setStatus('', '');
+                    closeConfirmModal();
+                    resetAfterSuccess();
+                } catch (error) {
+                    console.error(error);
+                    setFeedback(error.message || 'A apărut o eroare la actualizarea stocului.', 'error');
+                } finally {
+                    isSubmittingAction = false;
+                    if (confirmBtn) {
+                        confirmBtn.disabled = false;
+                        confirmBtn.textContent = 'Confirmă';
+                    }
+                    updateResetBtnState();
+                }
+            }
+
+            function resetAfterSuccess() {
+                clearFile();
+            }
+
+            if (confirmBtn) {
+                confirmBtn.addEventListener('click', function () {
+                    const action = confirmBtn.dataset.action;
+                    if (!action) {
+                        return;
+                    }
+                    submitInventoryAction(action);
+                });
+            }
+        });
+    </script>
 
     <?php require_once __DIR__ . '/includes/footer.php'; ?>

@@ -20,6 +20,19 @@ const orderCardCache = new Map();
 
 // Use PHP-provided configuration
 const API_BASE = window.WMS_CONFIG?.apiBase || '/api';
+const CURRENT_USER_RAW = window.WMS_CONFIG?.currentUser?.id;
+const CURRENT_USER_ID = (function normalizeCurrentUserId(value) {
+    if (value === null || value === undefined || value === '') {
+        return null;
+    }
+
+    const numericId = Number(value);
+    if (Number.isNaN(numericId)) {
+        return String(value);
+    }
+
+    return numericId;
+})(CURRENT_USER_RAW);
 
 // Reuse picking AWB workflow helpers for modal actions
 if (typeof window !== 'undefined') {
@@ -340,18 +353,49 @@ function syncOrders(orders) {
     applyFilters();
 }
 
+function normalizeAssignedTo(value) {
+    if (value === null || value === undefined || value === '') {
+        return null;
+    }
+
+    const numericAssigned = Number(value);
+    if (Number.isNaN(numericAssigned)) {
+        return String(value);
+    }
+
+    return numericAssigned;
+}
+
+function isOrderVisibleToCurrentUser(order) {
+    if (!order) {
+        return false;
+    }
+
+    const status = String(order.status || '').toLowerCase();
+    const requiresLock = status === 'assigned' || status === 'processing';
+
+    if (!requiresLock) {
+        return true;
+    }
+
+    const assignedTo = normalizeAssignedTo(order.assigned_to);
+
+    if (assignedTo === null || assignedTo === undefined) {
+        return true;
+    }
+
+    if (CURRENT_USER_ID === null || CURRENT_USER_ID === undefined) {
+        return true;
+    }
+
+    return String(assignedTo) === String(CURRENT_USER_ID);
+}
+
 function normalizeOrderData(order) {
     const id = Number(order.id);
     const normalizedStatus = String(order.status || '').toLowerCase();
     const normalizedPriority = String(order.priority || 'normal').toLowerCase();
-    let assignedTo = order.assigned_to;
-
-    if (assignedTo === null || assignedTo === undefined || assignedTo === '') {
-        assignedTo = null;
-    } else {
-        const numericAssigned = Number(assignedTo);
-        assignedTo = Number.isNaN(numericAssigned) ? assignedTo : numericAssigned;
-    }
+    const assignedTo = normalizeAssignedTo(order.assigned_to);
 
     return {
         ...order,
@@ -369,6 +413,10 @@ function normalizeOrderData(order) {
 function filterOrdersList(orders) {
     const filtered = orders.filter(order => {
         const status = String(order.status || '').toLowerCase();
+
+        if (!isOrderVisibleToCurrentUser(order)) {
+            return false;
+        }
 
         if (activeStatusFilter === 'processing') {
             return status === 'processing' || status === 'assigned';
@@ -416,6 +464,10 @@ function updateStatsCounters(orders) {
     const today = new Date();
 
     orders.forEach(order => {
+        if (!isOrderVisibleToCurrentUser(order)) {
+            return;
+        }
+
         const status = String(order.status || '').toLowerCase();
 
         if (status === 'pending') {

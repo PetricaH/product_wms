@@ -68,7 +68,7 @@ try {
 
     try {
         // Find the order (accept both order number and ID)
-        $orderQuery = "SELECT id, order_number, customer_name, status FROM orders WHERE order_number = :order_id OR id = :order_id_int";
+        $orderQuery = "SELECT id, order_number, customer_name, status, assigned_to FROM orders WHERE order_number = :order_id OR id = :order_id_int";
         $orderStmt = $db->prepare($orderQuery);
         $orderStmt->execute([
             ':order_id' => $orderId,
@@ -81,6 +81,14 @@ try {
         }
 
         $actualOrderId = $order['id'];
+        $currentUserId = isset($_SESSION['user_id']) ? (int)$_SESSION['user_id'] : 1;
+        $assignedTo = $order['assigned_to'];
+        if ($assignedTo !== null && $assignedTo !== '') {
+            $assignedTo = is_numeric($assignedTo) ? (int)$assignedTo : (string)$assignedTo;
+        } else {
+            $assignedTo = null;
+        }
+        $statusLower = strtolower((string)$order['status']);
 
         // CRITICAL: Verify order has items BEFORE any changes
         $itemCountQuery = "SELECT COUNT(*) FROM order_items WHERE order_id = :order_id";
@@ -92,35 +100,42 @@ try {
             throw new Exception('Cannot assign order: No items found in order ' . $order['order_number']);
         }
 
-        // Check if order is already assigned
-        if (strtolower($order['status']) === 'assigned') {
-            // Order already assigned - just return success for idempotency
-            $db->commit();
-            echo json_encode([
-                'status' => 'success',
-                'message' => 'Order already assigned.',
-                'data' => [
-                    'order_id' => $actualOrderId,
-                    'order_number' => $order['order_number'],
-                    'status' => 'assigned',
-                    'items_count' => $itemCount,
-                    'redirect' => "mobile_picker.php?order=" . urlencode($order['order_number'])
-                ]
-            ]);
-            exit;
+        // Check if order is already assigned or being processed by someone else
+        if (in_array($statusLower, ['assigned', 'processing'], true)) {
+            if ($assignedTo !== null && (string)$assignedTo !== (string)$currentUserId) {
+                http_response_code(409);
+                throw new Exception('Order is already being processed by another worker.');
+            }
+
+            if ($statusLower === 'assigned' && (string)$assignedTo === (string)$currentUserId) {
+                // Order already assigned to current user - return success for idempotency
+                $db->commit();
+                echo json_encode([
+                    'status' => 'success',
+                    'message' => 'Order already assigned to current user.',
+                    'data' => [
+                        'order_id' => $actualOrderId,
+                        'order_number' => $order['order_number'],
+                        'status' => 'assigned',
+                        'assigned_to' => $currentUserId,
+                        'items_count' => $itemCount,
+                        'redirect' => "mobile_picker.php?order=" . urlencode($order['order_number'])
+                    ]
+                ]);
+                exit;
+            }
         }
 
-        // Get current user (you may need to implement proper session handling)
-        $currentUserId = $_SESSION['user_id'] ?? 1; // Fallback for now
-
         // SAFE UPDATE: Only change order status and assignment, NEVER touch order_items
-        $updateQuery = "UPDATE orders SET 
-                       status = 'assigned', 
-                       assigned_to = :user_id, 
+        $updateQuery = "UPDATE orders SET
+                       status = 'assigned',
+                       assigned_to = :user_id,
                        assigned_at = CURRENT_TIMESTAMP,
                        updated_at = CURRENT_TIMESTAMP
-                       WHERE id = :order_id AND status != 'assigned'";
-        
+                       WHERE id = :order_id
+                         AND (status != 'assigned' OR assigned_to IS NULL)
+                         AND (assigned_to IS NULL OR assigned_to = :user_id)";
+
         $updateStmt = $db->prepare($updateQuery);
         $updateResult = $updateStmt->execute([
             ':user_id' => $currentUserId,
@@ -177,9 +192,12 @@ try {
     error_log("Error in assign_order.php: " . $e->getMessage());
     
     // Return error response
-    $statusCode = strpos($e->getMessage(), 'not found') !== false ? 404 : 500;
+    $statusCode = http_response_code();
+    if ($statusCode === 200) {
+        $statusCode = strpos($e->getMessage(), 'not found') !== false ? 404 : 500;
+    }
     http_response_code($statusCode);
-    
+
     echo json_encode([
         'status' => 'error',
         'message' => $e->getMessage(),

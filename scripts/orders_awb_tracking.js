@@ -146,24 +146,32 @@
     }
 
     function normalizeEvents(history) {
-        return history
-            .map((event, index) => {
-                const dateString = String(event.date || '').trim();
-                const description = String(event.description || '').trim();
-                const location = String(event.location || '').trim();
-                const parsedDate = parseCargusDate(dateString);
+    return history
+        .map((event, index) => {
+            const timeString = String(event.time || '').trim();
+            const description = String(event.event || '').trim();
+            const location = String(event.location || '').trim();
+            const parsedDate = timeString ? new Date(timeString) : null;
 
-                return {
-                    id: `${parsedDate ? parsedDate.getTime() : Date.now()}-${index}`,
-                    start: parsedDate || new Date(),
-                    dateDisplay: dateString,
-                    description,
-                    location,
-                    isReturn: /expediere\s+returnata/i.test(description)
-                };
-            })
-            .sort((a, b) => a.start.getTime() - b.start.getTime());
-    }
+            return {
+                id: `${parsedDate ? parsedDate.getTime() : Date.now()}-${index}`,
+                start: parsedDate || new Date(),
+                dateDisplay: parsedDate 
+                    ? parsedDate.toLocaleString('ro-RO', { 
+                        day: '2-digit', 
+                        month: '2-digit', 
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      })
+                    : timeString,
+                description,
+                location,
+                isReturn: /expediere\s+returnata/i.test(description)
+            };
+        })
+        .sort((a, b) => a.start.getTime() - b.start.getTime());
+}
 
     function renderTimeline(orderId, row, entry) {
         const { events, hasEvents, message } = normalizeCacheEntry(entry);

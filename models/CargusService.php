@@ -599,13 +599,14 @@ class CargusService
                 $last   = $item['Status']['Date'] ?? $item['LastUpdate'] ?? null;
 
                 $history = [];
-                $historyData = $item['History'] ?? $item['history'] ?? [];
+                // Cargus API uses 'Event' array according to documentation
+                $historyData = $item['Event'] ?? $item['History'] ?? $item['history'] ?? [];
                 if (is_array($historyData)) {
                     foreach ($historyData as $h) {
                         $history[] = [
                             'time'     => $h['Date'] ?? $h['time'] ?? null,
-                            'event'    => $h['Status'] ?? $h['event'] ?? '',
-                            'location' => $h['Location'] ?? $h['LocationName'] ?? $h['location'] ?? null
+                            'event'    => $h['Description'] ?? $h['Status'] ?? $h['event'] ?? '',
+                            'location' => $h['LocalityName'] ?? $h['Location'] ?? $h['location'] ?? null
                         ];
                     }
                 }

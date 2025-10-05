@@ -541,17 +541,31 @@ function renderAwbCell(order) {
         const awbDate = order.awb_created_at ? formatRomanianDate(order.awb_created_at) : '';
         const escapedOrderNumber = escapeJsString(orderNumber);
         const escapedAwb = escapeJsString(awb);
+        const awbForAttr = escapeHtml(awb);
+        const awbDateLabel = awbDate ? `Generat la ${escapeHtml(awbDate)}` : '';
         return `
             ${attemptHtml}
-            <div class="awb-info">
-                <span class="awb-barcode">${escapeHtml(awb)}</span>
-                ${awbDate ? `<small>${escapeHtml(awbDate)}</small>` : ''}
-                <a href="${trackingUrl}" class="btn btn-sm btn-outline-secondary track-awb-link" target="_blank" rel="noopener noreferrer">
-                    <span class="material-symbols-outlined">open_in_new</span> Urmărește AWB
-                </a>
-                <button type="button" class="btn btn-sm btn-outline-success print-awb-btn" onclick="printAWB(${orderId}, '${escapedAwb}', '${escapedOrderNumber}')">
-                    <span class="material-symbols-outlined">print</span> Printează AWB
-                </button>
+            <div class="awb-info" data-awb-toggle-container>
+                <div class="awb-info-primary">
+                    <button type="button"
+                        class="awb-barcode awb-timeline-toggle"
+                        data-order-id="${orderId}"
+                        data-awb="${awbForAttr}"
+                        title="Vezi istoricul expediției">
+                        <span class="awb-barcode-text">${escapeHtml(awb)}</span>
+                        <span class="material-symbols-outlined awb-barcode-icon" aria-hidden="true">expand_more</span>
+                        <span class="visually-hidden">Istoric AWB pentru comanda ${escapeHtml(orderNumber)}</span>
+                    </button>
+                    ${awbDate ? `<small class="awb-barcode-meta">${awbDateLabel}</small>` : ''}
+                </div>
+                <div class="awb-info-actions">
+                    <a href="${trackingUrl}" class="btn btn-sm btn-outline-secondary track-awb-link" target="_blank" rel="noopener noreferrer">
+                        <span class="material-symbols-outlined">open_in_new</span> Urmărește AWB
+                    </a>
+                    <button type="button" class="btn btn-sm btn-outline-success print-awb-btn" onclick="printAWB(${orderId}, '${escapedAwb}', '${escapedOrderNumber}')">
+                        <span class="material-symbols-outlined">print</span> Printează AWB
+                    </button>
+                </div>
             </div>
         `;
     }

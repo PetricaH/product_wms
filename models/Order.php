@@ -15,6 +15,8 @@ class Order
     private $weightCalculator;
     private $table = "orders";
     private $itemsTable = "order_items";
+    private $hasCanceledAtColumn = false;
+    private $hasCanceledByColumn = false;
     
     public function __construct($conn) {
         $this->conn = $conn;
@@ -22,6 +24,33 @@ class Order
         // Load WeightCalculator for automatic calculations
         require_once BASE_PATH . '/models/WeightCalculator.php';
         $this->weightCalculator = new WeightCalculator($conn);
+
+        $this->detectCancellationColumns();
+    }
+
+    private function detectCancellationColumns(): void
+    {
+        try {
+            $columnsQuery = sprintf('SHOW COLUMNS FROM `%s` LIKE ?', $this->table);
+
+            $stmt = $this->conn->prepare($columnsQuery);
+            $stmt->execute(['canceled_at']);
+            $this->hasCanceledAtColumn = $stmt->fetch(PDO::FETCH_ASSOC) !== false;
+            $stmt->closeCursor();
+
+            $stmt->execute(['canceled_by']);
+            $this->hasCanceledByColumn = $stmt->fetch(PDO::FETCH_ASSOC) !== false;
+            $stmt->closeCursor();
+        } catch (PDOException $e) {
+            error_log('Unable to detect cancellation columns: ' . $e->getMessage());
+            $this->hasCanceledAtColumn = false;
+            $this->hasCanceledByColumn = false;
+        }
+    }
+
+    public function hasCancellationMetadata(): bool
+    {
+        return $this->hasCanceledAtColumn || $this->hasCanceledByColumn;
     }
 
      /**
@@ -125,21 +154,35 @@ class Order
                 return false;
             }
 
-            $query = "UPDATE {$this->table}
-                      SET status = :status,
-                          canceled_at = NOW(),
-                          canceled_by = :canceled_by,
-                          updated_at = NOW()
-                      WHERE id = :id";
+            $updateColumns = [
+                'status = :status',
+                'updated_at = NOW()'
+            ];
+
+            if ($this->hasCanceledAtColumn) {
+                $updateColumns[] = 'canceled_at = NOW()';
+            }
+
+            if ($this->hasCanceledByColumn) {
+                $updateColumns[] = 'canceled_by = :canceled_by';
+            }
+
+            $query = sprintf(
+                "UPDATE %s SET %s WHERE id = :id",
+                $this->table,
+                implode(', ', $updateColumns)
+            );
 
             $stmt = $this->conn->prepare($query);
             $stmt->bindValue(':id', $orderId, PDO::PARAM_INT);
             $stmt->bindValue(':status', 'canceled');
 
-            if ($userId !== null) {
-                $stmt->bindValue(':canceled_by', $userId, PDO::PARAM_INT);
-            } else {
-                $stmt->bindValue(':canceled_by', null, PDO::PARAM_NULL);
+            if ($this->hasCanceledByColumn) {
+                if ($userId !== null) {
+                    $stmt->bindValue(':canceled_by', $userId, PDO::PARAM_INT);
+                } else {
+                    $stmt->bindValue(':canceled_by', null, PDO::PARAM_NULL);
+                }
             }
 
             $result = $stmt->execute();
@@ -187,12 +230,24 @@ class Order
                 return false;
             }
 
-            $query = "UPDATE {$this->table}
-                      SET status = :status,
-                          canceled_at = NULL,
-                          canceled_by = NULL,
-                          updated_at = NOW()
-                      WHERE id = :id";
+            $updateColumns = [
+                'status = :status',
+                'updated_at = NOW()'
+            ];
+
+            if ($this->hasCanceledAtColumn) {
+                $updateColumns[] = 'canceled_at = NULL';
+            }
+
+            if ($this->hasCanceledByColumn) {
+                $updateColumns[] = 'canceled_by = NULL';
+            }
+
+            $query = sprintf(
+                "UPDATE %s SET %s WHERE id = :id",
+                $this->table,
+                implode(', ', $updateColumns)
+            );
 
             $stmt = $this->conn->prepare($query);
             $stmt->bindValue(':id', $orderId, PDO::PARAM_INT);
@@ -237,14 +292,26 @@ class Order
             $viewMode = 'active';
         }
 
-        $query = "SELECT o.*,
+        $select = "SELECT o.*,
                          COALESCE((SELECT SUM(oi.quantity * oi.unit_price) FROM {$this->itemsTable} oi WHERE oi.order_id = o.id), 0) as total_value,
-                         COALESCE((SELECT COUNT(*) FROM {$this->itemsTable} oi WHERE oi.order_id = o.id), 0) as total_items,
+                         COALESCE((SELECT COUNT(*) FROM {$this->itemsTable} oi WHERE oi.order_id = o.id), 0) as total_items";
+
+        if ($this->hasCanceledByColumn) {
+            $select .= ",
                          canceled_user.username AS canceled_by_username,
                          TRIM(CONCAT_WS(' ', canceled_user.first_name, canceled_user.last_name)) AS canceled_by_full_name,
-                         canceled_user.email AS canceled_by_email
-                  FROM {$this->table} o
-                  LEFT JOIN users canceled_user ON canceled_user.id = o.canceled_by
+                         canceled_user.email AS canceled_by_email";
+        }
+
+        $query = $select . "
+                  FROM {$this->table} o";
+
+        if ($this->hasCanceledByColumn) {
+            $query .= "
+                  LEFT JOIN users canceled_user ON canceled_user.id = o.canceled_by";
+        }
+
+        $query .= "
                   WHERE 1=1";
 
         $params = [];
@@ -1250,14 +1317,26 @@ class Order
     {
         $limit = max(1, min($limit, 200));
 
-        $query = "SELECT o.*,
+        $select = "SELECT o.*,
                          COALESCE((SELECT SUM(oi.quantity * oi.unit_price) FROM {$this->itemsTable} oi WHERE oi.order_id = o.id), 0) AS total_value,
-                         COALESCE((SELECT COUNT(*) FROM {$this->itemsTable} oi WHERE oi.order_id = o.id), 0) AS total_items,
+                         COALESCE((SELECT COUNT(*) FROM {$this->itemsTable} oi WHERE oi.order_id = o.id), 0) AS total_items";
+
+        if ($this->hasCanceledByColumn) {
+            $select .= ",
                          canceled_user.username AS canceled_by_username,
                          TRIM(CONCAT_WS(' ', canceled_user.first_name, canceled_user.last_name)) AS canceled_by_full_name,
-                         canceled_user.email AS canceled_by_email
-                  FROM {$this->table} o
-                  LEFT JOIN users canceled_user ON canceled_user.id = o.canceled_by
+                         canceled_user.email AS canceled_by_email";
+        }
+
+        $query = $select . "
+                  FROM {$this->table} o";
+
+        if ($this->hasCanceledByColumn) {
+            $query .= "
+                  LEFT JOIN users canceled_user ON canceled_user.id = o.canceled_by";
+        }
+
+        $query .= "
                   WHERE 1=1";
 
         $params = [];

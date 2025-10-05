@@ -38,6 +38,17 @@ require_once BASE_PATH . '/models/Product.php';
 
 $orderModel = new Order($db);
 $productModel = new Product($db);
+$supportsCancelMetadata = method_exists($orderModel, 'hasCancellationMetadata')
+    ? $orderModel->hasCancellationMetadata()
+    : false;
+
+// Soft delete schema requirements (run once in the database):
+// ALTER TABLE orders
+//     ADD COLUMN canceled_at DATETIME NULL AFTER updated_at,
+//     ADD COLUMN canceled_by INT NULL AFTER canceled_at,
+//     ADD INDEX idx_orders_status_canceled_at (status, canceled_at);
+// ALTER TABLE orders
+//     ADD CONSTRAINT fk_orders_canceled_by FOREIGN KEY (canceled_by) REFERENCES users(id);
 
 // Soft delete schema requirements (run once in the database):
 // ALTER TABLE orders
@@ -598,32 +609,28 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
         .orders-view-toggle {
             display: flex;
             gap: 0.5rem;
+            align-items: center;
             flex-wrap: wrap;
-            margin: 1rem 0;
+            margin: 0 0 1rem;
         }
 
-        .orders-view-toggle .btn-toggle {
-            border: 1px solid #d0d5dd;
-            padding: 0.5rem 1rem;
-            border-radius: 9999px;
-            background: #ffffff;
-            color: #475467;
-            font-weight: 600;
-            text-decoration: none;
+        .orders-view-toggle .btn {
             display: inline-flex;
             align-items: center;
-            gap: 0.4rem;
-            transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+            gap: 0.35rem;
+            font-weight: 600;
         }
 
-        .orders-view-toggle .btn-toggle.active {
-            background: #1d4ed8;
-            border-color: #1d4ed8;
-            color: #ffffff;
+        .orders-view-toggle .btn .material-symbols-outlined {
+            font-size: 1rem;
         }
 
-        .orders-view-toggle .btn-toggle .material-symbols-outlined {
-            font-size: 1.1rem;
+        .orders-view-toggle .badge-count {
+            font-size: 0.75rem;
+            background-color: #f1f5f9;
+            color: #475467;
+            border-radius: 999px;
+            padding: 0.1rem 0.45rem;
         }
 
         .order-row--canceled {
@@ -683,21 +690,29 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                     </div>
                 </header>
 
+                <?php
+                    $activeViewClasses = $isCanceledView
+                        ? 'btn btn-outline-secondary btn-sm'
+                        : 'btn btn-secondary btn-sm active';
+                    $canceledViewClasses = $isCanceledView
+                        ? 'btn btn-secondary btn-sm active'
+                        : 'btn btn-outline-secondary btn-sm';
+                ?>
                 <div class="orders-view-toggle" role="tablist" aria-label="Mod vizualizare comenzi">
                     <a href="<?= htmlspecialchars($activeViewUrl) ?>"
-                       class="btn-toggle <?= $isCanceledView ? '' : 'active' ?>"
+                       class="<?= $activeViewClasses ?>"
                        role="tab"
                        aria-selected="<?= $isCanceledView ? 'false' : 'true' ?>">
                         <span class="material-symbols-outlined">assignment</span>
                         Comenzi active
                     </a>
                     <a href="<?= htmlspecialchars($canceledViewUrl) ?>"
-                       class="btn-toggle <?= $isCanceledView ? 'active' : '' ?>"
+                       class="<?= $canceledViewClasses ?>"
                        role="tab"
                        aria-selected="<?= $isCanceledView ? 'true' : 'false' ?>">
                         <span class="material-symbols-outlined">history_toggle_off</span>
                         Comenzi anulate
-                        <span class="badge bg-light text-dark" style="margin-left: 0.4rem;">
+                        <span class="badge badge-count">
                             <?= number_format($canceledOrdersCount) ?>
                         </span>
                     </a>
@@ -997,7 +1012,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                         </span>
                                                         <span class="order-status-text"><?= htmlspecialchars($statusLabel) ?></span>
                                                     </span>
-                                                    <?php if ($isOrderCanceled && ($canceledAtFormatted !== '' || $canceledByLabel !== '')): ?>
+                                                    <?php if ($supportsCancelMetadata && $isOrderCanceled && ($canceledAtFormatted !== '' || $canceledByLabel !== '')): ?>
                                                         <div class="order-status-meta">
                                                             <?php if ($canceledAtFormatted !== ''): ?>
                                                                 Anulat la <strong><?= htmlspecialchars($canceledAtFormatted) ?></strong>

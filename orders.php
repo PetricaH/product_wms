@@ -50,6 +50,14 @@ $supportsCancelMetadata = method_exists($orderModel, 'hasCancellationMetadata')
 // ALTER TABLE orders
 //     ADD CONSTRAINT fk_orders_canceled_by FOREIGN KEY (canceled_by) REFERENCES users(id);
 
+// Soft delete schema requirements (run once in the database):
+// ALTER TABLE orders
+//     ADD COLUMN canceled_at DATETIME NULL AFTER updated_at,
+//     ADD COLUMN canceled_by INT NULL AFTER canceled_at,
+//     ADD INDEX idx_orders_status_canceled_at (status, canceled_at);
+// ALTER TABLE orders
+//     ADD CONSTRAINT fk_orders_canceled_by FOREIGN KEY (canceled_by) REFERENCES users(id);
+
 // Admin reset hint:
 // To reset AWB attempts for an order run:
 // UPDATE orders SET awb_generation_attempts = 0, awb_generation_last_attempt_at = NULL WHERE id = :order_id;

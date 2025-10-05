@@ -1,590 +1,1515 @@
-<?php
-ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
-error_reporting(E_ALL);
-
-// Load configuration
-require_once __DIR__ . '/bootstrap.php';
-$config = require __DIR__ . '/config/config.php';
-// define('BASE_PATH', __DIR__);
-
-// Include helpers
-require_once __DIR__ . '/includes/helpers.php';
-
-// Get database connection using the factory from config
-if (!isset($config['connection_factory']) || !is_callable($config['connection_factory'])) {
-     die("Database connection factory not configured correctly in config.php");
-}
-$dbFactory = $config['connection_factory'];
-$db = $dbFactory();
-
-// Include Models
-require_once __DIR__ . '/models/Product.php';
-require_once __DIR__ . '/models/User.php';
-require_once __DIR__ . '/models/Location.php';
-require_once __DIR__ . '/models/Inventory.php';
-require_once __DIR__ . '/models/Order.php';
-require_once __DIR__ . '/models/ReceivingSession.php';
-require_once __DIR__ . '/models/RelocationTask.php';
-require_once BASE_PATH . '/models/LocationLevelSettings.php';
-
-$currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
-
-// Instantiate Models
-$product = new Product($db);
-$users = new Users($db);
-$location = new Location($db);
-$inventory = new Inventory($db);
-$orders = new Order($db);
-$receivingSession = new ReceivingSession($db);
-$relocationTask = new RelocationTask($db);
-
-// Get Dashboard Data
-try {
-    $totalProducts = $product->countAll();
-    $totalUsers = $users->countAllUsers();
-    $totalLocations = $location->countTotalLocations();
-    $occupiedLocations = $location->countOccupiedLocations();
-    $totalItemsInStock = $inventory->getTotalItemCount();
-    $lowStockProducts = $inventory->getLowStockCount();
-    $activeOrders = $orders->countActiveOrders();
-    $pendingOrders = $orders->countPendingOrders();
-    $completedOrdersToday = $orders->countCompletedToday();
-    $pendingQualityItems = $receivingSession->countPendingQualityItems();
-    $pendingRelocations = $relocationTask->countReadyTasks();
-    
-    // Calculate warehouse occupation percentage
-    $warehouseOccupationPercent = $totalLocations > 0 ? round(($occupiedLocations / $totalLocations) * 100, 1) : 0;
-    
-    // Recent activity
-    $recentOrders = $orders->getRecentOrders(10);
-    $criticalStockAlerts = $inventory->getCriticalStockAlerts(5);
-
-    // Performance metrics
-    $todayStats = [
-        'orders_created' => $orders->countOrdersCreatedToday(),
-        'orders_completed' => $completedOrdersToday,
-        'items_moved' => $inventory->getItemsMovedToday(),
-    ];
-
-    // Duration statistics - Updated to use timing tables
-    $pickingByOperator = [];
-    $pickingByProduct = [];
-    $receivingByOperator = [];
-    $receivingByProduct = [];
-    
-    try {
-        // Get picking statistics by operator from timing tables
-        $pickingByOperatorStmt = $db->prepare("
-            SELECT 
-                u.username as operator,
-                AVG(pt.duration_seconds) / 60 as avg_minutes,
-                COUNT(*) as total_tasks
-            FROM picking_tasks pt
-            JOIN users u ON pt.operator_id = u.id
-            WHERE pt.status = 'completed'
-            AND pt.end_time IS NOT NULL
-            AND pt.start_time >= DATE_SUB(NOW(), INTERVAL 30 DAY)
-            GROUP BY u.username
-            ORDER BY avg_minutes ASC
-            LIMIT 10
-        ");
-        $pickingByOperatorStmt->execute();
-        $pickingByOperator = $pickingByOperatorStmt->fetchAll(PDO::FETCH_ASSOC);
-
-        // Get picking statistics by product from timing tables
-    $pickingByProductStmt = $db->prepare("
-            SELECT
-                p.name as product,
-                AVG(pt.duration_seconds) / 60 as avg_minutes,
-                COUNT(*) as total_tasks
-            FROM picking_tasks pt
-            JOIN products p ON pt.product_id = p.product_id
-            WHERE pt.status = 'completed'
-            AND pt.end_time IS NOT NULL
-            AND pt.start_time >= DATE_SUB(NOW(), INTERVAL 30 DAY)
-            GROUP BY p.product_id
-            ORDER BY avg_minutes ASC
-            LIMIT 10
-        ");
-        $pickingByProductStmt->execute();
-        $pickingByProduct = $pickingByProductStmt->fetchAll(PDO::FETCH_ASSOC);
-
-        // Get receiving statistics by operator from timing tables
-        $receivingByOperatorStmt = $db->prepare("
-            SELECT 
-                u.username as operator,
-                AVG(rt.duration_seconds) / 60 as avg_minutes,
-                COUNT(*) as total_tasks
-            FROM receiving_tasks rt
-            JOIN users u ON rt.operator_id = u.id
-            WHERE rt.status = 'completed'
-            AND rt.end_time IS NOT NULL
-            AND rt.start_time >= DATE_SUB(NOW(), INTERVAL 30 DAY)
-            GROUP BY u.username
-            ORDER BY avg_minutes ASC
-            LIMIT 10
-        ");
-        $receivingByOperatorStmt->execute();
-        $receivingByOperator = $receivingByOperatorStmt->fetchAll(PDO::FETCH_ASSOC);
-
-        // Get receiving statistics by product from timing tables
-    $receivingByProductStmt = $db->prepare("
-            SELECT
-                p.name as product,
-                AVG(rt.duration_seconds) / 60 as avg_minutes,
-                COUNT(*) as total_tasks
-            FROM receiving_tasks rt
-            JOIN products p ON rt.product_id = p.product_id
-            WHERE rt.status = 'completed'
-            AND rt.end_time IS NOT NULL
-            AND rt.start_time >= DATE_SUB(NOW(), INTERVAL 30 DAY)
-            GROUP BY p.product_id
-            ORDER BY avg_minutes ASC
-            LIMIT 10
-        ");
-        $receivingByProductStmt->execute();
-        $receivingByProduct = $receivingByProductStmt->fetchAll(PDO::FETCH_ASSOC);
-
-        // Get today's task counts for the performance section
-        $todayTasksStmt = $db->prepare("
-            SELECT 
-                (SELECT COUNT(*) FROM picking_tasks WHERE DATE(start_time) = CURDATE() AND status = 'completed') as picking_tasks_today,
-                (SELECT COUNT(*) FROM receiving_tasks WHERE DATE(start_time) = CURDATE() AND status = 'completed') as receiving_tasks_today,
-                (SELECT COUNT(*) FROM picking_tasks WHERE status = 'active') as active_picking_tasks,
-                (SELECT COUNT(*) FROM receiving_tasks WHERE status = 'active') as active_receiving_tasks
-        ");
-        $todayTasksStmt->execute();
-        $todayTaskCounts = $todayTasksStmt->fetch(PDO::FETCH_ASSOC);
-
-    } catch (Exception $e) {
-        // If timing tables don't exist yet, fall back to old methods
-        error_log("Timing tables not available, using fallback: " . $e->getMessage());
-        $pickingByOperator = $orders->getAverageProcessingTimeByOperator();
-        $pickingByProduct = $orders->getAverageProcessingTimeByProduct();
-        $receivingByOperator = $receivingSession->getAverageDurationByOperator();
-        $receivingByProduct = $receivingSession->getAverageDurationByProduct();
-        $todayTaskCounts = ['picking_tasks_today' => 0, 'receiving_tasks_today' => 0, 'active_picking_tasks' => 0, 'active_receiving_tasks' => 0];
-    }
-    
-} catch (Exception $e) {
-    error_log("Dashboard data error: " . $e->getMessage());
-    // Set default values on error
-    $totalProducts = $totalUsers = $totalLocations = $occupiedLocations = 0;
-    $totalItemsInStock = $lowStockProducts = $activeOrders = $pendingOrders = 0;
-    $warehouseOccupationPercent = 0;
-    $recentOrders = $criticalStockAlerts = [];
-    $todayStats = ['orders_created' => 0, 'orders_completed' => 0, 'items_moved' => 0];
-    $pendingQualityItems = 0;
-    $pendingRelocations = 0;
-    $pickingByOperator = $pickingByProduct = [];
-    $receivingByOperator = $receivingByProduct = [];
-    $todayTaskCounts = ['picking_tasks_today' => 0, 'receiving_tasks_today' => 0, 'active_picking_tasks' => 0, 'active_receiving_tasks' => 0];
-}
-?>
-
 <!DOCTYPE html>
 <html lang="ro">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <?php require_once __DIR__ . '/includes/header.php'; ?>
-    <title>WMS Dashboard</title>
+    <title>NOTSOWMS - Enterprise Warehouse Management System</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,300,0,0" rel="stylesheet" />
+    <style>
+        :root {
+            --black: #0F1013;
+            --dark-gray: #1A1A1D;
+            --darker-gray: #16161A;
+            --light-gray: #94A1B2;
+            --lighter-gray: #AAAAAA;
+            --white: #FEFFFF;
+            --transition: all 0.35s ease;
+        }
+
+        *, *::before, *::after {
+            box-sizing: border-box;
+        }
+
+        html {
+            scroll-behavior: smooth;
+        }
+
+        body {
+            margin: 0;
+            font-family: 'Poppins', sans-serif;
+            background: radial-gradient(140% 140% at 80% 8%, rgba(148, 161, 178, 0.18) 0%, rgba(148, 161, 178, 0.08) 38%, rgba(148, 161, 178, 0.02) 62%, rgba(15, 16, 19, 0) 85%),
+                        radial-gradient(120% 120% at 18% 42%, rgba(148, 161, 178, 0.14) 0%, rgba(148, 161, 178, 0.06) 40%, rgba(148, 161, 178, 0.02) 65%, rgba(15, 16, 19, 0) 85%),
+                        linear-gradient(180deg, var(--black) 0%, var(--darker-gray) 55%, var(--black) 100%);
+            color: var(--white);
+            min-height: 100vh;
+        }
+
+        a {
+            color: inherit;
+        }
+
+        img {
+            max-width: 100%;
+            display: block;
+        }
+
+        header {
+            position: fixed;
+            inset: 0 0 auto 0;
+            z-index: 1000;
+            background: rgba(15, 16, 19, 0.92);
+            backdrop-filter: blur(18px);
+            border-bottom: 1px solid rgba(148, 161, 178, 0.08);
+        }
+
+        .nav-container {
+            margin: 0 auto;
+            max-width: 1180px;
+            padding: 0.9rem 1.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 0.65rem;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            text-decoration: none;
+        }
+
+        .brand-icon {
+            display: grid;
+            place-items: center;
+            width: 42px;
+            height: 42px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, rgba(148, 161, 178, 0.16), rgba(148, 161, 178, 0.05));
+            border: 1px solid rgba(148, 161, 178, 0.22);
+            box-shadow: 0 18px 36px rgba(15, 16, 19, 0.45);
+            color: var(--white);
+        }
+
+        nav {
+            display: flex;
+            align-items: center;
+            gap: 2.5rem;
+        }
+
+        .nav-links {
+            display: flex;
+            align-items: center;
+            gap: 1.75rem;
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+
+        .nav-links a {
+            text-decoration: none;
+            font-size: 0.95rem;
+            font-weight: 400;
+            color: var(--lighter-gray);
+            transition: var(--transition);
+        }
+
+        .nav-links a:hover,
+        .nav-links a:focus {
+            color: var(--white);
+        }
+
+        .language-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            border-radius: 999px;
+            padding: 0.25rem;
+            border: 1px solid rgba(148, 161, 178, 0.22);
+            background: linear-gradient(135deg, rgba(148, 161, 178, 0.1), rgba(26, 26, 29, 0.7));
+            box-shadow: inset 0 0 0 1px rgba(254, 255, 255, 0.05);
+        }
+
+        .language-toggle button {
+            border: none;
+            background: transparent;
+            color: var(--lighter-gray);
+            font-size: 0.82rem;
+            font-weight: 500;
+            padding: 0.35rem 0.85rem;
+            border-radius: 999px;
+            cursor: pointer;
+            transition: var(--transition);
+        }
+
+        .language-toggle button.active {
+            color: var(--black);
+            background: var(--white);
+        }
+
+        .menu-toggle {
+            display: none;
+            border: 1px solid rgba(148, 161, 178, 0.22);
+            background: rgba(26, 26, 29, 0.8);
+            color: var(--white);
+            padding: 0.45rem 0.75rem;
+            border-radius: 10px;
+            cursor: pointer;
+        }
+
+        section {
+            padding: 5rem 1.5rem;
+        }
+
+        .section-inner {
+            max-width: 1180px;
+            margin: 0 auto;
+        }
+
+        .section-header {
+            max-width: 720px;
+            margin-bottom: 2.5rem;
+        }
+
+        .section-title {
+            font-size: clamp(1.8rem, 3vw, 2.6rem);
+            font-weight: 600;
+            letter-spacing: 0.02em;
+        }
+
+        .section-subtitle {
+            margin-top: 0.85rem;
+            color: var(--light-gray);
+            font-weight: 400;
+        }
+
+        .hero {
+            position: relative;
+            overflow: hidden;
+            background: linear-gradient(155deg, rgba(26, 26, 29, 0.96) 0%, rgba(15, 16, 19, 0.94) 45%, rgba(26, 26, 29, 0.98) 100%);
+        }
+
+        .hero::before {
+            content: "";
+            position: absolute;
+            inset: -32% 35% 28% -28%;
+            background: radial-gradient(120% 120% at 28% 32%, rgba(148, 161, 178, 0.22) 0%, rgba(148, 161, 178, 0.1) 42%, rgba(148, 161, 178, 0.04) 68%, rgba(15, 16, 19, 0) 88%);
+            filter: blur(48px);
+            opacity: 0.8;
+            pointer-events: none;
+        }
+
+        .hero::after {
+            content: "";
+            position: absolute;
+            inset: 26% -32% -36% 42%;
+            background: radial-gradient(130% 130% at 72% 36%, rgba(148, 161, 178, 0.18) 0%, rgba(148, 161, 178, 0.08) 46%, rgba(148, 161, 178, 0.03) 72%, rgba(15, 16, 19, 0) 92%);
+            filter: blur(60px);
+            opacity: 0.75;
+            pointer-events: none;
+        }
+
+        .hero-grid {
+            position: relative;
+            display: grid;
+            gap: 3rem;
+        }
+
+        .hero-text {
+            display: grid;
+            gap: 1.5rem;
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.7rem;
+            padding: 0.55rem 1rem;
+            border-radius: 999px;
+            background: rgba(148, 161, 178, 0.1);
+            border: 1px solid rgba(148, 161, 178, 0.2);
+            font-size: 0.85rem;
+            font-weight: 500;
+            color: var(--light-gray);
+        }
+
+        .hero-title {
+            font-size: clamp(2.2rem, 4vw, 3.4rem);
+            font-weight: 600;
+            max-width: 720px;
+            line-height: 1.1;
+        }
+
+        .hero-subtitle {
+            color: var(--lighter-gray);
+            max-width: 640px;
+            font-weight: 400;
+        }
+
+        .hero-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+            align-items: center;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            padding: 0.95rem 1.9rem;
+            border-radius: 12px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            text-decoration: none;
+            cursor: pointer;
+            transition: var(--transition);
+            border: 1px solid transparent;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--white), #d8dce2);
+            color: var(--black);
+            box-shadow: 0 20px 48px rgba(15, 16, 19, 0.45);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 26px 60px rgba(15, 16, 19, 0.55);
+        }
+
+        .btn-secondary {
+            background: transparent;
+            color: var(--white);
+            border: 1px solid rgba(148, 161, 178, 0.35);
+        }
+
+        .btn-secondary:hover {
+            transform: translateY(-2px);
+            border-color: rgba(254, 255, 255, 0.6);
+        }
+
+        .hero-right {
+            position: relative;
+            border-radius: 28px;
+            padding: 2.5rem;
+            background: linear-gradient(145deg, rgba(26, 26, 29, 0.95), rgba(15, 16, 19, 0.9));
+            border: 1px solid rgba(148, 161, 178, 0.18);
+            box-shadow: 0 38px 72px rgba(15, 16, 19, 0.5);
+            display: grid;
+            gap: 1.5rem;
+        }
+
+        .hero-right::after {
+            content: "";
+            position: absolute;
+            inset: 18px;
+            border-radius: 24px;
+            border: 1px dashed rgba(148, 161, 178, 0.18);
+            pointer-events: none;
+        }
+
+        .hero-right-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .hero-right-title {
+            font-weight: 500;
+            color: var(--lighter-gray);
+        }
+
+        .integrations-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.65rem;
+        }
+
+        .integration-pill {
+            padding: 0.6rem 1rem;
+            border-radius: 12px;
+            background: rgba(148, 161, 178, 0.08);
+            border: 1px solid rgba(148, 161, 178, 0.18);
+            font-weight: 500;
+            color: var(--light-gray);
+        }
+
+        .dashboard-preview {
+            display: grid;
+            gap: 1.1rem;
+        }
+
+        .dashboard-card {
+            padding: 1.1rem;
+            border-radius: 14px;
+            border: 1px solid rgba(148, 161, 178, 0.2);
+            background: rgba(148, 161, 178, 0.05);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            color: var(--lighter-gray);
+        }
+
+        .dashboard-card strong {
+            display: block;
+            color: var(--white);
+            font-size: 1.05rem;
+        }
+
+        .hero-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 1.25rem;
+            margin-top: 1rem;
+        }
+
+        .stat-card {
+            padding: 1.4rem;
+            border-radius: 16px;
+            background: linear-gradient(140deg, rgba(148, 161, 178, 0.12), rgba(26, 26, 29, 0.75));
+            border: 1px solid rgba(148, 161, 178, 0.18);
+            box-shadow: 0 20px 44px rgba(15, 16, 19, 0.4);
+            display: grid;
+            gap: 0.35rem;
+        }
+
+        .stat-value {
+            font-size: 1.85rem;
+            font-weight: 600;
+        }
+
+        .stat-label {
+            font-size: 0.9rem;
+            color: var(--lighter-gray);
+        }
+
+        .trusted-bar {
+            margin-top: 2.75rem;
+            padding: 1.1rem 1.5rem;
+            border-radius: 14px;
+            border: 1px solid rgba(148, 161, 178, 0.18);
+
+            background: rgba(148, 161, 178, 0.05);
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1.25rem;
+            align-items: center;
+            color: var(--light-gray);
+            font-size: 0.9rem;
+        }
+
+        .trusted-brands {
+            display: flex;
+            gap: 1.5rem;
+            flex-wrap: wrap;
+            font-weight: 500;
+            letter-spacing: 0.05em;
+        }
+
+        .cards-grid {
+            display: grid;
+            gap: 1.5rem;
+        }
+
+        .feature-card,
+        .integration-card {
+            position: relative;
+            padding: 2rem;
+            border-radius: 20px;
+            background: linear-gradient(140deg, rgba(148, 161, 178, 0.08), rgba(26, 26, 29, 0.85));
+            border: 1px solid rgba(148, 161, 178, 0.18);
+            box-shadow: 0 26px 52px rgba(15, 16, 19, 0.42);
+            transition: var(--transition);
+        }
+
+        .feature-card:hover,
+        .integration-card:hover {
+            transform: translateY(-6px);
+            border-color: rgba(254, 255, 255, 0.22);
+        }
+
+        .feature-card::after,
+        .integration-card::after {
+            content: "";
+            position: absolute;
+            inset: 1.2rem;
+            border-radius: 16px;
+            border: 1px dashed rgba(148, 161, 178, 0.16);
+            pointer-events: none;
+        }
+
+        .card-icon {
+            width: 54px;
+            height: 54px;
+            border-radius: 14px;
+            background: linear-gradient(135deg, rgba(254, 255, 255, 0.12), rgba(148, 161, 178, 0.08));
+            border: 1px solid rgba(148, 161, 178, 0.2);
+            display: grid;
+            place-items: center;
+            color: var(--white);
+            margin-bottom: 1.25rem;
+        }
+
+        .card-icon .material-symbols-outlined {
+            font-size: 28px;
+        }
+
+        .card-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 0.85rem;
+        }
+
+        .card-list {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+            display: grid;
+            gap: 0.55rem;
+            color: var(--lighter-gray);
+            font-size: 0.95rem;
+        }
+
+        .card-list li {
+            display: flex;
+            gap: 0.6rem;
+            align-items: flex-start;
+        }
+
+        .card-list li::before {
+            content: '•';
+            color: var(--light-gray);
+            font-weight: 600;
+            margin-top: -0.05rem;
+        }
+
+        .statistics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+            margin-top: 2.5rem;
+        }
+
+        .statistic-card {
+            padding: 1.9rem;
+            border-radius: 20px;
+            border: 1px solid rgba(148, 161, 178, 0.18);
+            background: linear-gradient(140deg, rgba(148, 161, 178, 0.06), rgba(26, 26, 29, 0.85));
+            box-shadow: 0 22px 44px rgba(15, 16, 19, 0.42);
+        }
+
+        .statistic-value {
+            font-size: 2.1rem;
+            font-weight: 600;
+            margin-bottom: 0.45rem;
+        }
+
+        .statistic-label {
+            color: var(--lighter-gray);
+        }
+
+        #pricing {
+            position: relative;
+            background: linear-gradient(150deg, rgba(26, 26, 29, 0.92), rgba(15, 16, 19, 0.94));
+            border-top: 1px solid rgba(148, 161, 178, 0.18);
+            border-bottom: 1px solid rgba(148, 161, 178, 0.12);
+        }
+
+        .billing-toggle {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.4rem;
+            border-radius: 999px;
+            border: 1px solid rgba(148, 161, 178, 0.24);
+            background: linear-gradient(135deg, rgba(148, 161, 178, 0.12), rgba(26, 26, 29, 0.7));
+            box-shadow: inset 0 0 0 1px rgba(254, 255, 255, 0.05);
+            gap: 0.25rem;
+        }
+
+        .billing-option {
+            border: none;
+            background: transparent;
+            color: var(--lighter-gray);
+            font-size: 0.9rem;
+            font-weight: 600;
+            padding: 0.55rem 1.35rem;
+            border-radius: 999px;
+            cursor: pointer;
+            transition: var(--transition);
+        }
+
+        .billing-option.active {
+            background: var(--white);
+            color: var(--black);
+        }
+
+        .pricing-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 1.75rem;
+            margin-top: 2.5rem;
+        }
+
+        .pricing-card {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            gap: 1.4rem;
+            padding: 2.2rem;
+            border-radius: 22px;
+            border: 1px solid rgba(148, 161, 178, 0.22);
+            background: linear-gradient(145deg, rgba(148, 161, 178, 0.1), rgba(26, 26, 29, 0.85));
+            box-shadow: 0 32px 64px rgba(15, 16, 19, 0.45);
+            overflow: hidden;
+        }
+
+        .pricing-card::after {
+            content: "";
+            position: absolute;
+            inset: 1.2rem;
+            border-radius: 16px;
+            border: 1px dashed rgba(148, 161, 178, 0.16);
+            pointer-events: none;
+        }
+
+        .pricing-card.popular {
+            border-color: rgba(254, 255, 255, 0.4);
+            box-shadow: 0 38px 72px rgba(15, 16, 19, 0.6);
+            background: linear-gradient(145deg, rgba(254, 255, 255, 0.14), rgba(26, 26, 29, 0.85));
+        }
+
+        .popular-badge {
+            position: absolute;
+            top: 1.4rem;
+            right: 1.4rem;
+            padding: 0.35rem 0.9rem;
+            border-radius: 999px;
+            background: rgba(254, 255, 255, 0.18);
+            color: var(--black);
+            font-size: 0.75rem;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+        }
+
+        .pricing-header {
+            position: relative;
+            z-index: 1;
+            display: grid;
+            gap: 0.5rem;
+        }
+
+        .tier-name {
+            font-size: 1.1rem;
+            font-weight: 600;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: var(--light-gray);
+        }
+
+        .pricing-price {
+            position: relative;
+            z-index: 1;
+            display: grid;
+            gap: 0.5rem;
+        }
+
+        .price-amount {
+            display: none;
+            align-items: baseline;
+            gap: 0.5rem;
+            font-size: 2.2rem;
+            font-weight: 600;
+            color: var(--white);
+        }
+
+        .price-amount.active {
+            display: inline-flex;
+        }
+
+        .price-period {
+            font-size: 1rem;
+            color: var(--lighter-gray);
+        }
+
+        .billing-note {
+            display: none;
+            font-size: 0.9rem;
+            color: var(--light-gray);
+        }
+
+        .billing-note.active {
+            display: block;
+        }
+
+        .pricing-features {
+            position: relative;
+            z-index: 1;
+            list-style: none;
+            margin: 0;
+            padding: 0;
+            display: grid;
+            gap: 0.65rem;
+            color: var(--lighter-gray);
+            font-size: 0.95rem;
+        }
+
+        .pricing-features li {
+            display: flex;
+            gap: 0.6rem;
+            align-items: flex-start;
+        }
+
+        .pricing-features li::before {
+            content: '•';
+            color: var(--light-gray);
+            font-weight: 600;
+            margin-top: -0.05rem;
+        }
+
+        .pricing-cta {
+            position: relative;
+            z-index: 1;
+            margin-top: auto;
+        }
+
+        .pricing-card.one-time {
+            border-style: dashed;
+            background: linear-gradient(145deg, rgba(148, 161, 178, 0.08), rgba(26, 26, 29, 0.9));
+        }
+
+        .comparison-table {
+            margin-top: 3.5rem;
+            position: relative;
+            z-index: 1;
+            overflow-x: auto;
+            border-radius: 20px;
+            border: 1px solid rgba(148, 161, 178, 0.18);
+            background: rgba(148, 161, 178, 0.05);
+        }
+
+        .pricing-comparison {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 640px;
+        }
+
+        .pricing-comparison caption {
+            padding: 1.5rem;
+            font-weight: 600;
+            text-align: left;
+            color: var(--white);
+        }
+
+        .pricing-comparison th,
+        .pricing-comparison td {
+            padding: 1rem 1.25rem;
+            border: 1px solid rgba(148, 161, 178, 0.18);
+            text-align: center;
+            color: var(--lighter-gray);
+        }
+
+        .pricing-comparison th:first-child,
+        .pricing-comparison td:first-child {
+            text-align: left;
+            color: var(--white);
+            font-weight: 500;
+        }
+
+        .comparison-check {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 26px;
+            height: 26px;
+            border-radius: 50%;
+            background: rgba(148, 161, 178, 0.16);
+            color: var(--white);
+        }
+
+        .comparison-metric {
+            font-weight: 600;
+            color: var(--white);
+        }
+
+        .pricing-footnote {
+            margin-top: 1.5rem;
+            font-size: 0.85rem;
+            color: var(--lighter-gray);
+        }
+        .cta-section {
+            position: relative;
+            overflow: hidden;
+        }
+
+        .cta-section::before {
+            content: "";
+            position: absolute;
+            inset: -20% -30% 0 -30%;
+            background: radial-gradient(circle at top, rgba(148, 161, 178, 0.16), transparent 60%);
+            pointer-events: none;
+        }
+
+        .cta-card {
+            position: relative;
+            padding: 3.2rem;
+            border-radius: 28px;
+            background: linear-gradient(145deg, rgba(148, 161, 178, 0.12), rgba(26, 26, 29, 0.92));
+            border: 1px solid rgba(148, 161, 178, 0.2);
+            box-shadow: 0 38px 72px rgba(15, 16, 19, 0.5);
+            overflow: hidden;
+        }
+
+        .cta-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+            margin-top: 1.75rem;
+        }
+
+        .cal-embed {
+            margin-top: 2.5rem;
+            background: linear-gradient(150deg, rgba(26, 26, 29, 0.94), rgba(15, 16, 19, 0.92));
+            border: 1px solid rgba(148, 161, 178, 0.16);
+            border-radius: 24px;
+            padding: 1rem;
+            box-shadow: inset 0 1px 0 rgba(254, 255, 255, 0.03);
+        }
+
+        .cal-embed .cal-inline {
+            width: 100%;
+            min-height: 560px;
+            border-radius: 18px;
+            overflow: hidden;
+        }
+
+        .cta-card h2 {
+            font-size: clamp(1.9rem, 3vw, 2.8rem);
+            margin-bottom: 1.5rem;
+            font-weight: 600;
+        }
+
+        .cta-card p {
+            color: var(--lighter-gray);
+            max-width: 640px;
+            margin-bottom: 2.25rem;
+        }
+
+        footer {
+            padding: 2.75rem 1.5rem;
+            border-top: 1px solid rgba(148, 161, 178, 0.12);
+            background: var(--black);
+            color: var(--lighter-gray);
+            font-size: 0.9rem;
+        }
+
+        footer .footer-inner {
+            max-width: 1180px;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .reveal {
+            opacity: 0;
+            transform: translateY(40px);
+            transition: opacity 0.6s ease, transform 0.6s ease;
+        }
+
+        .reveal.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        @media (min-width: 960px) {
+            .hero-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                align-items: center;
+            }
+
+            .cards-grid.features-grid {
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+            }
+
+            .cards-grid.integrations-grid {
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+            }
+        }
+
+        @media (max-width: 960px) {
+            nav {
+                position: fixed;
+                inset: 72px 1.5rem auto 1.5rem;
+                border-radius: 18px;
+                background: rgba(15, 16, 19, 0.95);
+                border: 1px solid rgba(148, 161, 178, 0.16);
+                padding: 1.75rem;
+                flex-direction: column;
+                align-items: stretch;
+                gap: 1.75rem;
+                transform-origin: top right;
+                transform: scale(0.9);
+                opacity: 0;
+                pointer-events: none;
+                transition: var(--transition);
+            }
+
+            nav.open {
+                opacity: 1;
+                pointer-events: auto;
+                transform: scale(1);
+            }
+
+            .nav-links {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 1.25rem;
+            }
+
+            .language-toggle {
+                align-self: flex-end;
+            }
+
+            .pricing-grid {
+                grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            }
+
+            .menu-toggle {
+                display: inline-flex;
+                align-items: center;
+                gap: 0.35rem;
+            }
+        }
+
+        @media (max-width: 720px) {
+            .hero-actions {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .btn {
+                width: 100%;
+            }
+
+            .hero-right {
+                padding: 2rem;
+            }
+
+            .billing-toggle {
+                width: 100%;
+                justify-content: space-between;
+            }
+
+            .billing-option {
+                flex: 1;
+                text-align: center;
+            }
+
+            .pricing-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .pricing-card {
+                padding: 1.9rem;
+            }
+
+            .cta-card {
+                padding: 2.5rem;
+            }
+
+            .cta-actions {
+                flex-direction: column;
+            }
+
+            .cal-embed .cal-inline {
+                min-height: 520px;
+            }
+        }
+    </style>
 </head>
-<body class="app">
-    <?php require_once __DIR__ . '/includes/navbar.php'; ?>
+<body>
+    <header>
+        <div class="nav-container">
+            <a class="brand" href="#hero">
+                <span class="brand-icon material-symbols-outlined">inventory</span>
+                <span>NOTSOWMS</span>
+            </a>
+            <button class="menu-toggle" aria-expanded="false" aria-controls="primary-navigation">
+                <span class="material-symbols-outlined">menu</span>
+                <span class="translate" data-lang-ro="Meniu" data-lang-en="Menu">Meniu</span>
+            </button>
+            <nav id="primary-navigation" aria-label="Primary">
+                <ul class="nav-links">
+                    <li><a class="translate" data-lang-ro="Caracteristici" data-lang-en="Features" href="#features">Caracteristici</a></li>
+                    <li><a class="translate" data-lang-ro="Prețuri" data-lang-en="Pricing" href="#pricing">Prețuri</a></li>
+                    <li><a class="translate" data-lang-ro="Integrări" data-lang-en="Integrations" href="#integrations">Integrări</a></li>
+                    <li><a class="translate" data-lang-ro="Statistici" data-lang-en="Statistics" href="#statistics">Statistici</a></li>
+                    <li><a class="translate" data-lang-ro="Contact" data-lang-en="Contact" href="#contact">Contact</a></li>
+                </ul>
+                <div class="language-toggle" role="group" aria-label="Language toggle">
+                    <button type="button" class="lang-option active" data-language="ro">RO</button>
+                    <button type="button" class="lang-option" data-language="en">EN</button>
+                </div>
+            </nav>
+        </div>
+    </header>
 
-    <div class="main-content">
-        <div class="dashboard-container">
-            <div class="page-container">
-                <!-- Dashboard Header -->
-                <div class="dashboard-header">
-                    <div class="header-content">
-                        <div class="header-info">
-                            <h1 class="dashboard-title">
-                                <span class="material-symbols-outlined">dashboard</span>
-                                Dashboard WMS
-                            </h1>
-                            <p class="dashboard-subtitle">Sumar activitate depozit - <?= date('d.m.Y H:i') ?></p>
-                        </div>
-                        <div class="header-actions">
-                            <div class="status-indicator">
-                                <span class="status-dot status-active"></span>
-                                <span class="status-text">Sistem Operațional</span>
-                            </div>
+    <main>
+        <section id="hero" class="hero reveal">
+            <div class="section-inner hero-grid">
+                <div class="hero-text">
+                    <span class="badge">
+                        <span class="material-symbols-outlined">workspace_premium</span>
+                        <span class="translate" data-lang-ro="Soluție enterprise pentru distribuție națională" data-lang-en="Enterprise solution for national distribution">Soluție enterprise pentru distribuție națională</span>
+                    </span>
+                    <h1 class="hero-title translate" data-lang-ro="Sistem enterprise de management al depozitului pentru România" data-lang-en="Enterprise Warehouse Management System for Romania">Sistem enterprise de management al depozitului pentru România</h1>
+                    <p class="hero-subtitle translate" data-lang-ro="Integrare nativă cu SmartBill și Cargus, aliniată la legislația ANAF pentru operațiuni fără blocaje." data-lang-en="Native SmartBill and Cargus integrations, aligned with ANAF regulations for frictionless operations.">Integrare nativă cu SmartBill și Cargus, aliniată la legislația ANAF pentru operațiuni fără blocaje.</p>
+                    <div class="hero-actions">
+                        <a class="btn btn-primary translate" href="#contact" data-lang-ro="Solicită Demo Enterprise" data-lang-en="Request Enterprise Demo">Solicită Demo Enterprise</a>
+                        <a class="btn btn-secondary translate" href="#features" data-lang-ro="Explorează Funcționalitățile" data-lang-en="Explore Features">Explorează Funcționalitățile</a>
+                    </div>
+                    <div class="trusted-bar">
+                        <span class="material-symbols-outlined">verified_user</span>
+                        <span class="translate" data-lang-ro="Ales de lideri din e-commerce, distribuție și 3PL" data-lang-en="Chosen by leaders in e-commerce, distribution, and 3PL">Ales de lideri din e-commerce, distribuție și 3PL</span>
+                        <div class="trusted-brands">
+                            <span>SmartBill</span>
+                            <span>Cargus</span>
+                            <span>ANAF</span>
+                            <span>ERP</span>
                         </div>
                     </div>
                 </div>
-
-                <!-- Key Metrics Grid -->
-                <div class="metrics-grid">
-                    <!-- Products Overview -->
-                    <div class="metric-card primary">
-                        <div class="metric-header">
-                            <span class="material-symbols-outlined">inventory_2</span>
-                            <div class="metric-values">
-                                <div class="metric-primary"><?= number_format($totalProducts) ?></div>
-                                <div class="metric-label">Produse Totale</div>
-                            </div>
-                        </div>
-                        <div class="metric-details">
-                            <div class="detail-item">
-                                <span class="detail-label">Stoc critic:</span>
-                                <span class="detail-value text-warning"><?= number_format($lowStockProducts) ?></span>
-                            </div>
-                        </div>
+                <div class="hero-right">
+                    <div class="hero-right-header">
+                        <span class="hero-right-title translate" data-lang-ro="Turn de control operațional" data-lang-en="Operations control tower">Turn de control operațional</span>
+                        <span class="material-symbols-outlined">monitoring</span>
                     </div>
-
-                    <!-- Warehouse Capacity -->
-                    <div class="metric-card secondary">
-                        <div class="metric-header">
-                            <span class="material-symbols-outlined">warehouse</span>
-                            <div class="metric-values">
-                                <div class="metric-primary"><?= $warehouseOccupationPercent ?>%</div>
-                                <div class="metric-label">Ocupare Depozit</div>
-                            </div>
-                        </div>
-                        <div class="metric-details">
-                            <div class="detail-item">
-                                <span class="detail-label">Locații ocupate:</span>
-                                <span class="detail-value"><?= number_format($occupiedLocations) ?>/<?= number_format($totalLocations) ?></span>
-                            </div>
-                            <div class="progress-bar">
-                                <div class="progress-fill" style="width: <?= $warehouseOccupationPercent ?>%"></div>
-                            </div>
-                        </div>
+                    <div class="integrations-row">
+                        <span class="integration-pill">SmartBill</span>
+                        <span class="integration-pill">Cargus</span>
+                        <span class="integration-pill">ANAF</span>
+                        <span class="integration-pill">ERP</span>
                     </div>
-
-                    <!-- Inventory Overview -->
-                    <div class="metric-card info">
-                        <div class="metric-header">
-                            <span class="material-symbols-outlined">widgets</span>
-                            <div class="metric-values">
-                                <div class="metric-primary"><?= number_format($totalItemsInStock) ?></div>
-                                <div class="metric-label">Articole în Stoc</div>
+                    <div class="dashboard-preview">
+                        <div class="dashboard-card">
+                            <div>
+                                <strong>SmartBill Sync</strong>
+                                <span class="translate" data-lang-ro="Documente fiscale generate instant" data-lang-en="Fiscal documents generated instantly">Documente fiscale generate instant</span>
                             </div>
+                            <span class="material-symbols-outlined">cloud_sync</span>
                         </div>
-                        <div class="metric-details">
-                            <div class="detail-item">
-                                <span class="detail-label">Mișcări azi:</span>
-                                <span class="detail-value"><?= number_format($todayStats['items_moved']) ?></span>
+                        <div class="dashboard-card">
+                            <div>
+                                <strong>Cargus AWB</strong>
+                                <span class="translate" data-lang-ro="AWB automat pentru fiecare comandă" data-lang-en="Automatic AWB for every order">AWB automat pentru fiecare comandă</span>
                             </div>
+                            <span class="material-symbols-outlined">local_shipping</span>
                         </div>
-                    </div>
-
-                    <!-- Orders Overview -->
-                    <div class="metric-card success">
-                        <div class="metric-header">
-                            <span class="material-symbols-outlined">shopping_cart</span>
-                            <div class="metric-values">
-                                <div class="metric-primary"><?= number_format($activeOrders) ?></div>
-                                <div class="metric-label">Comenzi Active</div>
+                        <div class="dashboard-card">
+                            <div>
+                                <strong>ROI Monitor</strong>
+                                <span class="translate" data-lang-ro="Economie medie de 40 ore/lună" data-lang-en="Average saving of 40 hours/month">Economie medie de 40 ore/lună</span>
                             </div>
+                            <span class="material-symbols-outlined">trending_up</span>
                         </div>
-                        <div class="metric-details">
-                            <div class="detail-item">
-                                <span class="detail-label">Finalizate azi:</span>
-                                <span class="detail-value text-success"><?= number_format($todayStats['orders_completed']) ?></span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- QC Pending -->
-                    <div class="metric-card warning">
-                        <div class="metric-header">
-                            <span class="material-symbols-outlined">fact_check</span>
-                            <div class="metric-values">
-                                <div class="metric-primary"><?= number_format($pendingQualityItems) ?></div>
-                                <div class="metric-label">QC în Așteptare</div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Relocation Tasks -->
-                    <div class="metric-card danger">
-                        <div class="metric-header">
-                            <span class="material-symbols-outlined">swap_horiz</span>
-                            <div class="metric-values">
-                                <div class="metric-primary"><?= number_format($pendingRelocations) ?></div>
-                                <div class="metric-label">Relocări în așteptare</div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Activity Overview -->
-                <div class="activity-grid">
-                    <!-- Today's Performance -->
-                    <div class="activity-card">
-                        <div class="card-header">
-                            <h3 class="card-title">
-                                <span class="material-symbols-outlined">trending_up</span>
-                                Performanță Astăzi
-                            </h3>
-                        </div>
-                        <div class="card-content">
-                            <div class="performance-stats">
-                                <div class="perf-stat">
-                                    <div class="perf-value"><?= number_format($todayStats['orders_created']) ?></div>
-                                    <div class="perf-label">Comenzi Noi</div>
-                                </div>
-                                <div class="perf-stat">
-                                    <div class="perf-value"><?= number_format($todayStats['orders_completed']) ?></div>
-                                    <div class="perf-label">Finalizate</div>
-                                </div>
-                                <div class="perf-stat">
-                                    <div class="perf-value"><?= number_format($todayStats['items_moved']) ?></div>
-                                    <div class="perf-label">Articole Procesate</div>
-                                </div>
-                            </div>
-                            <!-- Added tracking data -->
-                            <div class="performance-stats" style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border-color);">
-                                <div class="perf-stat">
-                                    <div class="perf-value"><?= number_format($todayTaskCounts['picking_tasks_today']) ?></div>
-                                    <div class="perf-label">Picking Tasks</div>
-                                </div>
-                                <div class="perf-stat">
-                                    <div class="perf-value"><?= number_format($todayTaskCounts['receiving_tasks_today']) ?></div>
-                                    <div class="perf-label">Receiving Tasks</div>
-                                </div>
-                                <div class="perf-stat">
-                                    <div class="perf-value"><?= number_format($todayTaskCounts['active_picking_tasks'] + $todayTaskCounts['active_receiving_tasks']) ?></div>
-                                    <div class="perf-label">Active Tasks</div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Recent Orders -->
-                    <div class="activity-card">
-                        <div class="card-header">
-                            <h3 class="card-title">
-                                <span class="material-symbols-outlined">receipt_long</span>
-                                Comenzi Recente
-                            </h3>
-                            <a href="<?= getNavUrl('orders.php') ?>" class="card-action">Vezi toate</a>
-                        </div>
-                        <div class="card-content">
-                            <?php if (empty($recentOrders)): ?>
-                                <div class="empty-state">
-                                    <span class="material-symbols-outlined">inbox</span>
-                                    <p>Nu există comenzi recente</p>
-                                </div>
-                            <?php else: ?>
-                                <div class="order-list-container">
-                                    <div class="order-list">
-                                        <?php foreach ($recentOrders as $order): ?>
-                                            <div class="order-item">
-                                                <div class="order-info">
-                                                    <div class="order-id">#<?= htmlspecialchars($order['id']) ?></div>
-                                                    <div class="order-customer"><?= htmlspecialchars($order['customer_name'] ?? 'N/A') ?></div>
-                                                </div>
-                                                <div class="order-status">
-                                                    <span class="status-badge status-<?= strtolower($order['status']) ?>">
-                                                        <?= ucfirst($order['status']) ?>
-                                                    </span>
-                                                </div>
-                                            </div>
-                                        <?php endforeach; ?>
-                                    </div>
-                                </div>
-                            <?php endif; ?>
-                        </div>
-                    </div>
-
-                    <!-- Stock Alerts -->
-                    <div class="activity-card alert-card">
-                        <div class="card-header">
-                            <h3 class="card-title">
-                                <span class="material-symbols-outlined">warning</span>
-                                Alerte Stoc
-                            </h3>
-                            <a href="<?= getNavUrl('inventory.php?filter=low_stock') ?>" class="card-action">Vezi toate</a>
-                        </div>
-                        <div class="card-content">
-                            <?php if (empty($criticalStockAlerts)): ?>
-                                <div class="empty-state">
-                                    <span class="material-symbols-outlined">check_circle</span>
-                                    <p>Nu există alerte de stoc</p>
-                                </div>
-                            <?php else: ?>
-                                <div class="alert-list">
-                                    <?php foreach ($criticalStockAlerts as $alert): ?>
-                                        <div class="alert-item">
-                                            <div class="alert-info">
-                                                <div class="alert-product"><?= htmlspecialchars($alert['name']) ?></div>
-                                                <div class="alert-sku"><?= htmlspecialchars($alert['sku']) ?></div>
-                                            </div>
-                                            <div class="alert-stock">
-                                                <span class="stock-current"><?= number_format($alert['quantity']) ?></span>
-                                                <span class="stock-divider">/</span>
-                                                <span class="stock-min"><?= number_format($alert['min_stock_level']) ?></span>
-                                            </div>
-                                        </div>
-                    <?php endforeach; ?>
-                                </div>
-                            <?php endif; ?>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Duration Statistics -->
-                <div class="duration-stats">
-                    <h3 class="section-title">
-                        <span class="material-symbols-outlined">schedule</span>
-                        Timp Mediu Procesare
-                    </h3>
-                    <div class="duration-grid">
-                        <div class="duration-card">
-                            <div class="card-header">
-                                <h3 class="card-title">
-                                    <span class="material-symbols-outlined">person</span>
-                                    Picking / Operator
-                                </h3>
-                            </div>
-                            <div class="card-content">
-                                <?php if (empty($pickingByOperator)): ?>
-                                    <div class="empty-state">
-                                        <span class="material-symbols-outlined">info</span>
-                                        <p>Fără date</p>
-                                    </div>
-                                <?php else: ?>
-                                    <div class="duration-list">
-                                        <?php foreach ($pickingByOperator as $row): ?>
-                                            <div class="duration-item">
-                                                <span><?= htmlspecialchars($row['operator']) ?></span>
-                                                <span class="duration-value"><?= number_format($row['avg_minutes'], 1) ?> min</span>
-                                            </div>
-                                        <?php endforeach; ?>
-                                    </div>
-                                <?php endif; ?>
-                            </div>
-                        </div>
-
-                        <div class="duration-card">
-                            <div class="card-header">
-                                <h3 class="card-title">
-                                    <span class="material-symbols-outlined">category</span>
-                                    Picking / Produs
-                                </h3>
-                            </div>
-                            <div class="card-content">
-                                <?php if (empty($pickingByProduct)): ?>
-                                    <div class="empty-state">
-                                        <span class="material-symbols-outlined">info</span>
-                                        <p>Fără date</p>
-                                    </div>
-                                <?php else: ?>
-                                    <div class="duration-list">
-                                        <?php foreach ($pickingByProduct as $row): ?>
-                                            <div class="duration-item">
-                                                <span><?= htmlspecialchars($row['product'] ?? 'N/A') ?></span>
-                                                <span class="duration-value"><?= number_format($row['avg_minutes'], 1) ?> min</span>
-                                            </div>
-                                        <?php endforeach; ?>
-                                    </div>
-                                <?php endif; ?>
-                            </div>
-                        </div>
-
-                        <div class="duration-card">
-                            <div class="card-header">
-                                <h3 class="card-title">
-                                    <span class="material-symbols-outlined">person</span>
-                                    Recepție / Operator
-                                </h3>
-                            </div>
-                            <div class="card-content">
-                                <?php if (empty($receivingByOperator)): ?>
-                                    <div class="empty-state">
-                                        <span class="material-symbols-outlined">info</span>
-                                        <p>Fără date</p>
-                                    </div>
-                                <?php else: ?>
-                                    <div class="duration-list">
-                                        <?php foreach ($receivingByOperator as $row): ?>
-                                            <div class="duration-item">
-                                                <span><?= htmlspecialchars($row['operator']) ?></span>
-                                                <span class="duration-value"><?= number_format($row['avg_minutes'], 1) ?> min</span>
-                                            </div>
-                                        <?php endforeach; ?>
-                                    </div>
-                                <?php endif; ?>
-                            </div>
-                        </div>
-
-                        <div class="duration-card">
-                            <div class="card-header">
-                                <h3 class="card-title">
-                                    <span class="material-symbols-outlined">category</span>
-                                    Recepție / Produs
-                                </h3>
-                            </div>
-                            <div class="card-content">
-                                <?php if (empty($receivingByProduct)): ?>
-                                    <div class="empty-state">
-                                        <span class="material-symbols-outlined">info</span>
-                                        <p>Fără date</p>
-                                    </div>
-                                <?php else: ?>
-                                    <div class="duration-list">
-                                        <?php foreach ($receivingByProduct as $row): ?>
-                                            <div class="duration-item">
-                                                <span><?= htmlspecialchars($row['product'] ?? 'N/A') ?></span>
-                                                <span class="duration-value"><?= number_format($row['avg_minutes'], 1) ?> min</span>
-                                            </div>
-                                        <?php endforeach; ?>
-                                    </div>
-                                <?php endif; ?>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Quick Actions -->
-                <div class="quick-actions">
-                    <h3 class="section-title">Acțiuni Rapide</h3>
-                    <div class="actions-grid">
-                        <a href="<?= getNavUrl('products.php') ?>" class="action-card">
-                            <span class="material-symbols-outlined">add_box</span>
-                            <span class="action-text">Adaugă Produs</span>
-                        </a>
-                        <a href="<?= getNavUrl('inventory.php') ?>" class="action-card">
-                            <span class="material-symbols-outlined">inventory</span>
-                            <span class="action-text">Verifică Inventar</span>
-                        </a>
-                        <a href="<?= getNavUrl('orders.php') ?>" class="action-card">
-                            <span class="material-symbols-outlined">add_shopping_cart</span>
-                            <span class="action-text">Comandă Nouă</span>
-                        </a>
-                        <a href="<?= getNavUrl('locations.php') ?>" class="action-card">
-                            <span class="material-symbols-outlined">place</span>
-                            <span class="action-text">Gestionează Locații</span>
-                        </a>
                     </div>
                 </div>
             </div>
+            <div class="section-inner hero-stats">
+                <div class="stat-card">
+                    <span class="stat-value">95%</span>
+                    <span class="stat-label translate" data-lang-ro="Reducere a erorilor operaționale" data-lang-en="Reduction in operational errors">Reducere a erorilor operaționale</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-value">60%</span>
+                    <span class="stat-label translate" data-lang-ro="Creștere a eficienței de picking" data-lang-en="Increase in picking efficiency">Creștere a eficienței de picking</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-value">24/7</span>
+                    <span class="stat-label translate" data-lang-ro="Suport enterprise dedicat" data-lang-en="Dedicated enterprise support">Suport enterprise dedicat</span>
+                </div>
+            </div>
+        </section>
+
+        <section id="features" class="reveal">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 class="section-title translate" data-lang-ro="Capabilități enterprise care scală cu depozitul tău" data-lang-en="Enterprise capabilities engineered for Romanian logistics">Capabilități enterprise care scală cu depozitul tău</h2>
+                    <p class="section-subtitle translate" data-lang-ro="Automatizăm procesele complexe ale depozitului și eliminăm blocajele operaționale cu fluxuri end-to-end." data-lang-en="Automate complex warehouse processes and eliminate operational bottlenecks with end-to-end flows.">Automatizăm procesele complexe ale depozitului și eliminăm blocajele operaționale cu fluxuri end-to-end.</p>
+                </div>
+                <div class="cards-grid features-grid">
+                    <article class="feature-card">
+                        <div class="card-icon"><span class="material-symbols-outlined">inventory_2</span></div>
+                        <h3 class="card-title translate" data-lang-ro="Management complet al stocului" data-lang-en="Complete inventory management">Management complet al stocului</h3>
+                        <ul class="card-list">
+                            <li class="translate" data-lang-ro="Trasabilitate lot/serie pentru fiecare mișcare" data-lang-en="Lot and serial traceability for every movement">Trasabilitate lot/serie pentru fiecare mișcare</li>
+                            <li class="translate" data-lang-ro="Reguli de slotting inteligente pentru zone rapide" data-lang-en="Intelligent slotting rules for fast lanes">Reguli de slotting inteligente pentru zone rapide</li>
+                            <li class="translate" data-lang-ro="Control automat al stocurilor de siguranță" data-lang-en="Automated safety stock enforcement">Control automat al stocurilor de siguranță</li>
+                        </ul>
+                    </article>
+                    <article class="feature-card">
+                        <div class="card-icon"><span class="material-symbols-outlined">smartphone</span></div>
+                        <h3 class="card-title translate" data-lang-ro="Aplicații mobile enterprise" data-lang-en="Enterprise mobile applications">Aplicații mobile enterprise</h3>
+                        <ul class="card-list">
+                            <li class="translate" data-lang-ro="Suport Android/iOS cu funcționare offline" data-lang-en="Android/iOS support with offline continuity">Suport Android/iOS cu funcționare offline</li>
+                            <li class="translate" data-lang-ro="Scanare coduri 1D/2D și validări în timp real" data-lang-en="1D/2D scanning with real-time validations">Scanare coduri 1D/2D și validări în timp real</li>
+                            <li class="translate" data-lang-ro="Fluxuri personalizate pentru picking și cross-docking" data-lang-en="Custom flows for picking and cross-docking">Fluxuri personalizate pentru picking și cross-docking</li>
+                        </ul>
+                    </article>
+                    <article class="feature-card">
+                        <div class="card-icon"><span class="material-symbols-outlined">assignment_return</span></div>
+                        <h3 class="card-title translate" data-lang-ro="Management avansat al retururilor" data-lang-en="Advanced returns management">Management avansat al retururilor</h3>
+                        <ul class="card-list">
+                            <li class="translate" data-lang-ro="Procesare automată a retururilor Cargus" data-lang-en="Automated processing for Cargus returns">Procesare automată a retururilor Cargus</li>
+                            <li class="translate" data-lang-ro="Decizii rapide prin workflows aprobate" data-lang-en="Rapid decisions through approved workflows">Decizii rapide prin workflows aprobate</li>
+                            <li class="translate" data-lang-ro="Reconcilieri SmartBill fără erori" data-lang-en="Error-free SmartBill reconciliations">Reconcilieri SmartBill fără erori</li>
+                        </ul>
+                    </article>
+                    <article class="feature-card">
+                        <div class="card-icon"><span class="material-symbols-outlined">verified</span></div>
+                        <h3 class="card-title translate" data-lang-ro="Control al calității integrat" data-lang-en="Integrated quality control">Control al calității integrat</h3>
+                        <ul class="card-list">
+                            <li class="translate" data-lang-ro="Check-list-uri digitale și rapoarte ANAF" data-lang-en="Digital checklists with ANAF-ready reports">Check-list-uri digitale și rapoarte ANAF</li>
+                            <li class="translate" data-lang-ro="Alertare instant pentru deviații critice" data-lang-en="Instant alerts for critical deviations">Alertare instant pentru deviații critice</li>
+                            <li class="translate" data-lang-ro="Audit trail complet și semnătură electronică" data-lang-en="Complete audit trail with electronic signature">Audit trail complet și semnătură electronică</li>
+                        </ul>
+                    </article>
+                    <article class="feature-card">
+                        <div class="card-icon"><span class="material-symbols-outlined">analytics</span></div>
+                        <h3 class="card-title translate" data-lang-ro="Analytics & raportare enterprise" data-lang-en="Enterprise analytics & reporting">Analytics & raportare enterprise</h3>
+                        <ul class="card-list">
+                            <li class="translate" data-lang-ro="KPIs operaționali și financiari în timp real" data-lang-en="Operational and financial KPIs in real time">KPIs operaționali și financiari în timp real</li>
+                            <li class="translate" data-lang-ro="Previziuni AI pentru stocuri sezoniere" data-lang-en="AI forecasting for seasonal stock">Previziuni AI pentru stocuri sezoniere</li>
+                            <li class="translate" data-lang-ro="Exporturi automate către board și ANAF" data-lang-en="Automated exports for board and ANAF">Exporturi automate către board și ANAF</li>
+                        </ul>
+                    </article>
+                    <article class="feature-card">
+                        <div class="card-icon"><span class="material-symbols-outlined">groups</span></div>
+                        <h3 class="card-title translate" data-lang-ro="Management enterprise al utilizatorilor" data-lang-en="Enterprise user management">Management enterprise al utilizatorilor</h3>
+                        <ul class="card-list">
+                            <li class="translate" data-lang-ro="Roluri granulare și politici Zero Trust" data-lang-en="Granular roles with Zero Trust policies">Roluri granulare și politici Zero Trust</li>
+                            <li class="translate" data-lang-ro="SSO și autentificare multi-factor" data-lang-en="SSO and multi-factor authentication">SSO și autentificare multi-factor</li>
+                            <li class="translate" data-lang-ro="Monitorizare a performanței echipelor" data-lang-en="Team performance monitoring">Monitorizare a performanței echipelor</li>
+                        </ul>
+                    </article>
+                </div>
+            </div>
+        </section>
+
+        <section id="pricing" class="reveal">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 class="section-title translate" data-lang-ro="Planuri premium calibrate pentru operațiuni la scară" data-lang-en="Premium plans calibrated for scale operations">Planuri premium calibrate pentru operațiuni la scară</h2>
+                    <p class="section-subtitle translate" data-lang-ro="Alege nivelul potrivit pentru depozitul tău și activează fluxurile automatizate, integrarea SmartBill/Cargus și API-ul enterprise exact când ai nevoie." data-lang-en="Select the right level for your warehouse and unlock automation, SmartBill/Cargus integrations, and the enterprise API exactly when you need them.">Alege nivelul potrivit pentru depozitul tău și activează fluxurile automatizate, integrarea SmartBill/Cargus și API-ul enterprise exact când ai nevoie.</p>
+                </div>
+                <div class="billing-toggle" role="group" aria-label="Billing frequency">
+                    <button type="button" class="billing-option active translate" data-billing="monthly" data-lang-ro="Facturare lunară" data-lang-en="Monthly billing">Facturare lunară</button>
+                    <button type="button" class="billing-option translate" data-billing="annual" data-lang-ro="Facturare anuală · economisești 17%" data-lang-en="Annual billing · save 17%">Facturare anuală · economisești 17%</button>
+                </div>
+                <div class="pricing-grid">
+                    <article class="pricing-card">
+                        <div class="pricing-header">
+                            <span class="tier-name translate" data-lang-ro="Starter" data-lang-en="Starter">Starter</span>
+                            <p class="translate" data-lang-ro="Pentru echipe care digitalizează operațiunile de bază ale depozitului." data-lang-en="For teams digitising core warehouse operations.">Pentru echipe care digitalizează operațiunile de bază ale depozitului.</p>
+                        </div>
+                        <div class="pricing-price">
+                            <div class="price-amount active" data-billing-mode="monthly">
+                                <span class="price-value translate" data-lang-ro="1.490 RON" data-lang-en="RON 1,490">1.490 RON</span>
+                                <span class="price-period translate" data-lang-ro="/ lună" data-lang-en="/ month">/ lună</span>
+                            </div>
+                            <div class="price-amount" data-billing-mode="annual">
+                                <span class="price-value translate" data-lang-ro="14.900 RON" data-lang-en="RON 14,900">14.900 RON</span>
+                                <span class="price-period translate" data-lang-ro="/ an" data-lang-en="/ year">/ an</span>
+                            </div>
+                            <p class="billing-note active translate" data-billing-mode="monthly" data-lang-ro="Include 5 utilizatori, 1 depozit și 5.000 SKU-uri active." data-lang-en="Includes 5 users, 1 warehouse and 5,000 active SKUs.">Include 5 utilizatori, 1 depozit și 5.000 SKU-uri active.</p>
+                            <p class="billing-note translate" data-billing-mode="annual" data-lang-ro="Economisești 17% față de lunar. Include 5 utilizatori, 1 depozit și 5.000 SKU-uri active." data-lang-en="Save 17% versus monthly. Includes 5 users, 1 warehouse and 5,000 active SKUs.">Economisești 17% față de lunar. Include 5 utilizatori, 1 depozit și 5.000 SKU-uri active.</p>
+                        </div>
+                        <ul class="pricing-features">
+                            <li class="translate" data-lang-ro="Inventariere și recepție centralizată (stoc, loturi, locații)." data-lang-en="Centralised inventory and receiving (stock, batches, locations).">Inventariere și recepție centralizată (stoc, loturi, locații).</li>
+                            <li class="translate" data-lang-ro="Procesare comenzi și generare automată AWB Cargus de bază." data-lang-en="Order processing with core automated Cargus AWB generation.">Procesare comenzi și generare automată AWB Cargus de bază.</li>
+                            <li class="translate" data-lang-ro="Sincronizare SmartBill și emitere documente fiscale conform ANAF." data-lang-en="SmartBill sync with ANAF-compliant fiscal documents.">Sincronizare SmartBill și emitere documente fiscale conform ANAF.</li>
+                            <li class="translate" data-lang-ro="Scanare coduri de bare și management locații din aplicația web." data-lang-en="Barcode scanning and location management from the web app.">Scanare coduri de bare și management locații din aplicația web.</li>
+                            <li class="translate" data-lang-ro="Dashboard operațional cu alerte de stoc și performanță zilnică." data-lang-en="Operational dashboard with stock alerts and daily performance.">Dashboard operațional cu alerte de stoc și performanță zilnică.</li>
+                        </ul>
+                        <a class="btn btn-primary pricing-cta translate" href="#contact" data-lang-ro="Începe cu Starter" data-lang-en="Start with Starter">Începe cu Starter</a>
+                    </article>
+                    <article class="pricing-card popular">
+                        <span class="popular-badge translate" data-lang-ro="Cel mai căutat" data-lang-en="Most popular">Cel mai căutat</span>
+                        <div class="pricing-header">
+                            <span class="tier-name translate" data-lang-ro="Professional" data-lang-en="Professional">Professional</span>
+                            <p class="translate" data-lang-ro="Pentru operațiuni în creștere care automatizează fluxurile avansate." data-lang-en="For growing operations automating advanced flows.">Pentru operațiuni în creștere care automatizează fluxurile avansate.</p>
+                        </div>
+                        <div class="pricing-price">
+                            <div class="price-amount active" data-billing-mode="monthly">
+                                <span class="price-value translate" data-lang-ro="2.490 RON" data-lang-en="RON 2,490">2.490 RON</span>
+                                <span class="price-period translate" data-lang-ro="/ lună" data-lang-en="/ month">/ lună</span>
+                            </div>
+                            <div class="price-amount" data-billing-mode="annual">
+                                <span class="price-value translate" data-lang-ro="24.900 RON" data-lang-en="RON 24,900">24.900 RON</span>
+                                <span class="price-period translate" data-lang-ro="/ an" data-lang-en="/ year">/ an</span>
+                            </div>
+                            <p class="billing-note active translate" data-billing-mode="monthly" data-lang-ro="Include 15 utilizatori, 3 depozite și 25.000 SKU-uri active." data-lang-en="Includes 15 users, 3 warehouses and 25,000 active SKUs.">Include 15 utilizatori, 3 depozite și 25.000 SKU-uri active.</p>
+                            <p class="billing-note translate" data-billing-mode="annual" data-lang-ro="Economisești 17% față de lunar. Include 15 utilizatori, 3 depozite și 25.000 SKU-uri active." data-lang-en="Save 17% versus monthly. Includes 15 users, 3 warehouses and 25,000 active SKUs.">Economisești 17% față de lunar. Include 15 utilizatori, 3 depozite și 25.000 SKU-uri active.</p>
+                        </div>
+                        <ul class="pricing-features">
+                            <li class="translate" data-lang-ro="Aplicații mobile de picking și retur cu validări în timp real." data-lang-en="Mobile picking and returns apps with real-time validation.">Aplicații mobile de picking și retur cu validări în timp real.</li>
+                            <li class="translate" data-lang-ro="Fluxuri automate de relocare, cross-docking și task-uri barcode." data-lang-en="Automated relocation, cross-docking and barcode task flows.">Fluxuri automate de relocare, cross-docking și task-uri barcode.</li>
+                            <li class="translate" data-lang-ro="Gestionare retururi, incidente și QC digital dintr-un singur hub." data-lang-en="Returns, incident and digital QC management from one hub.">Gestionare retururi, incidente și QC digital dintr-un singur hub.</li>
+                            <li class="translate" data-lang-ro="Reguli de ambalare, niveluri de locație și configurări multi-depozit." data-lang-en="Packaging rules, location levels and multi-warehouse setups.">Reguli de ambalare, niveluri de locație și configurări multi-depozit.</li>
+                            <li class="translate" data-lang-ro="Integrare SmartBill & Cargus extinsă cu procesare automată a retururilor." data-lang-en="Extended SmartBill & Cargus integration with automated returns.">Integrare SmartBill & Cargus extinsă cu procesare automată a retururilor.</li>
+                        </ul>
+                        <a class="btn btn-primary pricing-cta translate" href="#contact" data-lang-ro="Rezervă Professional" data-lang-en="Book Professional">Rezervă Professional</a>
+                    </article>
+                    <article class="pricing-card">
+                        <div class="pricing-header">
+                            <span class="tier-name translate" data-lang-ro="Enterprise" data-lang-en="Enterprise">Enterprise</span>
+                            <p class="translate" data-lang-ro="Pentru rețele complexe cu integrare completă și SLA garantat." data-lang-en="For complex networks requiring full integration and guaranteed SLA.">Pentru rețele complexe cu integrare completă și SLA garantat.</p>
+                        </div>
+                        <div class="pricing-price">
+                            <div class="price-amount active" data-billing-mode="monthly">
+                                <span class="price-value translate" data-lang-ro="3.990 RON" data-lang-en="RON 3,990">3.990 RON</span>
+                                <span class="price-period translate" data-lang-ro="/ lună" data-lang-en="/ month">/ lună</span>
+                            </div>
+                            <div class="price-amount" data-billing-mode="annual">
+                                <span class="price-value translate" data-lang-ro="39.900 RON" data-lang-en="RON 39,900">39.900 RON</span>
+                                <span class="price-period translate" data-lang-ro="/ an" data-lang-en="/ year">/ an</span>
+                            </div>
+                            <p class="billing-note active translate" data-billing-mode="monthly" data-lang-ro="Include 50 utilizatori, depozite nelimitate și 100.000+ SKU-uri active." data-lang-en="Includes 50 users, unlimited warehouses and 100,000+ active SKUs.">Include 50 utilizatori, depozite nelimitate și 100.000+ SKU-uri active.</p>
+                            <p class="billing-note translate" data-billing-mode="annual" data-lang-ro="Economisești 17% față de lunar. Include 50 utilizatori, depozite nelimitate și 100.000+ SKU-uri active." data-lang-en="Save 17% versus monthly. Includes 50 users, unlimited warehouses and 100,000+ active SKUs.">Economisești 17% față de lunar. Include 50 utilizatori, depozite nelimitate și 100.000+ SKU-uri active.</p>
+                        </div>
+                        <ul class="pricing-features">
+                            <li class="translate" data-lang-ro="API REST complet, webhooks și limite SLA monitorizate." data-lang-en="Full REST API, webhooks and monitored SLA limits.">API REST complet, webhooks și limite SLA monitorizate.</li>
+                            <li class="translate" data-lang-ro="Print server dedicat, template-uri dinamice și management imprimante." data-lang-en="Dedicated print server, dynamic templates and printer management.">Print server dedicat, template-uri dinamice și management imprimante.</li>
+                            <li class="translate" data-lang-ro="Monitorizare timpi operaționali și rapoarte executive personalizate." data-lang-en="Operational time tracking with customised executive reports.">Monitorizare timpi operaționali și rapoarte executive personalizate.</li>
+                            <li class="translate" data-lang-ro="Automatizări cron pentru retururi, importuri și reconciliere fiscală." data-lang-en="Cron automations for returns, imports and fiscal reconciliation.">Automatizări cron pentru retururi, importuri și reconciliere fiscală.</li>
+                            <li class="translate" data-lang-ro="Customer Success dedicat și sesiuni avansate de training." data-lang-en="Dedicated Customer Success and advanced training sessions.">Customer Success dedicat și sesiuni avansate de training.</li>
+                        </ul>
+                        <a class="btn btn-primary pricing-cta translate" href="#contact" data-lang-ro="Programează Enterprise" data-lang-en="Schedule Enterprise">Programează Enterprise</a>
+                    </article>
+                    <article class="pricing-card one-time">
+                        <div class="pricing-header">
+                            <span class="tier-name translate" data-lang-ro="Enterprise Lifetime" data-lang-en="Enterprise Lifetime">Enterprise Lifetime</span>
+                            <p class="translate" data-lang-ro="Licență unică pentru companii care necesită control total și implementare on-premises." data-lang-en="One-time licence for companies needing full control and on-premises deployment.">Licență unică pentru companii care necesită control total și implementare on-premises.</p>
+                        </div>
+                        <div class="pricing-price">
+                            <div class="price-amount active">
+                                <span class="price-value translate" data-lang-ro="89.000 RON" data-lang-en="RON 89,000">89.000 RON</span>
+                                <span class="price-period translate" data-lang-ro="plată unică" data-lang-en="one-time payment">plată unică</span>
+                            </div>
+                        </div>
+                        <ul class="pricing-features">
+                            <li class="translate" data-lang-ro="Include toate funcționalitățile Enterprise și acces complet API." data-lang-en="Includes the full Enterprise feature set with complete API access.">Include toate funcționalitățile Enterprise și acces complet API.</li>
+                            <li class="translate" data-lang-ro="Implementare asistată, migrare date și training personalizat onsite." data-lang-en="Guided implementation, data migration and bespoke onsite training.">Implementare asistată, migrare date și training personalizat onsite.</li>
+                            <li class="translate" data-lang-ro="Configurare print server dedicat și scripturi de automatizare custom." data-lang-en="Dedicated print server setup with custom automation scripts.">Configurare print server dedicat și scripturi de automatizare custom.</li>
+                            <li class="translate" data-lang-ro="Suport prioritar și acces la roadmap-ul de dezvoltare." data-lang-en="Priority support with direct access to the product roadmap.">Suport prioritar și acces la roadmap-ul de dezvoltare.</li>
+                        </ul>
+                        <a class="btn btn-secondary pricing-cta translate" href="#contact" data-lang-ro="Discută cu noi" data-lang-en="Talk with us">Discută cu noi</a>
+                    </article>
+                </div>
+                <div class="comparison-table">
+                    <table class="pricing-comparison">
+                        <caption class="translate" data-lang-ro="Comparație detaliată a funcționalităților" data-lang-en="Detailed functionality comparison">Comparație detaliată a funcționalităților</caption>
+                        <thead>
+                            <tr>
+                                <th></th>
+                                <th class="translate" data-lang-ro="Starter" data-lang-en="Starter">Starter</th>
+                                <th class="translate" data-lang-ro="Professional" data-lang-en="Professional">Professional</th>
+                                <th class="translate" data-lang-ro="Enterprise" data-lang-en="Enterprise">Enterprise</th>
+                                <th class="translate" data-lang-ro="Lifetime" data-lang-en="Lifetime">Lifetime</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td class="translate" data-lang-ro="Utilizatori incluși" data-lang-en="Included users">Utilizatori incluși</td>
+                                <td><span class="comparison-metric">5</span></td>
+                                <td><span class="comparison-metric">15</span></td>
+                                <td><span class="comparison-metric">50</span></td>
+                                <td><span class="comparison-metric">50+</span></td>
+                            </tr>
+                            <tr>
+                                <td class="translate" data-lang-ro="Depozite active" data-lang-en="Active warehouses">Depozite active</td>
+                                <td><span class="translate" data-lang-ro="1 depozit" data-lang-en="1 warehouse">1 depozit</span></td>
+                                <td><span class="translate" data-lang-ro="până la 3 depozite" data-lang-en="up to 3 warehouses">până la 3 depozite</span></td>
+                                <td><span class="translate" data-lang-ro="nelimitat" data-lang-en="unlimited">nelimitat</span></td>
+                                <td><span class="translate" data-lang-ro="nelimitat + on-prem" data-lang-en="unlimited + on-prem">nelimitat + on-prem</span></td>
+                            </tr>
+                            <tr>
+                                <td class="translate" data-lang-ro="SKU-uri active" data-lang-en="Active SKUs">SKU-uri active</td>
+                                <td><span class="translate" data-lang-ro="5.000" data-lang-en="5,000">5.000</span></td>
+                                <td><span class="translate" data-lang-ro="25.000" data-lang-en="25,000">25.000</span></td>
+                                <td><span class="translate" data-lang-ro="100.000+" data-lang-en="100,000+">100.000+</span></td>
+                                <td><span class="translate" data-lang-ro="nelimitat" data-lang-en="unlimited">nelimitat</span></td>
+                            </tr>
+                            <tr>
+                                <td class="translate" data-lang-ro="Integrare SmartBill & Cargus" data-lang-en="SmartBill & Cargus integration">Integrare SmartBill & Cargus</td>
+                                <td><span class="comparison-check material-symbols-outlined">done</span></td>
+                                <td><span class="comparison-check material-symbols-outlined">done_all</span></td>
+                                <td><span class="comparison-check material-symbols-outlined">workspace_premium</span></td>
+                                <td><span class="comparison-check material-symbols-outlined">workspace_premium</span></td>
+                            </tr>
+                            <tr>
+                                <td class="translate" data-lang-ro="Aplicații mobile & task-uri barcode" data-lang-en="Mobile apps & barcode tasks">Aplicații mobile & task-uri barcode</td>
+                                <td><span class="comparison-check material-symbols-outlined">done</span></td>
+                                <td><span class="comparison-check material-symbols-outlined">done_all</span></td>
+                                <td><span class="comparison-check material-symbols-outlined">workspace_premium</span></td>
+                                <td><span class="comparison-check material-symbols-outlined">workspace_premium</span></td>
+                            </tr>
+                            <tr>
+                                <td class="translate" data-lang-ro="API REST & webhooks" data-lang-en="REST API & webhooks">API REST & webhooks</td>
+                                <td><span class="translate" data-lang-ro="lectură" data-lang-en="read-only">lectură</span></td>
+                                <td><span class="translate" data-lang-ro="complet" data-lang-en="full">complet</span></td>
+                                <td><span class="comparison-check material-symbols-outlined">sync_lock</span></td>
+                                <td><span class="comparison-check material-symbols-outlined">sync_lock</span></td>
+                            </tr>
+                            <tr>
+                                <td class="translate" data-lang-ro="Automatizare retururi & QC" data-lang-en="Returns & QC automation">Automatizare retururi & QC</td>
+                                <td><span class="comparison-check material-symbols-outlined">done</span></td>
+                                <td><span class="comparison-check material-symbols-outlined">done_all</span></td>
+                                <td><span class="comparison-check material-symbols-outlined">verified</span></td>
+                                <td><span class="comparison-check material-symbols-outlined">verified</span></td>
+                            </tr>
+                            <tr>
+                                <td class="translate" data-lang-ro="Print server & template-uri personalizate" data-lang-en="Print server & custom templates">Print server & template-uri personalizate</td>
+                                <td><span class="translate" data-lang-ro="add-on" data-lang-en="add-on">add-on</span></td>
+                                <td><span class="translate" data-lang-ro="add-on" data-lang-en="add-on">add-on</span></td>
+                                <td><span class="comparison-check material-symbols-outlined">local_printshop</span></td>
+                                <td><span class="comparison-check material-symbols-outlined">local_printshop</span></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <p class="pricing-footnote translate" data-lang-ro="Toate planurile includ onboarding asistat, migrare date standard și acces la documentația API." data-lang-en="All plans include guided onboarding, standard data migration and access to API documentation.">Toate planurile includ onboarding asistat, migrare date standard și acces la documentația API.</p>
+            </div>
+        </section>
+        <section id="integrations" class="reveal">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 class="section-title translate" data-lang-ro="Integrări validate pe piața din România" data-lang-en="Integrations built for the Romanian market">Integrări validate pe piața din România</h2>
+                    <p class="section-subtitle translate" data-lang-ro="Operăm cu platformele critice pentru business-urile locale, cu sincronizări sigure și monitorizare permanentă." data-lang-en="Operate with the critical Romanian platforms through secure, continuously monitored integrations.">Operăm cu platformele critice pentru business-urile locale, cu sincronizări sigure și monitorizare permanentă.</p>
+                </div>
+                <div class="cards-grid integrations-grid">
+                    <article class="integration-card">
+                        <div class="card-icon"><span class="material-symbols-outlined">receipt_long</span></div>
+                        <h3 class="card-title">SmartBill</h3>
+                        <ul class="card-list">
+                            <li class="translate" data-lang-ro="Sincronizare automată a facturilor și stocurilor" data-lang-en="Automatic sync of invoices and stock">Sincronizare automată a facturilor și stocurilor</li>
+                            <li class="translate" data-lang-ro="Generare instant de documente fiscale" data-lang-en="Instant fiscal document generation">Generare instant de documente fiscale</li>
+                            <li class="translate" data-lang-ro="Aliniere completă la cerințele ANAF" data-lang-en="Full alignment with ANAF compliance">Aliniere completă la cerințele ANAF</li>
+                        </ul>
+                    </article>
+                    <article class="integration-card">
+                        <div class="card-icon"><span class="material-symbols-outlined">local_shipping</span></div>
+                        <h3 class="card-title">Cargus</h3>
+                        <ul class="card-list">
+                            <li class="translate" data-lang-ro="Generare automată a AWB-urilor" data-lang-en="Automatic AWB generation">Generare automată a AWB-urilor</li>
+                            <li class="translate" data-lang-ro="Tracking în timp real pentru fiecare expediție" data-lang-en="Real-time tracking for every shipment">Tracking în timp real pentru fiecare expediție</li>
+                            <li class="translate" data-lang-ro="Gestionare completă a retururilor" data-lang-en="Complete returns management">Gestionare completă a retururilor</li>
+                        </ul>
+                    </article>
+                    <article class="integration-card">
+                        <div class="card-icon"><span class="material-symbols-outlined">api</span></div>
+                        <h3 class="card-title">Enterprise REST API</h3>
+                        <ul class="card-list">
+                            <li class="translate" data-lang-ro="Autentificare securizată și token management" data-lang-en="Secure authentication and token management">Autentificare securizată și token management</li>
+                            <li class="translate" data-lang-ro="Limitare de trafic și SLA monitorizat" data-lang-en="Rate limiting with monitored SLAs">Limitare de trafic și SLA monitorizat</li>
+                            <li class="translate" data-lang-ro="Documentație completă pentru parteneri" data-lang-en="Comprehensive partner documentation">Documentație completă pentru parteneri</li>
+                        </ul>
+                    </article>
+                </div>
+            </div>
+        </section>
+
+        <section id="statistics" class="reveal">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 class="section-title translate" data-lang-ro="Indicatori de performanță obținuți de clienții NOTSOWMS" data-lang-en="Performance indicators delivered by NOTSOWMS">Indicatori de performanță obținuți de clienții NOTSOWMS</h2>
+                    <p class="section-subtitle translate" data-lang-ro="Date validate în proiecte enterprise din e-commerce, distribuție și producție." data-lang-en="Validated data across enterprise projects in e-commerce, distribution, and manufacturing.">Date validate în proiecte enterprise din e-commerce, distribuție și producție.</p>
+                </div>
+                <div class="statistics-grid">
+                    <div class="statistic-card">
+                        <div class="statistic-value">95%</div>
+                        <div class="statistic-label translate" data-lang-ro="Reducere a erorilor de inventar" data-lang-en="Inventory error reduction">Reducere a erorilor de inventar</div>
+                    </div>
+                    <div class="statistic-card">
+                        <div class="statistic-value">60%</div>
+                        <div class="statistic-label translate" data-lang-ro="Creștere a eficienței de picking" data-lang-en="Increase in picking efficiency">Creștere a eficienței de picking</div>
+                    </div>
+                    <div class="statistic-card">
+                        <div class="statistic-value">80%</div>
+                        <div class="statistic-label translate" data-lang-ro="Reducere a timpului de procesare" data-lang-en="Processing time reduction">Reducere a timpului de procesare</div>
+                    </div>
+                    <div class="statistic-card">
+                        <div class="statistic-value">99.9%</div>
+                        <div class="statistic-label translate" data-lang-ro="Disponibilitate a platformei" data-lang-en="Platform uptime">Disponibilitate a platformei</div>
+                    </div>
+                    <div class="statistic-card">
+                        <div class="statistic-value">15</div>
+                        <div class="statistic-label translate" data-lang-ro="Zile medii de implementare" data-lang-en="Average implementation days">Zile medii de implementare</div>
+                    </div>
+                    <div class="statistic-card">
+                        <div class="statistic-value">24/7</div>
+                        <div class="statistic-label translate" data-lang-ro="Suport enterprise permanent" data-lang-en="Permanent enterprise support">Suport enterprise permanent</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="contact" class="cta-section reveal">
+            <div class="section-inner">
+                <div class="cta-card">
+                    <h2 class="translate" data-lang-ro="Transformă-ți operațiunile de depozit în doar câteva săptămâni" data-lang-en="Transform your warehouse operations in weeks">Transformă-ți operațiunile de depozit în doar câteva săptămâni</h2>
+                    <p class="translate" data-lang-ro="Programează un demo personalizat pentru a vedea cum NOTSOWMS conectează SmartBill, Cargus și procesele interne într-o singură platformă enterprise." data-lang-en="Schedule a personalized demo to see how NOTSOWMS connects SmartBill, Cargus, and internal processes into one enterprise platform.">Programează un demo personalizat pentru a vedea cum NOTSOWMS conectează SmartBill, Cargus și procesele interne într-o singură platformă enterprise.</p>
+                    <div class="cta-actions">
+                        <a class="btn btn-primary translate" href="https://cal.com/notso/15min" target="_blank" rel="noreferrer" data-lang-ro="Rezervă un demo" data-lang-en="Book a demo">Rezervă un demo</a>
+                        <a class="btn btn-secondary translate" href="https://cal.com/notso/15min?utm=landing" target="_blank" rel="noreferrer" data-lang-ro="Planifică o consultanță" data-lang-en="Schedule a consultation">Planifică o consultanță</a>
+                    </div>
+                    <div class="cal-embed">
+                        <div class="cal-inline" id="my-cal-inline-15min"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+        <script type="text/javascript">
+            (function (C, A, L) {
+                let p = function (a, ar) { a.q.push(ar); };
+                let d = C.document;
+                C.Cal = C.Cal || function () {
+                    let cal = C.Cal;
+                    let ar = arguments;
+                    if (!cal.loaded) {
+                        cal.ns = {};
+                        cal.q = cal.q || [];
+                        d.head.appendChild(d.createElement("script")).src = A;
+                        cal.loaded = true;
+                    }
+                    if (ar[0] === L) {
+                        const api = function () { p(api, arguments); };
+                        const namespace = ar[1];
+                        api.q = api.q || [];
+                        if (typeof namespace === "string") {
+                            cal.ns[namespace] = cal.ns[namespace] || api;
+                            p(cal.ns[namespace], ar);
+                            p(cal, ["initNamespace", namespace]);
+                        } else p(cal, ar);
+                        return;
+                    }
+                    p(cal, ar);
+                };
+            })(window, "https://app.cal.com/embed/embed.js", "init");
+
+            Cal("init", "15min", { origin: "https://app.cal.com" });
+
+            Cal.ns["15min"]("inline", {
+                elementOrSelector: "#my-cal-inline-15min",
+                config: { "layout": "month_view", "theme": "dark" },
+                calLink: "notso/15min",
+            });
+
+            Cal.ns["15min"]("ui", { "theme": "dark", "hideEventTypeDetails": false, "layout": "month_view" });
+        </script>
+    </main>
+
+    <footer>
+        <div class="footer-inner">
+            <span>© 2025 NOTSOWMS. All rights reserved.</span>
+            <span class="translate" data-lang-ro="Soluție enterprise de management al depozitelor construită în România." data-lang-en="Enterprise warehouse management solution built in Romania.">Soluție enterprise de management al depozitelor construită în România.</span>
         </div>
-    </div>
+    </footer>
 
-    <?php require_once __DIR__ . '/includes/footer.php'; ?>
     <script>
-        // Auto-refresh dashboard data every 30 seconds
-        setInterval(() => {
-            // Update timestamp
-            const subtitle = document.querySelector('.dashboard-subtitle');
-            if (subtitle) {
-                const now = new Date();
-                const timeStr = now.toLocaleDateString('ro-RO') + ' ' + 
-                               now.toLocaleTimeString('ro-RO', {hour: '2-digit', minute: '2-digit'});
-                subtitle.textContent = `Sumar activitate depozit - ${timeStr}`;
-            }
-        }, 30000);
+        (function () {
+            const nav = document.getElementById('primary-navigation');
+            const menuToggle = document.querySelector('.menu-toggle');
+            const langButtons = document.querySelectorAll('.lang-option');
+            const billingOptions = document.querySelectorAll('.billing-option');
+            const billingElements = document.querySelectorAll('[data-billing-mode]');
+            const translatable = document.querySelectorAll('.translate');
+            const STORAGE_KEY = 'notsowms-language';
 
-        // Pass tracking data to JavaScript for updates
-        window.TRACKING_DATA = {
-            todayTaskCounts: <?= json_encode($todayTaskCounts) ?>
-        };
+            function setLanguage(lang) {
+                document.documentElement.setAttribute('lang', lang);
+                localStorage.setItem(STORAGE_KEY, lang);
+                translatable.forEach(element => {
+                    const ro = element.dataset.langRo;
+                    const en = element.dataset.langEn;
+                    if (lang === 'en' && en) {
+                        element.textContent = en;
+                    } else if (lang === 'ro' && ro) {
+                        element.textContent = ro;
+                    }
+                });
+                langButtons.forEach(button => {
+                    button.classList.toggle('active', button.dataset.language === lang);
+                });
+            }
+
+            function initLanguage() {
+                const saved = localStorage.getItem(STORAGE_KEY);
+                const initial = saved === 'en' ? 'en' : 'ro';
+                setLanguage(initial);
+            }
+
+            function setBillingMode(mode) {
+                billingOptions.forEach(option => {
+                    option.classList.toggle('active', option.dataset.billing === mode);
+                });
+                billingElements.forEach(element => {
+                    const targetMode = element.dataset.billingMode;
+                    if (!targetMode) {
+                        return;
+                    }
+                    element.classList.toggle('active', targetMode === mode);
+                });
+            }
+
+            function toggleMenu(forceState) {
+                const shouldOpen = typeof forceState === 'boolean' ? forceState : !nav.classList.contains('open');
+                nav.classList.toggle('open', shouldOpen);
+                menuToggle.setAttribute('aria-expanded', shouldOpen);
+            }
+
+            if (billingOptions.length) {
+                billingOptions.forEach(option => {
+                    option.addEventListener('click', () => {
+                        const mode = option.dataset.billing;
+                        if (mode) {
+                            setBillingMode(mode);
+                        }
+                    });
+                });
+                setBillingMode('monthly');
+            }
+
+            langButtons.forEach(button => {
+                button.addEventListener('click', () => {
+                    const lang = button.dataset.language;
+                    setLanguage(lang);
+                    if (nav.classList.contains('open')) {
+                        toggleMenu(false);
+                    }
+                });
+            });
+
+            menuToggle.addEventListener('click', () => toggleMenu());
+
+            document.addEventListener('click', event => {
+                if (!nav.contains(event.target) && !menuToggle.contains(event.target)) {
+                    toggleMenu(false);
+                }
+            });
+
+            const observer = new IntersectionObserver((entries, obs) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        entry.target.classList.add('visible');
+                        obs.unobserve(entry.target);
+                    }
+                });
+            }, {
+                threshold: 0.15
+            });
+
+            document.querySelectorAll('.reveal').forEach(section => observer.observe(section));
+
+            initLanguage();
+        })();
     </script>
 </body>
 </html>

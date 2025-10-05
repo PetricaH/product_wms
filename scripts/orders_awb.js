@@ -354,7 +354,7 @@ function getAwbStatusClass(status) {
         return 'awb-status-picked-up';
     } else if (statusLower.includes('returnat') || statusLower.includes('return')) {
         return 'awb-status-returned';
-    } else if (statusLower.includes('anulat') || statusLower.includes('cancelled')) {
+    } else if (statusLower.includes('anulat') || statusLower.includes('cancelled') || statusLower.includes('canceled')) {
         return 'awb-status-cancelled';
     } else {
         return 'awb-status-unknown';

@@ -19,6 +19,18 @@ let ordersRealtimeTimer = null;
 let ordersRealtimeController = null;
 let ordersLatestTimestamp = null;
 
+function normalizeOrderStatus(status) {
+    const value = (status ?? '').toString().trim().toLowerCase();
+    if (value === 'cancelled') {
+        return 'canceled';
+    }
+    return value;
+}
+
+function isOrderStatusCanceled(status) {
+    return normalizeOrderStatus(status) === 'canceled';
+}
+
 function initRealtimeSearch() {
     const searchInput = document.querySelector('.search-input');
     if (!searchInput) return;
@@ -237,9 +249,9 @@ function shouldRenderOrder(order, table) {
 }
 
 function updateOrderRow(row, order) {
-    const status = (order.status || '').toLowerCase();
+    const status = normalizeOrderStatus(order.status);
     const statusRaw = order.status_raw || order.status || status;
-    const previousStatus = row.getAttribute('data-status') || '';
+    const previousStatus = normalizeOrderStatus(row.getAttribute('data-status') || '');
     const result = { statusChanged: false, awbUpdated: false };
 
     if (status && previousStatus !== status) {
@@ -247,7 +259,7 @@ function updateOrderRow(row, order) {
         row.setAttribute('data-status', status);
     }
 
-    const isCanceled = status === 'canceled';
+    const isCanceled = isOrderStatusCanceled(status);
     row.classList.toggle('order-row--canceled', isCanceled);
     row.setAttribute('data-is-canceled', isCanceled ? '1' : '0');
 
@@ -384,10 +396,10 @@ function updateOrderRow(row, order) {
 
 function renderOrderRow(order) {
     const row = document.createElement('tr');
-    const status = (order.status || '').toLowerCase();
+    const status = normalizeOrderStatus(order.status);
     const sanitizedStatus = sanitizeStatus(status);
     const statusRaw = order.status_raw || order.status || status;
-    const isCanceled = status === 'canceled';
+    const isCanceled = isOrderStatusCanceled(status);
 
     row.className = `order-row${isCanceled ? ' order-row--canceled' : ''}`;
     row.setAttribute('data-order-id', order.id);
@@ -454,7 +466,7 @@ function renderOrderRow(order) {
 }
 
 function renderAwbCell(order) {
-    const isCanceled = (order.status || '').toLowerCase() === 'canceled';
+    const isCanceled = isOrderStatusCanceled(order.status);
     if (isCanceled) {
         return '<div class="text-muted small">Anulat - AWB indisponibil</div>';
     }
@@ -503,8 +515,9 @@ function renderOrderActions(order, statusRawValue) {
     const id = Number(order.id);
     const orderNumber = order.order_number || `#${id}`;
     const escapedOrderNumber = escapeJsString(orderNumber);
-    const status = escapeJsString(statusRawValue || order.status || '');
-    const isCanceled = (order.status || '').toLowerCase() === 'canceled';
+    const normalizedStatus = normalizeOrderStatus(statusRawValue || order.status || '');
+    const status = escapeJsString(normalizedStatus);
+    const isCanceled = isOrderStatusCanceled(order.status);
     const table = document.querySelector('.orders-table');
     const viewMode = table ? table.dataset.viewMode || 'active' : 'active';
     const escapedViewMode = escapeHtml(viewMode);

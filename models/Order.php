@@ -927,15 +927,25 @@ class Order
         $status = strtolower($status);
 
         $setClauses = ['status = :status', 'updated_at = NOW()'];
-        $bindCanceled = false;
+        $shouldBindCanceledBy = false;
 
         if ($status === 'canceled') {
-            $setClauses[] = 'canceled_at = NOW()';
-            $setClauses[] = 'canceled_by = :canceled_by';
-            $bindCanceled = true;
+            if ($this->hasCanceledAtColumn) {
+                $setClauses[] = 'canceled_at = NOW()';
+            }
+
+            if ($this->hasCanceledByColumn) {
+                $setClauses[] = 'canceled_by = :canceled_by';
+                $shouldBindCanceledBy = true;
+            }
         } else {
-            $setClauses[] = 'canceled_at = NULL';
-            $setClauses[] = 'canceled_by = NULL';
+            if ($this->hasCanceledAtColumn) {
+                $setClauses[] = 'canceled_at = NULL';
+            }
+
+            if ($this->hasCanceledByColumn) {
+                $setClauses[] = 'canceled_by = NULL';
+            }
         }
 
         $query = "UPDATE {$this->table} SET " . implode(', ', $setClauses) . " WHERE id = :id";
@@ -945,7 +955,8 @@ class Order
             $stmt = $this->conn->prepare($query);
             $stmt->bindValue(':id', $orderId, PDO::PARAM_INT);
             $stmt->bindValue(':status', $status);
-            if ($bindCanceled) {
+
+            if ($shouldBindCanceledBy) {
                 $canceledBy = $_SESSION['user_id'] ?? null;
                 if ($canceledBy !== null) {
                     $stmt->bindValue(':canceled_by', $canceledBy, PDO::PARAM_INT);
@@ -953,7 +964,9 @@ class Order
                     $stmt->bindValue(':canceled_by', null, PDO::PARAM_NULL);
                 }
             }
+
             $result = $stmt->execute();
+
             if ($result) {
                 $userId = $_SESSION['user_id'] ?? 0;
                 $oldStatus = $old['status'] ?? null;
@@ -967,6 +980,7 @@ class Order
                     ['status' => $status]
                 );
             }
+
             return $result;
         } catch (PDOException $e) {
             error_log("Error updating order status: " . $e->getMessage());

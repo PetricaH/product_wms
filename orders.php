@@ -650,6 +650,20 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
             color: #7f1d1d;
         }
 
+        [data-theme="dark"] .order-row--canceled {
+            background-color: rgba(127, 29, 29, 0.24);
+        }
+
+        [data-theme="dark"] .order-row--canceled td {
+            color: #fecaca;
+        }
+
+        [data-theme="dark"] .order-row--canceled .order-status-badge {
+            background-color: rgba(248, 113, 113, 0.18);
+            border-color: rgba(248, 113, 113, 0.35);
+            color: #fecaca;
+        }
+
         .order-status-badge {
             display: inline-flex;
             align-items: center;

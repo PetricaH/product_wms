@@ -365,3 +365,40 @@
     }
 }
 
+.awb-node-wrapper {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    text-align: center !important;
+    min-width: 150px !important;
+    padding: 8px !important;
+}
+
+.awb-node-date {
+    font-size: 12px !important;
+    font-weight: 600 !important;
+    margin-bottom: 8px !important;
+    white-space: nowrap !important;
+}
+
+.awb-node-dot {
+    width: 12px !important;
+    height: 12px !important;
+    background: #f97316 !important;
+    border-radius: 50% !important;
+    margin: 8px 0 !important;
+}
+
+.awb-node-desc {
+    font-size: 10px !important;
+    margin-top: 8px !important;
+    max-width: 200px !important;
+    line-height: 1.4 !important;
+}
+
+.awb-node-loc {
+    font-size: 11px !important;
+    font-weight: 700 !important;
+    margin-top: 8px !important;
+    color: #f97316 !important;
+}

@@ -1,3 +1,4 @@
+console.log('AWB Tracking Script Version 2.0 LOADED');
 // File: scripts/orders_awb_tracking.js
 // Handles expandable AWB tracking timeline rendering on the orders page
 
@@ -94,7 +95,6 @@
         if (errorElement) {
             errorElement.hidden = true;
             errorElement.textContent = '';
-            errorElement.setAttribute('hidden', 'hidden');
         }
         if (emptyElement) {
             emptyElement.hidden = true;
@@ -193,11 +193,9 @@
         if (errorElement) {
             errorElement.hidden = true;
             errorElement.textContent = '';
-            errorElement.setAttribute('hidden', 'hidden');
         }
         if (emptyElement) {
             emptyElement.hidden = true;
-            emptyElement.setAttribute('hidden', 'hidden');
         }
 
         container.removeAttribute('hidden');
@@ -226,17 +224,14 @@
 
         if (emptyElement) {
             emptyElement.hidden = true;
-            emptyElement.setAttribute('hidden', 'hidden');
         }
         destroyTimeline(orderId);
         if (container) {
             container.innerHTML = '';
             container.setAttribute('hidden', 'hidden');
-            container.hidden = true;
         }
         errorElement.textContent = message;
         errorElement.hidden = false;
-        errorElement.removeAttribute('hidden');
     }
 
     function showTimelineEmpty(orderId, row, message) {
@@ -247,19 +242,16 @@
         if (errorElement) {
             errorElement.hidden = true;
             errorElement.textContent = '';
-            errorElement.setAttribute('hidden', 'hidden');
         }
         destroyTimeline(orderId);
 
         if (container) {
             container.innerHTML = '';
             container.setAttribute('hidden', 'hidden');
-            container.hidden = true;
         }
 
         if (emptyElement) {
             emptyElement.hidden = false;
-            emptyElement.removeAttribute('hidden');
             const messageElement = emptyElement.querySelector('[data-empty-message]');
             if (messageElement) {
                 messageElement.textContent = message || DEFAULT_EMPTY_MESSAGE;

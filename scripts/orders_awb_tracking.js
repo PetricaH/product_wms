@@ -102,6 +102,7 @@
         if (errorElement) {
             errorElement.hidden = true;
             errorElement.textContent = '';
+            errorElement.setAttribute('hidden', 'hidden');
         }
         if (emptyElement) {
             emptyElement.hidden = true;
@@ -197,12 +198,15 @@
         if (errorElement) {
             errorElement.hidden = true;
             errorElement.textContent = '';
+            errorElement.setAttribute('hidden', 'hidden');
         }
         if (emptyElement) {
             emptyElement.hidden = true;
+            emptyElement.setAttribute('hidden', 'hidden');
         }
 
         container.removeAttribute('hidden');
+        container.hidden = false;
 
         const dataset = events.map((event, index) => ({
             id: event.id,
@@ -228,8 +232,8 @@
             horizontalScroll: false,
             verticalScroll: false,
             margin: {
-                item: 32,
-                axis: 8
+                item: 48,
+                axis: 0
             },
             orientation: { axis: 'bottom' },
             template
@@ -260,14 +264,17 @@
 
         if (emptyElement) {
             emptyElement.hidden = true;
+            emptyElement.setAttribute('hidden', 'hidden');
         }
         destroyTimeline(orderId);
         if (container) {
             container.innerHTML = '';
             container.setAttribute('hidden', 'hidden');
+            container.hidden = true;
         }
         errorElement.textContent = message;
         errorElement.hidden = false;
+        errorElement.removeAttribute('hidden');
     }
 
     function showTimelineEmpty(orderId, row, message) {
@@ -278,16 +285,19 @@
         if (errorElement) {
             errorElement.hidden = true;
             errorElement.textContent = '';
+            errorElement.setAttribute('hidden', 'hidden');
         }
         destroyTimeline(orderId);
 
         if (container) {
             container.innerHTML = '';
             container.setAttribute('hidden', 'hidden');
+            container.hidden = true;
         }
 
         if (emptyElement) {
             emptyElement.hidden = false;
+            emptyElement.removeAttribute('hidden');
             const messageElement = emptyElement.querySelector('[data-empty-message]');
             if (messageElement) {
                 messageElement.textContent = message || DEFAULT_EMPTY_MESSAGE;

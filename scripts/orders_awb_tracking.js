@@ -3,7 +3,6 @@
 
 (function() {
     const timelineCache = new Map();
-    const timelineInstances = new Map();
     const DEFAULT_EMPTY_MESSAGE = 'Nu există evenimente înregistrate pentru acest AWB.';
 
     document.addEventListener('DOMContentLoaded', () => {
@@ -56,13 +55,6 @@
         });
 
         loadTimelineData(orderId, awb, row)
-            .then(() => {
-                const instance = timelineInstances.get(orderId);
-                if (instance) {
-                    instance.redraw();
-                    instance.fit({ animation: { duration: 500, easingFunction: 'easeInOutCubic' } });
-                }
-            })
             .catch((error) => {
                 console.error('Nu s-a putut încărca cronologia AWB:', error);
             });
@@ -147,32 +139,41 @@
     }
 
     function normalizeEvents(history) {
-    return history
-        .map((event, index) => {
-            const timeString = String(event.time || '').trim();
-            const description = String(event.event || '').trim();
-            const location = String(event.location || '').trim();
-            const parsedDate = timeString ? new Date(timeString) : null;
+        return history
+            .map((event, index) => {
+                const timeString = String(event.time || '').trim();
+                const description = String(event.event || '').trim();
+                const location = String(event.location || '').trim();
+                let parsedDate = timeString ? new Date(timeString) : null;
+                let displayDate = timeString;
 
-            return {
-                id: `${parsedDate ? parsedDate.getTime() : Date.now()}-${index}`,
-                start: parsedDate || new Date(),
-                dateDisplay: parsedDate 
-                    ? parsedDate.toLocaleString('ro-RO', { 
-                        day: '2-digit', 
-                        month: '2-digit', 
+                if (parsedDate && Number.isNaN(parsedDate.getTime())) {
+                    parsedDate = parseCargusDate(timeString);
+                }
+
+                if (parsedDate && !Number.isNaN(parsedDate.getTime())) {
+                    displayDate = parsedDate.toLocaleString('ro-RO', {
+                        day: '2-digit',
+                        month: '2-digit',
                         year: 'numeric',
                         hour: '2-digit',
                         minute: '2-digit'
-                      })
-                    : timeString,
-                description,
-                location,
-                isReturn: /expediere\s+returnata/i.test(description)
-            };
-        })
-        .sort((a, b) => a.start.getTime() - b.start.getTime());
-}
+                    });
+                } else {
+                    parsedDate = new Date();
+                }
+
+                return {
+                    id: `${parsedDate.getTime()}-${index}`,
+                    start: parsedDate,
+                    dateDisplay: displayDate,
+                    description,
+                    location,
+                    isReturn: /expediere\s+returnata/i.test(description)
+                };
+            })
+            .sort((a, b) => a.start.getTime() - b.start.getTime());
+    }
 
     function renderTimeline(orderId, row, entry) {
         const { events, hasEvents, message } = normalizeCacheEntry(entry);
@@ -189,12 +190,6 @@
             return;
         }
 
-        if (typeof vis === 'undefined' || typeof vis.Timeline !== 'function') {
-            console.error('Librăria vis-timeline nu este disponibilă.');
-            showTimelineError(orderId, row, 'Componenta de cronologie nu s-a putut inițializa.');
-            return;
-        }
-
         if (errorElement) {
             errorElement.hidden = true;
             errorElement.textContent = '';
@@ -207,51 +202,18 @@
 
         container.removeAttribute('hidden');
         container.hidden = false;
+        container.setAttribute('role', 'group');
+        container.setAttribute('aria-label', 'Cronologie evenimente AWB');
+        container.innerHTML = '';
 
-        const dataset = events.map((event, index) => ({
-            id: event.id,
-            start: event.start,
-            className: buildClassName('awb-timeline-node', {
-                'awb-timeline-node--first': index === 0,
-                'awb-timeline-node--last': index === events.length - 1,
-                'awb-timeline-node--return': event.isReturn
-            }),
-            data: event,
-            title: buildTooltipText(event)
-        }));
+        const track = document.createElement('div');
+        track.className = 'awb-timeline-track';
 
-        const visItems = new vis.DataSet(dataset);
-        const template = (item) => buildTimelineItemTemplate(item.data);
-        const options = {
-            stack: false,
-            showMajorLabels: false,
-            showMinorLabels: false,
-            selectable: false,
-            zoomable: false,
-            moveable: false,
-            horizontalScroll: false,
-            verticalScroll: false,
-            margin: {
-                item: 48,
-                axis: 0
-            },
-            orientation: { axis: 'bottom' },
-            template
-        };
-
-        let timeline = timelineInstances.get(orderId);
-        if (!timeline) {
-            timeline = new vis.Timeline(container, visItems, options);
-            timelineInstances.set(orderId, timeline);
-        } else {
-            timeline.setItems(visItems);
-            timeline.setOptions(options);
-        }
-
-        requestAnimationFrame(() => {
-            timeline.redraw();
-            timeline.fit({ animation: { duration: 400, easingFunction: 'easeInOutCubic' } });
+        events.forEach((event, index) => {
+            track.appendChild(buildTimelineEventElement(event, index, events.length));
         });
+
+        container.appendChild(track);
     }
 
     function showTimelineError(orderId, row, message) {
@@ -305,41 +267,10 @@
         }
     }
 
-    function buildTimelineItemTemplate(data) {
-        if (!data) {
-            return '';
-        }
-
-        return `
-            <div class="awb-timeline-node__inner">
-                <div class="awb-timeline-node__date">${escapeHtml(data.dateDisplay)}</div>
-                <div class="awb-timeline-node__marker" aria-hidden="true"></div>
-                <div class="awb-timeline-node__details">${escapeHtml(data.description)}</div>
-                ${data.location ? `<div class="awb-timeline-node__location">${escapeHtml(data.location)}</div>` : ''}
-            </div>
-        `;
-    }
-
-    function buildTooltipText(data) {
-        if (!data) {
-            return '';
-        }
-
-        const parts = [data.description, data.location, data.dateDisplay]
-            .map((part) => (part ? String(part).trim() : ''))
-            .filter(Boolean);
-
-        return parts.join('\n');
-    }
-
     function resizeVisibleTimelines() {
-        document.querySelectorAll('.awb-timeline-row.is-visible').forEach((row) => {
-            const orderId = row.getAttribute('data-order-id');
-            const timeline = timelineInstances.get(orderId);
-            if (timeline) {
-                timeline.redraw();
-                timeline.fit();
-            }
+        document.querySelectorAll('.awb-timeline-row.is-visible .awb-timeline-container').forEach((container) => {
+            // Trigger a reflow to ensure flex layouts size correctly after resize.
+            void container.offsetHeight;
         });
     }
 
@@ -383,15 +314,6 @@
         return classes.join(' ');
     }
 
-    function escapeHtml(value) {
-        return String(value)
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#039;');
-    }
-
     function debounce(fn, wait = 200) {
         let timeout;
         return (...args) => {
@@ -409,10 +331,62 @@
     }
 
     function destroyTimeline(orderId) {
-        const instance = timelineInstances.get(orderId);
-        if (instance && typeof instance.destroy === 'function') {
-            instance.destroy();
+        const row = document.querySelector(`.awb-timeline-row[data-order-id="${safeCssEscape(orderId)}"]`);
+        const container = row ? row.querySelector('.awb-timeline-container') : null;
+        if (container) {
+            container.innerHTML = '';
         }
-        timelineInstances.delete(orderId);
+    }
+
+    function buildTimelineEventElement(event, index, totalEvents) {
+        const eventElement = document.createElement('div');
+        eventElement.className = buildClassName('awb-timeline-event', {
+            'awb-timeline-event--first': index === 0,
+            'awb-timeline-event--last': index === totalEvents - 1,
+            'awb-timeline-event--return': Boolean(event.isReturn)
+        });
+
+        if (event.description) {
+            eventElement.title = [event.description, event.location, event.dateDisplay]
+                .filter(Boolean)
+                .join('\n');
+        }
+
+        const dateElement = document.createElement('div');
+        dateElement.className = 'awb-timeline-event-date';
+        dateElement.textContent = event.dateDisplay || '';
+        eventElement.appendChild(dateElement);
+
+        const markerWrapper = document.createElement('div');
+        markerWrapper.className = 'awb-timeline-event-marker-wrapper';
+
+        const leftLine = document.createElement('span');
+        leftLine.className = 'awb-timeline-event-line awb-timeline-event-line--left';
+        markerWrapper.appendChild(leftLine);
+
+        const marker = document.createElement('span');
+        marker.className = 'awb-timeline-event-marker';
+        marker.setAttribute('aria-hidden', 'true');
+        markerWrapper.appendChild(marker);
+
+        const rightLine = document.createElement('span');
+        rightLine.className = 'awb-timeline-event-line awb-timeline-event-line--right';
+        markerWrapper.appendChild(rightLine);
+
+        eventElement.appendChild(markerWrapper);
+
+        const descriptionElement = document.createElement('div');
+        descriptionElement.className = 'awb-timeline-event-description';
+        descriptionElement.textContent = event.description || '';
+        eventElement.appendChild(descriptionElement);
+
+        if (event.location) {
+            const locationElement = document.createElement('div');
+            locationElement.className = 'awb-timeline-event-location';
+            locationElement.textContent = event.location;
+            eventElement.appendChild(locationElement);
+        }
+
+        return eventElement;
     }
 })();

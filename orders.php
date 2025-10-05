@@ -38,6 +38,17 @@ require_once BASE_PATH . '/models/Product.php';
 
 $orderModel = new Order($db);
 $productModel = new Product($db);
+$supportsCancelMetadata = method_exists($orderModel, 'hasCancellationMetadata')
+    ? $orderModel->hasCancellationMetadata()
+    : false;
+
+// Soft delete schema requirements (run once in the database):
+// ALTER TABLE orders
+//     ADD COLUMN canceled_at DATETIME NULL AFTER updated_at,
+//     ADD COLUMN canceled_by INT NULL AFTER canceled_at,
+//     ADD INDEX idx_orders_status_canceled_at (status, canceled_at);
+// ALTER TABLE orders
+//     ADD CONSTRAINT fk_orders_canceled_by FOREIGN KEY (canceled_by) REFERENCES users(id);
 
 // Admin reset hint:
 // To reset AWB attempts for an order run:
@@ -116,16 +127,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 
             case 'delete':
                 $orderId = intval($_POST['order_id'] ?? 0);
-                
+
                 if ($orderId <= 0) {
                     throw new Exception('ID comandă invalid.');
                 }
-                
-                if ($orderModel->deleteOrder($orderId)) {
-                    $message = 'Comanda a fost ștearsă cu succes.';
+
+                if ($orderModel->cancelOrder($orderId, $_SESSION['user_id'] ?? null)) {
+                    $message = 'Comanda a fost anulată cu succes.';
                     $messageType = 'success';
                 } else {
-                    throw new Exception('Eroare la ștergerea comenzii.');
+                    throw new Exception('Eroare la anularea comenzii.');
+                }
+                break;
+
+            case 'restore':
+                $orderId = intval($_POST['order_id'] ?? 0);
+                $restoreStatus = $_POST['restore_status'] ?? 'pending';
+
+                if ($orderId <= 0) {
+                    throw new Exception('ID comandă invalid pentru restaurare.');
+                }
+
+                if ($orderModel->restoreOrder($orderId, $restoreStatus, $_SESSION['user_id'] ?? null)) {
+                    $message = 'Comanda a fost reactivată cu succes.';
+                    $messageType = 'success';
+                } else {
+                    throw new Exception('Eroare la reactivarea comenzii.');
                 }
                 break;
         }
@@ -438,6 +465,18 @@ if (isset($_GET['export_orders_pdf']) && $_GET['export_orders_pdf'] === '1') {
 $statusFilter = $_GET['status'] ?? '';
 $priorityFilter = $_GET['priority'] ?? '';
 $search = trim($_GET['search'] ?? '');
+$requestedView = $_POST['view'] ?? $_GET['view'] ?? 'active';
+$viewMode = strtolower($requestedView);
+$allowedViewModes = ['active', 'canceled', 'all'];
+if (!in_array($viewMode, $allowedViewModes, true)) {
+    $viewMode = 'active';
+}
+
+if ($statusFilter === 'canceled' && $viewMode !== 'canceled') {
+    $viewMode = 'canceled';
+}
+
+$isCanceledView = $viewMode === 'canceled';
 
 // Pagination
 $page = max(1, intval($_GET['page'] ?? 1));
@@ -445,29 +484,37 @@ $pageSize = 25;
 $offset = ($page - 1) * $pageSize;
 
 // Get data
-$totalCount = $orderModel->getTotalCount($statusFilter, $priorityFilter, $search);
+$totalCount = $orderModel->getTotalCount($statusFilter, $priorityFilter, $search, $viewMode);
 $totalPages = max(1, ceil($totalCount / $pageSize));
-$orders = $orderModel->getOrdersPaginated($pageSize, $offset, $statusFilter, $priorityFilter, $search);
+$orders = $orderModel->getOrdersPaginated($pageSize, $offset, $statusFilter, $priorityFilter, $search, $viewMode);
 $orderIds = array_map(static function ($orderRow) {
     return (int)($orderRow['id'] ?? 0);
 }, $orders);
-$ordersStockIssues = !empty($orderIds) ? $orderModel->getOrdersStockIssues($orderIds) : [];
+$ordersStockIssues = (!$isCanceledView && !empty($orderIds)) ? $orderModel->getOrdersStockIssues($orderIds) : [];
+$canceledOrdersCount = $orderModel->getTotalCount('', $priorityFilter, $search, 'canceled');
 
 // Get unique statuses and priorities for filters
 $statuses = $orderModel->getStatuses();
+if ($viewMode === 'active') {
+    unset($statuses['canceled']);
+} elseif ($isCanceledView) {
+    $canceledLabel = $statuses['canceled'] ?? 'Anulat';
+    $statuses = ['canceled' => $canceledLabel];
+}
 $statusDisplayLabels = array_merge($statuses, [
     'processing' => 'În procesare',
     'picked' => 'Ridicat',
     'ready' => 'Pregătit',
     'ready_to_ship' => 'Pregătit',
     'shipped' => 'Expediat',
-    'completed' => 'Finalizat'
+    'completed' => 'Finalizat',
+    'canceled' => 'Anulat'
 ]);
 
 $latestUpdatedIso = '';
 $latestUpdatedAt = null;
 foreach ($orders as $orderRow) {
-    $candidate = $orderRow['updated_at'] ?? $orderRow['created_at'] ?? $orderRow['order_date'] ?? null;
+    $candidate = $orderRow['updated_at'] ?? $orderRow['canceled_at'] ?? $orderRow['created_at'] ?? $orderRow['order_date'] ?? null;
     if ($candidate === null || $candidate === '') {
         continue;
     }
@@ -523,6 +570,21 @@ $exportQueryParams['export_awb_pdf'] = 1;
 $exportQueryString = http_build_query($exportQueryParams);
 $exportButtonUrl = $_SERVER['PHP_SELF'] . ($exportQueryString !== '' ? '?' . $exportQueryString : '');
 
+$viewToggleBaseParams = $_GET;
+if (!is_array($viewToggleBaseParams)) {
+    $viewToggleBaseParams = [];
+}
+unset($viewToggleBaseParams['view'], $viewToggleBaseParams['page']);
+
+$activeViewParams = array_merge($viewToggleBaseParams, ['view' => 'active']);
+$canceledViewParams = array_merge($viewToggleBaseParams, ['view' => 'canceled']);
+
+$activeViewQuery = http_build_query($activeViewParams);
+$canceledViewQuery = http_build_query($canceledViewParams);
+
+$activeViewUrl = $_SERVER['PHP_SELF'] . ($activeViewQuery !== '' ? '?' . $activeViewQuery : '');
+$canceledViewUrl = $_SERVER['PHP_SELF'] . ($canceledViewQuery !== '' ? '?' . $canceledViewQuery : '');
+
 // Define current page for footer
 $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
 ?>
@@ -535,6 +597,70 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
     <link rel="stylesheet" href="styles/awb_generation.css?v=20250804.2">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        .orders-view-toggle {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+            flex-wrap: wrap;
+            margin: 0 0 1rem;
+        }
+
+        .orders-view-toggle .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            font-weight: 600;
+        }
+
+        .orders-view-toggle .btn .material-symbols-outlined {
+            font-size: 1rem;
+        }
+
+        .orders-view-toggle .badge-count {
+            font-size: 0.75rem;
+            background-color: #f1f5f9;
+            color: #475467;
+            border-radius: 999px;
+            padding: 0.1rem 0.45rem;
+        }
+
+        .order-row--canceled {
+            background-color: #fff4f4;
+        }
+
+        .order-row--canceled td {
+            color: #7f1d1d;
+        }
+
+        .order-status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            padding: 0.25rem 0.55rem;
+            border-radius: 9999px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            background: #e0e7ff;
+            color: #1e3a8a;
+        }
+
+        .order-status-badge.canceled {
+            background: #f8d7da;
+            color: #842029;
+        }
+
+        .order-status-meta {
+            font-size: 0.78rem;
+            color: #475467;
+            margin-top: 0.25rem;
+            line-height: 1.2;
+        }
+
+        .order-status-meta strong {
+            color: inherit;
+        }
+    </style>
 </head>
 <body>
     <div class="app">
@@ -556,6 +682,44 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                     </div>
                 </header>
 
+                <?php
+                    $activeViewClasses = $isCanceledView
+                        ? 'btn btn-outline-secondary btn-sm'
+                        : 'btn btn-secondary btn-sm active';
+                    $canceledViewClasses = $isCanceledView
+                        ? 'btn btn-secondary btn-sm active'
+                        : 'btn btn-outline-secondary btn-sm';
+                ?>
+                <div class="orders-view-toggle" role="tablist" aria-label="Mod vizualizare comenzi">
+                    <a href="<?= htmlspecialchars($activeViewUrl) ?>"
+                       class="<?= $activeViewClasses ?>"
+                       role="tab"
+                       aria-selected="<?= $isCanceledView ? 'false' : 'true' ?>">
+                        <span class="material-symbols-outlined">assignment</span>
+                        Comenzi active
+                    </a>
+                    <a href="<?= htmlspecialchars($canceledViewUrl) ?>"
+                       class="<?= $canceledViewClasses ?>"
+                       role="tab"
+                       aria-selected="<?= $isCanceledView ? 'true' : 'false' ?>">
+                        <span class="material-symbols-outlined">history_toggle_off</span>
+                        Comenzi anulate
+                        <span class="badge badge-count">
+                            <?= number_format($canceledOrdersCount) ?>
+                        </span>
+                    </a>
+                </div>
+
+                <?php if ($isCanceledView): ?>
+                    <div class="alert alert-warning" role="status" style="display: flex; gap: 0.5rem; align-items: flex-start;">
+                        <span class="material-symbols-outlined">info</span>
+                        <div>
+                            <strong>Vizualizezi comenzi anulate.</strong>
+                            <div>Aceste comenzi nu mai apar în fluxurile active și pot fi restaurate din această secțiune.</div>
+                        </div>
+                    </div>
+                <?php endif; ?>
+
                 <div class="card">
                     <div class="card-header">
                         <h3 class="card-title">Export comenzi PDF</h3>
@@ -563,6 +727,9 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                     <div class="card-body">
                         <form method="GET" class="export-orders-form">
                             <input type="hidden" name="export_orders_pdf" value="1">
+                            <?php if ($viewMode !== 'active'): ?>
+                                <input type="hidden" name="view" value="<?= htmlspecialchars($viewMode) ?>">
+                            <?php endif; ?>
                             <?php if ($statusFilter !== ''): ?>
                                 <input type="hidden" name="status" value="<?= htmlspecialchars($statusFilter) ?>">
                             <?php endif; ?>
@@ -625,6 +792,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                     </div>
                     <div class="card-body">
                         <form method="GET" class="filter-form">
+                            <input type="hidden" name="view" value="<?= htmlspecialchars($viewMode) ?>">
                             <div class="form-group">
                                 <label class="form-label">Status</label>
                                 <select name="status" class="form-control">
@@ -660,7 +828,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                 Filtrează
                             </button>
                             
-                            <a href="<?= $_SERVER['PHP_SELF'] ?>" class="btn btn-secondary">
+                            <a href="<?= $_SERVER['PHP_SELF'] . ($viewMode !== 'active' ? '?view=' . urlencode($viewMode) : '') ?>" class="btn btn-secondary">
                                 <span class="material-symbols-outlined">refresh</span>
                                 Reset
                             </a>
@@ -680,7 +848,8 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                        data-priority-filter="<?= htmlspecialchars($priorityFilter) ?>"
                                        data-search="<?= htmlspecialchars($search) ?>"
                                        data-page="<?= $page ?>"
-                                       data-page-size="<?= $pageSize ?>">
+                                       data-page-size="<?= $pageSize ?>"
+                                       data-view-mode="<?= htmlspecialchars($viewMode) ?>">
                                     <thead>
                                         <tr>
                                             <th>Număr Comandă</th>
@@ -765,10 +934,38 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                     ? implode(' • ', $stockIssueMessages)
                                                     : 'Stoc disponibil pentru toate produsele din comandă.';
                                                 $statusKey = strtolower((string)$order['status']);
+                                                $isOrderCanceled = $statusKey === 'canceled';
                                                 $statusLabel = $statusDisplayLabels[$statusKey] ?? ($statuses[$statusKey] ?? ucfirst((string)$order['status']));
-                                                $statusClass = preg_replace('/[^a-z0-9_-]/', '-', $statusKey);
                                                 $awbBarcode = trim((string)($order['awb_barcode'] ?? ''));
-                                                $rowUpdatedAt = $order['updated_at'] ?? $order['created_at'] ?? $order['order_date'] ?? null;
+
+                                                $canceledAtRaw = $order['canceled_at'] ?? null;
+                                                $canceledAtFormatted = '';
+                                                if (!empty($canceledAtRaw)) {
+                                                    try {
+                                                        $canceledAtFormatted = (new DateTimeImmutable($canceledAtRaw))->format('d.m.Y H:i');
+                                                    } catch (Exception $e) {
+                                                        $canceledAtFormatted = '';
+                                                    }
+                                                }
+
+                                                $canceledByLabel = '';
+                                                if (!empty($order['canceled_by_full_name'])) {
+                                                    $canceledByLabel = trim((string)$order['canceled_by_full_name']);
+                                                }
+                                                if ($canceledByLabel === '' && !empty($order['canceled_by_username'])) {
+                                                    $canceledByLabel = trim((string)$order['canceled_by_username']);
+                                                }
+                                                if ($canceledByLabel === '' && !empty($order['canceled_by_email'])) {
+                                                    $canceledByLabel = trim((string)$order['canceled_by_email']);
+                                                }
+
+                                                $rowUpdatedAt = $order['updated_at'] ?? null;
+                                                if ($rowUpdatedAt === null && $isOrderCanceled) {
+                                                    $rowUpdatedAt = $canceledAtRaw;
+                                                }
+                                                if ($rowUpdatedAt === null) {
+                                                    $rowUpdatedAt = $order['created_at'] ?? $order['order_date'] ?? null;
+                                                }
                                                 $rowUpdatedIso = '';
                                                 if (!empty($rowUpdatedAt)) {
                                                     try {
@@ -778,12 +975,13 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                     }
                                                 }
                                             ?>
-                                            <tr class="order-row<?= $hasStockIssue ? ' has-stock-issue' : '' ?>"
+                                            <tr class="order-row<?= $hasStockIssue ? ' has-stock-issue' : '' ?><?= $isOrderCanceled ? ' order-row--canceled' : '' ?>"
                                                 data-order-id="<?= (int)$order['id'] ?>"
                                                 data-status="<?= htmlspecialchars($statusKey) ?>"
                                                 data-awb="<?= htmlspecialchars($awbBarcode) ?>"
                                                 data-stock-issue="<?= $hasStockIssue ? '1' : '0' ?>"
-                                                data-updated-at="<?= htmlspecialchars($rowUpdatedIso) ?>">
+                                                data-updated-at="<?= htmlspecialchars($rowUpdatedIso) ?>"
+                                                data-is-canceled="<?= $isOrderCanceled ? '1' : '0' ?>">
                                                 <td>
                                                     <code class="order-number"><?= htmlspecialchars($order['order_number']) ?></code>
                                                 </td>
@@ -799,10 +997,23 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                     <small class="order-date-value"><?= date('d.m.Y H:i', strtotime($order['order_date'])) ?></small>
                                                 </td>
                                                 <td>
-                                                    <span class="status-badge status-<?= htmlspecialchars($statusClass) ?>"
+                                                    <span class="order-status-badge <?= $isOrderCanceled ? 'canceled' : '' ?>"
                                                           data-status="<?= htmlspecialchars($statusKey) ?>">
-                                                        <?= htmlspecialchars($statusLabel) ?>
+                                                        <span class="material-symbols-outlined" aria-hidden="true">
+                                                            <?= $isOrderCanceled ? 'block' : 'flag' ?>
+                                                        </span>
+                                                        <span class="order-status-text"><?= htmlspecialchars($statusLabel) ?></span>
                                                     </span>
+                                                    <?php if ($supportsCancelMetadata && $isOrderCanceled && ($canceledAtFormatted !== '' || $canceledByLabel !== '')): ?>
+                                                        <div class="order-status-meta">
+                                                            <?php if ($canceledAtFormatted !== ''): ?>
+                                                                Anulat la <strong><?= htmlspecialchars($canceledAtFormatted) ?></strong>
+                                                            <?php endif; ?>
+                                                            <?php if ($canceledByLabel !== ''): ?>
+                                                                <br>de <strong><?= htmlspecialchars($canceledByLabel) ?></strong>
+                                                            <?php endif; ?>
+                                                        </div>
+                                                    <?php endif; ?>
                                                 </td>
                                                 <td>
                                                     <span class="priority-badge priority-<?= strtolower($order['priority'] ?? 'normal') ?>">
@@ -839,43 +1050,47 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                     <?php endif; ?>
                                                 </td>
                                                 <td class="awb-column awb-cell">
-                                                    <?php
-                                                    $attempts = (int)($order['awb_generation_attempts'] ?? 0);
-                                                    $awbBarcode = trim($order['awb_barcode'] ?? '');
-                                                    $hasValidAwb = ($awbBarcode !== '' && preg_match('/^\\d+$/', $awbBarcode));
-                                                    $attemptMessage = '';
-                                                    if (!$hasValidAwb && $attempts > 0) {
-                                                        $attemptMessage = $attempts === 1
-                                                            ? '1 încercare efectuată'
-                                                            : $attempts . ' încercări efectuate';
-                                                    }
-                                                    ?>
-                                                    <?php if ($attemptMessage !== ''): ?>
-                                                        <div class="awb-attempts">
-                                                            <?= htmlspecialchars($attemptMessage) ?>
-                                                        </div>
-                                                    <?php endif; ?>
-                                                    <?php if ($hasValidAwb): ?>
-                                                        <?php
-                                                            $trackingUrl = 'https://www.cargus.ro/personal/urmareste-coletul/?tracking_number=' . urlencode($awbBarcode) . '&Urm%C4%83re%C8%99te=Urm%C4%83re%C8%99te';
-                                                        ?>
-                                                        <div class="awb-info">
-                                                            <span class="awb-barcode"><?= htmlspecialchars($awbBarcode) ?></span>
-                                                            <?php if (!empty($order['awb_created_at'])): ?>
-                                                                <small><?= date('d.m.Y H:i', strtotime($order['awb_created_at'])) ?></small>
-                                                            <?php endif; ?>
-                                                            <a href="<?= htmlspecialchars($trackingUrl) ?>" class="btn btn-sm btn-outline-secondary track-awb-link" target="_blank" rel="noopener noreferrer">
-                                                                <span class="material-symbols-outlined">open_in_new</span> Urmărește AWB
-                                                            </a>
-                                                            <button type="button" class="btn btn-sm btn-outline-success print-awb-btn" onclick="printAWB(<?= $order['id'] ?>, '<?= htmlspecialchars($awbBarcode) ?>', '<?= htmlspecialchars(addslashes($order['order_number'])) ?>')" title="Printează AWB">
-                                                                <span class="material-symbols-outlined">print</span> Printează AWB
-                                                            </button>
-                                                        </div>
+                                                    <?php if ($isOrderCanceled): ?>
+                                                        <div class="text-muted small">Anulat - AWB indisponibil</div>
                                                     <?php else: ?>
-                                                        <button type="button" class="btn btn-sm btn-outline-primary generate-awb-btn" data-order-id="<?= $order['id'] ?>" title="Generează AWB">
-                                                            <span class="material-symbols-outlined">local_shipping</span>
-                                                            Generează AWB
-                                                        </button>
+                                                        <?php
+                                                        $attempts = (int)($order['awb_generation_attempts'] ?? 0);
+                                                        $awbBarcode = trim($order['awb_barcode'] ?? '');
+                                                        $hasValidAwb = ($awbBarcode !== '' && preg_match('/^\\d+$/', $awbBarcode));
+                                                        $attemptMessage = '';
+                                                        if (!$hasValidAwb && $attempts > 0) {
+                                                            $attemptMessage = $attempts === 1
+                                                                ? '1 încercare efectuată'
+                                                                : $attempts . ' încercări efectuate';
+                                                        }
+                                                        ?>
+                                                        <?php if ($attemptMessage !== ''): ?>
+                                                            <div class="awb-attempts">
+                                                                <?= htmlspecialchars($attemptMessage) ?>
+                                                            </div>
+                                                        <?php endif; ?>
+                                                        <?php if ($hasValidAwb): ?>
+                                                            <?php
+                                                                $trackingUrl = 'https://www.cargus.ro/personal/urmareste-coletul/?tracking_number=' . urlencode($awbBarcode) . '&Urm%C4%83re%C8%99te=Urm%C4%83re%C8%99te';
+                                                            ?>
+                                                            <div class="awb-info">
+                                                                <span class="awb-barcode"><?= htmlspecialchars($awbBarcode) ?></span>
+                                                                <?php if (!empty($order['awb_created_at'])): ?>
+                                                                    <small><?= date('d.m.Y H:i', strtotime($order['awb_created_at'])) ?></small>
+                                                                <?php endif; ?>
+                                                                <a href="<?= htmlspecialchars($trackingUrl) ?>" class="btn btn-sm btn-outline-secondary track-awb-link" target="_blank" rel="noopener noreferrer">
+                                                                    <span class="material-symbols-outlined">open_in_new</span> Urmărește AWB
+                                                                </a>
+                                                                <button type="button" class="btn btn-sm btn-outline-success print-awb-btn" onclick="printAWB(<?= $order['id'] ?>, '<?= htmlspecialchars($awbBarcode) ?>', '<?= htmlspecialchars(addslashes($order['order_number'])) ?>')" title="Printează AWB">
+                                                                    <span class="material-symbols-outlined">print</span> Printează AWB
+                                                                </button>
+                                                            </div>
+                                                        <?php else: ?>
+                                                            <button type="button" class="btn btn-sm btn-outline-primary generate-awb-btn" data-order-id="<?= $order['id'] ?>" title="Generează AWB">
+                                                                <span class="material-symbols-outlined">local_shipping</span>
+                                                                Generează AWB
+                                                            </button>
+                                                        <?php endif; ?>
                                                     <?php endif; ?>
                                                 </td>
                                                 <td>
@@ -883,16 +1098,28 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                         <button class="btn btn-sm btn-outline-primary" onclick="viewOrderDetails(<?= $order['id'] ?>)" title="Vezi detalii">
                                                             <span class="material-symbols-outlined">visibility</span>
                                                         </button>
-                                                        <button class="btn btn-sm btn-outline-secondary" onclick="openStatusModal(<?= $order['id'] ?>, '<?= htmlspecialchars($order['status']) ?>')" title="Schimbă status">
-                                                            <span class="material-symbols-outlined">edit</span>
-                                                        </button>
-                                                        <button class="btn btn-sm btn-outline-info" onclick="printInvoiceWithSelection(<?= $order['id'] ?>)" title="Printează Factura">
-                                                            <span class="material-symbols-outlined">print</span>
-                                                        </button>
-                    
-                                                        <button class="btn btn-sm btn-outline-danger" onclick="openDeleteModal(<?= $order['id'] ?>, '<?= htmlspecialchars(addslashes($order['order_number'])) ?>')" title="Șterge">
-                                                            <span class="material-symbols-outlined">delete</span>
-                                                        </button>
+                                                        <?php if (!$isOrderCanceled): ?>
+                                                            <button class="btn btn-sm btn-outline-secondary" onclick="openStatusModal(<?= $order['id'] ?>, '<?= htmlspecialchars($order['status']) ?>')" title="Schimbă status">
+                                                                <span class="material-symbols-outlined">edit</span>
+                                                            </button>
+                                                            <button class="btn btn-sm btn-outline-info" onclick="printInvoiceWithSelection(<?= $order['id'] ?>)" title="Printează Factura">
+                                                                <span class="material-symbols-outlined">print</span>
+                                                            </button>
+
+                                                            <button class="btn btn-sm btn-outline-danger" onclick="openCancelModal(<?= $order['id'] ?>, '<?= htmlspecialchars(addslashes($order['order_number'])) ?>')" title="Anulează comanda">
+                                                                <span class="material-symbols-outlined">cancel</span>
+                                                            </button>
+                                                        <?php else: ?>
+                                                            <form method="POST" class="inline-form" style="display: inline-block;" onsubmit="return confirm('Reactivezi această comandă?');">
+                                                                <input type="hidden" name="action" value="restore">
+                                                                <input type="hidden" name="order_id" value="<?= (int)$order['id'] ?>">
+                                                                <input type="hidden" name="restore_status" value="pending">
+                                                                <input type="hidden" name="view" value="<?= htmlspecialchars($viewMode) ?>">
+                                                                <button type="submit" class="btn btn-sm btn-outline-success" title="Restaurează comanda">
+                                                                    <span class="material-symbols-outlined">restore</span>
+                                                                </button>
+                                                            </form>
+                                                        <?php endif; ?>
                                                     </div>
                                                 </td>
                                             </tr>
@@ -910,8 +1137,8 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                     </div>
                                     <div class="pagination-controls">
                                         <?php if ($page > 1): ?>
-                                            <a href="?page=1&status=<?= urlencode($statusFilter) ?>&priority=<?= urlencode($priorityFilter) ?>&search=<?= urlencode($search) ?>" class="pagination-btn">Prima</a>
-                                            <a href="?page=<?= $page - 1 ?>&status=<?= urlencode($statusFilter) ?>&priority=<?= urlencode($priorityFilter) ?>&search=<?= urlencode($search) ?>" class="pagination-btn">‹</a>
+                                            <a href="?page=1&status=<?= urlencode($statusFilter) ?>&priority=<?= urlencode($priorityFilter) ?>&search=<?= urlencode($search) ?>&view=<?= urlencode($viewMode) ?>" class="pagination-btn">Prima</a>
+                                            <a href="?page=<?= $page - 1 ?>&status=<?= urlencode($statusFilter) ?>&priority=<?= urlencode($priorityFilter) ?>&search=<?= urlencode($search) ?>&view=<?= urlencode($viewMode) ?>" class="pagination-btn">‹</a>
                                         <?php endif; ?>
                                         
                                         <?php 
@@ -922,13 +1149,13 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                             <?php if ($i == $page): ?>
                                                 <span class="pagination-btn active"><?= $i ?></span>
                                             <?php else: ?>
-                                                <a href="?page=<?= $i ?>&status=<?= urlencode($statusFilter) ?>&priority=<?= urlencode($priorityFilter) ?>&search=<?= urlencode($search) ?>" class="pagination-btn"><?= $i ?></a>
+                                                <a href="?page=<?= $i ?>&status=<?= urlencode($statusFilter) ?>&priority=<?= urlencode($priorityFilter) ?>&search=<?= urlencode($search) ?>&view=<?= urlencode($viewMode) ?>" class="pagination-btn"><?= $i ?></a>
                                             <?php endif; ?>
                                         <?php endfor; ?>
                                         
                                         <?php if ($page < $totalPages): ?>
-                                            <a href="?page=<?= $page + 1 ?>&status=<?= urlencode($statusFilter) ?>&priority=<?= urlencode($priorityFilter) ?>&search=<?= urlencode($search) ?>" class="pagination-btn">›</a>
-                                            <a href="?page=<?= $totalPages ?>&status=<?= urlencode($statusFilter) ?>&priority=<?= urlencode($priorityFilter) ?>&search=<?= urlencode($search) ?>" class="pagination-btn">Ultima</a>
+                                            <a href="?page=<?= $page + 1 ?>&status=<?= urlencode($statusFilter) ?>&priority=<?= urlencode($priorityFilter) ?>&search=<?= urlencode($search) ?>&view=<?= urlencode($viewMode) ?>" class="pagination-btn">›</a>
+                                            <a href="?page=<?= $totalPages ?>&status=<?= urlencode($statusFilter) ?>&priority=<?= urlencode($priorityFilter) ?>&search=<?= urlencode($search) ?>&view=<?= urlencode($viewMode) ?>" class="pagination-btn">Ultima</a>
                                         <?php endif; ?>
                                     </div>
                                 </div>
@@ -1005,7 +1232,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                     <option value="Picked">Picked</option>
                                     <option value="Shipped">Shipped</option>
                                     <option value="Delivered">Delivered</option>
-                                    <option value="Cancelled">Cancelled</option>
+                                    <option value="Canceled">Canceled</option>
                                 </select>
                             </div>
                             <div class="form-group">
@@ -1085,6 +1312,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                     <div class="modal-body">
                         <input type="hidden" name="action" value="update_status">
                         <input type="hidden" name="order_id" id="statusOrderId">
+                        <input type="hidden" name="view" value="<?= htmlspecialchars($viewMode) ?>">
                         
                         <div class="form-group">
                             <label for="updateStatus" class="form-label">Nou Status</label>
@@ -1094,7 +1322,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                 <option value="Picked">Picked</option>
                                 <option value="Shipped">Shipped</option>
                                 <option value="Delivered">Delivered</option>
-                                <option value="Cancelled">Cancelled</option>
+                                <option value="Canceled">Canceled</option>
                             </select>
                         </div>
                     </div>
@@ -1107,31 +1335,32 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
         </div>
     </div>
 
-    <!-- Delete Confirmation Modal -->
-    <div class="modal" id="deleteModal">
+    <!-- Cancel Confirmation Modal -->
+    <div class="modal" id="cancelModal">
         <div class="modal-dialog modal-sm">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h3 class="modal-title">Confirmare Ștergere</h3>
-                    <button class="modal-close" onclick="closeDeleteModal()">
+                    <h3 class="modal-title">Confirmare Anulare</h3>
+                    <button class="modal-close" onclick="closeCancelModal()">
                         <span class="material-symbols-outlined">close</span>
                     </button>
                 </div>
                 <form method="POST">
                     <div class="modal-body">
                         <input type="hidden" name="action" value="delete">
-                        <input type="hidden" name="order_id" id="deleteOrderId">
-                        
+                        <input type="hidden" name="order_id" id="cancelOrderId">
+                        <input type="hidden" name="view" value="<?= htmlspecialchars($viewMode) ?>">
+
                         <div class="alert alert-warning">
                             <span class="material-symbols-outlined">warning</span>
-                            Ești sigur că vrei să ștergi comanda <strong id="deleteOrderNumber"></strong>?
+                            Ești sigur că vrei să anulezi comanda <strong id="cancelOrderNumber"></strong>?
                         </div>
-                        
-                        <p><small class="text-muted">Această acțiune nu poate fi anulată.</small></p>
+
+                        <p><small class="text-muted">Comanda va fi marcată ca „Anulată” și va fi exclusă din fluxurile active. O poți restaura ulterior din lista de comenzi anulate.</small></p>
                     </div>
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" onclick="closeDeleteModal()">Anulează</button>
-                        <button type="submit" class="btn btn-danger">Șterge Comanda</button>
+                        <button type="button" class="btn btn-secondary" onclick="closeCancelModal()">Renunță</button>
+                        <button type="submit" class="btn btn-danger">Anulează Comanda</button>
                     </div>
                 </form>
             </div>

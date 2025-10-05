@@ -247,6 +247,10 @@ function updateOrderRow(row, order) {
         row.setAttribute('data-status', status);
     }
 
+    const isCanceled = status === 'canceled';
+    row.classList.toggle('order-row--canceled', isCanceled);
+    row.setAttribute('data-is-canceled', isCanceled ? '1' : '0');
+
     if (order.updated_at) {
         row.setAttribute('data-updated-at', order.updated_at);
     }
@@ -271,11 +275,43 @@ function updateOrderRow(row, order) {
         }
     }
 
-    const statusBadge = row.querySelector('.status-badge');
+    const statusBadge = row.querySelector('.order-status-badge');
     if (statusBadge) {
-        statusBadge.textContent = order.status_label || capitalize(status);
         statusBadge.dataset.status = status;
-        statusBadge.className = `status-badge status-${sanitizeStatus(status)}`;
+        statusBadge.classList.toggle('canceled', isCanceled);
+        const statusIcon = statusBadge.querySelector('.material-symbols-outlined');
+        if (statusIcon) {
+            statusIcon.textContent = isCanceled ? 'block' : 'flag';
+        }
+        const statusText = statusBadge.querySelector('.order-status-text');
+        if (statusText) {
+            statusText.textContent = order.status_label || capitalize(status);
+        }
+    }
+
+    const canceledAtDisplay = order.canceled_at_display || (order.canceled_at ? formatRomanianDate(order.canceled_at) : '');
+    const canceledBy = order.canceled_by_full_name || order.canceled_by_username || order.canceled_by_email || order.canceled_by || '';
+    const statusMeta = row.querySelector('.order-status-meta');
+
+    if (isCanceled && (canceledAtDisplay || canceledBy)) {
+        const parts = [];
+        if (canceledAtDisplay) {
+            parts.push(`Anulat la <strong>${escapeHtml(canceledAtDisplay)}</strong>`);
+        }
+        if (canceledBy) {
+            parts.push(`de <strong>${escapeHtml(canceledBy)}</strong>`);
+        }
+        const metaHtml = parts.join('<br>');
+        if (statusMeta) {
+            statusMeta.innerHTML = metaHtml;
+        } else if (statusBadge) {
+            const metaEl = document.createElement('div');
+            metaEl.className = 'order-status-meta';
+            metaEl.innerHTML = metaHtml;
+            statusBadge.insertAdjacentElement('afterend', metaEl);
+        }
+    } else if (statusMeta) {
+        statusMeta.remove();
     }
 
     const priorityBadge = row.querySelector('.priority-badge');
@@ -324,9 +360,9 @@ function updateOrderRow(row, order) {
         row.setAttribute('data-awb', newAwb);
     }
 
-    const statusButton = row.querySelector('.btn-group .btn-outline-secondary');
-    if (statusButton) {
-        statusButton.setAttribute('onclick', `openStatusModal(${order.id}, '${escapeJsString(statusRaw)}')`);
+    const actionsCell = row.querySelector('td:last-child');
+    if (actionsCell) {
+        actionsCell.innerHTML = renderOrderActions(order, statusRaw);
     }
 
     return result;
@@ -334,11 +370,14 @@ function updateOrderRow(row, order) {
 
 function renderOrderRow(order) {
     const row = document.createElement('tr');
-    row.className = 'order-row';
-    row.setAttribute('data-order-id', order.id);
     const status = (order.status || '').toLowerCase();
     const statusRaw = order.status_raw || order.status || status;
+    const isCanceled = status === 'canceled';
+
+    row.className = `order-row${isCanceled ? ' order-row--canceled' : ''}`;
+    row.setAttribute('data-order-id', order.id);
     row.setAttribute('data-status', status);
+    row.setAttribute('data-is-canceled', isCanceled ? '1' : '0');
     if (order.updated_at) {
         row.setAttribute('data-updated-at', order.updated_at);
     }
@@ -347,6 +386,14 @@ function renderOrderRow(order) {
     const priority = (order.priority || 'normal').toLowerCase();
     const orderDateDisplay = order.order_date_display || formatRomanianDate(order.order_date);
     const customerEmail = order.customer_email ? `<br><small>${escapeHtml(order.customer_email)}</small>` : '';
+    const canceledAtDisplay = order.canceled_at_display || (order.canceled_at ? formatRomanianDate(order.canceled_at) : '');
+    const canceledBy = order.canceled_by_full_name || order.canceled_by_username || order.canceled_by_email || order.canceled_by || '';
+    const statusMetaHtml = isCanceled && (canceledAtDisplay || canceledBy)
+        ? `<div class="order-status-meta">${[
+                canceledAtDisplay ? `Anulat la <strong>${escapeHtml(canceledAtDisplay)}</strong>` : '',
+                canceledBy ? `de <strong>${escapeHtml(canceledBy)}</strong>` : ''
+            ].filter(Boolean).join('<br>')}</div>`
+        : '';
 
     row.innerHTML = `
         <td>
@@ -362,7 +409,11 @@ function renderOrderRow(order) {
             <small class="order-date-value">${escapeHtml(orderDateDisplay || '')}</small>
         </td>
         <td>
-            <span class="status-badge status-${sanitizeStatus(status)}" data-status="${escapeHtml(status)}">${escapeHtml(order.status_label || capitalize(status))}</span>
+            <span class="order-status-badge${isCanceled ? ' canceled' : ''}" data-status="${escapeHtml(status)}">
+                <span class="material-symbols-outlined">${isCanceled ? 'block' : 'flag'}</span>
+                <span class="order-status-text">${escapeHtml(order.status_label || capitalize(status))}</span>
+            </span>
+            ${statusMetaHtml}
         </td>
         <td>
             <span class="priority-badge priority-${sanitizeStatus(priority)}">${escapeHtml(order.priority_label || capitalize(priority))}</span>
@@ -388,6 +439,11 @@ function renderOrderRow(order) {
 }
 
 function renderAwbCell(order) {
+    const isCanceled = (order.status || '').toLowerCase() === 'canceled';
+    if (isCanceled) {
+        return '<div class="text-muted small">Anulat - AWB indisponibil</div>';
+    }
+
     const attempts = Number(order.awb_generation_attempts || 0);
     const awb = order.awb_barcode ? String(order.awb_barcode) : '';
     const hasAwb = awb !== '';
@@ -433,6 +489,29 @@ function renderOrderActions(order, statusRawValue) {
     const orderNumber = order.order_number || `#${id}`;
     const escapedOrderNumber = escapeJsString(orderNumber);
     const status = escapeJsString(statusRawValue || order.status || '');
+    const isCanceled = (order.status || '').toLowerCase() === 'canceled';
+    const table = document.querySelector('.orders-table');
+    const viewMode = table ? table.dataset.viewMode || 'active' : 'active';
+    const escapedViewMode = escapeHtml(viewMode);
+
+    if (isCanceled) {
+        return `
+        <div class="btn-group">
+            <button class="btn btn-sm btn-outline-primary" onclick="viewOrderDetails(${id})" title="Vezi detalii">
+                <span class="material-symbols-outlined">visibility</span>
+            </button>
+            <form method="POST" class="inline-form" style="display: inline-block;" onsubmit="return confirm('Reactivezi această comandă?');">
+                <input type="hidden" name="action" value="restore">
+                <input type="hidden" name="order_id" value="${id}">
+                <input type="hidden" name="restore_status" value="pending">
+                <input type="hidden" name="view" value="${escapedViewMode}">
+                <button type="submit" class="btn btn-sm btn-outline-success" title="Restaurează comanda">
+                    <span class="material-symbols-outlined">restore</span>
+                </button>
+            </form>
+        </div>
+    `;
+    }
 
     return `
         <div class="btn-group">
@@ -445,8 +524,8 @@ function renderOrderActions(order, statusRawValue) {
             <button class="btn btn-sm btn-outline-info" onclick="printInvoiceWithSelection(${id})" title="Printează Factura">
                 <span class="material-symbols-outlined">print</span>
             </button>
-            <button class="btn btn-sm btn-outline-danger" onclick="openDeleteModal(${id}, '${escapedOrderNumber}')" title="Șterge">
-                <span class="material-symbols-outlined">delete</span>
+            <button class="btn btn-sm btn-outline-danger" onclick="openCancelModal(${id}, '${escapedOrderNumber}')" title="Anulează comanda">
+                <span class="material-symbols-outlined">cancel</span>
             </button>
         </div>
     `;
@@ -460,7 +539,7 @@ function flashNewOrder(row) {
 function flashStatusChange(row) {
     row.classList.add('order-status-changed');
     row.addEventListener('animationend', () => row.classList.remove('order-status-changed'), { once: true });
-    const badge = row.querySelector('.status-badge');
+    const badge = row.querySelector('.order-status-badge');
     if (badge) {
         badge.classList.add('status-change-flash');
         badge.addEventListener('animationend', () => badge.classList.remove('status-change-flash'), { once: true });
@@ -589,21 +668,21 @@ function closeStatusModal() {
 }
 
 /**
- * Opens the confirmation modal for deleting an order.
- * @param {number} orderId The ID of the order to delete.
+ * Opens the confirmation modal for canceling an order.
+ * @param {number} orderId The ID of the order to cancel.
  * @param {string} orderNumber The human-readable order number for the confirmation message.
  */
-function openDeleteModal(orderId, orderNumber) {
-    document.getElementById('deleteOrderId').value = orderId;
-    document.getElementById('deleteOrderNumber').textContent = orderNumber;
-    document.getElementById('deleteModal').classList.add('show');
+function openCancelModal(orderId, orderNumber) {
+    document.getElementById('cancelOrderId').value = orderId;
+    document.getElementById('cancelOrderNumber').textContent = orderNumber;
+    document.getElementById('cancelModal').classList.add('show');
 }
 
 /**
- * Closes the "Delete Order" confirmation modal.
+ * Closes the "Cancel Order" confirmation modal.
  */
-function closeDeleteModal() {
-    document.getElementById('deleteModal').classList.remove('show');
+function closeCancelModal() {
+    document.getElementById('cancelModal').classList.remove('show');
 }
 
 /**

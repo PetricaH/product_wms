@@ -31,25 +31,36 @@ class Order
      * @param string $search Search in order number, customer name
      * @return int Total count
      */
-    public function getTotalCount($statusFilter = '', $priorityFilter = '', $search = '') {
-        $query = "SELECT COUNT(*) as total FROM {$this->table} WHERE 1=1";
+    public function getTotalCount($statusFilter = '', $priorityFilter = '', $search = '', string $viewMode = 'active') {
+        $viewMode = strtolower($viewMode);
+        if (!in_array($viewMode, ['active', 'canceled', 'all'], true)) {
+            $viewMode = 'active';
+        }
+
+        $query = "SELECT COUNT(*) as total FROM {$this->table} o WHERE 1=1";
         $params = [];
-        
+
         if (!empty($statusFilter)) {
-            $query .= " AND status = :status";
+            $query .= " AND o.status = :status";
             $params[':status'] = $statusFilter;
         }
-        
+
         if (!empty($priorityFilter)) {
-            $query .= " AND priority = :priority";
+            $query .= " AND o.priority = :priority";
             $params[':priority'] = $priorityFilter;
         }
-        
+
         if (!empty($search)) {
-            $query .= " AND (order_number LIKE :search OR customer_name LIKE :search OR customer_email LIKE :search)";
+            $query .= " AND (o.order_number LIKE :search OR o.customer_name LIKE :search OR o.customer_email LIKE :search)";
             $params[':search'] = '%' . $search . '%';
         }
-        
+
+        if ($viewMode === 'active') {
+            $query .= " AND (o.status IS NULL OR LOWER(o.status) <> 'canceled')";
+        } elseif ($viewMode === 'canceled') {
+            $query .= " AND LOWER(o.status) = 'canceled'";
+        }
+
         try {
             $stmt = $this->conn->prepare($query);
             foreach ($params as $key => $value) {
@@ -89,38 +100,124 @@ class Order
      * @return bool
      */
     public function deleteOrder($orderId) {
+        return $this->cancelOrder((int)$orderId, $_SESSION['user_id'] ?? null);
+    }
+
+    /**
+     * Soft delete (cancel) an order.
+     *
+     * @param int      $orderId Order identifier
+     * @param int|null $userId  User performing the cancellation
+     */
+    public function cancelOrder(int $orderId, ?int $userId = null): bool
+    {
+        $orderId = max(0, $orderId);
+        if ($orderId <= 0) {
+            return false;
+        }
+
         try {
             $this->conn->beginTransaction();
-            
-            // Delete order items first
-            $itemQuery = "DELETE FROM {$this->itemsTable} WHERE order_id = :order_id";
-            $itemStmt = $this->conn->prepare($itemQuery);
-            $itemStmt->bindValue(':order_id', $orderId, PDO::PARAM_INT);
-            $itemStmt->execute();
-            
-            // Delete order
-            $orderQuery = "DELETE FROM {$this->table} WHERE id = :id";
-            $orderStmt = $this->conn->prepare($orderQuery);
-            $orderStmt->bindValue(':id', $orderId, PDO::PARAM_INT);
-            $result = $orderStmt->execute();
 
-            $this->conn->commit();
+            $existingOrder = $this->getOrderById($orderId);
+            if (!$existingOrder) {
+                $this->conn->rollBack();
+                return false;
+            }
+
+            $query = "UPDATE {$this->table}
+                      SET status = :status,
+                          canceled_at = NOW(),
+                          canceled_by = :canceled_by,
+                          updated_at = NOW()
+                      WHERE id = :id";
+
+            $stmt = $this->conn->prepare($query);
+            $stmt->bindValue(':id', $orderId, PDO::PARAM_INT);
+            $stmt->bindValue(':status', 'canceled');
+
+            if ($userId !== null) {
+                $stmt->bindValue(':canceled_by', $userId, PDO::PARAM_INT);
+            } else {
+                $stmt->bindValue(':canceled_by', null, PDO::PARAM_NULL);
+            }
+
+            $result = $stmt->execute();
 
             if ($result) {
-                $userId = $_SESSION['user_id'] ?? 0;
+                $actorId = $userId ?? ($_SESSION['user_id'] ?? 0);
                 logActivity(
-                    $userId,
-                    'delete',
+                    $actorId,
+                    'cancel',
                     'order',
                     $orderId,
-                    'Order deleted'
+                    'Order canceled',
+                    ['status' => $existingOrder['status'] ?? null],
+                    ['status' => 'canceled']
                 );
             }
 
+            $this->conn->commit();
             return $result;
         } catch (PDOException $e) {
             $this->conn->rollBack();
-            error_log("Error deleting order: " . $e->getMessage());
+            error_log("Error canceling order: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Restore a previously canceled order.
+     */
+    public function restoreOrder(int $orderId, string $newStatus = 'pending', ?int $userId = null): bool
+    {
+        $orderId = max(0, $orderId);
+        if ($orderId <= 0) {
+            return false;
+        }
+
+        $newStatus = strtolower($newStatus);
+
+        try {
+            $this->conn->beginTransaction();
+
+            $existingOrder = $this->getOrderById($orderId);
+            if (!$existingOrder) {
+                $this->conn->rollBack();
+                return false;
+            }
+
+            $query = "UPDATE {$this->table}
+                      SET status = :status,
+                          canceled_at = NULL,
+                          canceled_by = NULL,
+                          updated_at = NOW()
+                      WHERE id = :id";
+
+            $stmt = $this->conn->prepare($query);
+            $stmt->bindValue(':id', $orderId, PDO::PARAM_INT);
+            $stmt->bindValue(':status', $newStatus);
+
+            $result = $stmt->execute();
+
+            if ($result) {
+                $actorId = $userId ?? ($_SESSION['user_id'] ?? 0);
+                logActivity(
+                    $actorId,
+                    'restore',
+                    'order',
+                    $orderId,
+                    'Order restored',
+                    ['status' => $existingOrder['status'] ?? null],
+                    ['status' => $newStatus]
+                );
+            }
+
+            $this->conn->commit();
+            return $result;
+        } catch (PDOException $e) {
+            $this->conn->rollBack();
+            error_log("Error restoring order: " . $e->getMessage());
             return false;
         }
     }
@@ -134,11 +231,20 @@ class Order
      * @param string $search Search term
      * @return array
      */
-    public function getOrdersPaginated($pageSize, $offset, $statusFilter = '', $priorityFilter = '', $search = '') {
+    public function getOrdersPaginated($pageSize, $offset, $statusFilter = '', $priorityFilter = '', $search = '', string $viewMode = 'active') {
+        $viewMode = strtolower($viewMode);
+        if (!in_array($viewMode, ['active', 'canceled', 'all'], true)) {
+            $viewMode = 'active';
+        }
+
         $query = "SELECT o.*,
                          COALESCE((SELECT SUM(oi.quantity * oi.unit_price) FROM {$this->itemsTable} oi WHERE oi.order_id = o.id), 0) as total_value,
-                         COALESCE((SELECT COUNT(*) FROM {$this->itemsTable} oi WHERE oi.order_id = o.id), 0) as total_items
+                         COALESCE((SELECT COUNT(*) FROM {$this->itemsTable} oi WHERE oi.order_id = o.id), 0) as total_items,
+                         canceled_user.username AS canceled_by_username,
+                         TRIM(CONCAT_WS(' ', canceled_user.first_name, canceled_user.last_name)) AS canceled_by_full_name,
+                         canceled_user.email AS canceled_by_email
                   FROM {$this->table} o
+                  LEFT JOIN users canceled_user ON canceled_user.id = o.canceled_by
                   WHERE 1=1";
 
         $params = [];
@@ -147,19 +253,25 @@ class Order
             $query .= " AND o.status = :status";
             $params[':status'] = $statusFilter;
         }
-        
+
         if (!empty($priorityFilter)) {
             $query .= " AND o.priority = :priority";
             $params[':priority'] = $priorityFilter;
         }
-        
+
         if (!empty($search)) {
             $query .= " AND (o.order_number LIKE :search OR o.customer_name LIKE :search OR o.customer_email LIKE :search)";
             $params[':search'] = '%' . $search . '%';
         }
-        
+
+        if ($viewMode === 'active') {
+            $query .= " AND (o.status IS NULL OR LOWER(o.status) <> 'canceled')";
+        } elseif ($viewMode === 'canceled') {
+            $query .= " AND LOWER(o.status) = 'canceled'";
+        }
+
         $query .= " ORDER BY o.order_date DESC LIMIT :limit OFFSET :offset";
-        
+
         try {
             $stmt = $this->conn->prepare($query);
             foreach ($params as $key => $value) {
@@ -232,6 +344,7 @@ class Order
                 FROM {$this->table} o
                 LEFT JOIN {$this->itemsTable} oi ON oi.order_id = o.id
                 WHERE DATE(o.order_date) BETWEEN :start_date AND :end_date
+                  AND (o.status IS NULL OR LOWER(o.status) <> 'canceled')
                 GROUP BY o.id, o.order_number, o.customer_name, o.order_date, o.status, o.type, o.invoice_reference
                 ORDER BY o.order_date ASC, o.order_number ASC";
 
@@ -745,13 +858,34 @@ class Order
      */
     public function updateStatus($orderId, $status) {
         $status = strtolower($status);
-        $query = "UPDATE {$this->table} SET status = :status, updated_at = NOW() WHERE id = :id";
+
+        $setClauses = ['status = :status', 'updated_at = NOW()'];
+        $bindCanceled = false;
+
+        if ($status === 'canceled') {
+            $setClauses[] = 'canceled_at = NOW()';
+            $setClauses[] = 'canceled_by = :canceled_by';
+            $bindCanceled = true;
+        } else {
+            $setClauses[] = 'canceled_at = NULL';
+            $setClauses[] = 'canceled_by = NULL';
+        }
+
+        $query = "UPDATE {$this->table} SET " . implode(', ', $setClauses) . " WHERE id = :id";
 
         try {
             $old = $this->getOrderById($orderId);
             $stmt = $this->conn->prepare($query);
             $stmt->bindValue(':id', $orderId, PDO::PARAM_INT);
             $stmt->bindValue(':status', $status);
+            if ($bindCanceled) {
+                $canceledBy = $_SESSION['user_id'] ?? null;
+                if ($canceledBy !== null) {
+                    $stmt->bindValue(':canceled_by', $canceledBy, PDO::PARAM_INT);
+                } else {
+                    $stmt->bindValue(':canceled_by', null, PDO::PARAM_NULL);
+                }
+            }
             $result = $stmt->execute();
             if ($result) {
                 $userId = $_SESSION['user_id'] ?? 0;
@@ -1097,7 +1231,7 @@ class Order
             'shipped' => 'Expediat',
             'completed' => 'Finalizat',
             'delivered' => 'Livrat',
-            'cancelled' => 'Anulat',
+            'canceled' => 'Anulat',
             'returned' => 'Returnat'
         ];
     }
@@ -1116,10 +1250,14 @@ class Order
     {
         $limit = max(1, min($limit, 200));
 
-        $query = "SELECT o.*, 
+        $query = "SELECT o.*,
                          COALESCE((SELECT SUM(oi.quantity * oi.unit_price) FROM {$this->itemsTable} oi WHERE oi.order_id = o.id), 0) AS total_value,
-                         COALESCE((SELECT COUNT(*) FROM {$this->itemsTable} oi WHERE oi.order_id = o.id), 0) AS total_items
+                         COALESCE((SELECT COUNT(*) FROM {$this->itemsTable} oi WHERE oi.order_id = o.id), 0) AS total_items,
+                         canceled_user.username AS canceled_by_username,
+                         TRIM(CONCAT_WS(' ', canceled_user.first_name, canceled_user.last_name)) AS canceled_by_full_name,
+                         canceled_user.email AS canceled_by_email
                   FROM {$this->table} o
+                  LEFT JOIN users canceled_user ON canceled_user.id = o.canceled_by
                   WHERE 1=1";
 
         $params = [];

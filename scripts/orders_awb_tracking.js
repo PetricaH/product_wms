@@ -4,6 +4,7 @@
 (function() {
     const timelineCache = new Map();
     const timelineInstances = new Map();
+    const DEFAULT_EMPTY_MESSAGE = 'Nu există evenimente înregistrate pentru acest AWB.';
 
     document.addEventListener('DOMContentLoaded', () => {
         document.addEventListener('click', handleToggleClick, true);
@@ -97,9 +98,13 @@
 
         const loadingElement = row.querySelector('.awb-timeline-loading');
         const errorElement = row.querySelector('.awb-timeline-error');
+        const emptyElement = row.querySelector('.awb-timeline-empty');
         if (errorElement) {
             errorElement.hidden = true;
             errorElement.textContent = '';
+        }
+        if (emptyElement) {
+            emptyElement.hidden = true;
         }
         if (loadingElement) {
             loadingElement.hidden = false;
@@ -123,10 +128,15 @@
             }
 
             const events = normalizeEvents(payload.data.history);
-            timelineCache.set(orderId, events);
-            return renderTimeline(orderId, row, events);
+            const cacheEntry = {
+                events,
+                hasEvents: events.length > 0,
+                message: events.length ? '' : (payload.message || DEFAULT_EMPTY_MESSAGE)
+            };
+            timelineCache.set(orderId, cacheEntry);
+            return renderTimeline(orderId, row, cacheEntry);
         } catch (error) {
-            showTimelineError(row, error.message || 'Nu s-a putut încărca istoricul.');
+            showTimelineError(orderId, row, error.message || 'Nu s-a putut încărca istoricul.');
             throw error;
         } finally {
             if (loadingElement) {
@@ -155,22 +165,24 @@
             .sort((a, b) => a.start.getTime() - b.start.getTime());
     }
 
-    function renderTimeline(orderId, row, events) {
+    function renderTimeline(orderId, row, entry) {
+        const { events, hasEvents, message } = normalizeCacheEntry(entry);
         const container = row.querySelector('.awb-timeline-container');
         const errorElement = row.querySelector('.awb-timeline-error');
+        const emptyElement = row.querySelector('.awb-timeline-empty');
 
         if (!container) {
             return;
         }
 
-        if (typeof vis === 'undefined' || typeof vis.Timeline !== 'function') {
-            console.error('Librăria vis-timeline nu este disponibilă.');
-            showTimelineError(row, 'Componenta de cronologie nu s-a putut inițializa.');
+        if (!hasEvents) {
+            showTimelineEmpty(orderId, row, message || DEFAULT_EMPTY_MESSAGE);
             return;
         }
 
-        if (!events.length) {
-            showTimelineError(row, 'Nu există evenimente înregistrate pentru acest AWB.');
+        if (typeof vis === 'undefined' || typeof vis.Timeline !== 'function') {
+            console.error('Librăria vis-timeline nu este disponibilă.');
+            showTimelineError(orderId, row, 'Componenta de cronologie nu s-a putut inițializa.');
             return;
         }
 
@@ -178,6 +190,11 @@
             errorElement.hidden = true;
             errorElement.textContent = '';
         }
+        if (emptyElement) {
+            emptyElement.hidden = true;
+        }
+
+        container.removeAttribute('hidden');
 
         const dataset = events.map((event, index) => ({
             id: event.id,
@@ -203,8 +220,8 @@
             horizontalScroll: false,
             verticalScroll: false,
             margin: {
-                item: 40,
-                axis: 10
+                item: 32,
+                axis: 8
             },
             orientation: { axis: 'bottom' },
             template
@@ -221,18 +238,53 @@
 
         requestAnimationFrame(() => {
             timeline.redraw();
-            timeline.fit({ animation: { duration: 500, easingFunction: 'easeInOutCubic' } });
+            timeline.fit({ animation: { duration: 400, easingFunction: 'easeInOutCubic' } });
         });
     }
 
-    function showTimelineError(row, message) {
+    function showTimelineError(orderId, row, message) {
         const errorElement = row.querySelector('.awb-timeline-error');
+        const emptyElement = row.querySelector('.awb-timeline-empty');
+        const container = row.querySelector('.awb-timeline-container');
         if (!errorElement) {
             return;
         }
 
+        if (emptyElement) {
+            emptyElement.hidden = true;
+        }
+        destroyTimeline(orderId);
+        if (container) {
+            container.innerHTML = '';
+            container.setAttribute('hidden', 'hidden');
+        }
         errorElement.textContent = message;
         errorElement.hidden = false;
+    }
+
+    function showTimelineEmpty(orderId, row, message) {
+        const emptyElement = row.querySelector('.awb-timeline-empty');
+        const errorElement = row.querySelector('.awb-timeline-error');
+        const container = row.querySelector('.awb-timeline-container');
+
+        if (errorElement) {
+            errorElement.hidden = true;
+            errorElement.textContent = '';
+        }
+        destroyTimeline(orderId);
+
+        if (container) {
+            container.innerHTML = '';
+            container.setAttribute('hidden', 'hidden');
+        }
+
+        if (emptyElement) {
+            emptyElement.hidden = false;
+            const messageElement = emptyElement.querySelector('[data-empty-message]');
+            if (messageElement) {
+                messageElement.textContent = message || DEFAULT_EMPTY_MESSAGE;
+            }
+        }
     }
 
     function buildTimelineItemTemplate(data) {
@@ -271,6 +323,24 @@
                 timeline.fit();
             }
         });
+    }
+
+    function normalizeCacheEntry(entry) {
+        if (!entry) {
+            return { events: [], hasEvents: false, message: DEFAULT_EMPTY_MESSAGE };
+        }
+
+        if (Array.isArray(entry)) {
+            return { events: entry, hasEvents: entry.length > 0, message: DEFAULT_EMPTY_MESSAGE };
+        }
+
+        const events = Array.isArray(entry.events) ? entry.events : [];
+        const hasEvents = typeof entry.hasEvents === 'boolean' ? entry.hasEvents : events.length > 0;
+        return {
+            events,
+            hasEvents,
+            message: typeof entry.message === 'string' && entry.message.trim() ? entry.message : DEFAULT_EMPTY_MESSAGE
+        };
     }
 
     function parseCargusDate(value) {
@@ -318,5 +388,13 @@
         }
 
         return String(value).replace(/"/g, '\\"');
+    }
+
+    function destroyTimeline(orderId) {
+        const instance = timelineInstances.get(orderId);
+        if (instance && typeof instance.destroy === 'function') {
+            instance.destroy();
+        }
+        timelineInstances.delete(orderId);
     }
 })();

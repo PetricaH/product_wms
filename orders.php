@@ -1122,27 +1122,27 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                                 $trackingUrl = 'https://www.cargus.ro/personal/urmareste-coletul/?tracking_number=' . urlencode($awbBarcode) . '&Urm%C4%83re%C8%99te=Urm%C4%83re%C8%99te';
                                                             ?>
                                                             <div class="awb-info" data-awb-toggle-container>
-                                                                <button type="button"
-                                                                        class="btn btn-icon awb-timeline-toggle"
-                                                                        data-order-id="<?= (int)$order['id'] ?>"
-                                                                        data-awb="<?= htmlspecialchars($awbBarcode) ?>"
-                                                                        title="Deschide cronologia urmăririi">
-                                                                    <span class="material-symbols-outlined" aria-hidden="true">unfold_more</span>
-                                                                    <span class="visually-hidden">Urmărire AWB</span>
-                                                                </button>
-                                                                <div class="awb-info-details">
-                                                                    <span class="awb-barcode"><?= htmlspecialchars($awbBarcode) ?></span>
+                                                                <div class="awb-info-primary">
+                                                                    <button type="button"
+                                                                            class="awb-barcode awb-timeline-toggle"
+                                                                            data-order-id="<?= (int)$order['id'] ?>"
+                                                                            data-awb="<?= htmlspecialchars($awbBarcode) ?>"
+                                                                            title="Vezi istoricul expediției">
+                                                                        <span class="awb-barcode-text"><?= htmlspecialchars($awbBarcode) ?></span>
+                                                                        <span class="material-symbols-outlined awb-barcode-icon" aria-hidden="true">expand_more</span>
+                                                                        <span class="visually-hidden">Istoric AWB pentru comanda <?= htmlspecialchars($order['order_number'] ?? (string)$order['id']) ?></span>
+                                                                    </button>
                                                                     <?php if (!empty($order['awb_created_at'])): ?>
-                                                                        <small><?= date('d.m.Y H:i', strtotime($order['awb_created_at'])) ?></small>
+                                                                        <small class="awb-barcode-meta">Generat la <?= date('d.m.Y H:i', strtotime($order['awb_created_at'])) ?></small>
                                                                     <?php endif; ?>
-                                                                    <div class="awb-info-actions">
-                                                                        <a href="<?= htmlspecialchars($trackingUrl) ?>" class="btn btn-sm btn-outline-secondary track-awb-link" target="_blank" rel="noopener noreferrer">
-                                                                            <span class="material-symbols-outlined">open_in_new</span> Urmărește AWB
-                                                                        </a>
-                                                                        <button type="button" class="btn btn-sm btn-outline-success print-awb-btn" onclick="printAWB(<?= $order['id'] ?>, '<?= htmlspecialchars($awbBarcode) ?>', '<?= htmlspecialchars(addslashes($order['order_number'])) ?>')" title="Printează AWB">
-                                                                            <span class="material-symbols-outlined">print</span> Printează AWB
-                                                                        </button>
-                                                                    </div>
+                                                                </div>
+                                                                <div class="awb-info-actions">
+                                                                    <a href="<?= htmlspecialchars($trackingUrl) ?>" class="btn btn-sm btn-outline-secondary track-awb-link" target="_blank" rel="noopener noreferrer">
+                                                                        <span class="material-symbols-outlined">open_in_new</span> Urmărește AWB
+                                                                    </a>
+                                                                    <button type="button" class="btn btn-sm btn-outline-success print-awb-btn" onclick="printAWB(<?= $order['id'] ?>, '<?= htmlspecialchars($awbBarcode) ?>', '<?= htmlspecialchars(addslashes($order['order_number'])) ?>')" title="Printează AWB">
+                                                                        <span class="material-symbols-outlined">print</span> Printează AWB
+                                                                    </button>
                                                                 </div>
                                                             </div>
                                                         <?php else: ?>
@@ -1188,10 +1188,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                     <td colspan="11">
                                                         <div class="awb-timeline-panel" data-state="collapsed">
                                                             <div class="awb-timeline-header">
-                                                                <div class="awb-timeline-title">
-                                                                    <span class="material-symbols-outlined" aria-hidden="true">local_shipping</span>
-                                                                    <span>Urmărire AWB <?= htmlspecialchars($awbBarcode) ?></span>
-                                                                </div>
+                                                                <div class="awb-timeline-title">Istoric expediție AWB <?= htmlspecialchars($awbBarcode) ?></div>
                                                                 <button type="button" class="btn btn-icon awb-timeline-close" data-order-id="<?= (int)$order['id'] ?>" title="Închide cronologia">
                                                                     <span class="material-symbols-outlined" aria-hidden="true">close</span>
                                                                     <span class="visually-hidden">Închide</span>
@@ -1201,6 +1198,10 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                                 <div class="awb-timeline-loading" role="status">
                                                                     <span class="material-symbols-outlined spinning" aria-hidden="true">progress_activity</span>
                                                                     <span>Se încarcă istoricul expediției...</span>
+                                                                </div>
+                                                                <div class="awb-timeline-empty" role="status" hidden>
+                                                                    <span class="material-symbols-outlined" aria-hidden="true">info</span>
+                                                                    <span class="awb-timeline-empty-text" data-empty-message>Nu există evenimente înregistrate pentru acest AWB.</span>
                                                                 </div>
                                                                 <div class="awb-timeline-error" role="alert" hidden></div>
                                                                 <div class="awb-timeline-container" id="awb-timeline-<?= (int)$order['id'] ?>" data-order-id="<?= (int)$order['id'] ?>" aria-live="polite"></div>

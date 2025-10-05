@@ -645,22 +645,34 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
             display: inline-flex;
             align-items: center;
             gap: 0.35rem;
-            padding: 0.25rem 0.55rem;
+            padding: 0.2rem 0.6rem;
             border-radius: 9999px;
-            font-size: 0.85rem;
+            font-size: 0.78rem;
             font-weight: 600;
-            background: #e0e7ff;
-            color: #1e3a8a;
+            letter-spacing: 0.01em;
+            text-transform: none;
+            border: 1px solid var(--border-color);
+            background-color: rgba(148, 161, 178, 0.14);
+            color: var(--text-secondary);
         }
 
-        .order-status-badge.canceled {
-            background: #f8d7da;
-            color: #842029;
+        [data-theme="dark"] .order-status-badge {
+            background-color: rgba(148, 161, 178, 0.2);
+            color: var(--text-primary);
+            border-color: rgba(148, 161, 178, 0.35);
+        }
+
+        .order-status-badge .material-symbols-outlined {
+            font-size: 1rem;
+        }
+
+        .order-status-badge .order-status-text {
+            line-height: 1;
         }
 
         .order-status-meta {
             font-size: 0.78rem;
-            color: #475467;
+            color: var(--text-secondary);
             margin-top: 0.25rem;
             line-height: 1.2;
         }
@@ -944,6 +956,8 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                 $statusKey = strtolower((string)$order['status']);
                                                 $isOrderCanceled = $statusKey === 'canceled';
                                                 $statusLabel = $statusDisplayLabels[$statusKey] ?? ($statuses[$statusKey] ?? ucfirst((string)$order['status']));
+                                                $statusClassSuffix = trim(preg_replace('/[^a-z0-9_-]+/', '-', $statusKey), '-');
+                                                $orderStatusBadgeClasses = 'status-badge order-status-badge' . ($statusClassSuffix !== '' ? ' status-' . $statusClassSuffix : '');
                                                 $awbBarcode = trim((string)($order['awb_barcode'] ?? ''));
 
                                                 $canceledAtRaw = $order['canceled_at'] ?? null;
@@ -1005,7 +1019,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                     <small class="order-date-value"><?= date('d.m.Y H:i', strtotime($order['order_date'])) ?></small>
                                                 </td>
                                                 <td>
-                                                    <span class="order-status-badge <?= $isOrderCanceled ? 'canceled' : '' ?>"
+                                                    <span class="<?= htmlspecialchars($orderStatusBadgeClasses) ?>"
                                                           data-status="<?= htmlspecialchars($statusKey) ?>">
                                                         <span class="material-symbols-outlined" aria-hidden="true">
                                                             <?= $isOrderCanceled ? 'block' : 'flag' ?>

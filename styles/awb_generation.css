@@ -150,11 +150,19 @@
 }
 
 .orders-table tr.has-stock-issue {
-    background-color: #fff6f6;
+    background-color: rgba(220, 53, 69, 0.08);
 }
 
 .orders-table tr.has-stock-issue:hover {
-    background-color: #ffecec;
+    background-color: rgba(220, 53, 69, 0.12);
+}
+
+[data-theme="dark"] .orders-table tr.has-stock-issue {
+    background-color: rgba(220, 53, 69, 0.16);
+}
+
+[data-theme="dark"] .orders-table tr.has-stock-issue:hover {
+    background-color: rgba(220, 53, 69, 0.22);
 }
 
 .stock-status-cell {
@@ -177,20 +185,34 @@
 }
 
 .stock-status.stock-ok {
-    background-color: #e8f5e9;
-    color: #1b5e20;
+    background-color: rgba(25, 135, 84, 0.12);
+    color: var(--success-color);
+}
+
+[data-theme="dark"] .stock-status.stock-ok {
+    background-color: rgba(25, 135, 84, 0.18);
+    color: #72e0a9;
 }
 
 .stock-status.stock-missing {
-    background-color: #fdecea;
-    color: #c62828;
+    background-color: rgba(220, 53, 69, 0.12);
+    color: var(--danger-color);
+}
+
+[data-theme="dark"] .stock-status.stock-missing {
+    background-color: rgba(220, 53, 69, 0.2);
+    color: #ffb3bc;
 }
 
 .stock-status-details {
     margin-top: 0.35rem;
     font-size: 0.75rem;
-    color: #9c1f1f;
+    color: var(--danger-color);
     line-height: 1.35;
+}
+
+[data-theme="dark"] .stock-status-details {
+    color: #ffb3bc;
 }
 
 .stock-status-details div + div {

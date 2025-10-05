@@ -277,8 +277,22 @@ function updateOrderRow(row, order) {
 
     const statusBadge = row.querySelector('.order-status-badge');
     if (statusBadge) {
+        const sanitizedStatus = sanitizeStatus(status);
         statusBadge.dataset.status = status;
-        statusBadge.classList.toggle('canceled', isCanceled);
+
+        const classesToRemove = Array.from(statusBadge.classList).filter((cls) =>
+            cls.startsWith('status-') &&
+            cls !== 'status-badge' &&
+            cls !== 'status-change-flash' &&
+            cls !== `status-${sanitizedStatus}`
+        );
+
+        classesToRemove.forEach((cls) => statusBadge.classList.remove(cls));
+        statusBadge.classList.add('status-badge', 'order-status-badge');
+        if (sanitizedStatus) {
+            statusBadge.classList.add(`status-${sanitizedStatus}`);
+        }
+
         const statusIcon = statusBadge.querySelector('.material-symbols-outlined');
         if (statusIcon) {
             statusIcon.textContent = isCanceled ? 'block' : 'flag';
@@ -371,6 +385,7 @@ function updateOrderRow(row, order) {
 function renderOrderRow(order) {
     const row = document.createElement('tr');
     const status = (order.status || '').toLowerCase();
+    const sanitizedStatus = sanitizeStatus(status);
     const statusRaw = order.status_raw || order.status || status;
     const isCanceled = status === 'canceled';
 
@@ -409,7 +424,7 @@ function renderOrderRow(order) {
             <small class="order-date-value">${escapeHtml(orderDateDisplay || '')}</small>
         </td>
         <td>
-            <span class="order-status-badge${isCanceled ? ' canceled' : ''}" data-status="${escapeHtml(status)}">
+            <span class="${['status-badge', 'order-status-badge', sanitizedStatus ? `status-${sanitizedStatus}` : ''].filter(Boolean).join(' ')}" data-status="${escapeHtml(status)}">
                 <span class="material-symbols-outlined">${isCanceled ? 'block' : 'flag'}</span>
                 <span class="order-status-text">${escapeHtml(order.status_label || capitalize(status))}</span>
             </span>

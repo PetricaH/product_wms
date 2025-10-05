@@ -500,6 +500,95 @@
     border: 1px solid rgba(220, 53, 69, 0.2);
 }
 
+.order-status-badge {
+    text-transform: none;
+    letter-spacing: 0.01em;
+    padding: 0.2rem 0.55rem;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    border: 1px solid var(--border-color);
+    background-color: rgba(148, 161, 178, 0.14);
+    color: var(--text-secondary);
+}
+
+[data-theme="dark"] .order-status-badge {
+    background-color: rgba(148, 161, 178, 0.2);
+    color: var(--text-primary);
+    border-color: rgba(148, 161, 178, 0.35);
+}
+
+.order-status-badge .material-symbols-outlined {
+    font-size: 1rem;
+}
+
+.order-status-badge .order-status-text {
+    line-height: 1;
+}
+
+.order-status-badge.status-pending,
+.order-status-badge.status-processing,
+.order-status-badge.status-confirmed,
+.order-status-badge.status-ready,
+.order-status-badge.status-ready_to_ship {
+    background-color: rgba(13, 110, 253, 0.12);
+    color: #0d6efd;
+    border-color: rgba(13, 110, 253, 0.25);
+}
+
+[data-theme="dark"] .order-status-badge.status-pending,
+[data-theme="dark"] .order-status-badge.status-processing,
+[data-theme="dark"] .order-status-badge.status-confirmed,
+[data-theme="dark"] .order-status-badge.status-ready,
+[data-theme="dark"] .order-status-badge.status-ready_to_ship {
+    background-color: rgba(13, 110, 253, 0.2);
+    color: #93c5fd;
+    border-color: rgba(147, 197, 253, 0.35);
+}
+
+.order-status-badge.status-picked,
+.order-status-badge.status-shipped,
+.order-status-badge.status-completed,
+.order-status-badge.status-delivered {
+    background-color: rgba(25, 135, 84, 0.12);
+    color: var(--success-color);
+    border-color: rgba(25, 135, 84, 0.25);
+}
+
+[data-theme="dark"] .order-status-badge.status-picked,
+[data-theme="dark"] .order-status-badge.status-shipped,
+[data-theme="dark"] .order-status-badge.status-completed,
+[data-theme="dark"] .order-status-badge.status-delivered {
+    background-color: rgba(25, 135, 84, 0.2);
+    color: #7be9b3;
+    border-color: rgba(123, 233, 179, 0.35);
+}
+
+.order-status-badge.status-canceled,
+.order-status-badge.status-cancelled {
+    background-color: rgba(220, 53, 69, 0.12);
+    color: var(--danger-color);
+    border-color: rgba(220, 53, 69, 0.28);
+}
+
+[data-theme="dark"] .order-status-badge.status-canceled,
+[data-theme="dark"] .order-status-badge.status-cancelled {
+    background-color: rgba(220, 53, 69, 0.2);
+    color: #ffb3bc;
+    border-color: rgba(220, 53, 69, 0.4);
+}
+
+.order-status-badge.status-returned {
+    background-color: rgba(255, 193, 7, 0.14);
+    color: #b58100;
+    border-color: rgba(255, 193, 7, 0.3);
+}
+
+[data-theme="dark"] .order-status-badge.status-returned {
+    background-color: rgba(255, 193, 7, 0.22);
+    color: #ffd166;
+    border-color: rgba(255, 193, 7, 0.45);
+}
+
 /* ===== PRIORITY BADGES ===== */
 .priority-badge {
     display: inline-flex;

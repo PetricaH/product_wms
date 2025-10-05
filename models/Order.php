@@ -17,6 +17,9 @@ class Order
     private $itemsTable = "order_items";
     private $hasCanceledAtColumn = false;
     private $hasCanceledByColumn = false;
+    private const CANCELED_STATUS_CANONICAL = 'canceled';
+    private const CANCELED_STATUS_STORAGE = 'cancelled';
+    private const CANCELED_STATUS_ALIASES = ['canceled', 'cancelled'];
     
     public function __construct($conn) {
         $this->conn = $conn;
@@ -53,6 +56,33 @@ class Order
         return $this->hasCanceledAtColumn || $this->hasCanceledByColumn;
     }
 
+    public static function normalizeStatus(?string $status): string
+    {
+        $status = strtolower(trim((string)$status));
+
+        if (in_array($status, self::CANCELED_STATUS_ALIASES, true)) {
+            return self::CANCELED_STATUS_CANONICAL;
+        }
+
+        return $status;
+    }
+
+    public static function normalizeStatusForStorage(?string $status): string
+    {
+        $normalized = self::normalizeStatus($status);
+
+        if ($normalized === self::CANCELED_STATUS_CANONICAL) {
+            return self::CANCELED_STATUS_STORAGE;
+        }
+
+        return $normalized;
+    }
+
+    public static function isCanceledStatus(?string $status): bool
+    {
+        return in_array(strtolower(trim((string)$status)), self::CANCELED_STATUS_ALIASES, true);
+    }
+
      /**
      * Get total count of orders with filters
      * @param string $statusFilter Filter by status
@@ -69,9 +99,17 @@ class Order
         $query = "SELECT COUNT(*) as total FROM {$this->table} o WHERE 1=1";
         $params = [];
 
+        $statusField = "LOWER(TRIM(o.status))";
+
         if (!empty($statusFilter)) {
-            $query .= " AND o.status = :status";
-            $params[':status'] = $statusFilter;
+            $normalizedStatus = strtolower(trim($statusFilter));
+
+            if (self::isCanceledStatus($normalizedStatus)) {
+                $query .= " AND $statusField IN ('canceled', 'cancelled')";
+            } else {
+                $query .= " AND $statusField = :status";
+                $params[':status'] = $normalizedStatus;
+            }
         }
 
         if (!empty($priorityFilter)) {
@@ -85,9 +123,9 @@ class Order
         }
 
         if ($viewMode === 'active') {
-            $query .= " AND (o.status IS NULL OR LOWER(o.status) <> 'canceled')";
+            $query .= " AND (o.status IS NULL OR $statusField = '' OR $statusField NOT IN ('canceled', 'cancelled'))";
         } elseif ($viewMode === 'canceled') {
-            $query .= " AND LOWER(o.status) = 'canceled'";
+            $query .= " AND $statusField IN ('canceled', 'cancelled')";
         }
 
         try {
@@ -175,7 +213,7 @@ class Order
 
             $stmt = $this->conn->prepare($query);
             $stmt->bindValue(':id', $orderId, PDO::PARAM_INT);
-            $stmt->bindValue(':status', 'canceled');
+            $stmt->bindValue(':status', self::CANCELED_STATUS_STORAGE);
 
             if ($this->hasCanceledByColumn) {
                 if ($userId !== null) {
@@ -195,8 +233,8 @@ class Order
                     'order',
                     $orderId,
                     'Order canceled',
-                    ['status' => $existingOrder['status'] ?? null],
-                    ['status' => 'canceled']
+                    ['status' => self::normalizeStatus($existingOrder['status'] ?? null)],
+                    ['status' => self::CANCELED_STATUS_CANONICAL]
                 );
             }
 
@@ -219,7 +257,8 @@ class Order
             return false;
         }
 
-        $newStatus = strtolower($newStatus);
+        $displayStatus = self::normalizeStatus($newStatus);
+        $newStatus = self::normalizeStatusForStorage($newStatus);
 
         try {
             $this->conn->beginTransaction();
@@ -263,8 +302,8 @@ class Order
                     'order',
                     $orderId,
                     'Order restored',
-                    ['status' => $existingOrder['status'] ?? null],
-                    ['status' => $newStatus]
+                    ['status' => self::normalizeStatus($existingOrder['status'] ?? null)],
+                    ['status' => $displayStatus]
                 );
             }
 
@@ -316,9 +355,21 @@ class Order
 
         $params = [];
 
+        $statusField = "LOWER(TRIM(o.status))";
+
         if (!empty($statusFilter)) {
-            $query .= " AND o.status = :status";
-            $params[':status'] = $statusFilter;
+            $normalizedStatus = strtolower(trim($statusFilter));
+
+            if (self::isCanceledStatus($normalizedStatus)) {
+                $query .= " AND $statusField IN ('canceled', 'cancelled')";
+            } elseif ($normalizedStatus === 'ready') {
+                $query .= " AND ($statusField = :status OR $statusField = :alt_status)";
+                $params[':status'] = $normalizedStatus;
+                $params[':alt_status'] = 'ready_to_ship';
+            } else {
+                $query .= " AND $statusField = :status";
+                $params[':status'] = $normalizedStatus;
+            }
         }
 
         if (!empty($priorityFilter)) {
@@ -332,9 +383,9 @@ class Order
         }
 
         if ($viewMode === 'active') {
-            $query .= " AND (o.status IS NULL OR LOWER(o.status) <> 'canceled')";
+            $query .= " AND (o.status IS NULL OR $statusField = '' OR $statusField NOT IN ('canceled', 'cancelled'))";
         } elseif ($viewMode === 'canceled') {
-            $query .= " AND LOWER(o.status) = 'canceled'";
+            $query .= " AND $statusField IN ('canceled', 'cancelled')";
         }
 
         $query .= " ORDER BY o.order_date DESC LIMIT :limit OFFSET :offset";
@@ -399,6 +450,8 @@ class Order
      * @return array<int, array<string, mixed>>
      */
     public function getOrdersByDateRangeForExport(string $startDate, string $endDate): array {
+        $statusField = "LOWER(TRIM(o.status))";
+
         $query = "SELECT
                     o.id,
                     o.order_number,
@@ -411,7 +464,7 @@ class Order
                 FROM {$this->table} o
                 LEFT JOIN {$this->itemsTable} oi ON oi.order_id = o.id
                 WHERE DATE(o.order_date) BETWEEN :start_date AND :end_date
-                  AND (o.status IS NULL OR LOWER(o.status) <> 'canceled')
+                  AND (o.status IS NULL OR $statusField = '' OR $statusField NOT IN ('canceled', 'cancelled'))
                 GROUP BY o.id, o.order_number, o.customer_name, o.order_date, o.status, o.type, o.invoice_reference
                 ORDER BY o.order_date ASC, o.order_number ASC";
 
@@ -924,12 +977,13 @@ class Order
      * @return bool
      */
     public function updateStatus($orderId, $status) {
-        $status = strtolower($status);
+        $displayStatus = self::normalizeStatus($status);
+        $status = self::normalizeStatusForStorage($status);
 
         $setClauses = ['status = :status', 'updated_at = NOW()'];
         $shouldBindCanceledBy = false;
 
-        if ($status === 'canceled') {
+        if (self::isCanceledStatus($status)) {
             if ($this->hasCanceledAtColumn) {
                 $setClauses[] = 'canceled_at = NOW()';
             }
@@ -976,8 +1030,8 @@ class Order
                     'order',
                     $orderId,
                     'Order status updated',
-                    ['status' => $oldStatus],
-                    ['status' => $status]
+                    ['status' => self::normalizeStatus($oldStatus)],
+                    ['status' => $displayStatus]
                 );
             }
 
@@ -1350,16 +1404,26 @@ class Order
                   LEFT JOIN users canceled_user ON canceled_user.id = o.canceled_by";
         }
 
+        $statusField = "LOWER(TRIM(o.status))";
+
         $query .= "
                   WHERE 1=1";
 
         $params = [];
 
         if (!empty($statusFilter)) {
-            $query .= " AND (LOWER(o.status) = LOWER(:status) OR LOWER(o.status) = LOWER(:alt_status))";
-            $params[':status'] = $statusFilter;
-            // Allow compatibility with ready_to_ship vs ready, etc.
-            $params[':alt_status'] = $statusFilter === 'ready' ? 'ready_to_ship' : $statusFilter;
+            $normalizedStatus = strtolower(trim($statusFilter));
+
+            if (self::isCanceledStatus($normalizedStatus)) {
+                $query .= " AND $statusField IN ('canceled', 'cancelled')";
+            } elseif ($normalizedStatus === 'ready') {
+                $query .= " AND ($statusField = :status OR $statusField = :alt_status)";
+                $params[':status'] = $normalizedStatus;
+                $params[':alt_status'] = 'ready_to_ship';
+            } else {
+                $query .= " AND $statusField = :status";
+                $params[':status'] = $normalizedStatus;
+            }
         }
 
         if (!empty($priorityFilter)) {

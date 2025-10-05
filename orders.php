@@ -471,6 +471,9 @@ if (isset($_GET['export_orders_pdf']) && $_GET['export_orders_pdf'] === '1') {
 
 // Get filters and search
 $statusFilter = $_GET['status'] ?? '';
+if ($statusFilter !== '') {
+    $statusFilter = Order::normalizeStatus($statusFilter);
+}
 $priorityFilter = $_GET['priority'] ?? '';
 $search = trim($_GET['search'] ?? '');
 $requestedView = $_POST['view'] ?? $_GET['view'] ?? 'active';
@@ -480,7 +483,7 @@ if (!in_array($viewMode, $allowedViewModes, true)) {
     $viewMode = 'active';
 }
 
-if ($statusFilter === 'canceled' && $viewMode !== 'canceled') {
+if (Order::isCanceledStatus($statusFilter) && $viewMode !== 'canceled') {
     $viewMode = 'canceled';
 }
 
@@ -495,6 +498,12 @@ $offset = ($page - 1) * $pageSize;
 $totalCount = $orderModel->getTotalCount($statusFilter, $priorityFilter, $search, $viewMode);
 $totalPages = max(1, ceil($totalCount / $pageSize));
 $orders = $orderModel->getOrdersPaginated($pageSize, $offset, $statusFilter, $priorityFilter, $search, $viewMode);
+foreach ($orders as &$orderRow) {
+    if (isset($orderRow['status'])) {
+        $orderRow['status'] = Order::normalizeStatus($orderRow['status']);
+    }
+}
+unset($orderRow);
 $orderIds = array_map(static function ($orderRow) {
     return (int)($orderRow['id'] ?? 0);
 }, $orders);
@@ -639,6 +648,20 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
 
         .order-row--canceled td {
             color: #7f1d1d;
+        }
+
+        [data-theme="dark"] .order-row--canceled {
+            background-color: rgba(127, 29, 29, 0.24);
+        }
+
+        [data-theme="dark"] .order-row--canceled td {
+            color: #fecaca;
+        }
+
+        [data-theme="dark"] .order-row--canceled .order-status-badge {
+            background-color: rgba(248, 113, 113, 0.18);
+            border-color: rgba(248, 113, 113, 0.35);
+            color: #fecaca;
         }
 
         .order-status-badge {
@@ -953,8 +976,8 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                 $stockStatusTitle = $hasStockIssue
                                                     ? implode(' • ', $stockIssueMessages)
                                                     : 'Stoc disponibil pentru toate produsele din comandă.';
-                                                $statusKey = strtolower((string)$order['status']);
-                                                $isOrderCanceled = $statusKey === 'canceled';
+                                                $statusKey = Order::normalizeStatus($order['status'] ?? '');
+                                                $isOrderCanceled = Order::isCanceledStatus($order['status'] ?? '');
                                                 $statusLabel = $statusDisplayLabels[$statusKey] ?? ($statuses[$statusKey] ?? ucfirst((string)$order['status']));
                                                 $statusClassSuffix = trim(preg_replace('/[^a-z0-9_-]+/', '-', $statusKey), '-');
                                                 $orderStatusBadgeClasses = 'status-badge order-status-badge' . ($statusClassSuffix !== '' ? ' status-' . $statusClassSuffix : '');

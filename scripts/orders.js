@@ -19,6 +19,45 @@ let ordersRealtimeTimer = null;
 let ordersRealtimeController = null;
 let ordersLatestTimestamp = null;
 
+function normalizeOrderStatus(status) {
+    const value = (status ?? '').toString().trim().toLowerCase();
+    if (value === 'cancelled') {
+        return 'canceled';
+    }
+    return value;
+}
+
+function isOrderStatusCanceled(status) {
+    return normalizeOrderStatus(status) === 'canceled';
+}
+
+function normalizeViewMode(value) {
+    const normalized = (value ?? '').toString().trim().toLowerCase();
+    return ['active', 'canceled', 'all'].includes(normalized) ? normalized : 'active';
+}
+
+function isOrderVisibleInView(orderOrStatus, viewMode) {
+    let statusValue;
+    if (typeof orderOrStatus === 'string') {
+        statusValue = orderOrStatus;
+    } else if (orderOrStatus && typeof orderOrStatus === 'object') {
+        statusValue = orderOrStatus.status !== undefined ? orderOrStatus.status : orderOrStatus.status_raw;
+    }
+    const normalizedStatus = normalizeOrderStatus(statusValue);
+    const isCanceled = isOrderStatusCanceled(normalizedStatus);
+    const mode = normalizeViewMode(viewMode);
+
+    if (mode === 'all') {
+        return true;
+    }
+
+    if (mode === 'canceled') {
+        return isCanceled;
+    }
+
+    return !isCanceled;
+}
+
 function initRealtimeSearch() {
     const searchInput = document.querySelector('.search-input');
     if (!searchInput) return;
@@ -182,6 +221,8 @@ function applyOrderUpdates(updates, tbody) {
 
     const newRows = [];
 
+    const viewMode = normalizeViewMode(table && table.dataset ? table.dataset.viewMode : undefined);
+
     updates.forEach(order => {
         const id = Number(order.id);
         if (Number.isNaN(id)) {
@@ -191,14 +232,32 @@ function applyOrderUpdates(updates, tbody) {
         const existingRow = existingRows.get(id);
         if (existingRow) {
             const changes = updateOrderRow(existingRow, order);
+            const stillVisible = isOrderVisibleInView(changes.status || order, viewMode);
+            if (!stillVisible) {
+                existingRow.remove();
+                existingRows.delete(id);
+            }
             if (changes.statusChanged) {
-                flashStatusChange(existingRow);
-                showOrdersToast('info', `Statusul comenzii ${order.order_number || `#${id}`} a devenit ${order.status_label || ''}.`);
+                if (stillVisible) {
+                    flashStatusChange(existingRow);
+                }
+                let message;
+                const becameActive = !changes.isCanceled && isOrderStatusCanceled(changes.previousStatus);
+                if (changes.isCanceled) {
+                    message = viewMode === 'active'
+                        ? `Comanda ${order.order_number || `#${id}`} a fost anulată și mutată în lista de comenzi anulate.`
+                        : `Comanda ${order.order_number || `#${id}`} a fost anulată.`;
+                } else if (becameActive && viewMode === 'canceled') {
+                    message = `Comanda ${order.order_number || `#${id}`} a fost restaurată și mutată în lista de comenzi active.`;
+                } else {
+                    message = `Statusul comenzii ${order.order_number || `#${id}`} a devenit ${order.status_label || ''}.`;
+                }
+                showOrdersToast('info', message);
             }
             if (changes.awbUpdated) {
                 showOrdersToast('success', `AWB generat pentru comanda ${order.order_number || `#${id}`}.`);
             }
-        } else if (shouldRenderOrder(order, table)) {
+        } else if (shouldRenderOrder(order, table, viewMode)) {
             const row = renderOrderRow(order);
             newRows.push({ row, order });
         }
@@ -228,26 +287,33 @@ function applyOrderUpdates(updates, tbody) {
     }
 }
 
-function shouldRenderOrder(order, table) {
+function shouldRenderOrder(order, table, viewMode) {
     const currentPage = Number(table.dataset.page || '1');
     if (currentPage > 1) {
         return false;
     }
-    return true;
+
+    return isOrderVisibleInView(order, viewMode);
 }
 
 function updateOrderRow(row, order) {
-    const status = (order.status || '').toLowerCase();
+    const status = normalizeOrderStatus(order.status);
     const statusRaw = order.status_raw || order.status || status;
-    const previousStatus = row.getAttribute('data-status') || '';
-    const result = { statusChanged: false, awbUpdated: false };
+    const previousStatus = normalizeOrderStatus(row.getAttribute('data-status') || '');
+    const result = {
+        statusChanged: false,
+        awbUpdated: false,
+        status,
+        previousStatus,
+        isCanceled: isOrderStatusCanceled(status)
+    };
 
     if (status && previousStatus !== status) {
         result.statusChanged = true;
         row.setAttribute('data-status', status);
     }
 
-    const isCanceled = status === 'canceled';
+    const isCanceled = result.isCanceled;
     row.classList.toggle('order-row--canceled', isCanceled);
     row.setAttribute('data-is-canceled', isCanceled ? '1' : '0');
 
@@ -384,10 +450,10 @@ function updateOrderRow(row, order) {
 
 function renderOrderRow(order) {
     const row = document.createElement('tr');
-    const status = (order.status || '').toLowerCase();
+    const status = normalizeOrderStatus(order.status);
     const sanitizedStatus = sanitizeStatus(status);
     const statusRaw = order.status_raw || order.status || status;
-    const isCanceled = status === 'canceled';
+    const isCanceled = isOrderStatusCanceled(status);
 
     row.className = `order-row${isCanceled ? ' order-row--canceled' : ''}`;
     row.setAttribute('data-order-id', order.id);
@@ -454,7 +520,7 @@ function renderOrderRow(order) {
 }
 
 function renderAwbCell(order) {
-    const isCanceled = (order.status || '').toLowerCase() === 'canceled';
+    const isCanceled = isOrderStatusCanceled(order.status);
     if (isCanceled) {
         return '<div class="text-muted small">Anulat - AWB indisponibil</div>';
     }
@@ -503,8 +569,9 @@ function renderOrderActions(order, statusRawValue) {
     const id = Number(order.id);
     const orderNumber = order.order_number || `#${id}`;
     const escapedOrderNumber = escapeJsString(orderNumber);
-    const status = escapeJsString(statusRawValue || order.status || '');
-    const isCanceled = (order.status || '').toLowerCase() === 'canceled';
+    const normalizedStatus = normalizeOrderStatus(statusRawValue || order.status || '');
+    const status = escapeJsString(normalizedStatus);
+    const isCanceled = isOrderStatusCanceled(order.status);
     const table = document.querySelector('.orders-table');
     const viewMode = table ? table.dataset.viewMode || 'active' : 'active';
     const escapedViewMode = escapeHtml(viewMode);

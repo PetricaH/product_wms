@@ -2109,146 +2109,149 @@ public function getCriticalStockAlerts(int $limit = 10): array {
     }
 
     private function processAutoOrderExecution(array $context, int $productId, ?string $overrideRecipient = null): array
-    {
-        $result = [
-            'success' => false,
-            'message' => 'Autocomanda nu a putut fi procesată.',
-            'order_id' => null,
-            'order_number' => null,
-            'recipient' => null
-        ];
+{
+    $result = [
+        'success' => false,
+        'message' => 'Autocomanda nu a putut fi procesată.',
+        'order_id' => null,
+        'order_number' => null,
+        'recipient' => null
+    ];
 
-        $ensureResult = $this->ensureAutoOrderPurchasableProducts($context);
-        if (empty($ensureResult['success'])) {
-            $result['message'] = $ensureResult['message']
-                ?? 'Produsul nu are articole achiziționabile pregătite pentru autocomandă.';
-            return $result;
-        }
+    $ensureResult = $this->ensureAutoOrderPurchasableProducts($context);
+    if (empty($ensureResult['success'])) {
+        $result['message'] = $ensureResult['message']
+            ?? 'Produsul nu are articole achiziționabile pregătite pentru autocomandă.';
+        return $result;
+    }
 
-        $context = $ensureResult['context'];
+    $context = $ensureResult['context'];
 
-        $recipientEmail = $overrideRecipient
-            ?: ($context['furnizor']['email'] ?? '');
-        $recipientName = $context['furnizor']['nume'] ?? '';
+    $recipientEmail = $overrideRecipient
+        ?: ($context['furnizor']['email'] ?? '');
+    $recipientName = $context['furnizor']['nume'] ?? '';
 
-        if (empty($recipientEmail) || !filter_var($recipientEmail, FILTER_VALIDATE_EMAIL)) {
-            $result['message'] = 'Adresa de email a furnizorului este invalidă.';
+    if (empty($recipientEmail) || !filter_var($recipientEmail, FILTER_VALIDATE_EMAIL)) {
+        $result['message'] = 'Adresa de email a furnizorului este invalidă.';
+        return $result;
+    }
+
+    try {
+        require_once __DIR__ . '/PurchaseOrder.php';
+        $purchaseOrder = new PurchaseOrder($this->conn);
+
+        $orderId = $purchaseOrder->createPurchaseOrder($context['payload']);
+        if (!$orderId) {
+            $result['message'] = $purchaseOrder->getLastError()
+                ?? 'Comanda de achiziție nu a putut fi creată.';
             return $result;
         }
 
         try {
-            require_once __DIR__ . '/PurchaseOrder.php';
-            $purchaseOrder = new PurchaseOrder($this->conn);
+            $updateDate = $this->conn->prepare("UPDATE {$this->productsTable} SET last_auto_order_date = NOW() WHERE product_id = :id");
+            $updateDate->bindValue(':id', $productId, PDO::PARAM_INT);
+            $updateDate->execute();
+        } catch (PDOException $e) {
+            error_log("Failed to update last_auto_order_date for product #{$productId}: " . $e->getMessage());
+        }
 
-            $orderId = $purchaseOrder->createPurchaseOrder($context['payload']);
-            if (!$orderId) {
-                $result['message'] = $purchaseOrder->getLastError()
-                    ?? 'Comanda de achiziție nu a putut fi creată.';
-                return $result;
-            }
+        $orderNumberStmt = $this->conn->prepare('SELECT order_number FROM purchase_orders WHERE id = :id');
+        $orderNumberStmt->bindValue(':id', $orderId, PDO::PARAM_INT);
+        $orderNumberStmt->execute();
+        $orderNumber = $orderNumberStmt->fetchColumn() ?: ('PO-' . date('Y') . '-NEDEFINIT');
 
-            $orderNumberStmt = $this->conn->prepare('SELECT order_number FROM purchase_orders WHERE id = :id');
-            $orderNumberStmt->bindValue(':id', $orderId, PDO::PARAM_INT);
-            $orderNumberStmt->execute();
-            $orderNumber = $orderNumberStmt->fetchColumn() ?: ('PO-' . date('Y') . '-NEDEFINIT');
+        $result['order_id'] = $orderId;
+        $result['order_number'] = $orderNumber;
 
-            $result['order_id'] = $orderId;
-            $result['order_number'] = $orderNumber;
+        $orderInfo = [
+            'order_number' => $orderNumber,
+            'supplier_name' => $context['furnizor']['nume'] ?? '',
+            'currency' => $context['comanda']['currency'] ?? 'RON'
+        ];
 
-            $orderInfo = [
-                'order_number' => $orderNumber,
-                'supplier_name' => $context['furnizor']['nume'] ?? '',
-                'currency' => $context['comanda']['currency'] ?? 'RON'
+        $itemsForPdf = [];
+        foreach ($context['payload']['items'] as $itemPayload) {
+            $itemsForPdf[] = [
+                'product_name' => $context['articol']['nume']
+                    ?? ($context['produs']['nume'] ?? ''),
+                'quantity' => $itemPayload['quantity'] ?? 0,
+                'unit_price' => $itemPayload['unit_price'] ?? 0
             ];
+        }
 
-            $itemsForPdf = [];
-            foreach ($context['payload']['items'] as $itemPayload) {
-                $itemsForPdf[] = [
-                    'product_name' => $context['articol']['nume']
-                        ?? ($context['produs']['nume'] ?? ''),
-                    'quantity' => $itemPayload['quantity'] ?? 0,
-                    'unit_price' => $itemPayload['unit_price'] ?? 0
-                ];
-            }
+        $pdfFile = $this->generateAutoOrderPdf($orderInfo, $itemsForPdf);
+        if ($pdfFile) {
+            $purchaseOrder->updatePdfPath($orderId, $pdfFile);
+        }
 
-            $pdfFile = $this->generateAutoOrderPdf($orderInfo, $itemsForPdf);
-            if ($pdfFile) {
-                $purchaseOrder->updatePdfPath($orderId, $pdfFile);
-            }
+        $email = $this->buildAutoOrderEmail($orderNumber, $context);
 
-            $email = $this->buildAutoOrderEmail($orderNumber, $context);
+        $updateEmailStmt = $this->conn->prepare(
+            'UPDATE purchase_orders SET email_subject = :subject, custom_message = :message WHERE id = :id'
+        );
+        $updateEmailStmt->execute([
+            ':subject' => $email['subiect'],
+            ':message' => $email['corp'],
+            ':id' => $orderId
+        ]);
 
-            $updateEmailStmt = $this->conn->prepare(
-                'UPDATE purchase_orders SET email_subject = :subject, custom_message = :message WHERE id = :id'
-            );
-            $updateEmailStmt->execute([
-                ':subject' => $email['subiect'],
-                ':message' => $email['corp'],
-                ':id' => $orderId
-            ]);
+        $basePath = defined('BASE_PATH') ? BASE_PATH : dirname(__DIR__);
+        $configGlobal = $GLOBALS['config'] ?? require $basePath . '/config/config.php';
+        $smtpConfig = $configGlobal['email'] ?? [];
 
-            $basePath = defined('BASE_PATH') ? BASE_PATH : dirname(__DIR__);
-            $configGlobal = $GLOBALS['config'] ?? require $basePath . '/config/config.php';
-            $smtpConfig = $configGlobal['email'] ?? [];
+        if (empty($smtpConfig)) {
+            $result['message'] = 'Configurația de email nu este definită.';
+            return $result;
+        }
 
-            if (empty($smtpConfig)) {
-                $result['message'] = 'Configurația de email nu este definită.';
-                return $result;
-            }
+        $emailResult = $this->dispatchAutoOrderEmail(
+            $smtpConfig,
+            $recipientEmail,
+            $recipientName,
+            $email['subiect'],
+            $email['corp'],
+            $email['corp_html'] ?? null,
+            $pdfFile ?? ($context['payload']['pdf_path'] ?? null)
+        );
 
-            $emailResult = $this->dispatchAutoOrderEmail(
-                $smtpConfig,
-                $recipientEmail,
-                $recipientName,
-                $email['subiect'],
-                $email['corp'],
-                $email['corp_html'] ?? null,
-                $pdfFile ?? ($context['payload']['pdf_path'] ?? null)
-            );
-
-            if ($emailResult['success']) {
-                $purchaseOrder->markAsSent($orderId, $recipientEmail);
-
-                $updateDate = $this->conn->prepare("UPDATE {$this->productsTable} SET last_auto_order_date = NOW() WHERE product_id = :id");
-                $updateDate->bindValue(':id', $productId, PDO::PARAM_INT);
-                $updateDate->execute();
-
-                if (function_exists('logActivity')) {
-                    $descriere = sprintf('Autocomandă generată automat (%s)', $orderNumber);
-                    logActivity(
-                        $_SESSION['user_id'] ?? 0,
-                        'create',
-                        'purchase_order',
-                        $orderId,
-                        $descriere
-                    );
-                }
-
-                $result['success'] = true;
-                $result['message'] = sprintf(
-                    'Autocomanda #%s pentru produsul %s a fost trimisă către %s.',
-                    $orderNumber,
-                    $context['produs']['nume'] ?? ('#' . $productId),
-                    $recipientEmail
+        if ($emailResult['success']) {
+            $purchaseOrder->markAsSent($orderId, $recipientEmail);
+            if (function_exists('logActivity')) {
+                $descriere = sprintf('Autocomandă generată automat (%s)', $orderNumber);
+                logActivity(
+                    $_SESSION['user_id'] ?? 0,
+                    'create',
+                    'purchase_order',
+                    $orderId,
+                    $descriere
                 );
-                $result['recipient'] = $recipientEmail;
-                return $result;
             }
 
+            $result['success'] = true;
             $result['message'] = sprintf(
-                'Autocomanda %s pentru produsul %s nu a putut trimite emailul către %s: %s',
+                'Autocomanda #%s pentru produsul %s a fost trimisă către %s.',
                 $orderNumber,
                 $context['produs']['nume'] ?? ('#' . $productId),
-                $recipientEmail,
-                $emailResult['message'] ?? 'motiv necunoscut'
+                $recipientEmail
             );
             $result['recipient'] = $recipientEmail;
             return $result;
-        } catch (Throwable $e) {
-            $result['message'] = 'Autocomanda a întâmpinat o eroare neașteptată: ' . $e->getMessage();
-            return $result;
         }
+
+        $result['message'] = sprintf(
+            'Autocomanda %s pentru produsul %s nu a putut trimite emailul către %s: %s',
+            $orderNumber,
+            $context['produs']['nume'] ?? ('#' . $productId),
+            $recipientEmail,
+            $emailResult['message'] ?? 'motiv necunoscut'
+        );
+        $result['recipient'] = $recipientEmail;
+        return $result;
+    } catch (Throwable $e) {
+        $result['message'] = 'Autocomanda a întâmpinat o eroare neașteptată: ' . $e->getMessage();
+        return $result;
     }
+}
 
     private function ensureAutoOrderPurchasableProducts(array $context): array
     {

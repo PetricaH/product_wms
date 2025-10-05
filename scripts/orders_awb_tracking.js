@@ -1,3 +1,4 @@
+console.log('AWB Tracking Script Version 2.0 LOADED');
 // File: scripts/orders_awb_tracking.js
 // Handles expandable AWB tracking timeline rendering on the orders page
 
@@ -102,7 +103,6 @@
         if (errorElement) {
             errorElement.hidden = true;
             errorElement.textContent = '';
-            errorElement.setAttribute('hidden', 'hidden');
         }
         if (emptyElement) {
             emptyElement.hidden = true;
@@ -198,15 +198,12 @@
         if (errorElement) {
             errorElement.hidden = true;
             errorElement.textContent = '';
-            errorElement.setAttribute('hidden', 'hidden');
         }
         if (emptyElement) {
             emptyElement.hidden = true;
-            emptyElement.setAttribute('hidden', 'hidden');
         }
 
         container.removeAttribute('hidden');
-        container.hidden = false;
 
         const dataset = events.map((event, index) => ({
             id: event.id,
@@ -232,21 +229,21 @@
             horizontalScroll: false,
             verticalScroll: false,
             margin: {
-                item: 48,
-                axis: 0
+                item: 32,
+                axis: 8
             },
             orientation: { axis: 'bottom' },
             template
         };
 
-        let timeline = timelineInstances.get(orderId);
-        if (!timeline) {
-            timeline = new vis.Timeline(container, visItems, options);
-            timelineInstances.set(orderId, timeline);
-        } else {
-            timeline.setItems(visItems);
-            timeline.setOptions(options);
-        }
+        // Always destroy and recreate to use new template
+const oldTimeline = timelineInstances.get(orderId);
+if (oldTimeline && typeof oldTimeline.destroy === 'function') {
+    oldTimeline.destroy();
+}
+
+const timeline = new vis.Timeline(container, visItems, options);
+timelineInstances.set(orderId, timeline);
 
         requestAnimationFrame(() => {
             timeline.redraw();
@@ -264,17 +261,14 @@
 
         if (emptyElement) {
             emptyElement.hidden = true;
-            emptyElement.setAttribute('hidden', 'hidden');
         }
         destroyTimeline(orderId);
         if (container) {
             container.innerHTML = '';
             container.setAttribute('hidden', 'hidden');
-            container.hidden = true;
         }
         errorElement.textContent = message;
         errorElement.hidden = false;
-        errorElement.removeAttribute('hidden');
     }
 
     function showTimelineEmpty(orderId, row, message) {
@@ -285,19 +279,16 @@
         if (errorElement) {
             errorElement.hidden = true;
             errorElement.textContent = '';
-            errorElement.setAttribute('hidden', 'hidden');
         }
         destroyTimeline(orderId);
 
         if (container) {
             container.innerHTML = '';
             container.setAttribute('hidden', 'hidden');
-            container.hidden = true;
         }
 
         if (emptyElement) {
             emptyElement.hidden = false;
-            emptyElement.removeAttribute('hidden');
             const messageElement = emptyElement.querySelector('[data-empty-message]');
             if (messageElement) {
                 messageElement.textContent = message || DEFAULT_EMPTY_MESSAGE;
@@ -305,20 +296,20 @@
         }
     }
 
-    function buildTimelineItemTemplate(data) {
-        if (!data) {
-            return '';
-        }
-
-        return `
-            <div class="awb-timeline-node__inner">
-                <div class="awb-timeline-node__date">${escapeHtml(data.dateDisplay)}</div>
-                <div class="awb-timeline-node__marker" aria-hidden="true"></div>
-                <div class="awb-timeline-node__details">${escapeHtml(data.description)}</div>
-                ${data.location ? `<div class="awb-timeline-node__location">${escapeHtml(data.location)}</div>` : ''}
-            </div>
-        `;
+   function buildTimelineItemTemplate(data) {
+    if (!data) {
+        return '';
     }
+
+    return `
+        <div class="awb-node-wrapper">
+            <div class="awb-node-date">${escapeHtml(data.dateDisplay)}</div>
+            <div class="awb-node-dot"></div>
+            <div class="awb-node-desc">${escapeHtml(data.description)}</div>
+            ${data.location ? `<div class="awb-node-loc">${escapeHtml(data.location)}</div>` : ''}
+        </div>
+    `;
+}
 
     function buildTooltipText(data) {
         if (!data) {

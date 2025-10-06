@@ -416,21 +416,124 @@ class PurchaseOrder {
                   LEFT JOIN sellers s ON po.seller_id = s.id
                   LEFT JOIN users u ON po.created_by = u.id
                   WHERE po.id = :id";
-        
+
         try {
             $stmt = $this->conn->prepare($query);
             $stmt->bindValue(':id', $orderId, PDO::PARAM_INT);
             $stmt->execute();
             $order = $stmt->fetch(PDO::FETCH_ASSOC);
-            
+
             if ($order) {
                 // Get order items
                 $order['items'] = $this->getOrderItems($orderId);
             }
-            
+
             return $order;
         } catch (PDOException $e) {
             error_log("Error getting purchase order by ID: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Delete purchase order after ensuring there are no blocking dependencies.
+     */
+    public function deletePurchaseOrder(int $orderId): bool {
+        $this->rememberError(null);
+
+        try {
+            $stmt = $this->conn->prepare("SELECT order_number, pdf_path FROM {$this->table} WHERE id = :id");
+            $stmt->bindValue(':id', $orderId, PDO::PARAM_INT);
+            $stmt->execute();
+            $order = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if (!$order) {
+                $this->rememberError('Comanda de achiziție nu a fost găsită.');
+                return false;
+            }
+
+            $dependencyChecks = [
+                [
+                    'sql' => 'SELECT COUNT(*) FROM deliveries WHERE purchase_order_id = :id',
+                    'message' => 'Comanda nu poate fi ștearsă deoarece există livrări înregistrate.'
+                ],
+                [
+                    'sql' => 'SELECT COUNT(*) FROM supplier_invoices WHERE purchase_order_id = :id',
+                    'message' => 'Comanda nu poate fi ștearsă deoarece există facturi asociate.'
+                ]
+            ];
+
+            foreach ($dependencyChecks as $check) {
+                $dependencyStmt = $this->conn->prepare($check['sql']);
+                $dependencyStmt->bindValue(':id', $orderId, PDO::PARAM_INT);
+                $dependencyStmt->execute();
+                $count = (int)$dependencyStmt->fetchColumn();
+
+                if ($count > 0) {
+                    $this->rememberError($check['message']);
+                    return false;
+                }
+            }
+
+            $ownsTransaction = false;
+            if (!$this->conn->inTransaction()) {
+                $this->conn->beginTransaction();
+                $ownsTransaction = true;
+            }
+
+            $deleteStmt = $this->conn->prepare("DELETE FROM {$this->table} WHERE id = :id");
+            $deleteStmt->bindValue(':id', $orderId, PDO::PARAM_INT);
+
+            if (!$deleteStmt->execute()) {
+                $errorInfo = $deleteStmt->errorInfo();
+                $this->rememberError('Nu s-a putut șterge comanda de achiziție: ' . ($errorInfo[2] ?? 'eroare necunoscută.'));
+
+                if ($ownsTransaction && $this->conn->inTransaction()) {
+                    $this->conn->rollBack();
+                }
+
+                return false;
+            }
+
+            if ($ownsTransaction && $this->conn->inTransaction()) {
+                $this->conn->commit();
+            }
+
+            if (function_exists('logActivity')) {
+                logActivity(
+                    $_SESSION['user_id'] ?? null,
+                    'delete',
+                    'purchase_order',
+                    $orderId,
+                    sprintf('Purchase order %s deleted', $order['order_number'] ?? '')
+                );
+            }
+
+            $baseDirectory = defined('BASE_PATH') ? BASE_PATH : dirname(__DIR__);
+            $pdfPath = $order['pdf_path'] ?? '';
+            if (!empty($pdfPath)) {
+                $possiblePaths = [
+                    $baseDirectory . '/storage/purchase_order_pdfs/' . $pdfPath,
+                    $baseDirectory . '/' . ltrim($pdfPath, '/'),
+                    '/tmp/wms_pdfs/' . $pdfPath,
+                    '/tmp/' . $pdfPath,
+                    $baseDirectory . '/tmp/' . $pdfPath,
+                ];
+
+                foreach ($possiblePaths as $path) {
+                    if (is_file($path)) {
+                        @unlink($path);
+                    }
+                }
+            }
+
+            return true;
+        } catch (Throwable $exception) {
+            if (isset($ownsTransaction) && $ownsTransaction && $this->conn->inTransaction()) {
+                $this->conn->rollBack();
+            }
+
+            $this->rememberError('Eroare la ștergerea comenzii: ' . $exception->getMessage());
             return false;
         }
     }

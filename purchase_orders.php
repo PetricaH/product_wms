@@ -670,17 +670,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $invoiceDate = $_POST['invoice_date'] ?? '';
                 $totalAmount = floatval($_POST['total_amount'] ?? 0);
                 $items = $_POST['invoice_items'] ?? [];
-                
+
                 if ($orderId <= 0 || empty($invoiceNumber) || empty($invoiceDate)) {
                     throw new Exception('Numărul și data facturii sunt obligatorii.');
                 }
-                
+
                 // Process invoice recording
                 $message = 'Factura a fost înregistrată cu succes.';
                 $messageType = 'success';
                 break;
 
-                default:
+            case 'delete_purchase_order':
+                $orderId = intval($_POST['order_id'] ?? 0);
+
+                if ($orderId <= 0) {
+                    throw new Exception('ID-ul comenzii este invalid.');
+                }
+
+                if ($purchaseOrderModel->deletePurchaseOrder($orderId)) {
+                    $message = 'Comanda de achiziție a fost ștearsă cu succes.';
+                    $messageType = 'success';
+                } else {
+                    $error = $purchaseOrderModel->getLastError() ?? 'Nu s-a putut șterge comanda de achiziție.';
+                    throw new Exception($error);
+                }
+                break;
+
+            default:
                 throw new Exception('Acțiune necunoscută.');
         }
     } catch (Exception $e) {

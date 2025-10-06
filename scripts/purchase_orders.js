@@ -1199,6 +1199,7 @@ class PurchaseOrdersReceivingManager {
             : '';
 
         const rowClass = isAutoOrder ? 'auto-order-row' : '';
+        const safeOrderNumber = this.escapeJsString(order.order_number || '');
 
         // Updated invoice display logic - show button for all statuses except 'draft'
         let invoiceDisplay = '-';
@@ -1286,9 +1287,15 @@ class PurchaseOrdersReceivingManager {
                 <td>${invoiceDisplay}</td>
                 <td>
                     <div class="action-buttons">
-                        <button class="btn btn-info btn-sm" onclick="purchaseOrdersManager.showReceivingDetails(${order.id})" 
+                        <button class="btn btn-info btn-sm" onclick="purchaseOrdersManager.showReceivingDetails(${order.id})"
                                 title="Detalii Primire">
                             <span class="material-symbols-outlined">visibility</span>
+                        </button>
+                        <button type="button"
+                                class="btn btn-danger btn-sm delete-po-btn"
+                                onclick="purchaseOrdersManager.confirmDelete(${order.id}, '${safeOrderNumber}')"
+                                title="Șterge Comanda">
+                            <span class="material-symbols-outlined">delete</span>
                         </button>
                     </div>
                 </td>
@@ -1304,6 +1311,76 @@ class PurchaseOrdersReceivingManager {
                 </td>
             </tr>
         `;
+    }
+
+    confirmDelete(orderId, orderNumber = '') {
+        const displayNumber = orderNumber ? ` ${orderNumber}` : '';
+        const message = `Ești sigur că vrei să ștergi comanda${displayNumber}? Această acțiune nu poate fi anulată.`;
+
+        if (!window.confirm(message)) {
+            return;
+        }
+
+        this.deletePurchaseOrder(orderId, orderNumber);
+    }
+
+    async deletePurchaseOrder(orderId, orderNumber = '') {
+        if (!orderId) {
+            return;
+        }
+
+        const row = document.querySelector(`tr[data-order-id="${orderId}"]`);
+        const deleteButton = row?.querySelector('.delete-po-btn');
+
+        if (row) {
+            row.classList.add('purchase-order-deleting');
+            row.style.opacity = '0.5';
+        }
+
+        if (deleteButton) {
+            deleteButton.disabled = true;
+            deleteButton.dataset.originalContent = deleteButton.innerHTML;
+            deleteButton.innerHTML = '<span class="material-symbols-outlined spinning">sync</span>';
+        }
+
+        try {
+            const formData = new FormData();
+            formData.append('order_id', orderId);
+
+            const response = await fetch('api/purchase_orders/delete.php', {
+                method: 'POST',
+                body: formData
+            });
+
+            let result;
+            try {
+                result = await response.json();
+            } catch (parseError) {
+                throw new Error('Răspuns invalid de la server.');
+            }
+
+            if (!response.ok || !result.success) {
+                throw new Error(result.message || 'Nu s-a putut șterge comanda de achiziție.');
+            }
+
+            const successMessage = result.message || `Comanda${orderNumber ? ` ${orderNumber}` : ''} a fost ștearsă.`;
+            this.showNotification(successMessage, 'success');
+            await this.loadPurchaseOrdersWithReceiving();
+        } catch (error) {
+            console.error('Error deleting purchase order:', error);
+            this.showNotification(error.message || 'Eroare la ștergerea comenzii de achiziție.', 'error');
+        } finally {
+            if (row) {
+                row.classList.remove('purchase-order-deleting');
+                row.style.opacity = '';
+            }
+
+            if (deleteButton) {
+                deleteButton.disabled = false;
+                deleteButton.innerHTML = deleteButton.dataset.originalContent || '<span class="material-symbols-outlined">delete</span>';
+                delete deleteButton.dataset.originalContent;
+            }
+        }
     }
 
     getAutoOrderStatusLabel(status) {
@@ -1460,6 +1537,19 @@ class PurchaseOrdersReceivingManager {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+
+    escapeJsString(text) {
+        if (typeof text !== 'string') {
+            return '';
+        }
+
+        return text
+            .replace(/\\/g, '\\\\')
+            .replace(/'/g, "\\'")
+            .replace(/"/g, '\\"')
+            .replace(/\n/g, '\\n')
+            .replace(/\r/g, '\\r');
     }
 
     translateStatus(status) {

@@ -2712,7 +2712,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                 try {
                     const formData = new FormData();
                     formData.append('data', selectedFile);
-                    const response = await fetch('https://wartung.app.n8n.cloud/webhook/7793b2cd-efd4-4a42-8cd2-b4bc64d745d2', {
+                    const response = await fetch('https://wartung.app.n8n.cloud/webhook/0498a50b-9a65-440e-9e4e-16acbd38167e', {
                         method: 'POST',
                         body: formData
                     });

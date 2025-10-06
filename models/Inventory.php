@@ -61,11 +61,12 @@ class Inventory {
      * @param string $productFilter Product ID filter
      * @param string $locationFilter Location ID filter  
      * @param bool $lowStockOnly Show only low stock items
+     * @param array $options Additional filters (received_from, received_to)
      * @return array Array of inventory records
      */
-    public function getInventoryWithFilters($productFilter = '', $locationFilter = '', $lowStockOnly = false): array {
-        $query = "SELECT i.*, 
-                        p.sku, p.name as product_name, p.description as product_description, 
+    public function getInventoryWithFilters($productFilter = '', $locationFilter = '', $lowStockOnly = false, array $options = []): array {
+        $query = "SELECT i.*,
+                        p.sku, p.name as product_name, p.description as product_description,
                         p.category, p.min_stock_level, p.price,
                         l.location_code, l.notes as location_description,
                         l.zone, l.type as location_type
@@ -75,6 +76,19 @@ class Inventory {
                 WHERE i.quantity > 0";
 
         $params = [];
+
+        $receivedFrom = $options['received_from'] ?? '';
+        $receivedTo = $options['received_to'] ?? '';
+
+        if (!empty($receivedFrom)) {
+            $query .= " AND i.received_at >= :received_from";
+            $params[':received_from'] = $receivedFrom . ' 00:00:00';
+        }
+
+        if (!empty($receivedTo)) {
+            $query .= " AND i.received_at <= :received_to";
+            $params[':received_to'] = $receivedTo . ' 23:59:59';
+        }
 
         // Apply product filter
         if (!empty($productFilter)) {
@@ -93,7 +107,11 @@ class Inventory {
             $query .= " AND i.quantity <= COALESCE(p.min_stock_level, 5)";
         }
 
-        $query .= " ORDER BY p.name ASC, l.location_code ASC, i.received_at ASC";
+        if (!empty($receivedFrom) || !empty($receivedTo)) {
+            $query .= " ORDER BY i.received_at DESC, p.name ASC, l.location_code ASC";
+        } else {
+            $query .= " ORDER BY p.name ASC, l.location_code ASC, i.received_at ASC";
+        }
 
         try {
             $stmt = $this->conn->prepare($query);

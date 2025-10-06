@@ -362,7 +362,7 @@ $currentPage = 'warehouse_receiving';
                                     <span class="material-symbols-outlined">assignment_return</span>
                                     Recepție Retururi
                                 </h2>
-                                <p class="returns-panel-subtitle">Caută comenzile pregătite (status „picked”) după numele companiei</p>
+                                <p class="returns-panel-subtitle">Caută retururile active după numele companiei</p>
                             </div>
                             <div class="returns-search">
                                 <label for="return-company-search" class="form-label">Companie</label>
@@ -370,14 +370,14 @@ $currentPage = 'warehouse_receiving';
                                     <span class="material-symbols-outlined">search</span>
                                     <input type="text" id="return-company-search" class="form-input" placeholder="Introdu numele companiei">
                                 </div>
-                                <p class="returns-hint">Rezultatele afișează comenzile deja ridicate, cele mai recente apar primele.</p>
+                                <p class="returns-hint">Rezultatele afișează retururile active, cele mai recente apar primele.</p>
                             </div>
                             <div class="returns-panel-content">
                                 <div class="return-orders-column">
                                     <div id="return-orders-results" class="return-orders-results">
                                         <div class="empty-state">
                                             <span class="material-symbols-outlined">travel_explore</span>
-                                            <p>Introduceți numele unei companii pentru a vedea comenzile pregătite pentru retur.</p>
+                                            <p>Introduceți numele unei companii pentru a vedea retururile active.</p>
                                         </div>
                                     </div>
                                 </div>

@@ -44,50 +44,108 @@ try {
         throw new InvalidArgumentException('Invalid JSON payload');
     }
 
+    $returnId = isset($input['return_id']) ? (int)$input['return_id'] : 0;
     $orderId = isset($input['order_id']) ? (int)$input['order_id'] : 0;
-    $items = isset($input['items']) && is_array($input['items']) ? $input['items'] : [];
 
-    if ($orderId <= 0 || empty($items)) {
-        throw new InvalidArgumentException('Order ID și lista de produse sunt obligatorii.');
+    if ($returnId <= 0) {
+        throw new InvalidArgumentException('ID-ul returului este obligatoriu.');
     }
 
     require_once BASE_PATH . '/models/Inventory.php';
 
-    $orderStmt = $db->prepare('SELECT id, order_number, customer_name, status FROM orders WHERE id = :id');
-    $orderStmt->execute([':id' => $orderId]);
-    $order = $orderStmt->fetch(PDO::FETCH_ASSOC);
+    $returnStmt = $db->prepare(
+        'SELECT r.id, r.order_id, r.status, o.order_number, o.customer_name
+         FROM returns r
+         JOIN orders o ON o.id = r.order_id
+         WHERE r.id = :return_id
+         LIMIT 1'
+    );
+    $returnStmt->execute([':return_id' => $returnId]);
+    $returnRow = $returnStmt->fetch(PDO::FETCH_ASSOC);
 
-    if (!$order) {
+    if (!$returnRow) {
         http_response_code(404);
-        echo json_encode(['success' => false, 'message' => 'Comanda nu a fost găsită.']);
+        echo json_encode(['success' => false, 'message' => 'Returul nu a fost găsit.']);
         exit;
     }
 
+    $orderIdFromReturn = (int)$returnRow['order_id'];
+    if ($orderId > 0 && $orderId !== $orderIdFromReturn) {
+        throw new InvalidArgumentException('Returul nu aparține comenzii selectate.');
+    }
+
+    $orderId = $orderIdFromReturn;
+    $orderNumber = $returnRow['order_number'] ?? ('#' . $orderId);
+
     $inventoryModel = new Inventory($db);
     $userId = (int)($_SESSION['user_id'] ?? 0);
-    $orderNumber = $order['order_number'] ?? ('#' . $orderId);
+
+    $itemsStmt = $db->prepare(
+        'SELECT
+            ri.id,
+            ri.product_id,
+            ri.quantity_returned,
+            ri.location_id,
+            ri.item_condition,
+            ri.notes,
+            p.name AS product_name,
+            l.location_code,
+            oi.id AS order_item_id
+         FROM return_items ri
+         JOIN order_items oi ON oi.id = ri.order_item_id
+         JOIN products p ON p.product_id = ri.product_id
+         LEFT JOIN locations l ON l.id = ri.location_id
+         WHERE ri.return_id = :return_id'
+    );
+    $itemsStmt->execute([':return_id' => $returnId]);
+    $items = $itemsStmt->fetchAll(PDO::FETCH_ASSOC);
+
+    if (empty($items)) {
+        throw new InvalidArgumentException('Nu există produse înregistrate pentru acest retur.');
+    }
+
+    $locationCheckStmt = $db->prepare('SELECT status FROM locations WHERE id = :id LIMIT 1');
+    $inventoryLookupStmt = $db->prepare(
+        'SELECT id, shelf_level, subdivision_number
+         FROM inventory
+         WHERE product_id = :product_id AND location_id = :location_id
+         LIMIT 1'
+    );
 
     $processedCount = 0;
     $totalQuantity = 0;
 
     foreach ($items as $item) {
-        $productId = isset($item['product_id']) ? (int)$item['product_id'] : 0;
-        $restockQty = isset($item['restock_quantity']) ? (int)$item['restock_quantity'] : 0;
-        $locationId = isset($item['location_id']) ? (int)$item['location_id'] : 0;
-        $inventoryId = isset($item['inventory_id']) ? (int)$item['inventory_id'] : 0;
-        $shelfLevel = $item['shelf_level'] ?? null;
-        $subdivisionNumber = isset($item['subdivision_number']) ? (int)$item['subdivision_number'] : null;
+        $productId = (int)($item['product_id'] ?? 0);
+        $locationId = (int)($item['location_id'] ?? 0);
+        $restockQty = (int)($item['quantity_returned'] ?? 0);
 
-        if ($productId <= 0 || $restockQty <= 0 || $locationId <= 0) {
-            throw new InvalidArgumentException('Informațiile despre produs și locație sunt incomplete.');
+        if ($productId <= 0 || $locationId <= 0 || $restockQty <= 0) {
+            continue; // Skip items without quantity or location
         }
+
+        $locationCheckStmt->execute([':id' => $locationId]);
+        $locationStatus = $locationCheckStmt->fetchColumn();
+        if ($locationStatus !== 'active') {
+            throw new InvalidArgumentException('Locația selectată pentru produsul ' . $productId . ' nu este activă.');
+        }
+
+        $inventoryLookupStmt->execute([
+            ':product_id' => $productId,
+            ':location_id' => $locationId
+        ]);
+        $inventoryRow = $inventoryLookupStmt->fetch(PDO::FETCH_ASSOC);
+
+        $inventoryId = $inventoryRow ? (int)$inventoryRow['id'] : 0;
+        $shelfLevel = $inventoryRow['shelf_level'] ?? null;
+        $subdivisionNumber = isset($inventoryRow['subdivision_number']) ? (int)$inventoryRow['subdivision_number'] : null;
 
         $metadata = [
             'transaction_type' => 'return',
             'reason' => 'Restocare retur',
             'reference_type' => 'return',
-            'reference_id' => $orderId,
-            'notes' => 'Return din comanda ' . $orderNumber,
+            'reference_id' => $returnId,
+            'notes' => trim(($item['notes'] ?? '') !== '' ? $item['notes'] : 'Return din comanda ' . $orderNumber),
             'user_id' => $userId,
             'shelf_level' => $shelfLevel,
             'subdivision_number' => $subdivisionNumber
@@ -105,8 +163,8 @@ try {
                 'transaction_type' => 'return',
                 'reason' => 'Restocare retur',
                 'reference_type' => 'return',
-                'reference_id' => $orderId,
-                'notes' => 'Return din comanda ' . $orderNumber,
+                'reference_id' => $returnId,
+                'notes' => $metadata['notes'],
                 'user_id' => $userId
             ];
 
@@ -115,12 +173,6 @@ try {
             }
             if ($subdivisionNumber !== null) {
                 $addData['subdivision_number'] = $subdivisionNumber;
-            }
-            if (!empty($item['batch_number'])) {
-                $addData['batch_number'] = $item['batch_number'];
-            }
-            if (!empty($item['lot_number'])) {
-                $addData['lot_number'] = $item['lot_number'];
             }
 
             $success = (bool)$inventoryModel->addStock($addData);
@@ -135,7 +187,7 @@ try {
     }
 
     if ($processedCount === 0) {
-        throw new RuntimeException('Niciun produs nu a fost readăugat în stoc.');
+        throw new RuntimeException('Niciun produs valid nu a fost găsit pentru readăugare.');
     }
 
     echo json_encode([

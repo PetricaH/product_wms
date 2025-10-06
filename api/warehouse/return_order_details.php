@@ -23,24 +23,125 @@ try {
     $db = $dbFactory();
 
     $orderId = isset($_GET['order_id']) ? (int)$_GET['order_id'] : 0;
+    $returnId = isset($_GET['return_id']) ? (int)$_GET['return_id'] : 0;
+
+    if ($returnId <= 0 && $orderId <= 0) {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'message' => 'Parametri invalidi']);
+        exit;
+    }
+
+    $order = null;
+    $returnInfo = null;
+
+    if ($returnId > 0) {
+        $returnStmt = $db->prepare(
+            'SELECT
+                r.id AS return_id,
+                r.status AS return_status,
+                r.notes AS return_notes,
+                r.return_awb,
+                r.return_date,
+                r.created_at AS return_created_at,
+                r.updated_at AS return_updated_at,
+                o.id AS order_id,
+                o.order_number,
+                o.customer_name,
+                o.status AS order_status,
+                o.order_date,
+                o.updated_at AS order_updated_at,
+                o.total_value
+             FROM returns r
+             JOIN orders o ON o.id = r.order_id
+             WHERE r.id = :return_id
+             LIMIT 1'
+        );
+        $returnStmt->execute([':return_id' => $returnId]);
+        $row = $returnStmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$row) {
+            http_response_code(404);
+            echo json_encode(['success' => false, 'message' => 'Returul nu a fost găsit.']);
+            exit;
+        }
+
+        $orderId = (int)$row['order_id'];
+
+        $order = [
+            'id' => $orderId,
+            'order_number' => $row['order_number'],
+            'customer_name' => $row['customer_name'],
+            'status' => $row['order_status'],
+            'order_date' => $row['order_date'],
+            'updated_at' => $row['order_updated_at'],
+            'total_value' => $row['total_value']
+        ];
+
+        $returnInfo = [
+            'id' => (int)$row['return_id'],
+            'status' => $row['return_status'],
+            'return_date' => $row['return_date'],
+            'return_awb' => $row['return_awb'],
+            'notes' => $row['return_notes'],
+            'created_at' => $row['return_created_at'],
+            'updated_at' => $row['return_updated_at']
+        ];
+    }
+
     if ($orderId <= 0) {
         http_response_code(400);
         echo json_encode(['success' => false, 'message' => 'Order ID invalid']);
         exit;
     }
 
-    $orderStmt = $db->prepare(
-        'SELECT id, order_number, customer_name, status, order_date, updated_at, total_value
-         FROM orders
-         WHERE id = :id'
-    );
-    $orderStmt->execute([':id' => $orderId]);
-    $order = $orderStmt->fetch(PDO::FETCH_ASSOC);
+    if ($order === null) {
+        $orderStmt = $db->prepare(
+            'SELECT id, order_number, customer_name, status, order_date, updated_at, total_value
+             FROM orders
+             WHERE id = :id'
+        );
+        $orderStmt->execute([':id' => $orderId]);
+        $orderRow = $orderStmt->fetch(PDO::FETCH_ASSOC);
 
-    if (!$order) {
-        http_response_code(404);
-        echo json_encode(['success' => false, 'message' => 'Comanda nu a fost găsită.']);
-        exit;
+        if (!$orderRow) {
+            http_response_code(404);
+            echo json_encode(['success' => false, 'message' => 'Comanda nu a fost găsită.']);
+            exit;
+        }
+
+        $order = [
+            'id' => (int)$orderRow['id'],
+            'order_number' => $orderRow['order_number'],
+            'customer_name' => $orderRow['customer_name'],
+            'status' => $orderRow['status'],
+            'order_date' => $orderRow['order_date'],
+            'updated_at' => $orderRow['updated_at'],
+            'total_value' => $orderRow['total_value']
+        ];
+
+        if ($returnId <= 0) {
+            $activeReturnStmt = $db->prepare(
+                'SELECT id, status, return_date, return_awb, notes, created_at, updated_at
+                 FROM returns
+                 WHERE order_id = :order_id AND status IN ("pending", "in_progress")
+                 ORDER BY updated_at DESC
+                 LIMIT 1'
+            );
+            $activeReturnStmt->execute([':order_id' => $orderId]);
+            $activeReturn = $activeReturnStmt->fetch(PDO::FETCH_ASSOC);
+            if ($activeReturn) {
+                $returnInfo = [
+                    'id' => (int)$activeReturn['id'],
+                    'status' => $activeReturn['status'],
+                    'return_date' => $activeReturn['return_date'],
+                    'return_awb' => $activeReturn['return_awb'],
+                    'notes' => $activeReturn['notes'],
+                    'created_at' => $activeReturn['created_at'],
+                    'updated_at' => $activeReturn['updated_at']
+                ];
+                $returnId = (int)$activeReturn['id'];
+            }
+        }
     }
 
     $status = strtolower((string)($order['status'] ?? ''));
@@ -62,36 +163,65 @@ try {
             COALESCE(oi.picked_quantity, oi.quantity) AS picked_quantity,
             p.name AS product_name,
             p.sku,
-            p.barcode
+            p.barcode,
+            ri.id AS return_item_id,
+            ri.quantity_returned,
+            ri.item_condition,
+            ri.notes AS return_notes,
+            ri.location_id AS processed_location_id,
+            ri.updated_at AS processed_updated_at,
+            ri.created_at AS processed_created_at,
+            l.location_code AS processed_location_code
          FROM order_items oi
          JOIN products p ON oi.product_id = p.product_id
+         LEFT JOIN return_items ri
+            ON ri.order_item_id = oi.id AND ri.return_id = :return_id
+         LEFT JOIN locations l ON l.id = ri.location_id
          WHERE oi.order_id = :order_id
          ORDER BY oi.id'
     );
-    $itemsStmt->execute([':order_id' => $orderId]);
+    $itemsStmt->execute([
+        ':order_id' => $orderId,
+        ':return_id' => $returnId > 0 ? $returnId : 0
+    ]);
     $items = $itemsStmt->fetchAll(PDO::FETCH_ASSOC);
 
     $responseItems = [];
     $missingLocations = [];
-    $totalRestockQty = 0;
+    $totalExpectedQty = 0;
+    $processedCount = 0;
+    $processedUnits = 0;
 
     foreach ($items as $item) {
         $productId = (int)$item['product_id'];
         $pickedQty = (int)($item['picked_quantity'] ?? 0);
         $orderedQty = (int)($item['quantity_ordered'] ?? 0);
-        $restockQty = $pickedQty > 0 ? $pickedQty : $orderedQty;
-        if ($restockQty < 0) {
-            $restockQty = 0;
+        $expectedQty = $pickedQty > 0 ? $pickedQty : $orderedQty;
+        if ($expectedQty < 0) {
+            $expectedQty = 0;
         }
 
-        $locationInfo = findProductReturnLocation($db, $productId);
-        if (!$locationInfo) {
+        $defaultLocation = findProductReturnLocation($db, $productId);
+        if (!$defaultLocation) {
             $missingLocations[] = [
                 'product_id' => $productId,
                 'product_name' => $item['product_name'],
                 'sku' => $item['sku']
             ];
         }
+
+        $isProcessed = !empty($item['return_item_id']);
+        if ($isProcessed) {
+            $processedCount++;
+            $processedUnits += (int)($item['quantity_returned'] ?? 0);
+        }
+
+        $selectedLocationId = $isProcessed
+            ? (int)$item['processed_location_id']
+            : ($defaultLocation['location_id'] ?? null);
+        $selectedLocationCode = $isProcessed
+            ? $item['processed_location_code']
+            : ($defaultLocation['location_code'] ?? null);
 
         $responseItems[] = [
             'order_item_id' => (int)$item['order_item_id'],
@@ -100,18 +230,30 @@ try {
             'sku' => $item['sku'],
             'quantity_ordered' => $orderedQty,
             'picked_quantity' => $pickedQty,
-            'restock_quantity' => $restockQty,
-            'location_id' => $locationInfo['location_id'] ?? null,
-            'location_code' => $locationInfo['location_code'] ?? null,
-            'inventory_id' => $locationInfo['inventory_id'] ?? null,
-            'shelf_level' => $locationInfo['shelf_level'] ?? null,
-            'subdivision_number' => $locationInfo['subdivision_number'] ?? null
+            'expected_quantity' => $expectedQty,
+            'restock_quantity' => $expectedQty,
+            'default_location_id' => $defaultLocation['location_id'] ?? null,
+            'default_location_code' => $defaultLocation['location_code'] ?? null,
+            'inventory_id' => $defaultLocation['inventory_id'] ?? null,
+            'shelf_level' => $defaultLocation['shelf_level'] ?? null,
+            'subdivision_number' => $defaultLocation['subdivision_number'] ?? null,
+            'location_id' => $selectedLocationId,
+            'location_code' => $selectedLocationCode,
+            'is_processed' => $isProcessed,
+            'processed_quantity' => $isProcessed ? (int)$item['quantity_returned'] : null,
+            'processed_condition' => $isProcessed ? ($item['item_condition'] ?? null) : null,
+            'processed_notes' => $isProcessed ? ($item['return_notes'] ?? null) : null,
+            'processed_location_id' => $isProcessed ? (int)$item['processed_location_id'] : null,
+            'processed_location_code' => $isProcessed ? $item['processed_location_code'] : null,
+            'processed_at' => $isProcessed ? ($item['processed_updated_at'] ?? $item['processed_created_at']) : null,
+            'return_item_id' => $isProcessed ? (int)$item['return_item_id'] : null
         ];
 
-        $totalRestockQty += $restockQty;
+        $totalExpectedQty += $expectedQty;
     }
 
     $latestActivity = $order['updated_at'] ?: $order['order_date'];
+    $totalItems = count($responseItems);
 
     echo json_encode([
         'success' => true,
@@ -122,15 +264,23 @@ try {
             'status' => $order['status'],
             'status_label' => translateOrderStatus($order['status']),
             'latest_activity' => $latestActivity,
-            'total_items' => count($responseItems),
+            'total_items' => $totalItems,
             'total_value' => isset($order['total_value']) ? (float)$order['total_value'] : null
         ],
+        'return' => $returnInfo,
         'items' => $responseItems,
         'missing_locations' => $missingLocations,
         'totals' => [
-            'items' => count($responseItems),
-            'restock_quantity' => $totalRestockQty,
+            'items' => $totalItems,
+            'expected_quantity' => $totalExpectedQty,
+            'processed_items' => $processedCount,
+            'processed_quantity' => $processedUnits,
             'missing_locations' => count($missingLocations)
+        ],
+        'processing' => [
+            'all_processed' => $totalItems > 0 && $processedCount === $totalItems,
+            'processed_items' => $processedCount,
+            'total_items' => $totalItems
         ]
     ]);
 } catch (Throwable $e) {
@@ -271,35 +421,81 @@ function findAllowedLevelForProduct(PDO $db, int $productId): ?array
         "SELECT
             lls.location_id,
             l.location_code,
-            COALESCE(lls.level_name, CONCAT('Nivel ', lls.level_number)) AS shelf_level
+            COALESCE(lls.level_name, CONCAT('Nivel ', lls.level_number)) AS shelf_level,
+            lls.allowed_product_types
          FROM location_level_settings lls
          JOIN locations l ON lls.location_id = l.id
          WHERE lls.allowed_product_types IS NOT NULL
-           AND (
-                JSON_CONTAINS(lls.allowed_product_types, :product_numeric, '$')
-                OR JSON_CONTAINS(lls.allowed_product_types, :product_string, '$')
-           )
-         ORDER BY (l.status = 'active') DESC, lls.priority_order ASC, lls.level_number ASC
-         LIMIT 1"
+         ORDER BY (l.status = 'active') DESC, lls.priority_order ASC, lls.level_number ASC"
     );
 
-    $stmt->execute([
-        ':product_numeric' => json_encode((int)$productId),
-        ':product_string' => json_encode((string)$productId)
-    ]);
+    $stmt->execute();
 
-    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+        if (!productAllowedForLocationLevel($row['allowed_product_types'], $productId)) {
+            continue;
+        }
 
-    if (!$row) {
-        return null;
+        return [
+            'location_id' => (int)$row['location_id'],
+            'location_code' => $row['location_code'],
+            'shelf_level' => $row['shelf_level'] ?: null,
+            'subdivision_number' => null
+        ];
     }
 
-    return [
-        'location_id' => (int)$row['location_id'],
-        'location_code' => $row['location_code'],
-        'shelf_level' => $row['shelf_level'] ?: null,
-        'subdivision_number' => null
-    ];
+    return null;
+}
+
+function productAllowedForLocationLevel($allowedProductTypes, int $productId): bool
+{
+    if ($allowedProductTypes === null || $allowedProductTypes === '') {
+        return false;
+    }
+
+    $decoded = json_decode($allowedProductTypes, true);
+    if (json_last_error() === JSON_ERROR_NONE) {
+        $values = is_array($decoded) ? $decoded : [$decoded];
+
+        foreach ($values as $value) {
+            if (is_array($value)) {
+                continue;
+            }
+
+            $stringValue = (string)$value;
+            if ($stringValue === (string)$productId) {
+                return true;
+            }
+
+            if (is_numeric($value) && (int)$value === $productId) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    $parts = preg_split('/[\s,;|]+/', $allowedProductTypes);
+    if ($parts === false) {
+        return false;
+    }
+
+    foreach ($parts as $part) {
+        $trimmed = trim($part, "\"' ");
+        if ($trimmed === '') {
+            continue;
+        }
+
+        if ($trimmed === (string)$productId) {
+            return true;
+        }
+
+        if (ctype_digit($trimmed) && (int)$trimmed === $productId) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 function findInventoryRecordForLocation(PDO $db, int $productId, int $locationId): ?array

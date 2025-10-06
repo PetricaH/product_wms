@@ -70,6 +70,7 @@ try {
         return [
             'return_id' => (int)($return['return_id'] ?? 0),
             'order_id' => isset($return['order_id']) ? (int)$return['order_id'] : null,
+            'id' => isset($return['order_id']) ? (int)$return['order_id'] : null,
             'order_number' => $return['order_number'] ?? null,
             'customer_name' => $return['customer_name'] ?? 'Client necunoscut',
             'return_status' => $status,

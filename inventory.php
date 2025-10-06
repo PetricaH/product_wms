@@ -262,6 +262,42 @@ $inventoryFilterOptions = [
     'received_to' => $receivedTo,
 ];
 
+$detailedBaseParams = [
+    'view' => 'detailed',
+];
+
+if ($productFilter !== '') {
+    $detailedBaseParams['product'] = $productFilter;
+}
+
+if ($locationFilter !== '') {
+    $detailedBaseParams['location'] = $locationFilter;
+}
+
+if ($lowStockOnly) {
+    $detailedBaseParams['low_stock'] = '1';
+}
+
+if ($receivedFrom !== '') {
+    $detailedBaseParams['received_from'] = $receivedFrom;
+}
+
+if ($receivedTo !== '') {
+    $detailedBaseParams['received_to'] = $receivedTo;
+}
+
+if ($receivedQuick !== '') {
+    $detailedBaseParams['received_quick'] = $receivedQuick;
+}
+
+$detailedPageLink = static function (int $pageNumber) use ($detailedBaseParams): string {
+    $params = $detailedBaseParams;
+    $params['page'] = max($pageNumber, 1);
+    return '?' . http_build_query($params);
+};
+
+$detailedViewLink = '?' . http_build_query($detailedBaseParams);
+
 $inventoryExportColumns = [
     'location_code' => ['label' => 'Locație', 'default' => true],
     'shelf_level' => ['label' => 'Raft', 'default' => true],
@@ -707,16 +743,19 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
         .btn-quick-filter {
             display: inline-flex;
             align-items: center;
-            gap: 0.35rem;
-            border: none;
+            gap: 0.4rem;
+            border: 1px solid rgba(30, 64, 175, 0.45);
             border-radius: 999px;
-            background: rgba(37, 99, 235, 0.1);
-            color: #1e3a8a;
-            padding: 0.4rem 0.85rem;
-            font-size: 0.85rem;
-            font-weight: 600;
+            background: linear-gradient(135deg, #2563eb 0%, #1e3a8a 100%);
+            color: #ffffff;
+            padding: 0.5rem 1.1rem;
+            font-size: 0.9rem;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+            text-transform: uppercase;
             cursor: pointer;
-            transition: background-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+            box-shadow: 0 6px 16px rgba(37, 99, 235, 0.25);
+            transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
         }
 
         .btn-quick-filter .material-symbols-outlined {
@@ -725,16 +764,15 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
 
         .btn-quick-filter:hover,
         .btn-quick-filter:focus {
-            background: #2563eb;
-            color: #ffffff;
+            transform: translateY(-1px);
+            filter: brightness(1.05);
             outline: none;
-            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
+            box-shadow: 0 8px 22px rgba(30, 64, 175, 0.35);
         }
 
         .btn-quick-filter.active {
-            background: #2563eb;
-            color: #ffffff;
-            box-shadow: 0 6px 14px rgba(37, 99, 235, 0.3);
+            filter: brightness(0.95);
+            box-shadow: 0 10px 26px rgba(30, 64, 175, 0.45);
         }
 
         .table-row--recent {
@@ -1782,7 +1820,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                         <div class="card-actions">
                             <!-- View Toggle -->
                             <div class="view-toggle">
-                                <a href="?view=detailed<?= $productFilter ? '&product=' . $productFilter : '' ?><?= $locationFilter ? '&location=' . $locationFilter : '' ?><?= $lowStockOnly ? '&low_stock=1' : '' ?>" 
+                                <a href="<?= htmlspecialchars($detailedViewLink, ENT_QUOTES) ?>"
                                    class="toggle-link <?= $view === 'detailed' ? 'active' : '' ?>">
                                     <span class="material-symbols-outlined">table_view</span>
                                     Detaliat
@@ -2105,7 +2143,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                     </div>
                                     <div class="pagination-controls">
                                         <?php if ($page > 1): ?>
-                                            <a href="?view=<?= $view ?><?= $productFilter ? '&product=' . $productFilter : '' ?><?= $locationFilter ? '&location=' . $locationFilter : '' ?><?= $lowStockOnly ? '&low_stock=1' : '' ?>&page=<?= ($page - 1) ?>" 
+                                            <a href="<?= htmlspecialchars($detailedPageLink($page - 1), ENT_QUOTES) ?>"
                                                class="pagination-btn">
                                                 <span class="material-symbols-outlined">chevron_left</span>
                                                 Anterior
@@ -2117,7 +2155,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                         </span>
                                         
                                         <?php if ($page < $totalPages): ?>
-                                            <a href="?view=<?= $view ?><?= $productFilter ? '&product=' . $productFilter : '' ?><?= $locationFilter ? '&location=' . $locationFilter : '' ?><?= $lowStockOnly ? '&low_stock=1' : '' ?>&page=<?= ($page + 1) ?>" 
+                                            <a href="<?= htmlspecialchars($detailedPageLink($page + 1), ENT_QUOTES) ?>"
                                                class="pagination-btn">
                                                 Următor
                                                 <span class="material-symbols-outlined">chevron_right</span>

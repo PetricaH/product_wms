@@ -9,6 +9,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/PurchaseOrder.php';
 require_once __DIR__ . '/Setting.php';
 require_once __DIR__ . '/PurchasableProduct.php';
+require_once __DIR__ . '/AutoOrderDuplicateGuard.php';
 
 class AutoOrderManager
 {
@@ -21,6 +22,7 @@ class AutoOrderManager
     private Setting $settingModel;
     private PurchasableProduct $purchasableProductModel;
     private array $emailConfig = [];
+    private AutoOrderDuplicateGuard $duplicateGuard;
     private string $productsTable = 'products';
     private string $purchaseOrdersTable = 'purchase_orders';
     private string $purchaseOrderItemsTable = 'purchase_order_items';
@@ -36,6 +38,7 @@ class AutoOrderManager
         $this->settingModel = new Setting($conn);
         $this->purchasableProductModel = new PurchasableProduct($conn);
         $this->emailConfig = $this->incarcaConfiguratieEmail();
+        $this->duplicateGuard = new AutoOrderDuplicateGuard($conn, $this->productsTable);
     }
 
     /**
@@ -454,15 +457,60 @@ class AutoOrderManager
             }
             $context = $pregatire['context'];
 
-            $orderId = $this->purchaseOrder->createPurchaseOrder($context['payload']);
-            if (!$orderId) {
-                $mesaj = sprintf('Autocomanda pentru produsul #%d a eșuat: comanda de achiziție nu a putut fi creată.', $productId);
+            $orderId = null;
+            $guardFailureMessage = null;
+            $transactionStarted = false;
+            $intervalMinute = $this->getAutoOrderMinIntervalMinutes();
+
+            try {
+                if (!$this->conn->inTransaction()) {
+                    $this->conn->beginTransaction();
+                    $transactionStarted = true;
+                }
+
+                $verificareDuplicat = $this->duplicateGuard->canPlaceAutoOrder($productId, $intervalMinute, true);
+                if (!$verificareDuplicat['permisa']) {
+                    $guardFailureMessage = $verificareDuplicat['mesaj'];
+                    throw new RuntimeException($guardFailureMessage);
+                }
+
+                $orderId = $this->purchaseOrder->createPurchaseOrder($context['payload'], false);
+                if (!$orderId) {
+                    $mesaj = $this->purchaseOrder->getLastError()
+                        ?? 'Comanda de achiziție nu a putut fi creată.';
+                    throw new RuntimeException($mesaj);
+                }
+
+                $this->actualizeazaUltimaAutocomanda($productId);
+
+                if ($transactionStarted && $this->conn->inTransaction()) {
+                    $this->conn->commit();
+                }
+            } catch (RuntimeException $e) {
+                if ($transactionStarted && $this->conn->inTransaction()) {
+                    $this->conn->rollBack();
+                }
+
+                if ($guardFailureMessage !== null) {
+                    $this->log($guardFailureMessage, 'info');
+                    return [
+                        'succes' => false,
+                        'mesaj' => $guardFailureMessage
+                    ];
+                }
+
+                $mesaj = sprintf('Autocomanda pentru produsul #%d a eșuat: %s', $productId, $e->getMessage());
                 $this->log($mesaj, 'error');
                 $this->notificaAdministratori($mesaj);
                 return ['succes' => false, 'mesaj' => $mesaj];
+            } catch (Throwable $e) {
+                if ($transactionStarted && $this->conn->inTransaction()) {
+                    $this->conn->rollBack();
+                }
+                throw $e;
             }
 
-            $orderNumber = $this->obtineNumarComanda($orderId);
+            $orderNumber = $this->obtineNumarComanda((int)$orderId);
             $email = $this->construiesteEmailAutocomanda($orderNumber, $context);
 
             $this->actualizeazaMesajEmail($orderId, $email);
@@ -481,7 +529,6 @@ class AutoOrderManager
 
             if ($rezultatEmail['success']) {
                 $this->purchaseOrder->markAsSent($orderId, $context['furnizor']['email']);
-                $this->actualizeazaUltimaAutocomanda($productId);
                 $mesajSucces = sprintf('Autocomanda #%s pentru produsul %s a fost trimisă către %s.', $orderNumber, $context['produs']['nume'], $context['furnizor']['email']);
                 $this->log($mesajSucces, 'info');
                 if (function_exists('logActivity')) {
@@ -594,67 +641,9 @@ class AutoOrderManager
      */
     public function preventDuplicateOrders(int $productId): array
     {
-        $setari = $this->getAutoOrderSettings();
-        $intervalOre = (int)($setari['interval_minim_ore'] ?? self::INTERVAL_DUPLICATE_ORE);
+        $intervalMinute = $this->getAutoOrderMinIntervalMinutes();
 
-        try {
-            $stmt = $this->conn->prepare("SELECT last_auto_order_date FROM {$this->productsTable} WHERE product_id = :id");
-            $stmt->bindValue(':id', $productId, PDO::PARAM_INT);
-            $stmt->execute();
-            $ultimaData = $stmt->fetchColumn();
-        } catch (PDOException $e) {
-            $mesaj = 'Nu s-a putut verifica data ultimei autocomenzi: ' . $e->getMessage();
-            $this->log($mesaj, 'error');
-            return [
-                'permisa' => false,
-                'mesaj' => 'Eroare la verificarea istoricului de autocomandă.'
-            ];
-        }
-
-        $limit = new DateTimeImmutable('-' . max(1, $intervalOre) . ' hours');
-        if ($ultimaData) {
-            try {
-                $ultima = new DateTimeImmutable($ultimaData);
-                if ($ultima > $limit) {
-                    return [
-                        'permisa' => false,
-                        'mesaj' => 'Există deja o autocomandă generată în ultimele ' . $intervalOre . ' ore.'
-                    ];
-                }
-            } catch (Exception $e) {
-                $this->log('Format invalid pentru last_auto_order_date la produsul #' . $productId, 'warning');
-            }
-        }
-
-        try {
-            $sql = "SELECT po.created_at
-                    FROM {$this->purchaseOrdersTable} po
-                    INNER JOIN {$this->purchaseOrderItemsTable} poi ON poi.purchase_order_id = po.id
-                    INNER JOIN {$this->purchasableProductsTable} pp ON poi.purchasable_product_id = pp.id
-                    WHERE pp.internal_product_id = :product_id
-                        AND po.created_at >= :limit
-                        AND (po.notes LIKE 'Autocomandă%' OR poi.notes LIKE 'Autocomandă%')
-                    ORDER BY po.created_at DESC
-                    LIMIT 1";
-            $stmt = $this->conn->prepare($sql);
-            $stmt->bindValue(':product_id', $productId, PDO::PARAM_INT);
-            $stmt->bindValue(':limit', $limit->format('Y-m-d H:i:s'));
-            $stmt->execute();
-            $ultimaComanda = $stmt->fetchColumn();
-            if ($ultimaComanda) {
-                return [
-                    'permisa' => false,
-                    'mesaj' => 'În ultimele ' . $intervalOre . ' ore a fost deja emisă o autocomandă pentru acest produs.'
-                ];
-            }
-        } catch (PDOException $e) {
-            $this->log('Nu s-a putut interoga istoricul autocomenzilor: ' . $e->getMessage(), 'warning');
-        }
-
-        return [
-            'permisa' => true,
-            'mesaj' => 'Nu există autocomenzi recente pentru acest produs.'
-        ];
+        return $this->duplicateGuard->canPlaceAutoOrder($productId, $intervalMinute);
     }
 
     /**
@@ -751,6 +740,16 @@ class AutoOrderManager
         ];
 
         return array_merge($implicite, $setari);
+    }
+
+    private function getAutoOrderMinIntervalMinutes(): int
+    {
+        $setari = $this->getAutoOrderSettings();
+        $intervalOre = max(1, (int)($setari['interval_minim_ore'] ?? self::INTERVAL_DUPLICATE_ORE));
+        $minuteDinSetari = $intervalOre * 60;
+        $configurat = $this->duplicateGuard->getConfiguredMinIntervalMinutes();
+
+        return max($configurat, $minuteDinSetari);
     }
 
     /**
@@ -1012,7 +1011,7 @@ class AutoOrderManager
      */
     private function actualizeazaUltimaAutocomanda(int $productId): void
     {
-        $stmt = $this->conn->prepare("UPDATE {$this->productsTable} SET last_auto_order_date = NOW() WHERE product_id = :id");
+        $stmt = $this->conn->prepare("UPDATE {$this->productsTable} SET last_auto_order_date = CURRENT_TIMESTAMP WHERE product_id = :id");
         $stmt->bindValue(':id', $productId, PDO::PARAM_INT);
         $stmt->execute();
     }

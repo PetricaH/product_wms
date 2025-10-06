@@ -163,6 +163,10 @@ return [
         'imap_sent_folders' => ['INBOX.Sent', 'Sent', 'INBOX/Sent', 'Sent Items', 'Sent Messages']
     ],
 
+    'autoorders' => [
+        'min_interval_minutes' => max(1, (int)(getenv('AUTOORDERS_MIN_INTERVAL_MINUTES') ?: 30)),
+    ],
+
     'automation' => [
         'auto_return_user_id' => (int)(getenv('AUTO_RETURN_USER_ID') ?: 0),
         'delta_event_hours' => (int)(getenv('AUTO_RETURN_DELTA_HOURS') ?: 6),

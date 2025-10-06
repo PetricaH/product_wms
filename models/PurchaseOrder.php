@@ -128,9 +128,14 @@ class PurchaseOrder {
         }
     }
 
-    public function createPurchaseOrder(array $orderData): int|false {
+    public function createPurchaseOrder(array $orderData, bool $manageTransaction = true): int|false {
         $this->rememberError(null);
-        $this->conn->beginTransaction();
+        $ownsTransaction = false;
+
+        if ($manageTransaction && !$this->conn->inTransaction()) {
+            $this->conn->beginTransaction();
+            $ownsTransaction = true;
+        }
 
         try {
             // Generate order number
@@ -193,8 +198,10 @@ class PurchaseOrder {
                 }
             }
 
-            $this->conn->commit();
-            
+            if ($manageTransaction && $ownsTransaction) {
+                $this->conn->commit();
+            }
+
             // Log activity
             if (function_exists('logActivity')) {
                 logActivity(
@@ -207,10 +214,14 @@ class PurchaseOrder {
             }
             
             return $orderId;
-            
+
         } catch (Exception $e) {
-            $this->conn->rollBack();
+            if ($manageTransaction && $ownsTransaction && $this->conn->inTransaction()) {
+                $this->conn->rollBack();
+            }
+
             $this->rememberError($e->getMessage());
+
             return false;
         }
     }

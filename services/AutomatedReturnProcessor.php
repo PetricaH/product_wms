@@ -191,15 +191,10 @@ class AutomatedReturnProcessor
             }
 
             if (($order['status'] ?? '') !== 'shipped') {
-                $this->log('INFO', 'Skipping return creation for non-shipped order', [
+                $this->log('WARNING', 'Proceeding with return creation for order not marked as shipped', [
                     'order_id' => $order['id'],
                     'status' => $order['status'],
                 ]);
-                return [
-                    'success' => false,
-                    'error' => 'Order is not in shipped status',
-                    'code' => 409,
-                ];
             }
 
             $this->db->beginTransaction();

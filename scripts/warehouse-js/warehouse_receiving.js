@@ -36,10 +36,12 @@ class WarehouseReceiving {
         this.returnSearchAbortController = null;
         this.returnSearchResults = new Map();
         this.selectedReturnOrderId = null;
+        this.selectedReturnId = null;
         this.selectedReturnOrderDetails = null;
         this.lastReturnSearchTerm = '';
         this.returnRestockButton = null;
         this.returnRestockButtonDefaultHtml = '';
+        this.returnLocationOptions = null;
 
         // TIMING INTEGRATION - Silent timing for performance tracking
         this.timingManager = null;
@@ -520,9 +522,11 @@ class WarehouseReceiving {
         const totalItems = Number(order.total_items ?? order.items_count ?? 0) || 0;
         const totalValue = this.formatCurrency(order.total_value, order.currency || 'RON');
         const statusLabel = order.status_label || this.formatOrderStatus(order.status);
+        const returnIdValue = Number(order.return_id ?? order.return?.id ?? order.returnId ?? 0);
+        const returnIdAttr = Number.isFinite(returnIdValue) && returnIdValue > 0 ? returnIdValue : '';
 
         return `
-            <div class="return-order-card" data-order-id="${order.id}" data-order-number="${this.escapeHtml(orderNumber)}">
+            <div class="return-order-card" data-order-id="${order.id}" data-return-id="${returnIdAttr}" data-order-number="${this.escapeHtml(orderNumber)}">
                 <div class="return-order-card-header">
                     <span class="return-order-number">${this.escapeHtml(orderNumber)}</span>
                     <span class="return-order-date">${this.escapeHtml(formattedDate)}</span>
@@ -558,7 +562,10 @@ class WarehouseReceiving {
                 if (!Number.isFinite(orderId)) {
                     return;
                 }
-                this.handleReturnOrderSelection(orderId);
+                const returnIdAttr = card.getAttribute('data-return-id');
+                const parsedReturnId = returnIdAttr ? Number(returnIdAttr) : NaN;
+                const returnId = Number.isFinite(parsedReturnId) && parsedReturnId > 0 ? parsedReturnId : null;
+                this.handleReturnOrderSelection(orderId, returnId);
             });
         });
     }
@@ -585,17 +592,18 @@ class WarehouseReceiving {
         }
     }
 
-    handleReturnOrderSelection(orderId) {
+    handleReturnOrderSelection(orderId, returnId = null) {
         if (!Number.isFinite(orderId)) {
             return;
         }
 
         this.selectedReturnOrderId = orderId;
+        this.selectedReturnId = Number.isFinite(returnId) ? returnId : null;
         this.highlightSelectedReturnOrder();
-        this.loadReturnOrderDetails(orderId);
+        this.loadReturnOrderDetails(orderId, this.selectedReturnId);
     }
 
-    async loadReturnOrderDetails(orderId) {
+    async loadReturnOrderDetails(orderId, returnId = null) {
         if (!Number.isFinite(orderId)) {
             return;
         }
@@ -603,7 +611,12 @@ class WarehouseReceiving {
         this.showReturnDetailsLoading();
 
         try {
-            const response = await fetch(`${this.config.apiBase}/warehouse/return_order_details.php?order_id=${encodeURIComponent(orderId)}`);
+            const params = new URLSearchParams({ order_id: String(orderId) });
+            const effectiveReturnId = Number.isFinite(returnId) && returnId > 0 ? returnId : (Number.isFinite(this.selectedReturnId) ? this.selectedReturnId : null);
+            if (Number.isFinite(effectiveReturnId) && effectiveReturnId > 0) {
+                params.set('return_id', String(effectiveReturnId));
+            }
+            const response = await fetch(`${this.config.apiBase}/warehouse/return_order_details.php?${params.toString()}`);
             const result = await response.json();
 
             if (!response.ok || !result.success) {
@@ -651,30 +664,82 @@ class WarehouseReceiving {
         }
 
         const order = data.order || {};
+        const returnInfo = data.return || null;
         const items = Array.isArray(data.items) ? data.items : [];
+        const totals = data.totals || {};
+        const processing = data.processing || {};
 
         const normalizedItems = items.map((item) => {
-            const restockQuantity = Number(item.restock_quantity ?? item.picked_quantity ?? item.quantity_ordered ?? 0) || 0;
+            const expectedQuantity = Number(
+                item.expected_quantity ?? item.restock_quantity ?? item.picked_quantity ?? item.quantity_ordered ?? 0
+            ) || 0;
+            const processedQuantity = typeof item.processed_quantity !== 'undefined' && item.processed_quantity !== null
+                ? Number(item.processed_quantity)
+                : (item.is_processed ? Number(item.quantity_returned ?? 0) : null);
+            const defaultLocationId = item.default_location_id
+                ? Number(item.default_location_id)
+                : (!item.is_processed && item.location_id ? Number(item.location_id) : null);
+            const defaultLocationCode = item.default_location_code
+                || (!item.is_processed ? item.location_code : null);
+            const processedLocationId = item.processed_location_id
+                ? Number(item.processed_location_id)
+                : (item.is_processed && item.location_id ? Number(item.location_id) : null);
+            const processedLocationCode = item.processed_location_code
+                || (item.is_processed ? item.location_code : null);
+            const selectedLocationId = item.is_processed ? processedLocationId : (defaultLocationId ?? null);
+
             return {
                 ...item,
-                restock_quantity: restockQuantity,
-                location_id: item.location_id ? Number(item.location_id) : null,
-                inventory_id: item.inventory_id ? Number(item.inventory_id) : null,
-                shelf_level: item.shelf_level ?? null,
-                subdivision_number: typeof item.subdivision_number !== 'undefined' && item.subdivision_number !== null
-                    ? Number(item.subdivision_number)
-                    : null,
-                location_missing: !(item.location_id && item.location_code)
+                expected_quantity: expectedQuantity,
+                processed_quantity: processedQuantity,
+                default_location_id: defaultLocationId,
+                default_location_code: defaultLocationCode,
+                processed_location_id: processedLocationId,
+                processed_location_code: processedLocationCode,
+                selected_location_id: selectedLocationId,
+                processed_condition: item.processed_condition ?? item.item_condition ?? null,
+                processed_notes: item.processed_notes ?? item.notes ?? null,
+                is_processed: Boolean(item.is_processed || item.return_item_id)
             };
         });
 
         this.selectedReturnOrderDetails = {
             order,
-            items: normalizedItems
+            return: returnInfo,
+            items: normalizedItems,
+            totals,
+            processing
         };
 
-        const totalUnits = normalizedItems.reduce((sum, item) => sum + (item.restock_quantity || 0), 0);
-        const missingCount = normalizedItems.filter((item) => item.location_missing).length;
+        if (returnInfo && Number.isFinite(Number(returnInfo.id))) {
+            this.selectedReturnId = Number(returnInfo.id);
+        }
+
+        if (!normalizedItems.length) {
+            details.innerHTML = `
+                <div class="empty-state">
+                    <span class="material-symbols-outlined">inventory</span>
+                    <p>Nu există produse de înregistrat pentru acest retur.</p>
+                </div>
+            `;
+            this.toggleReturnRestockHint('warning', 'Nu există produse disponibile pentru readăugare în stoc.');
+            this.disableReturnRestockButton();
+            return;
+        }
+
+        const processedCount = Number(
+            processing.processed_items ?? normalizedItems.filter((item) => item.is_processed).length
+        );
+        const totalItems = normalizedItems.length;
+        const expectedUnits = Number(
+            totals.expected_quantity ?? normalizedItems.reduce((sum, item) => sum + (item.expected_quantity || 0), 0)
+        );
+        const processedUnits = Number(
+            totals.processed_quantity ?? normalizedItems.reduce((sum, item) => sum + (item.processed_quantity || 0), 0)
+        );
+        const allProcessed = Boolean(processing.all_processed ?? (processedCount === totalItems));
+
+        const returnStatusLabel = this.formatReturnStatus(returnInfo?.status);
 
         const summaryHtml = `
             <div class="return-order-summary">
@@ -686,92 +751,379 @@ class WarehouseReceiving {
                     <span class="return-order-summary-label">Client</span>
                     <span class="return-order-summary-value">${this.escapeHtml(order.customer_name || 'N/A')}</span>
                 </div>
+                ${returnInfo ? `
                 <div class="return-order-summary-item">
-                    <span class="return-order-summary-label">Status</span>
-                    <span class="return-order-summary-value">${this.escapeHtml(order.status_label || this.formatOrderStatus(order.status || 'picked'))}</span>
+                    <span class="return-order-summary-label">Retur</span>
+                    <span class="return-order-summary-value">#${this.escapeHtml(String(returnInfo.id))}</span>
                 </div>
+                <div class="return-order-summary-item">
+                    <span class="return-order-summary-label">Status retur</span>
+                    <span class="return-order-summary-value">${this.escapeHtml(returnStatusLabel)}</span>
+                </div>
+                ` : ''}
                 <div class="return-order-summary-item">
                     <span class="return-order-summary-label">Articole</span>
-                    <span class="return-order-summary-value">${normalizedItems.length}</span>
+                    <span class="return-order-summary-value">${totalItems}</span>
                 </div>
                 <div class="return-order-summary-item">
-                    <span class="return-order-summary-label">Bucăți</span>
-                    <span class="return-order-summary-value">${totalUnits}</span>
+                    <span class="return-order-summary-label">Bucăți așteptate</span>
+                    <span class="return-order-summary-value">${expectedUnits}</span>
                 </div>
                 <div class="return-order-summary-item">
                     <span class="return-order-summary-label">Ultima actualizare</span>
-                    <span class="return-order-summary-value">${this.escapeHtml(this.formatDateTime(order.latest_activity))}</span>
+                    <span class="return-order-summary-value">${this.escapeHtml(this.formatDateTime(order.latest_activity || order.updated_at || order.order_date))}</span>
                 </div>
             </div>
         `;
 
-        let itemsMarkup = '';
-        if (!normalizedItems.length) {
-            itemsMarkup = `
-                <div class="empty-state">
-                    <span class="material-symbols-outlined">inventory</span>
-                    <p>Nu există produse de readăugat în stoc pentru această comandă.</p>
+        const progressHtml = `
+            <div class="return-processing-progress">
+                <div class="return-processing-progress-count">
+                    <span class="material-symbols-outlined">playlist_add_check</span>
+                    ${processedCount}/${totalItems} produse înregistrate
                 </div>
-            `;
-        } else {
-            itemsMarkup = normalizedItems.map((item) => {
-                const hasLocation = Boolean(item.location_id && item.location_code);
-                const locationText = hasLocation
-                    ? `${this.escapeHtml(item.location_code)}${item.shelf_level ? ' · ' + this.escapeHtml(item.shelf_level) : ''}`
-                    : 'Necesită locație';
-                const locationIcon = hasLocation ? 'location_on' : 'warning';
-                const locationClass = hasLocation ? '' : 'return-item-location-missing';
+                <div class="return-processing-progress-quantities">
+                    <span class="material-symbols-outlined">inventory_2</span>
+                    ${processedUnits}/${expectedUnits} bucăți primite
+                </div>
+            </div>
+        `;
 
-                return `
-                    <div class="return-item">
-                        <div class="return-item-header">
-                            <span class="return-item-name">${this.escapeHtml(item.product_name || 'Produs')}</span>
-                            <span class="return-item-sku">${this.escapeHtml(item.sku || '')}</span>
-                        </div>
-                        <div class="return-item-meta">
-                            <span>
-                                <span class="material-symbols-outlined">inventory_2</span>
-                                ${item.restock_quantity} buc
-                            </span>
-                            <span>
-                                <span class="material-symbols-outlined">shopping_cart</span>
-                                Ridicate: ${item.picked_quantity ?? item.restock_quantity}
-                            </span>
-                            <span class="${locationClass}">
-                                <span class="material-symbols-outlined">${locationIcon}</span>
-                                ${this.escapeHtml(locationText)}
-                            </span>
-                        </div>
-                    </div>
-                `;
-            }).join('');
-        }
+        const itemsMarkup = normalizedItems.map((item, index) => this.renderReturnItemCard(item, index)).join('');
 
         details.innerHTML = `
             ${summaryHtml}
+            ${progressHtml}
             <div class="return-items-list">
                 ${itemsMarkup}
             </div>
         `;
 
-        if (missingCount > 0) {
-            const message = missingCount === 1
-                ? 'Un produs nu are o locație activă. Actualizați locația înainte de a readăuga în stoc.'
-                : `${missingCount} produse nu au o locație activă. Actualizați locațiile înainte de a continua.`;
-            this.toggleReturnRestockHint('warning', message);
-        } else if (!normalizedItems.length) {
-            this.toggleReturnRestockHint('warning', 'Nu există produse de readăugat în stoc pentru această comandă.');
-        } else if (totalUnits === 0) {
-            this.toggleReturnRestockHint('warning', 'Cantitățile de returnat sunt zero pentru această comandă.');
-        } else {
-            this.toggleReturnRestockHint('success', 'Toate produsele vor fi readăugate în stoc în locațiile propuse.');
+        normalizedItems.forEach((item, index) => {
+            if (item.is_processed) {
+                return;
+            }
+            const card = details.querySelector(`.return-item-card[data-index="${index}"]`);
+            if (!card) {
+                return;
+            }
+            const button = card.querySelector('[data-action="process-item"]');
+            if (button) {
+                button.addEventListener('click', () => this.processReturnItem(index));
+            }
+        });
+
+        this.updateReturnRestockState(allProcessed, processedCount, totalItems);
+    }
+
+    renderReturnItemCard(item, index) {
+        const processed = Boolean(item.is_processed);
+        const expectedQty = Number.isFinite(Number(item.expected_quantity)) ? Number(item.expected_quantity) : 0;
+        const processedQty = Number.isFinite(Number(item.processed_quantity)) ? Number(item.processed_quantity) : null;
+        const quantityValue = processed ? (processedQty !== null ? processedQty : 0) : expectedQty;
+        const conditionValue = processed ? (item.processed_condition || 'good') : 'good';
+        const notesValue = processed ? (item.processed_notes || '') : '';
+
+        const selectedLocationId = Number.isFinite(Number(item.selected_location_id)) && Number(item.selected_location_id) > 0
+            ? Number(item.selected_location_id)
+            : null;
+        const fallbackLocationCode = item.processed_location_code || item.location_code || item.default_location_code || '';
+        const locationOptions = this.getReturnLocationOptionsList(selectedLocationId, fallbackLocationCode);
+        const locationOptionsMarkup = locationOptions.map((option) => {
+            const isSelected = selectedLocationId !== null && Number(option.id) === Number(selectedLocationId);
+            return `<option value="${option.id}"${isSelected ? ' selected' : ''}>${this.escapeHtml(option.label)}</option>`;
+        }).join('');
+
+        const conditionOptionsMarkup = this.getReturnConditionOptions().map((option) => {
+            const isSelected = option.value === conditionValue;
+            return `<option value="${option.value}"${isSelected ? ' selected' : ''}>${option.label}</option>`;
+        }).join('');
+
+        const buttonHtml = processed
+            ? `<button type="button" class="btn btn-success return-item-submit" disabled>
+                    <span class="material-symbols-outlined">task_alt</span>
+                    Înregistrat
+               </button>`
+            : `<button type="button" class="btn btn-primary return-item-submit" data-action="process-item" data-index="${index}">
+                    <span class="material-symbols-outlined">inventory</span>
+                    Înregistrează Produs
+               </button>`;
+
+        return `
+            <div class="return-item-card${processed ? ' processed' : ''}" data-index="${index}" data-order-item-id="${item.order_item_id}" data-product-id="${item.product_id}">
+                <div class="return-item-card-header">
+                    <div class="return-item-card-info">
+                        <span class="return-item-name">${this.escapeHtml(item.product_name || 'Produs')}</span>
+                        <span class="return-item-sku">${this.escapeHtml(item.sku || '')}</span>
+                    </div>
+                    <div class="return-item-card-status">
+                        <span class="return-item-expected">Cantitate expediată: ${expectedQty}</span>
+                        ${processed ? `<span class="return-item-badge"><span class="material-symbols-outlined">task_alt</span>Înregistrat</span>` : ''}
+                    </div>
+                </div>
+                <div class="return-item-card-body">
+                    <div class="return-item-form-row">
+                        <div class="return-item-form-group">
+                            <label for="return-item-qty-${index}">Cantitate primită înapoi:</label>
+                            <input id="return-item-qty-${index}" type="number" min="0" name="quantity_received" value="${quantityValue}" ${processed ? 'readonly' : ''}>
+                        </div>
+                        <div class="return-item-form-group">
+                            <label for="return-item-condition-${index}">Stare produs:</label>
+                            <select id="return-item-condition-${index}" name="condition" ${processed ? 'disabled' : ''}>
+                                ${conditionOptionsMarkup}
+                            </select>
+                        </div>
+                    </div>
+                    <div class="return-item-form-row">
+                        <div class="return-item-form-group">
+                            <label for="return-item-location-${index}">Locație destinație:</label>
+                            <select id="return-item-location-${index}" name="location_id" ${processed ? 'disabled' : ''}>
+                                <option value="">Selectați locația</option>
+                                ${locationOptionsMarkup}
+                            </select>
+                        </div>
+                        ${processed ? `
+                        <div class="return-item-form-group return-item-processed-quantity">
+                            <label>Înregistrat:</label>
+                            <div class="return-item-processed-value">${quantityValue} buc</div>
+                        </div>
+                        ` : ''}
+                    </div>
+                    <div class="return-item-form-row full-width">
+                        <div class="return-item-form-group full-width">
+                            <label for="return-item-notes-${index}">Observații:</label>
+                            <textarea id="return-item-notes-${index}" name="notes" rows="2" ${processed ? 'readonly' : ''}>${this.escapeHtml(notesValue)}</textarea>
+                        </div>
+                    </div>
+                    <div class="return-item-actions">
+                        ${buttonHtml}
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    getReturnLocationOptions() {
+        if (Array.isArray(this.returnLocationOptions)) {
+            return this.returnLocationOptions;
         }
 
-        if (this.returnRestockButton) {
-            if (this.returnRestockButtonDefaultHtml) {
-                this.returnRestockButton.innerHTML = this.returnRestockButtonDefaultHtml;
+        const locations = Array.isArray(this.config.locations) ? this.config.locations : [];
+        const levelDescriptions = new Map();
+
+        if (Array.isArray(this.config.locationLevels)) {
+            this.config.locationLevels.forEach((level) => {
+                const locationId = Number(level.location_id);
+                if (!Number.isFinite(locationId) || locationId <= 0) {
+                    return;
+                }
+                if (levelDescriptions.has(locationId)) {
+                    return;
+                }
+                const display = level.display_code || level.level_name || null;
+                if (display) {
+                    levelDescriptions.set(locationId, display);
+                }
+            });
+        }
+
+        const options = locations.map((loc) => {
+            const locationId = Number(loc.id);
+            if (!Number.isFinite(locationId) || locationId <= 0) {
+                return null;
             }
-            this.returnRestockButton.disabled = missingCount > 0 || !normalizedItems.length || totalUnits === 0;
+            const baseCode = loc.location_code || `Locație #${locationId}`;
+            const description = levelDescriptions.get(locationId) || (loc.zone ? `Zona ${loc.zone}` : '');
+            const label = description && !description.includes(baseCode)
+                ? `${baseCode} - ${description}`
+                : baseCode;
+            return { id: locationId, label };
+        }).filter(Boolean);
+
+        options.sort((a, b) => a.label.localeCompare(b.label, 'ro-RO'));
+        this.returnLocationOptions = options;
+        return this.returnLocationOptions;
+    }
+
+    getReturnLocationOptionsList(selectedId = null, fallbackCode = '') {
+        const options = [...this.getReturnLocationOptions()];
+        if (selectedId && !options.some((opt) => Number(opt.id) === Number(selectedId))) {
+            const label = fallbackCode ? fallbackCode : `Locație #${selectedId}`;
+            options.push({ id: selectedId, label });
+        }
+        options.sort((a, b) => a.label.localeCompare(b.label, 'ro-RO'));
+        return options;
+    }
+
+    getReturnConditionOptions() {
+        return [
+            { value: 'good', label: 'Bun' },
+            { value: 'damaged', label: 'Deteriorat' },
+            { value: 'defective', label: 'Defect' },
+            { value: 'opened', label: 'Deschis' }
+        ];
+    }
+
+    getReturnConditionLabel(value) {
+        const option = this.getReturnConditionOptions().find((opt) => opt.value === value);
+        return option ? option.label : value;
+    }
+
+    formatReturnStatus(status) {
+        if (!status) {
+            return 'Necunoscut';
+        }
+
+        const normalized = String(status).toLowerCase();
+        const map = {
+            pending: 'În așteptare',
+            in_progress: 'În curs',
+            completed: 'Finalizat',
+            cancelled: 'Anulat'
+        };
+
+        return map[normalized] || status;
+    }
+
+    areAllReturnItemsProcessed() {
+        if (!this.selectedReturnOrderDetails || !Array.isArray(this.selectedReturnOrderDetails.items)) {
+            return false;
+        }
+        const items = this.selectedReturnOrderDetails.items;
+        return items.length > 0 && items.every((item) => item.is_processed);
+    }
+
+    updateReturnRestockState(allProcessedOverride = null, processedCountOverride = null, totalItemsOverride = null) {
+        if (!this.returnRestockButton) {
+            this.returnRestockButton = document.getElementById('return-restock-btn');
+        }
+        if (!this.returnRestockButton) {
+            return;
+        }
+
+        const items = this.selectedReturnOrderDetails?.items ?? [];
+        const totalItems = totalItemsOverride ?? items.length;
+        const processedCount = processedCountOverride ?? items.filter((item) => item.is_processed).length;
+        const allProcessed = typeof allProcessedOverride === 'boolean'
+            ? allProcessedOverride
+            : (totalItems > 0 && processedCount === totalItems);
+
+        if (this.returnRestockButtonDefaultHtml) {
+            this.returnRestockButton.innerHTML = this.returnRestockButtonDefaultHtml;
+        }
+
+        if (!totalItems) {
+            this.returnRestockButton.disabled = true;
+            this.toggleReturnRestockHint('warning', 'Nu există produse disponibile pentru readăugare în stoc.');
+            return;
+        }
+
+        if (!allProcessed) {
+            this.returnRestockButton.disabled = true;
+            this.toggleReturnRestockHint('warning', 'Înregistrați toate produsele înainte de a adăuga în stoc.');
+            return;
+        }
+
+        this.returnRestockButton.disabled = false;
+        this.toggleReturnRestockHint('success', 'Toate produsele sunt înregistrate. Puteți readăuga în stoc.');
+    }
+
+    async processReturnItem(itemIndex) {
+        if (!this.selectedReturnOrderDetails || !Array.isArray(this.selectedReturnOrderDetails.items)) {
+            return;
+        }
+
+        const item = this.selectedReturnOrderDetails.items[itemIndex];
+        if (!item) {
+            return;
+        }
+
+        const details = document.getElementById('return-order-details');
+        if (!details) {
+            return;
+        }
+
+        const card = details.querySelector(`.return-item-card[data-index="${itemIndex}"]`);
+        if (!card) {
+            return;
+        }
+
+        const quantityInput = card.querySelector('input[name="quantity_received"]');
+        const conditionSelect = card.querySelector('select[name="condition"]');
+        const locationSelect = card.querySelector('select[name="location_id"]');
+        const notesTextarea = card.querySelector('textarea[name="notes"]');
+        const submitButton = card.querySelector('[data-action="process-item"]');
+
+        const quantityValue = quantityInput ? Number(quantityInput.value) : 0;
+        if (!Number.isFinite(quantityValue) || quantityValue < 0) {
+            this.showError('Introduceți o cantitate validă pentru produs.');
+            return;
+        }
+
+        const conditionValue = conditionSelect ? conditionSelect.value : 'good';
+        if (!conditionValue) {
+            this.showError('Selectați starea produsului.');
+            return;
+        }
+
+        const locationValue = locationSelect ? Number(locationSelect.value) : 0;
+        if (!Number.isFinite(locationValue) || locationValue <= 0) {
+            this.showError('Selectați o locație pentru acest produs.');
+            return;
+        }
+
+        const notesValue = notesTextarea ? notesTextarea.value.trim() : '';
+
+        const returnId = this.selectedReturnOrderDetails.return?.id ?? this.selectedReturnId;
+        if (!Number.isFinite(Number(returnId)) || Number(returnId) <= 0) {
+            this.showError('Returul selectat nu este valid.');
+            return;
+        }
+
+        const payload = {
+            return_id: Number(returnId),
+            order_item_id: item.order_item_id,
+            product_id: item.product_id,
+            quantity_received: quantityValue,
+            condition: conditionValue,
+            location_id: locationValue,
+            notes: notesValue
+        };
+
+        let originalButtonHtml = '';
+        if (submitButton) {
+            originalButtonHtml = submitButton.innerHTML;
+            submitButton.disabled = true;
+            submitButton.classList.add('loading');
+            submitButton.innerHTML = `<span class="material-symbols-outlined spin">autorenew</span>Se înregistrează...`;
+        }
+
+        try {
+            const response = await fetch(`${this.config.apiBase}/warehouse/add_return_item.php`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': this.config.csrfToken
+                },
+                body: JSON.stringify(payload)
+            });
+
+            const result = await response.json();
+            if (!response.ok || !result.success) {
+                throw new Error(result.message || 'Nu am putut înregistra produsul.');
+            }
+
+            this.showSuccess(result.message || 'Produsul a fost înregistrat pentru retur.');
+            await this.loadReturnOrderDetails(this.selectedReturnOrderId, payload.return_id);
+        } catch (error) {
+            console.error('processReturnItem error:', error);
+            this.showError(error.message || 'A apărut o eroare la înregistrarea produsului.');
+        } finally {
+            if (submitButton && document.body.contains(submitButton)) {
+                submitButton.classList.remove('loading');
+                submitButton.disabled = false;
+                submitButton.innerHTML = originalButtonHtml || `<span class="material-symbols-outlined">inventory</span>Înregistrează Produs`;
+            }
         }
     }
 
@@ -797,6 +1149,7 @@ class WarehouseReceiving {
 
     clearReturnSelection(resetDetails = true) {
         this.selectedReturnOrderId = null;
+        this.selectedReturnId = null;
         const container = document.getElementById('return-orders-results');
         if (container) {
             container.querySelectorAll('.return-order-card.selected').forEach((card) => {
@@ -850,15 +1203,21 @@ class WarehouseReceiving {
 
     async processReturnRestock() {
         if (!this.selectedReturnOrderDetails || !this.selectedReturnOrderDetails.order) {
-            this.showError('Selectați o comandă de retur înainte de a readăuga produsele în stoc.');
+            this.showError('Selectați un retur înainte de a readăuga produsele în stoc.');
             return;
         }
 
-        const { order, items } = this.selectedReturnOrderDetails;
-        const restockItems = items.filter((item) => item.location_id && item.restock_quantity > 0);
+        const order = this.selectedReturnOrderDetails.order;
+        const returnId = this.selectedReturnOrderDetails.return?.id ?? this.selectedReturnId;
 
-        if (!restockItems.length) {
-            this.showError('Nu există produse eligibile pentru readăugare în stoc.');
+        if (!Number.isFinite(Number(returnId)) || Number(returnId) <= 0) {
+            this.showError('Returul selectat nu este valid.');
+            return;
+        }
+
+        if (!this.areAllReturnItemsProcessed()) {
+            this.showError('Înregistrați toate produsele înainte de a adăuga în stoc.');
+            this.updateReturnRestockState();
             return;
         }
 
@@ -877,16 +1236,7 @@ class WarehouseReceiving {
         try {
             const payload = {
                 order_id: order.id,
-                order_number: order.order_number,
-                items: restockItems.map((item) => ({
-                    order_item_id: item.order_item_id,
-                    product_id: item.product_id,
-                    restock_quantity: item.restock_quantity,
-                    location_id: item.location_id,
-                    inventory_id: item.inventory_id,
-                    shelf_level: item.shelf_level,
-                    subdivision_number: item.subdivision_number
-                }))
+                return_id: Number(returnId)
             };
 
             const response = await fetch(`${this.config.apiBase}/warehouse/process_return_restock.php`, {

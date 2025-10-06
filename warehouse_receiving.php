@@ -373,6 +373,13 @@ $currentPage = 'warehouse_receiving';
                                 <p class="returns-hint">Rezultatele afișează retururile active, cele mai recente apar primele.</p>
                             </div>
                             <div class="returns-panel-content">
+                                <div class="return-processing-instructions">
+                                    <span class="material-symbols-outlined">info</span>
+                                    <div class="return-processing-text">
+                                        <p class="return-processing-title">Verificați fiecare produs returnat și înregistrați cantitatea primită și starea acestuia.</p>
+                                        <p class="return-processing-subtitle">Înregistrați toate produsele înainte de a adăuga în stoc.</p>
+                                    </div>
+                                </div>
                                 <div class="return-orders-column">
                                     <div id="return-orders-results" class="return-orders-results">
                                         <div class="empty-state">

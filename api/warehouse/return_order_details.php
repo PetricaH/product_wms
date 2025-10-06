@@ -421,35 +421,81 @@ function findAllowedLevelForProduct(PDO $db, int $productId): ?array
         "SELECT
             lls.location_id,
             l.location_code,
-            COALESCE(lls.level_name, CONCAT('Nivel ', lls.level_number)) AS shelf_level
+            COALESCE(lls.level_name, CONCAT('Nivel ', lls.level_number)) AS shelf_level,
+            lls.allowed_product_types
          FROM location_level_settings lls
          JOIN locations l ON lls.location_id = l.id
          WHERE lls.allowed_product_types IS NOT NULL
-           AND (
-                JSON_CONTAINS(lls.allowed_product_types, :product_numeric, '$')
-                OR JSON_CONTAINS(lls.allowed_product_types, :product_string, '$')
-           )
-         ORDER BY (l.status = 'active') DESC, lls.priority_order ASC, lls.level_number ASC
-         LIMIT 1"
+         ORDER BY (l.status = 'active') DESC, lls.priority_order ASC, lls.level_number ASC"
     );
 
-    $stmt->execute([
-        ':product_numeric' => json_encode((int)$productId),
-        ':product_string' => json_encode((string)$productId)
-    ]);
+    $stmt->execute();
 
-    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+        if (!productAllowedForLocationLevel($row['allowed_product_types'], $productId)) {
+            continue;
+        }
 
-    if (!$row) {
-        return null;
+        return [
+            'location_id' => (int)$row['location_id'],
+            'location_code' => $row['location_code'],
+            'shelf_level' => $row['shelf_level'] ?: null,
+            'subdivision_number' => null
+        ];
     }
 
-    return [
-        'location_id' => (int)$row['location_id'],
-        'location_code' => $row['location_code'],
-        'shelf_level' => $row['shelf_level'] ?: null,
-        'subdivision_number' => null
-    ];
+    return null;
+}
+
+function productAllowedForLocationLevel($allowedProductTypes, int $productId): bool
+{
+    if ($allowedProductTypes === null || $allowedProductTypes === '') {
+        return false;
+    }
+
+    $decoded = json_decode($allowedProductTypes, true);
+    if (json_last_error() === JSON_ERROR_NONE) {
+        $values = is_array($decoded) ? $decoded : [$decoded];
+
+        foreach ($values as $value) {
+            if (is_array($value)) {
+                continue;
+            }
+
+            $stringValue = (string)$value;
+            if ($stringValue === (string)$productId) {
+                return true;
+            }
+
+            if (is_numeric($value) && (int)$value === $productId) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    $parts = preg_split('/[\s,;|]+/', $allowedProductTypes);
+    if ($parts === false) {
+        return false;
+    }
+
+    foreach ($parts as $part) {
+        $trimmed = trim($part, "\"' ");
+        if ($trimmed === '') {
+            continue;
+        }
+
+        if ($trimmed === (string)$productId) {
+            return true;
+        }
+
+        if (ctype_digit($trimmed) && (int)$trimmed === $productId) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 function findInventoryRecordForLocation(PDO $db, int $productId, int $locationId): ?array

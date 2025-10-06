@@ -237,6 +237,30 @@ $view = $_GET['view'] ?? 'detailed';
 $productFilter = $_GET['product'] ?? '';
 $locationFilter = $_GET['location'] ?? '';
 $lowStockOnly = isset($_GET['low_stock']);
+$receivedFrom = $_GET['received_from'] ?? '';
+$receivedTo = $_GET['received_to'] ?? '';
+$receivedQuick = $_GET['received_quick'] ?? '';
+
+$receivedFrom = is_string($receivedFrom) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $receivedFrom) ? $receivedFrom : '';
+$receivedTo = is_string($receivedTo) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $receivedTo) ? $receivedTo : '';
+$receivedQuick = is_string($receivedQuick) ? $receivedQuick : '';
+
+if ($receivedQuick === 'today') {
+    $today = date('Y-m-d');
+    $receivedFrom = $today;
+    $receivedTo = $today;
+}
+
+if ($receivedFrom && $receivedTo && $receivedFrom > $receivedTo) {
+    $swapValue = $receivedFrom;
+    $receivedFrom = $receivedTo;
+    $receivedTo = $swapValue;
+}
+
+$inventoryFilterOptions = [
+    'received_from' => $receivedFrom,
+    'received_to' => $receivedTo,
+];
 
 $inventoryExportColumns = [
     'location_code' => ['label' => 'Locație', 'default' => true],
@@ -266,7 +290,12 @@ if (isset($_GET['export_inventory'])) {
         ));
     }
 
-    $exportRows = $inventoryModel->getInventoryWithFilters($productFilter, $locationFilter, $lowStockOnly);
+    $exportRows = $inventoryModel->getInventoryWithFilters(
+        $productFilter,
+        $locationFilter,
+        $lowStockOnly,
+        $inventoryFilterOptions
+    );
 
     header('Content-Type: text/csv');
     header('Content-Disposition: attachment; filename="inventory_export_' . date('Ymd_His') . '.csv"');
@@ -390,7 +419,12 @@ switch ($view) {
         $inventory = array_slice($allInventory, $offset, $pageSize);
         break;
     case 'detailed':
-        $allInventory = $inventoryModel->getInventoryWithFilters($productFilter, $locationFilter, $lowStockOnly);
+        $allInventory = $inventoryModel->getInventoryWithFilters(
+            $productFilter,
+            $locationFilter,
+            $lowStockOnly,
+            $inventoryFilterOptions
+        );
         $totalCount = count($allInventory);
         $inventory = array_slice($allInventory, $offset, $pageSize);
         break;
@@ -492,7 +526,12 @@ switch ($view) {
         }
         break;
     default:
-        $allInventory = $inventoryModel->getInventoryWithFilters($productFilter, $locationFilter, $lowStockOnly);
+        $allInventory = $inventoryModel->getInventoryWithFilters(
+            $productFilter,
+            $locationFilter,
+            $lowStockOnly,
+            $inventoryFilterOptions
+        );
         $totalCount = count($allInventory);
         $inventory = array_slice($allInventory, $offset, $pageSize);
 }
@@ -640,6 +679,94 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
         .invoice-file-hint {
             font-size: 0.9rem;
             color: var(--text-muted, #64748b);
+        }
+
+        .form-group--date-range .date-range-inputs {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .form-group--date-range .form-control {
+            flex: 1 1 0;
+            min-width: 0;
+        }
+
+        .date-range-separator {
+            color: rgba(15, 23, 42, 0.6);
+            font-weight: 500;
+        }
+
+        .quick-filter-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-top: 0.75rem;
+        }
+
+        .btn-quick-filter {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            border: none;
+            border-radius: 999px;
+            background: rgba(37, 99, 235, 0.1);
+            color: #1e3a8a;
+            padding: 0.4rem 0.85rem;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .btn-quick-filter .material-symbols-outlined {
+            font-size: 1.1rem;
+        }
+
+        .btn-quick-filter:hover,
+        .btn-quick-filter:focus {
+            background: #2563eb;
+            color: #ffffff;
+            outline: none;
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
+        }
+
+        .btn-quick-filter.active {
+            background: #2563eb;
+            color: #ffffff;
+            box-shadow: 0 6px 14px rgba(37, 99, 235, 0.3);
+        }
+
+        .table-row--recent {
+            background: rgba(34, 197, 94, 0.08);
+        }
+
+        .table-row--recent:hover {
+            background: rgba(22, 163, 74, 0.12);
+        }
+
+        .received-info {
+            display: flex;
+            flex-direction: column;
+            gap: 0.1rem;
+            line-height: 1.2;
+        }
+
+        .badge-recent {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.2rem;
+            margin-top: 0.35rem;
+            padding: 0.2rem 0.6rem;
+            border-radius: 999px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            background: rgba(34, 197, 94, 0.18);
+            color: #166534;
+        }
+
+        .badge-recent .material-symbols-outlined {
+            font-size: 1rem;
         }
 
         .invoice-drop-zone:focus,
@@ -1724,7 +1851,34 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                     <?php endforeach; ?>
                                 </select>
                             </div>
-                            
+
+                            <div class="form-group form-group--date-range">
+                                <label class="form-label" for="received-from">Primire între</label>
+                                <div class="date-range-inputs">
+                                    <input
+                                        type="date"
+                                        id="received-from"
+                                        name="received_from"
+                                        class="form-control"
+                                        value="<?= htmlspecialchars($receivedFrom) ?>"
+                                    >
+                                    <span class="date-range-separator">–</span>
+                                    <input
+                                        type="date"
+                                        id="received-to"
+                                        name="received_to"
+                                        class="form-control"
+                                        value="<?= htmlspecialchars($receivedTo) ?>"
+                                    >
+                                </div>
+                                <div class="quick-filter-buttons">
+                                    <button type="submit" name="received_quick" value="today" class="btn btn-quick-filter <?= $receivedQuick === 'today' ? 'active' : '' ?>">
+                                        <span class="material-symbols-outlined">today</span>
+                                        Azi
+                                    </button>
+                                </div>
+                            </div>
+
                             <div class="form-group">
                                 <label class="checkbox-label">
                                     <input type="checkbox" name="low_stock" value="1" <?= $lowStockOnly ? 'checked' : '' ?>>
@@ -1783,8 +1937,15 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                         </tr>
                                     </thead>
                                     <tbody>
+                                        <?php $todayDate = date('Y-m-d'); ?>
                                         <?php foreach ($inventory as $item): ?>
-                                            <tr>
+                                            <?php
+                                                $receivedAtRaw = $item['received_at'] ?? null;
+                                                $receivedAtDate = $receivedAtRaw ? date('Y-m-d', strtotime($receivedAtRaw)) : null;
+                                                $isRecent = $view === 'detailed' && $receivedAtDate === $todayDate;
+                                                $rowClass = $isRecent ? 'table-row--recent' : '';
+                                            ?>
+                                            <tr class="<?= $rowClass ?>">
                                                 <?php if ($view === 'summary'): ?>
                                                     <td>
                                                         <code class="sku-code"><?= htmlspecialchars($item['sku']) ?></code>
@@ -1879,8 +2040,17 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                         </div>
                                                     </td>
                                                     <td>
-                                                        <?php if (!empty($item['received_at'])): ?>
-                                                            <small><?= date('d.m.Y', strtotime($item['received_at'])) ?></small>
+                                                        <?php if (!empty($receivedAtRaw)): ?>
+                                                            <div class="received-info">
+                                                                <strong><?= date('d.m.Y', strtotime($receivedAtRaw)) ?></strong>
+                                                                <small><?= date('H:i', strtotime($receivedAtRaw)) ?></small>
+                                                            </div>
+                                                            <?php if ($isRecent): ?>
+                                                                <span class="badge badge-recent">
+                                                                    <span class="material-symbols-outlined">new_releases</span>
+                                                                    Azi
+                                                                </span>
+                                                            <?php endif; ?>
                                                         <?php else: ?>
                                                             <span class="text-muted">-</span>
                                                         <?php endif; ?>

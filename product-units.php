@@ -283,6 +283,25 @@ $currentPage = 'product-units';
                             </div>
 
                             <div class="table-wrapper">
+                                <div class="bulk-actions barcode-bulk-actions" id="barcodeBulkActions" style="display: none;">
+                                    <span class="selected-count">
+                                        <span id="barcodeSelectedCount">0</span> selectate
+                                    </span>
+                                    <div class="bulk-buttons">
+                                        <button class="btn btn-sm btn-primary" id="bulkGenerateBarcodesBtn" type="button">
+                                            <span class="material-symbols-outlined">qr_code_2</span>
+                                            Generează EAN-13 pentru selecție
+                                        </button>
+                                        <button class="btn btn-sm btn-secondary" id="bulkPrintLabelsBtn" type="button">
+                                            <span class="material-symbols-outlined">print</span>
+                                            Tipărește etichete selectate
+                                        </button>
+                                        <button class="btn btn-sm btn-secondary" id="bulkClearSelectionBtn" type="button">
+                                            <span class="material-symbols-outlined">close</span>
+                                            Golește selecția
+                                        </button>
+                                    </div>
+                                </div>
                                 <table class="data-table" id="productUnitsTable">
                                     <thead>
                                         <tr>
@@ -294,6 +313,7 @@ $currentPage = 'product-units';
                                             <th>Unitate</th>
                                             <th>Greutate/Unitate</th>
                                             <th>Volum/Unitate</th>
+                                            <th>SKU/Barcode</th>
                                             <th>Proprietăți</th>
                                             <th>Max/Colet</th>
                                             <th>Status</th>
@@ -303,7 +323,7 @@ $currentPage = 'product-units';
                                     <tbody id="productUnitsBody">
                                         <!-- Table rows will be loaded via JavaScript -->
                                         <tr class="loading-row">
-                                            <td colspan="10" class="text-center">
+                                            <td colspan="11" class="text-center">
                                                 <div class="loading-spinner">
                                                     <span class="material-symbols-outlined spinning">progress_activity</span>
                                                     Încărcare date...
@@ -1285,6 +1305,30 @@ $currentPage = 'product-units';
                     </tbody>
                 </table>
                 <div id="pendingPagination" class="pagination-wrapper"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Confirm Overwrite Modal -->
+    <div id="confirmOverwriteModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>⚠️ Confirmă înlocuirea SKU</h3>
+            </div>
+            <div class="modal-body">
+                <p>Produsul are deja un cod SKU existent:</p>
+                <div class="current-sku-display">
+                    <strong id="currentSkuValue">-</strong>
+                </div>
+                <p>Generarea codului EAN-13 va <strong>înlocui</strong> acest cod cu:</p>
+                <div class="new-sku-display">
+                    <strong id="newSkuValue">-</strong>
+                </div>
+                <p class="warning-text">⚠️ Această acțiune nu poate fi anulată. Codul vechi va fi pierdut.</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" type="button" id="cancelOverwriteBtn">Anulează</button>
+                <button class="btn btn-danger" type="button" id="confirmOverwriteBtn">Înlocuiește SKU</button>
             </div>
         </div>
     </div>

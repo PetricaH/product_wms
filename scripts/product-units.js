@@ -185,6 +185,11 @@ const ProductUnitsApp = {
             applyBulkMaxBtn: document.getElementById('applyBulkMaxBtn'),
             bulkWeightValue: document.getElementById('bulkWeightValue'),
             applyBulkWeightBtn: document.getElementById('applyBulkWeightBtn'),
+            barcodeBulkActionsBar: document.getElementById('barcodeBulkActions'),
+            barcodeSelectedCount: document.getElementById('barcodeSelectedCount'),
+            bulkGenerateBarcodesBtn: document.getElementById('bulkGenerateBarcodesBtn'),
+            bulkPrintLabelsBtn: document.getElementById('bulkPrintLabelsBtn'),
+            bulkClearSelectionBtn: document.getElementById('bulkClearSelectionBtn'),
 
             // Label management
             labelTable: document.getElementById('labelTable'),
@@ -704,6 +709,46 @@ const ProductUnitsApp = {
 
         if (this.elements.applyBulkWeightBtn) {
             this.elements.applyBulkWeightBtn.addEventListener('click', () => this.applyBulkValueAction('set_weight'));
+        }
+
+        if (this.elements.bulkClearSelectionBtn) {
+            this.elements.bulkClearSelectionBtn.addEventListener('click', () => this.clearUnitSelection());
+        }
+
+        if (this.elements.bulkGenerateBarcodesBtn) {
+            this.elements.bulkGenerateBarcodesBtn.addEventListener('click', () => {
+                const ids = this.getSelectedUnitIds();
+                if (!ids.length) {
+                    this.showError('Selectați cel puțin un produs pentru generarea codului.');
+                    return;
+                }
+
+                if (!window.BarcodeManager || typeof window.BarcodeManager.bulkGenerate !== 'function') {
+                    this.showError('Funcționalitatea de generare cod nu este disponibilă.');
+                    return;
+                }
+
+                const units = this.getUnitDetailsByIds(ids);
+                window.BarcodeManager.bulkGenerate(units);
+            });
+        }
+
+        if (this.elements.bulkPrintLabelsBtn) {
+            this.elements.bulkPrintLabelsBtn.addEventListener('click', () => {
+                const ids = this.getSelectedUnitIds();
+                if (!ids.length) {
+                    this.showError('Selectați cel puțin un produs pentru tipărire.');
+                    return;
+                }
+
+                if (!window.BarcodeManager || typeof window.BarcodeManager.bulkPrint !== 'function') {
+                    this.showError('Funcționalitatea de tipărire nu este disponibilă.');
+                    return;
+                }
+
+                const units = this.getUnitDetailsByIds(ids);
+                window.BarcodeManager.bulkPrint(units);
+            });
         }
 
         if (this.elements.showPendingProductsBtn) {
@@ -2168,8 +2213,24 @@ const ProductUnitsApp = {
 
         tbody.innerHTML = this.state.filteredData.map(unit => {
             const isSelected = this.state.selectedUnits.has(unit.id);
+            const weightText = typeof unit.weight_per_unit === 'number'
+                ? `${unit.weight_per_unit} kg`
+                : `${unit.weight_per_unit || '-'} kg`;
+            const volumeText = unit.volume_per_unit ? `${unit.volume_per_unit} L` : '-';
+            const skuCell = (window.BarcodeManager && typeof window.BarcodeManager.renderSkuCell === 'function')
+                ? window.BarcodeManager.renderSkuCell(unit)
+                : this.renderFallbackSkuCell(unit);
+            const barcodeButtons = (window.BarcodeManager && typeof window.BarcodeManager.renderRowActions === 'function')
+                ? window.BarcodeManager.renderRowActions(unit)
+                : '';
+            const barcodeActionsHtml = barcodeButtons
+                ? `<div class="barcode-action-buttons">${barcodeButtons}</div>`
+                : '';
+
             return `
-            <tr data-id="${unit.id}">
+            <tr data-id="${unit.id}" data-unit-id="${unit.id}" data-product-id="${unit.product_id}"
+                data-product-name="${this.escapeHtml(unit.product_name)}"
+                data-current-sku="${this.escapeHtml(unit.product_code || '')}">
                 <td class="select-cell">
                     <input type="checkbox" class="unit-checkbox" data-id="${unit.id}" ${isSelected ? 'checked' : ''}>
                 </td>
@@ -2184,8 +2245,9 @@ const ProductUnitsApp = {
                     <span class="badge badge-primary">${this.escapeHtml(unit.unit_code)}</span>
                     <small class="text-muted d-block">${this.escapeHtml(unit.unit_name)}</small>
                 </td>
-                <td><strong>${unit.weight_per_unit} kg</strong></td>
-                <td>${unit.volume_per_unit ? unit.volume_per_unit + ' L' : '-'}</td>
+                <td><strong>${weightText}</strong></td>
+                <td>${volumeText}</td>
+                <td>${skuCell}</td>
                 <td>
                     <div class="properties-list">
                         ${unit.fragile ? '<span class="badge badge-warning">Fragil</span>' : ''}
@@ -2201,6 +2263,7 @@ const ProductUnitsApp = {
                     </span>
                 </td>
                 <td>
+                    ${barcodeActionsHtml}
                     <div class="action-buttons">
                         <button class="btn btn-sm btn-secondary"
                                 onclick="ProductUnitsApp.editProductUnit(${unit.id})"
@@ -2218,8 +2281,45 @@ const ProductUnitsApp = {
         `;
         }).join('');
 
+        if (window.BarcodeManager && typeof window.BarcodeManager.afterTableRender === 'function') {
+            window.BarcodeManager.afterTableRender();
+        }
+
         this.updateTableInfo();
         this.initializeUnitBulkSelection();
+    },
+
+    renderFallbackSkuCell(unit) {
+        const rawSku = typeof unit.product_code === 'string' ? unit.product_code : (unit.product_code ?? '');
+        const hasSku = rawSku && rawSku.trim() !== '';
+
+        if (!hasSku) {
+            return '<div class="sku-display"><span class="badge badge-danger">⚠️ Lipsă SKU</span></div>';
+        }
+
+        const escapedSku = this.escapeHtml(rawSku);
+        const isAlpha = /[a-zA-Z]/.test(rawSku);
+        const isNumeric = !isAlpha && /^\d+$/.test(rawSku.trim());
+        let badgeClass = 'badge-secondary';
+        let badgeText = 'Cod existent';
+
+        if (isAlpha) {
+            badgeClass = 'badge-warning';
+            badgeText = 'Alfanumeric';
+        } else if (isNumeric && rawSku.trim().length !== 13) {
+            badgeClass = 'badge-info';
+            badgeText = 'Numeric';
+        } else if (rawSku.trim().length === 13) {
+            badgeClass = 'badge-success';
+            badgeText = 'EAN-13';
+        }
+
+        return `
+            <div class="sku-display">
+                <span class="sku-value">${escapedSku}</span>
+                <span class="badge ${badgeClass}">${badgeText}</span>
+            </div>
+        `.trim();
     },
 
     renderEmptyTable() {
@@ -2227,7 +2327,7 @@ const ProductUnitsApp = {
 
         this.elements.productUnitsBody.innerHTML = `
             <tr class="empty-row">
-                <td colspan="10" class="text-center">
+                <td colspan="11" class="text-center">
                     <div class="empty-state">
                         <span class="material-symbols-outlined">inventory_2</span>
                         <h3>Nu există configurări</h3>
@@ -2250,7 +2350,7 @@ const ProductUnitsApp = {
 
         this.elements.productUnitsBody.innerHTML = `
             <tr class="error-row">
-                <td colspan="10" class="text-center">
+                <td colspan="11" class="text-center">
                     <div class="error-state">
                         <span class="material-symbols-outlined">error</span>
                         <h3>Eroare la încărcare</h3>
@@ -2273,7 +2373,7 @@ const ProductUnitsApp = {
 
         this.elements.productUnitsBody.innerHTML = `
             <tr class="loading-row">
-                <td colspan="10" class="text-center">
+                <td colspan="11" class="text-center">
                     <div class="loading-spinner">
                         <span class="material-symbols-outlined spinning">progress_activity</span>
                         Încărcare date...
@@ -2364,12 +2464,20 @@ const ProductUnitsApp = {
             this.elements.selectedUnitsCount.textContent = count;
         }
 
+        if (this.elements.barcodeSelectedCount) {
+            this.elements.barcodeSelectedCount.textContent = count;
+        }
+
         if (this.elements.unitBulkActionsBar) {
             if (count > 0) {
                 this.elements.unitBulkActionsBar.style.display = 'block';
             } else {
                 this.elements.unitBulkActionsBar.style.display = 'none';
             }
+        }
+
+        if (this.elements.barcodeBulkActionsBar) {
+            this.elements.barcodeBulkActionsBar.style.display = count > 0 ? 'flex' : 'none';
         }
 
         if (this.elements.selectAllUnits) {
@@ -2392,6 +2500,23 @@ const ProductUnitsApp = {
         }
 
         return Array.from(this.state.selectedUnits).filter(id => Number.isInteger(id) && id > 0);
+    },
+
+    getUnitById(id) {
+        if (!Array.isArray(this.state.productUnits)) {
+            return null;
+        }
+
+        return this.state.productUnits.find(unit => unit.id === id) || null;
+    },
+
+    getUnitDetailsByIds(ids) {
+        if (!Array.isArray(ids) || !ids.length) {
+            return [];
+        }
+
+        const map = new Map((this.state.productUnits || []).map(unit => [unit.id, unit]));
+        return ids.map(id => map.get(id)).filter(Boolean);
     },
 
     clearUnitSelection() {

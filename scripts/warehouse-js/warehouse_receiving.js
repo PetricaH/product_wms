@@ -397,7 +397,7 @@ class WarehouseReceiving {
             container.innerHTML = `
                 <div class="empty-state">
                     <span class="material-symbols-outlined">travel_explore</span>
-                    <p>Introduceți numele unei companii pentru a vedea comenzile pregătite pentru retur.</p>
+                    <p>Introduceți numele unei companii pentru a vedea retururile active.</p>
                 </div>
             `;
             return;
@@ -431,17 +431,17 @@ class WarehouseReceiving {
         this.returnSearchAbortController = new AbortController();
 
         try {
-            const response = await fetch(`${this.config.apiBase}/warehouse/search_picked_orders.php?company=${encodeURIComponent(trimmedQuery)}`, {
+            const response = await fetch(`${this.config.apiBase}/warehouse/search_pending_returns.php?company=${encodeURIComponent(trimmedQuery)}`, {
                 signal: this.returnSearchAbortController.signal
             });
             const result = await response.json();
 
             if (!response.ok) {
-                throw new Error(result.message || 'Nu am putut căuta comenzile pregătite.');
+                throw new Error(result.message || 'Nu am putut căuta retururile active.');
             }
 
-            const orders = Array.isArray(result.orders) ? result.orders : [];
-            this.renderReturnOrders(orders, trimmedQuery);
+            const returns = Array.isArray(result.returns) ? result.returns : [];
+            this.renderReturnOrders(returns, trimmedQuery);
         } catch (error) {
             if (error.name === 'AbortError') {
                 return;
@@ -450,7 +450,7 @@ class WarehouseReceiving {
             console.error('Return search error:', error);
             container.innerHTML = `
                 <div class="return-orders-error">
-                    ${this.escapeHtml(error.message || 'A apărut o eroare la încărcarea comenzilor de retur.')}
+                    ${this.escapeHtml(error.message || 'A apărut o eroare la încărcarea retururilor active.')}
                 </div>
             `;
             this.toggleReturnRestockHint();
@@ -469,7 +469,7 @@ class WarehouseReceiving {
         container.innerHTML = `
             <div class="returns-loading">
                 <span class="material-symbols-outlined">autorenew</span>
-                <span>Căutăm comenzile pregătite...</span>
+                <span>Căutăm retururile active...</span>
             </div>
         `;
 
@@ -489,7 +489,7 @@ class WarehouseReceiving {
             container.innerHTML = `
                 <div class="empty-state">
                     <span class="material-symbols-outlined">inventory_2</span>
-                    <p>Nu am găsit comenzi pregătite pentru compania <strong>${this.escapeHtml(query)}</strong>.</p>
+                    <p>Nu am găsit retururi active pentru compania <strong>${this.escapeHtml(query)}</strong>.</p>
                 </div>
             `;
             this.clearReturnSelection();

@@ -321,6 +321,10 @@ class GodexPrinter
             $this->drawText($image, $weightText, $this->fontRegular ?: $this->fontBold, 22, $margin, $textTop, $gray);
         }
 
+        if ($this->countVisiblePixels($image, $white) < 1500) {
+            $this->renderSafetyOverlay($image, $product, $black, $gray, $white);
+        }
+
         $saved = imagepng($image, $filePath, 0);
         imagedestroy($image);
 
@@ -333,9 +337,16 @@ class GodexPrinter
 
     private function drawText($image, string $text, string $font, int $size, int $x, int $y, int $color): void
     {
+        $drawn = false;
+
         if ($font !== '' && function_exists('imagettftext')) {
-            imagettftext($image, $size, 0, $x, $y, $color, $font, $text);
-        } else {
+            $result = @imagettftext($image, $size, 0, $x, $y, $color, $font, $text);
+            if ($result !== false) {
+                $drawn = true;
+            }
+        }
+
+        if (!$drawn) {
             imagestring($image, 5, $x, $y - 12, $text, $color);
         }
     }
@@ -343,15 +354,20 @@ class GodexPrinter
     private function drawCenteredText($image, string $text, string $font, int $size, float $centerX, int $baselineY, int $color): void
     {
         if ($font !== '' && function_exists('imagettfbbox')) {
-            $bbox = imagettfbbox($size, 0, $font, $text);
-            $textWidth = abs($bbox[2] - $bbox[0]);
-            $x = (int)($centerX - ($textWidth / 2));
-            imagettftext($image, $size, 0, $x, $baselineY, $color, $font, $text);
-        } else {
-            $textWidth = imagefontwidth(5) * strlen($text);
-            $x = (int)($centerX - ($textWidth / 2));
-            imagestring($image, 5, $x, $baselineY - 12, $text, $color);
+            $bbox = @imagettfbbox($size, 0, $font, $text);
+            if ($bbox !== false) {
+                $textWidth = abs($bbox[2] - $bbox[0]);
+                $x = (int)($centerX - ($textWidth / 2));
+                $result = @imagettftext($image, $size, 0, $x, $baselineY, $color, $font, $text);
+                if ($result !== false) {
+                    return;
+                }
+            }
         }
+
+        $textWidth = imagefontwidth(5) * strlen($text);
+        $x = (int)($centerX - ($textWidth / 2));
+        imagestring($image, 5, $x, $baselineY - 12, $text, $color);
     }
 
     private function drawWrappedText($image, string $text, string $font, int $size, int $x, int $startY, int $maxWidth, int $lineHeight, int $color): void
@@ -384,11 +400,56 @@ class GodexPrinter
     private function measureTextWidth(string $text, string $font, int $size): float
     {
         if ($font !== '' && function_exists('imagettfbbox')) {
-            $bbox = imagettfbbox($size, 0, $font, $text);
-            return abs($bbox[2] - $bbox[0]);
+            $bbox = @imagettfbbox($size, 0, $font, $text);
+            if ($bbox !== false) {
+                return abs($bbox[2] - $bbox[0]);
+            }
         }
 
         return imagefontwidth(5) * strlen($text);
+    }
+
+    private function countVisiblePixels($image, int $backgroundColor): int
+    {
+        $width = imagesx($image);
+        $height = imagesy($image);
+        $visible = 0;
+
+        for ($y = 0; $y < $height; $y++) {
+            for ($x = 0; $x < $width; $x++) {
+                if (imagecolorat($image, $x, $y) !== $backgroundColor) {
+                    $visible++;
+                }
+            }
+        }
+
+        return $visible;
+    }
+
+    private function renderSafetyOverlay($image, array $product, int $primaryColor, int $secondaryColor, int $backgroundColor): void
+    {
+        imagefill($image, 0, 0, $backgroundColor);
+
+        $sku = trim((string)($product['sku'] ?? ''));
+        $name = $this->sanitizeText($product['name'] ?? '', 32);
+        $code = $this->sanitizeText($product['product_code'] ?? '', 32);
+        $weight = isset($product['weight']) ? (float)$product['weight'] : null;
+        $unitCode = $this->sanitizeText($product['unit_code'] ?? '', 10) ?: 'kg';
+
+        imagestring($image, 5, 20, 20, 'SKU: ' . $sku, $primaryColor);
+        if ($name !== '') {
+            imagestring($image, 4, 20, 60, 'Nume: ' . $name, $primaryColor);
+        }
+        if ($code !== '' && $code !== $sku) {
+            imagestring($image, 4, 20, 100, 'Cod: ' . $code, $secondaryColor);
+        }
+        if ($weight !== null && $weight > 0) {
+            $weightText = sprintf('Greutate: %.3f %s', $weight, $unitCode);
+            imagestring($image, 4, 20, 140, $weightText, $secondaryColor);
+        }
+        if ($sku !== '') {
+            imagestring($image, 4, 20, 180, 'Barcode: ' . $sku, $primaryColor);
+        }
     }
 
     private function estimateLineCount(string $text, int $maxWidth, int $size, string $font): int

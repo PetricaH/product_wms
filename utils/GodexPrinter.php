@@ -331,7 +331,7 @@ class GodexPrinter
             'printer' => $printer,
         ];
 
-        $requestUrl = $this->printServerUrl . '?' . http_build_query($query);
+        $requestUrl = $this->printServerUrl . '?' . $this->buildPrintQuery($query);
 
         $context = stream_context_create([
             'http' => [
@@ -354,5 +354,23 @@ class GodexPrinter
         }
 
         return ['success' => false, 'error' => 'Print server response: ' . $response];
+    }
+
+    private function buildPrintQuery(array $params): string
+    {
+        $pairs = [];
+
+        foreach ($params as $key => $value) {
+            $encodedKey = rawurlencode((string) $key);
+            $encodedValue = rawurlencode((string) $value);
+
+            if ($key === 'printer') {
+                $encodedValue = str_replace('%2B', '+', $encodedValue);
+            }
+
+            $pairs[] = $encodedKey . '=' . $encodedValue;
+        }
+
+        return implode('&', $pairs);
     }
 }

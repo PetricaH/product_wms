@@ -3,6 +3,14 @@ declare(strict_types=1);
 
 header('Content-Type: application/json; charset=utf-8');
 
+header('Content-Type: application/json; charset=utf-8');
+
+if (!isset($_SESSION['user_id'])) {
+    http_response_code(401);
+    echo json_encode(['error' => 'unauthorized']);
+    exit;
+}
+
 $orderId  = (int)($_GET['order_id']  ?? 0);
 $returnId = (int)($_GET['return_id'] ?? 0);
 if ($orderId <= 0 || $returnId <= 0) {
@@ -21,6 +29,15 @@ set_exception_handler(function (Throwable $e): void {
 $lastSql = '';
 
 try {
+    $config = require BASE_PATH . '/config/config.php';
+    $dbFactory = $config['connection_factory'] ?? null;
+    if (!$dbFactory || !is_callable($dbFactory)) {
+        throw new RuntimeException('Database connection not available');
+    }
+
+    /** @var PDO $pdo */
+    $pdo = $dbFactory();
+
     $sqlHeader = '
         SELECT
             r.id,
@@ -77,6 +94,10 @@ try {
     ], JSON_UNESCAPED_UNICODE);
 } catch (PDOException $e) {
     error_log('[ReturnDetails][SQL] ' . $e->getMessage() . ' | SQL: ' . $lastSql);
+    http_response_code(500);
+    echo json_encode(['error' => 'internal']);
+} catch (Throwable $e) {
+    error_log('[ReturnDetails][General] ' . $e->getMessage());
     http_response_code(500);
     echo json_encode(['error' => 'internal']);
 }

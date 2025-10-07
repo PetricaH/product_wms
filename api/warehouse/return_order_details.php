@@ -3,11 +3,7 @@ declare(strict_types=1);
 
 header('Content-Type: application/json; charset=utf-8');
 
-if (!defined('BASE_PATH')) {
-    define('BASE_PATH', dirname(__DIR__, 2));
-}
-
-require_once BASE_PATH . '/bootstrap.php';
+header('Content-Type: application/json; charset=utf-8');
 
 if (!isset($_SESSION['user_id'])) {
     http_response_code(401);

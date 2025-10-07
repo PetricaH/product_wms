@@ -41,6 +41,8 @@ class GodexPrinter
     private string $storageDir;
     private string $storageUrlPath;
     private string $baseUrl;
+    private string $fontRegular;
+    private string $fontBold;
 
     public function __construct(array $config = [])
     {
@@ -68,7 +70,7 @@ class GodexPrinter
         }
 
         $this->ensureStorageDirectory();
-        $this->loadPdfLibrary();
+        $this->locateFonts();
     }
 
     public function printBatch(array $products): array
@@ -79,7 +81,7 @@ class GodexPrinter
         foreach ($products as $product) {
             try {
                 $label = $this->createLabelDocument($product);
-                $result = $this->sendToPrintServer($label['url'], $this->printerName);
+                $result = $this->sendToPrintServer($label['url'], $this->printerName, $label['format']);
                 if (!$result['success']) {
                     throw new Exception($result['error'] ?? 'Print server error');
                 }
@@ -123,27 +125,24 @@ class GodexPrinter
         return $scheme . '://' . $host;
     }
 
-    private function loadPdfLibrary(): void
+    private function locateFonts(): void
     {
-        if (class_exists('FPDF')) {
-            return;
-        }
+        $defaultRegular = BASE_PATH . '/fonts/Roboto-Regular.ttf';
+        $defaultBold = BASE_PATH . '/fonts/Roboto-Bold.ttf';
 
-        $vendorAutoload = BASE_PATH . '/vendor/autoload.php';
-        if (file_exists($vendorAutoload)) {
-            require_once $vendorAutoload;
-        }
+        $this->fontRegular = is_readable($defaultRegular) ? $defaultRegular : '';
+        $this->fontBold = is_readable($defaultBold) ? $defaultBold : $this->fontRegular;
 
-        if (!class_exists('FPDF')) {
-            $fallback = BASE_PATH . '/lib/fpdf.php';
-            if (file_exists($fallback)) {
-                require_once $fallback;
+        if (($this->fontRegular === '' || $this->fontBold === '') && function_exists('imagettftext')) {
+            $systemFont = getenv('GDFONTPATH');
+            if ($systemFont && is_readable($systemFont)) {
+                $this->fontRegular = $this->fontRegular ?: $systemFont;
+                $this->fontBold = $this->fontBold ?: $systemFont;
             }
         }
 
-        if (!class_exists('FPDF')) {
-            throw new Exception('FPDF library is not available for label generation.');
-        }
+        $this->fontRegular = $this->fontRegular ?: '';
+        $this->fontBold = $this->fontBold ?: $this->fontRegular;
     }
 
     private function createLabelDocument(array $product): array
@@ -156,56 +155,12 @@ class GodexPrinter
         $fileName = $this->buildFileName($sku);
         $filePath = $this->storageDir . '/' . $fileName;
 
-        $labelWidth = 60.0;
-        $labelHeight = 40.0;
-        $margin = 3.0;
-
-        $pdf = new \FPDF('P', 'mm', [$labelWidth, $labelHeight]);
-        $pdf->SetMargins($margin, $margin, $margin);
-        $pdf->SetAutoPageBreak(false);
-        $pdf->AddPage();
-
-        $pdf->SetFont('Arial', 'B', 10);
-        $pdf->Cell(0, 5, $this->convertForPdf('WARTUNG WMS'), 0, 1, 'L');
-
-        $barcodeWidth = $labelWidth - ($margin * 2);
-        $barcodeHeight = 16.0;
-        $barcodeX = $margin;
-        $barcodeY = 10.0;
-
-        $this->drawCode128($pdf, $barcodeX, $barcodeY, $sku, $barcodeWidth, $barcodeHeight);
-
-        $pdf->SetFont('Arial', '', 9);
-        $pdf->SetXY($barcodeX, $barcodeY + $barcodeHeight - 1);
-        $pdf->Cell($barcodeWidth, 5, $this->convertForPdf($sku), 0, 1, 'C');
-
-        $pdf->SetXY($margin, $barcodeY + $barcodeHeight + 4);
-        $name = $this->sanitizeText($product['name'] ?? '', 60);
-        if ($name !== '') {
-            $pdf->SetFont('Arial', 'B', 8);
-            $pdf->MultiCell($labelWidth - (2 * $margin), 4, $this->convertForPdf($name));
-        }
-
-        $code = $this->sanitizeText($product['product_code'] ?? '', 40);
-        if ($code !== '' && $code !== $sku) {
-            $pdf->SetFont('Arial', '', 8);
-            $pdf->SetX($margin);
-            $pdf->Cell(0, 4, $this->convertForPdf('Cod: ' . $code), 0, 1, 'L');
-        }
-
-        $weight = isset($product['weight']) ? (float)$product['weight'] : null;
-        $unitCode = $this->sanitizeText($product['unit_code'] ?? '', 10) ?: 'kg';
-        if ($weight !== null && $weight > 0) {
-            $pdf->SetFont('Arial', '', 8);
-            $pdf->SetX($margin);
-            $pdf->Cell(0, 4, $this->convertForPdf(sprintf('Greutate: %.3f %s', $weight, $unitCode)), 0, 1, 'L');
-        }
-
-        $pdf->Output('F', $filePath);
+        $document = $this->renderPngLabel($product, $filePath);
 
         return [
             'path' => $filePath,
             'url' => $this->buildFileUrl($fileName),
+            'format' => $document['format'] ?? 'png',
         ];
     }
 
@@ -219,7 +174,7 @@ class GodexPrinter
 
         $unique = substr(str_replace('.', '', uniqid('', true)), -6);
 
-        return sprintf('product_label_%s_%s_%s.pdf', $safeSku, date('Ymd_His'), $unique);
+        return sprintf('product_label_%s_%s_%s.png', $safeSku, date('Ymd_His'), $unique);
     }
 
     private function buildFileUrl(string $fileName): string
@@ -245,39 +200,6 @@ class GodexPrinter
         }
 
         return $value;
-    }
-
-    private function convertForPdf(string $text): string
-    {
-        $converted = @iconv('UTF-8', 'ISO-8859-1//TRANSLIT', $text);
-        if ($converted === false) {
-            return $text;
-        }
-
-        return $converted;
-    }
-
-    private function drawCode128(\FPDF $pdf, float $x, float $y, string $value, float $width, float $height): void
-    {
-        $patterns = $this->encodeCode128($value);
-        $patternString = implode('', $patterns);
-        $moduleCount = strlen($patternString);
-        if ($moduleCount === 0) {
-            throw new Exception('Failed to encode barcode pattern.');
-        }
-
-        $moduleWidth = $width / $moduleCount;
-        $positionX = $x;
-
-        $pdf->SetDrawColor(0);
-        $pdf->SetFillColor(0);
-
-        for ($i = 0; $i < $moduleCount; $i++) {
-            if ($patternString[$i] === '1') {
-                $pdf->Rect($positionX, $y, $moduleWidth, $height, 'F');
-            }
-            $positionX += $moduleWidth;
-        }
     }
 
     private function encodeCode128(string $value): array
@@ -320,7 +242,236 @@ class GodexPrinter
         return $patterns;
     }
 
-    private function sendToPrintServer(string $fileUrl, string $printer): array
+    private function renderPngLabel(array $product, string $filePath): array
+    {
+        if (!extension_loaded('gd')) {
+            throw new Exception('GD extension is required for PNG label rendering.');
+        }
+
+        $width = 600;
+        $height = 400;
+
+        $image = imagecreatetruecolor($width, $height);
+        if ($image === false) {
+            throw new Exception('Unable to initialize image canvas for label.');
+        }
+
+        if (function_exists('imageantialias')) {
+            imageantialias($image, true);
+        }
+
+        $white = imagecolorallocate($image, 255, 255, 255);
+        $black = imagecolorallocate($image, 0, 0, 0);
+        $gray = imagecolorallocate($image, 90, 90, 90);
+
+        imagefill($image, 0, 0, $white);
+
+        $margin = 28;
+        $usableWidth = $width - ($margin * 2);
+
+        $title = 'WARTUNG WMS';
+        $titleSize = 26;
+        $titleY = $margin + $titleSize;
+        $this->drawText($image, $title, $this->fontBold, $titleSize, $margin, $titleY, $black);
+
+        $barcodeTop = $titleY + 20;
+        $barcodeHeight = 160;
+        $patterns = implode('', $this->encodeCode128(trim((string)$product['sku'])));
+        $moduleCount = strlen($patterns);
+        if ($moduleCount === 0) {
+            imagedestroy($image);
+            throw new Exception('Unable to encode barcode pattern.');
+        }
+
+        $moduleWidth = (int)max(1, floor($usableWidth / $moduleCount));
+        $barcodeWidth = $moduleWidth * $moduleCount;
+        $barcodeLeft = (int)($margin + ($usableWidth - $barcodeWidth) / 2);
+
+        for ($i = 0; $i < $moduleCount; $i++) {
+            if ($patterns[$i] === '1') {
+                $x1 = $barcodeLeft + ($i * $moduleWidth);
+                $x2 = $x1 + $moduleWidth - 1;
+                imagefilledrectangle($image, $x1, $barcodeTop, $x2, $barcodeTop + $barcodeHeight, $black);
+            }
+        }
+
+        $skuTextSize = 28;
+        $skuY = $barcodeTop + $barcodeHeight + 42;
+        $this->drawCenteredText($image, $product['sku'], $this->fontRegular, $skuTextSize, $width / 2, $skuY, $black);
+
+        $textTop = $skuY + 24;
+        $lineHeight = 36;
+
+        $name = $this->sanitizeText($product['name'] ?? '', 60);
+        if ($name !== '') {
+            $this->drawWrappedText($image, $name, $this->fontBold ?: $this->fontRegular, 24, $margin, $textTop, $usableWidth, $lineHeight, $black);
+            $textTop += $lineHeight * $this->estimateLineCount($name, $usableWidth, 24, $this->fontBold ?: $this->fontRegular);
+        }
+
+        $code = $this->sanitizeText($product['product_code'] ?? '', 40);
+        if ($code !== '' && $code !== $product['sku']) {
+            $this->drawText($image, 'Cod: ' . $code, $this->fontRegular ?: $this->fontBold, 22, $margin, $textTop, $gray);
+            $textTop += $lineHeight;
+        }
+
+        $weight = isset($product['weight']) ? (float)$product['weight'] : null;
+        $unitCode = $this->sanitizeText($product['unit_code'] ?? '', 10) ?: 'kg';
+        if ($weight !== null && $weight > 0) {
+            $weightText = sprintf('Greutate: %.3f %s', $weight, $unitCode);
+            $this->drawText($image, $weightText, $this->fontRegular ?: $this->fontBold, 22, $margin, $textTop, $gray);
+        }
+
+        if ($this->countVisiblePixels($image, $white) < 1500) {
+            $this->renderSafetyOverlay($image, $product, $black, $gray, $white);
+        }
+
+        $saved = imagepng($image, $filePath, 0);
+        imagedestroy($image);
+
+        if (!$saved) {
+            throw new Exception('Failed to save PNG label to storage.');
+        }
+
+        return ['format' => 'png'];
+    }
+
+    private function drawText($image, string $text, string $font, int $size, int $x, int $y, int $color): void
+    {
+        $drawn = false;
+
+        if ($font !== '' && function_exists('imagettftext')) {
+            $result = @imagettftext($image, $size, 0, $x, $y, $color, $font, $text);
+            if ($result !== false) {
+                $drawn = true;
+            }
+        }
+
+        if (!$drawn) {
+            imagestring($image, 5, $x, $y - 12, $text, $color);
+        }
+    }
+
+    private function drawCenteredText($image, string $text, string $font, int $size, float $centerX, int $baselineY, int $color): void
+    {
+        if ($font !== '' && function_exists('imagettfbbox')) {
+            $bbox = @imagettfbbox($size, 0, $font, $text);
+            if ($bbox !== false) {
+                $textWidth = abs($bbox[2] - $bbox[0]);
+                $x = (int)($centerX - ($textWidth / 2));
+                $result = @imagettftext($image, $size, 0, $x, $baselineY, $color, $font, $text);
+                if ($result !== false) {
+                    return;
+                }
+            }
+        }
+
+        $textWidth = imagefontwidth(5) * strlen($text);
+        $x = (int)($centerX - ($textWidth / 2));
+        imagestring($image, 5, $x, $baselineY - 12, $text, $color);
+    }
+
+    private function drawWrappedText($image, string $text, string $font, int $size, int $x, int $startY, int $maxWidth, int $lineHeight, int $color): void
+    {
+        $words = preg_split('/\s+/', $text);
+        $line = '';
+        $y = $startY;
+
+        foreach ($words as $word) {
+            $testLine = trim($line === '' ? $word : $line . ' ' . $word);
+            if ($testLine === '') {
+                continue;
+            }
+
+            $lineWidth = $this->measureTextWidth($testLine, $font, $size);
+            if ($lineWidth > $maxWidth && $line !== '') {
+                $this->drawText($image, $line, $font, $size, $x, $y, $color);
+                $line = $word;
+                $y += $lineHeight;
+            } else {
+                $line = $testLine;
+            }
+        }
+
+        if ($line !== '') {
+            $this->drawText($image, $line, $font, $size, $x, $y, $color);
+        }
+    }
+
+    private function measureTextWidth(string $text, string $font, int $size): float
+    {
+        if ($font !== '' && function_exists('imagettfbbox')) {
+            $bbox = @imagettfbbox($size, 0, $font, $text);
+            if ($bbox !== false) {
+                return abs($bbox[2] - $bbox[0]);
+            }
+        }
+
+        return imagefontwidth(5) * strlen($text);
+    }
+
+    private function countVisiblePixels($image, int $backgroundColor): int
+    {
+        $width = imagesx($image);
+        $height = imagesy($image);
+        $visible = 0;
+
+        for ($y = 0; $y < $height; $y++) {
+            for ($x = 0; $x < $width; $x++) {
+                if (imagecolorat($image, $x, $y) !== $backgroundColor) {
+                    $visible++;
+                }
+            }
+        }
+
+        return $visible;
+    }
+
+    private function renderSafetyOverlay($image, array $product, int $primaryColor, int $secondaryColor, int $backgroundColor): void
+    {
+        imagefill($image, 0, 0, $backgroundColor);
+
+        $sku = trim((string)($product['sku'] ?? ''));
+        $name = $this->sanitizeText($product['name'] ?? '', 32);
+        $code = $this->sanitizeText($product['product_code'] ?? '', 32);
+        $weight = isset($product['weight']) ? (float)$product['weight'] : null;
+        $unitCode = $this->sanitizeText($product['unit_code'] ?? '', 10) ?: 'kg';
+
+        imagestring($image, 5, 20, 20, 'SKU: ' . $sku, $primaryColor);
+        if ($name !== '') {
+            imagestring($image, 4, 20, 60, 'Nume: ' . $name, $primaryColor);
+        }
+        if ($code !== '' && $code !== $sku) {
+            imagestring($image, 4, 20, 100, 'Cod: ' . $code, $secondaryColor);
+        }
+        if ($weight !== null && $weight > 0) {
+            $weightText = sprintf('Greutate: %.3f %s', $weight, $unitCode);
+            imagestring($image, 4, 20, 140, $weightText, $secondaryColor);
+        }
+        if ($sku !== '') {
+            imagestring($image, 4, 20, 180, 'Barcode: ' . $sku, $primaryColor);
+        }
+    }
+
+    private function estimateLineCount(string $text, int $maxWidth, int $size, string $font): int
+    {
+        $words = preg_split('/\s+/', $text);
+        $lines = 1;
+        $current = '';
+
+        foreach ($words as $word) {
+            $test = trim($current === '' ? $word : $current . ' ' . $word);
+            if ($this->measureTextWidth($test, $font, $size) > $maxWidth && $current !== '') {
+                $lines++;
+                $current = $word;
+            } else {
+                $current = $test;
+            }
+        }
+
+        return max(1, $lines);
+    }
+
+    private function sendToPrintServer(string $fileUrl, string $printer, string $format = 'pdf'): array
     {
         if ($this->printServerUrl === null) {
             return ['success' => false, 'error' => 'Print server URL is not configured'];
@@ -330,6 +481,10 @@ class GodexPrinter
             'url' => $fileUrl,
             'printer' => $printer,
         ];
+
+        if ($format !== '') {
+            $query['format'] = $format;
+        }
 
         $requestUrl = $this->printServerUrl . '?' . $this->buildPrintQuery($query);
 

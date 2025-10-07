@@ -84,7 +84,7 @@ $storageDir = BASE_PATH . '/storage/label_pdfs';
 $printServerUrl = $config['print_server_url'] ?? (getenv('PRINT_SERVER_URL') ?: null);
 $printerName = $requestedPrinter !== ''
     ? $requestedPrinter
-    : ($config['default_printer'] ?? (getenv('GODEX_PRINTER_QUEUE') ?: 'godex'));
+    : resolveProductLabelPrinter($config);
 
 try {
     $printer = new GodexPrinter([
@@ -210,6 +210,29 @@ function fetchProductsForPrinting(PDO $db, array $unitIds, array $productIds): a
     }
 
     return $results;
+}
+
+function resolveProductLabelPrinter(array $config): string
+{
+    $candidates = [
+        $config['product_unit_printer'] ?? null,
+        getenv('PRODUCT_UNIT_PRINTER') ?: null,
+        $config['default_printer'] ?? null,
+        getenv('DEFAULT_PRINTER') ?: null,
+        getenv('GODEX_PRINTER_QUEUE') ?: null,
+        'GODEX+G500',
+    ];
+
+    foreach ($candidates as $candidate) {
+        if (is_string($candidate)) {
+            $candidate = trim($candidate);
+            if ($candidate !== '') {
+                return $candidate;
+            }
+        }
+    }
+
+    return 'GODEX+G500';
 }
 
 function getBaseUrl(): string

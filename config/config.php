@@ -121,7 +121,21 @@ return [
     'connection_factory' => $connectionFactory,
 
     // Print server configuration
-    'print_server_url' => getenv('PRINT_SERVER_URL') ?: 'http://86.124.196.102:3000/print_server.php',
+    'print_server_url' => (function () use ($baseUrl) {
+        $configuredUrl = getenv('PRINT_SERVER_URL');
+        if ($configuredUrl) {
+            return $configuredUrl;
+        }
+
+        $host = $_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? '';
+        $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+
+        if ($host !== '') {
+            return sprintf('%s://%s/print_server.php', $scheme, rtrim($host, '/'));
+        }
+
+        return rtrim($baseUrl, '/') . '/print_server.php';
+    })(),
     'default_printer'  => getenv('DEFAULT_PRINTER') ?: 'godex_ez6250i',
 
     'label_rotation' => 180,

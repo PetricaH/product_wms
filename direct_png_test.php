@@ -3,6 +3,8 @@
  * Fix for Both Printer Name and Template Size Issues
  */
 
+$config = require __DIR__ . '/config/config.php';
+
 // ===== ISSUE 1: CORRECT PRINTER NAME =====
 
 /**
@@ -10,10 +12,10 @@
  */
 function testPrinterNames($testUrl) {
     echo "=== TESTING PRINTER NAMES ===\n";
-    
+
     $printerNames = [
         'Godex EZ6250i',
-        'EZ6250i', 
+        'EZ6250i',
         'godex_ez6250i',
         'godex-ez6250i',
         'GODEX_EZ6250i',
@@ -23,13 +25,15 @@ function testPrinterNames($testUrl) {
         'godex6250',
         'default'
     ];
-    
-    $printServerUrl = 'http://86.124.196.102:3000/print_server.php';
+
+    global $config;
+    $printServerUrl = $config['print_server_url'] ?? 'http://localhost/print_server.php';
+    $separator = (strpos($printServerUrl, '?') === false) ? '?' : '&';
     
     foreach ($printerNames as $printerName) {
         echo "\n🖨️  Testing printer name: '$printerName'\n";
         
-        $testRequestUrl = $printServerUrl . '?' . http_build_query([
+        $testRequestUrl = $printServerUrl . $separator . http_build_query([
             'url' => $testUrl,
             'printer' => $printerName,
             'format' => 'png',
@@ -230,7 +234,10 @@ function testUpgradedTemplate($upgradedTemplatePath, $correctPrinterName) {
     echo "Test URL: $testUrl\n";
     
     // Print with correct printer name
-    $printUrl = 'http://86.124.196.102:3000/print_server.php?' . http_build_query([
+    global $config;
+    $printServerUrl = $config['print_server_url'] ?? 'http://localhost/print_server.php';
+    $separator = (strpos($printServerUrl, '?') === false) ? '?' : '&';
+    $printUrl = $printServerUrl . $separator . http_build_query([
         'url' => $testUrl,
         'printer' => $correctPrinterName,
         'format' => 'png',
@@ -252,11 +259,12 @@ function testUpgradedTemplate($upgradedTemplatePath, $correctPrinterName) {
  */
 function generateUpdatedConfig() {
     echo "\n=== UPDATED CONFIGURATION ===\n";
-    
+
     echo "📝 1. Update your config/config.php:\n";
     echo "```php\n";
     echo "'default_printer' => 'EZ6250i',  // or whatever name works\n";
-    echo "'print_server_url' => 'http://86.124.196.102:3000/print_server.php',\n";
+    global $config;
+    echo "'print_server_url' => '" . ($config['print_server_url'] ?? 'http://localhost/print_server.php') . "',\n";
     echo "'label_dpi' => 203,\n";
     echo "'label_width_mm' => 148,\n";
     echo "'label_height_mm' => 210,\n";

@@ -60,6 +60,11 @@ if (isset($input['product_id'])) {
     }
 }
 
+$requestedPrinter = '';
+if (isset($input['printer']) && is_string($input['printer'])) {
+    $requestedPrinter = trim($input['printer']);
+}
+
 $productUnitIds = array_values(array_unique($productUnitIds));
 $productIds = array_values(array_unique($productIds));
 
@@ -74,12 +79,24 @@ try {
     respond(['status' => 'error', 'message' => 'Database connection failed: ' . $e->getMessage()], 500);
 }
 
-$printer = new GodexPrinter([
-    'host' => getenv('GODEX_PRINTER_HOST') ?: null,
-    'port' => getenv('GODEX_PRINTER_PORT') ?: null,
-    'print_server_url' => $config['print_server_url'] ?? null,
-    'queue' => $config['default_printer'] ?? null,
-]);
+$baseUrl = getBaseUrl();
+$storageDir = BASE_PATH . '/storage/label_pdfs';
+$printServerUrl = $config['print_server_url'] ?? (getenv('PRINT_SERVER_URL') ?: null);
+$printerName = $requestedPrinter !== ''
+    ? $requestedPrinter
+    : ($config['default_printer'] ?? (getenv('GODEX_PRINTER_QUEUE') ?: 'godex'));
+
+try {
+    $printer = new GodexPrinter([
+        'print_server_url' => $printServerUrl,
+        'printer' => $printerName,
+        'storage_dir' => $storageDir,
+        'storage_url_path' => '/storage/label_pdfs',
+        'base_url' => $baseUrl,
+    ]);
+} catch (Exception $e) {
+    respond(['status' => 'error', 'message' => $e->getMessage()], 500);
+}
 
 try {
     $products = fetchProductsForPrinting($db, $productUnitIds, $productIds);
@@ -143,6 +160,7 @@ $response = [
     'status' => $status,
     'printed' => $result['printed'] ?? 0,
     'errors' => $totalErrors,
+    'printer' => $printerName,
 ];
 
 $httpCode = $status === 'success' ? 200 : 207;
@@ -192,5 +210,13 @@ function fetchProductsForPrinting(PDO $db, array $unitIds, array $productIds): a
     }
 
     return $results;
+}
+
+function getBaseUrl(): string
+{
+    $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+    $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+
+    return $scheme . '://' . $host;
 }
 

@@ -110,10 +110,10 @@ $connectionFactory = function() use ($dbCfg) {
 return [
     // app environment (development, production, etc.)
     'environment' => $environment,
-    
+
     // Base URL with auto-detected protocol
     'base_url' => $baseUrl,
-    
+
     // raw DB settings, if you need them elsewhere
     'db' => $dbCfg,
 
@@ -123,6 +123,7 @@ return [
     // Print server configuration
     'print_server_url' => getenv('PRINT_SERVER_URL') ?: 'http://86.124.196.102:3000/print_server.php',
     'default_printer'  => getenv('DEFAULT_PRINTER') ?: 'godex_ez6250i',
+    'product_unit_printer' => getenv('PRODUCT_UNIT_PRINTER') ?: 'GODEX+G500',
 
     'label_rotation' => 180,
 

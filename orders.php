@@ -1454,4 +1454,15 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
         </div>
     </div>
     
+    <script>
+        window.orderProductsList = <?= json_encode(array_map(static function ($product) {
+            return [
+                'product_id' => (int)($product['product_id'] ?? 0),
+                'name' => $product['name'] ?? '',
+                'sku' => $product['sku'] ?? '',
+                'price' => isset($product['price']) ? (float)$product['price'] : 0,
+                'unit_of_measure' => $product['unit_of_measure'] ?? ''
+            ];
+        }, $allProducts ?? []), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?>;
+    </script>
     <?php require_once __DIR__ . '/includes/footer.php'; ?>

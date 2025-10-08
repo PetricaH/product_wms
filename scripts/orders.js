@@ -18,6 +18,8 @@ const ORDERS_REALTIME_INTERVAL_MS = 5000;
 let ordersRealtimeTimer = null;
 let ordersRealtimeController = null;
 let ordersLatestTimestamp = null;
+let currentOrderDetails = null;
+let currentOrderId = null;
 
 function normalizeOrderStatus(status) {
     const value = (status ?? '').toString().trim().toLowerCase();
@@ -786,6 +788,8 @@ function closeCancelModal() {
  * @param {number} orderId The ID of the order to display.
  */
 function viewOrderDetails(orderId) {
+    currentOrderId = orderId;
+    currentOrderDetails = null;
     // Create modal if it doesn't exist
     let modal = document.getElementById('orderDetailsModal');
     if (!modal) {
@@ -857,19 +861,155 @@ function createOrderDetailsModal() {
 }
 
 function displayOrderDetails(order) {
-    // Debug: log the order data to see what we're getting
     console.log('Order data for display:', order);
-    
-    // Ensure items is always an array
-    const items = order.items || [];
-    
-    // Generate items table HTML
-    let itemsTableHtml = '';
-    if (items.length > 0) {
-        itemsTableHtml = `
-            <div class="items-section" style="margin-top: 2rem;">
-                <h4>Produse comandate</h4>
-                <table class="order-items-table" style="width: 100%; border-collapse: collapse;">
+
+    currentOrderDetails = order || null;
+    if (order && order.id) {
+        currentOrderId = order.id;
+    }
+
+    const safeOrder = order || {};
+    const items = Array.isArray(safeOrder.items) ? safeOrder.items : [];
+
+    let formattedDate = safeOrder.order_date || 'N/A';
+    if (safeOrder.order_date && safeOrder.order_date !== 'N/A') {
+        try {
+            const date = new Date(safeOrder.order_date);
+            formattedDate = `${date.toLocaleDateString('ro-RO')} ${date.toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' })}`;
+        } catch (error) {
+            formattedDate = safeOrder.order_date;
+        }
+    }
+
+    const trackingLink = safeOrder.tracking_number
+        ? `https://www.cargus.ro/personal/urmareste-coletul/?tracking_number=${encodeURIComponent(safeOrder.tracking_number)}&Urm%C4%83re%C8%99te=Urm%C4%83re%C8%99te`
+        : null;
+
+    const itemsSectionHtml = renderOrderItemsSection(safeOrder, items);
+    const progressSectionHtml = safeOrder.progress ? `
+        <div class="progress-section" style="margin-top: 2rem;">
+            <h4>Progres comandă</h4>
+            <p><strong>Total articole:</strong> <span id="progress-total-items">${safeOrder.progress.total_items || 0}</span></p>
+            <p><strong>Cantitate comandată:</strong> <span id="progress-total-ordered">${safeOrder.progress.total_quantity_ordered || 0}</span></p>
+            <p><strong>Cantitate ridicată:</strong> <span id="progress-total-picked">${safeOrder.progress.total_quantity_picked || 0}</span></p>
+            <p><strong>Rămas de ridicat:</strong> <span id="progress-total-remaining">${safeOrder.progress.total_remaining || 0}</span></p>
+            <p><strong>Progres:</strong> <span id="progress-percent">${safeOrder.progress.progress_percent || 0}</span>%</p>
+        </div>
+    ` : '';
+
+    const notesSectionHtml = safeOrder.notes ? `
+        <div class="notes-section" style="margin-top: 2rem;">
+            <h4>Observații</h4>
+            <p>${safeOrder.notes}</p>
+        </div>
+    ` : '';
+
+    const content = `
+        <div class="order-details">
+            <div class="details-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 2rem;">
+                <div class="detail-section">
+                    <h4>Informații Comandă</h4>
+                    <p><strong>Număr:</strong> ${escapeHtml(safeOrder.order_number || 'N/A')}</p>
+                    <p><strong>Data:</strong> ${escapeHtml(formattedDate)}</p>
+                    <p><strong>Status:</strong> ${escapeHtml(safeOrder.status_label || safeOrder.status || 'N/A')}</p>
+                    <p><strong>Valoare:</strong> ${formatCurrency(safeOrder.total_value || 0)} RON</p>
+                    ${trackingLink ? `<p><strong>AWB:</strong> <a href="${trackingLink}" target="_blank" rel="noopener noreferrer" class="order-awb-link">${escapeHtml(safeOrder.tracking_number)}</a></p>` : ''}
+                </div>
+                <div class="detail-section">
+                    <h4>Informații Client</h4>
+                    <p><strong>Nume:</strong> ${escapeHtml(safeOrder.customer_name || 'N/A')}</p>
+                    <form id="orderContactForm" class="order-contact-form" style="margin-top: 1rem; display: grid; gap: 0.75rem;">
+                        <div class="form-group" style="display: flex; flex-direction: column; gap: 0.35rem;">
+                            <label for="orderContactEmail" class="form-label">Email</label>
+                            <input type="email" id="orderContactEmail" name="customer_email" class="form-control" value="${escapeHtml(safeOrder.customer_email || '')}" placeholder="client@example.com">
+                        </div>
+                        <div class="form-group" style="display: flex; flex-direction: column; gap: 0.35rem;">
+                            <label for="orderContactAddress" class="form-label">Adresă livrare</label>
+                            <textarea id="orderContactAddress" name="shipping_address" class="form-control" rows="3" placeholder="Introduce adresa completă">${escapeHtml(safeOrder.shipping_address || '')}</textarea>
+                        </div>
+                        <div class="form-actions" style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                            <button type="submit" class="btn btn-primary">Salvează detalii</button>
+                            <button type="button" class="btn btn-light" onclick="refreshOrderDetails(${safeOrder.id || 0}, { silent: true, showLoading: true })">Reîncarcă</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            ${progressSectionHtml}
+            ${itemsSectionHtml}
+            ${notesSectionHtml}
+        </div>
+    `;
+
+    const container = document.getElementById('orderDetailsContent');
+    if (container) {
+        container.innerHTML = content;
+    }
+
+    bindOrderDetailsEvents(safeOrder);
+    applyOrderItemsState(items);
+    if (safeOrder.id) {
+        startOrderPolling(safeOrder.id);
+    }
+}
+
+function renderOrderItemsSection(order, items) {
+    const productOptions = buildProductOptions();
+    let rowsHtml = '';
+
+    if (Array.isArray(items) && items.length) {
+        rowsHtml = items.map(item => {
+            const quantityOrdered = Number(item.quantity_ordered != null ? item.quantity_ordered : item.quantity) || 0;
+            const pickedQuantity = Number(item.picked_quantity) || 0;
+            const unitPrice = Number(item.unit_price) || 0;
+            const totalValue = quantityOrdered * unitPrice;
+            const productName = escapeHtml(item.product_name || 'Produs necunoscut');
+            const sku = escapeHtml(item.sku || '-');
+            const location = item.location_code
+                ? `<div class="order-item-location" style="color: #6c757d; font-size: 0.85rem; margin-top: 0.25rem;">Locație: ${escapeHtml(item.location_code)}</div>`
+                : '';
+
+            return `
+                <tr class="order-item-row${item.is_complete ? ' item-complete' : ''}" data-order-item-id="${item.order_item_id}" data-quantity-ordered="${quantityOrdered}">
+                    <td style="padding: 8px; border: 1px solid #ddd;">${productName}${location}</td>
+                    <td style="padding: 8px; border: 1px solid #ddd;">${sku}</td>
+                    <td style="padding: 8px; border: 1px solid #ddd;">${quantityOrdered}</td>
+                    <td class="picked-quantity-cell" style="padding: 8px; border: 1px solid #ddd;">
+                        <span class="picked-quantity-value">${pickedQuantity}</span>
+                    </td>
+                    <td style="padding: 8px; border: 1px solid #ddd;">${formatCurrency(unitPrice)} RON</td>
+                    <td style="padding: 8px; border: 1px solid #ddd;">${formatCurrency(totalValue)} RON</td>
+                    <td style="padding: 8px; border: 1px solid #ddd; width: 140px;">
+                        <div class="btn-group btn-group-sm">
+                            <button type="button" class="btn btn-sm btn-outline-secondary" data-action="edit-item" data-item-id="${item.order_item_id}" title="Modifică produs">
+                                <span class="material-symbols-outlined">edit</span>
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-danger" data-action="delete-item" data-item-id="${item.order_item_id}" title="Șterge produs">
+                                <span class="material-symbols-outlined">delete</span>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+    } else {
+        rowsHtml = `
+            <tr class="order-items-empty">
+                <td colspan="7" style="text-align: center; padding: 1rem; color: #666;">Nu există produse în această comandă.</td>
+            </tr>
+        `;
+    }
+
+    return `
+        <div class="items-section" style="margin-top: 2rem;">
+            <div class="items-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+                <h4 style="margin: 0;">Produse comandate</h4>
+                <button type="button" class="btn btn-sm btn-outline-primary" onclick="resetOrderItemForm()" title="Adaugă produs nou">
+                    <span class="material-symbols-outlined">add</span> Produs nou
+                </button>
+            </div>
+            <div class="table-responsive" style="margin-top: 1rem; overflow-x: auto;">
+                <table class="order-items-table" style="width: 100%; border-collapse: collapse; min-width: 760px;">
                     <thead>
                         <tr style="background-color: #f5f5f5;">
                             <th style="padding: 8px; border: 1px solid #ddd;">Produs</th>
@@ -878,96 +1018,475 @@ function displayOrderDetails(order) {
                             <th style="padding: 8px; border: 1px solid #ddd;">Cantitate ridicată</th>
                             <th style="padding: 8px; border: 1px solid #ddd;">Preț unitar</th>
                             <th style="padding: 8px; border: 1px solid #ddd;">Total</th>
+                            <th style="padding: 8px; border: 1px solid #ddd; width: 140px;">Acțiuni</th>
                         </tr>
                     </thead>
                     <tbody>
-                        ${items.map(item => `
-                            <tr class="order-item-row${item.is_complete ? ' item-complete' : ''}" data-order-item-id="${item.order_item_id}" data-quantity-ordered="${item.quantity_ordered || item.quantity || 0}">
-                                <td style="padding: 8px; border: 1px solid #ddd;">${item.product_name || 'Produs necunoscut'}</td>
-                                <td style="padding: 8px; border: 1px solid #ddd;">${item.sku || '-'}</td>
-                                <td style="padding: 8px; border: 1px solid #ddd;">${item.quantity_ordered || item.quantity || '0'}</td>
-                                <td class="picked-quantity-cell" style="padding: 8px; border: 1px solid #ddd;">
-                                    <span class="picked-quantity-value">${item.picked_quantity || '0'}</span>
-                                </td>
-                                <td style="padding: 8px; border: 1px solid #ddd;">${parseFloat(item.unit_price || 0).toFixed(2)} RON</td>
-                                <td style="padding: 8px; border: 1px solid #ddd;">${(parseFloat(item.quantity_ordered || item.quantity || 0) * parseFloat(item.unit_price || 0)).toFixed(2)} RON</td>
-                            </tr>
-                        `).join('')}
+                        ${rowsHtml}
                     </tbody>
                 </table>
             </div>
-        `;
-    } else {
-        itemsTableHtml = `
-            <div class="items-section" style="margin-top: 2rem;">
-                <h4>Produse comandate</h4>
-                <p style="color: #666; font-style: italic;">Nu au fost găsite produse pentru această comandă.</p>
+            <div class="order-item-form-wrapper" style="margin-top: 1.5rem; border: 1px solid #eee; border-radius: 8px; padding: 1rem;">
+                <h5 id="orderItemFormTitle" data-default-title="Adaugă produs" style="margin: 0 0 1rem;">Adaugă produs</h5>
+                <form id="orderItemForm" data-mode="add">
+                    <input type="hidden" name="order_item_id" value="">
+                    <div class="row" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem;">
+                        <div class="form-group" style="display: flex; flex-direction: column; gap: 0.35rem;">
+                            <label class="form-label" for="orderItemProduct">Produs</label>
+                            <select id="orderItemProduct" name="product_id" class="form-control" required>
+                                ${productOptions}
+                            </select>
+                        </div>
+                        <div class="form-group" style="display: flex; flex-direction: column; gap: 0.35rem;">
+                            <label class="form-label" for="orderItemQuantity">Cantitate</label>
+                            <input type="number" id="orderItemQuantity" name="quantity" class="form-control" min="1" step="1" value="1" required>
+                        </div>
+                        <div class="form-group" style="display: flex; flex-direction: column; gap: 0.35rem;">
+                            <label class="form-label" for="orderItemPrice">Preț unitar (RON)</label>
+                            <input type="number" id="orderItemPrice" name="unit_price" class="form-control" min="0" step="0.01" placeholder="Auto">
+                        </div>
+                    </div>
+                    <div class="form-actions" style="margin-top: 1rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                        <button type="submit" class="btn btn-primary" id="orderItemFormSubmit" data-default-label="Adaugă produs">Adaugă produs</button>
+                        <button type="button" class="btn btn-secondary" id="orderItemFormReset" onclick="resetOrderItemForm()">Resetează</button>
+                    </div>
+                </form>
             </div>
-        `;
-    }
-    
-    // Format the date nicely
-    let formattedDate = order.order_date || 'N/A';
-    if (order.order_date && order.order_date !== 'N/A') {
-        try {
-            const date = new Date(order.order_date);
-            formattedDate = date.toLocaleDateString('ro-RO') + ' ' + date.toLocaleTimeString('ro-RO', {hour: '2-digit', minute: '2-digit'});
-        } catch (e) {
-            formattedDate = order.order_date;
-        }
-    }
-    
-    const trackingLink = order.tracking_number
-        ? `https://www.cargus.ro/personal/urmareste-coletul/?tracking_number=${encodeURIComponent(order.tracking_number)}&Urm%C4%83re%C8%99te=Urm%C4%83re%C8%99te`
-        : null;
-
-    const content = `
-        <div class="order-details">
-            <div class="details-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">
-                <div class="detail-section">
-                    <h4>Informații Comandă</h4>
-                    <p><strong>Număr:</strong> ${order.order_number || 'N/A'}</p>
-                    <p><strong>Data:</strong> ${formattedDate}</p>
-                    <p><strong>Status:</strong> ${order.status_label || order.status || 'N/A'}</p>
-                    <p><strong>Valoare:</strong> ${parseFloat(order.total_value || 0).toFixed(2)} RON</p>
-                    ${order.tracking_number ? `<p><strong>AWB:</strong> <a href="${trackingLink}" target="_blank" rel="noopener noreferrer" class="order-awb-link">${order.tracking_number}</a></p>` : ''}
-                </div>
-                <div class="detail-section">
-                    <h4>Informații Client</h4>
-                    <p><strong>Nume:</strong> ${order.customer_name || 'N/A'}</p>
-                    <p><strong>Email:</strong> ${order.customer_email || 'N/A'}</p>
-                    <p><strong>Adresă:</strong> ${order.shipping_address || 'Nu este specificată'}</p>
-                </div>
-            </div>
-
-            ${order.progress ? `
-                <div class="progress-section" style="margin-top: 2rem;">
-                    <h4>Progres comandă</h4>
-                    <p><strong>Total articole:</strong> <span id="progress-total-items">${order.progress.total_items || 0}</span></p>
-                    <p><strong>Cantitate comandată:</strong> <span id="progress-total-ordered">${order.progress.total_quantity_ordered || 0}</span></p>
-                    <p><strong>Cantitate ridicată:</strong> <span id="progress-total-picked">${order.progress.total_quantity_picked || 0}</span></p>
-                    <p><strong>Rămas de ridicat:</strong> <span id="progress-total-remaining">${order.progress.total_remaining || 0}</span></p>
-                    <p><strong>Progres:</strong> <span id="progress-percent">${order.progress.progress_percent || 0}</span>%</p>
-                </div>
-            ` : ''}
-
-            ${itemsTableHtml}
-
-            ${order.notes ? `
-                <div class="notes-section" style="margin-top: 2rem;">
-                    <h4>Observații</h4>
-                    <p>${order.notes}</p>
-                </div>
-            ` : ''}
         </div>
     `;
+}
 
-    document.getElementById('orderDetailsContent').innerHTML = content;
+function buildProductOptions(selectedId) {
+    const products = Array.isArray(window.orderProductsList) ? window.orderProductsList : [];
+    const selectedValue = Number(selectedId);
+    const options = ['<option value="">Selectează produs</option>'];
 
-    applyOrderItemsState(items);
-    if (order.id) {
-        startOrderPolling(order.id);
+    products.forEach(product => {
+        const productId = Number(product.product_id);
+        if (!productId) {
+            return;
+        }
+
+        const isSelected = productId === selectedValue ? ' selected' : '';
+        const numericPrice = Number(product.price);
+        const priceAttr = Number.isFinite(numericPrice) ? ` data-price="${numericPrice}"` : '';
+        const unit = product.unit_of_measure ? ` data-unit="${escapeHtml(product.unit_of_measure)}"` : '';
+        const sku = product.sku ? ` (${product.sku})` : '';
+        const label = `${product.name || `Produs #${productId}`}${sku}`;
+
+        options.push(`<option value="${productId}"${isSelected}${priceAttr}${unit}>${escapeHtml(label)}</option>`);
+    });
+
+    return options.join('');
+}
+
+function bindOrderDetailsEvents(order) {
+    const contactForm = document.getElementById('orderContactForm');
+    if (contactForm) {
+        contactForm.addEventListener('submit', submitOrderContactForm);
     }
+
+    const orderItemForm = document.getElementById('orderItemForm');
+    if (orderItemForm) {
+        orderItemForm.addEventListener('submit', submitOrderItemForm);
+
+        const productSelect = orderItemForm.querySelector('select[name="product_id"]');
+        const priceInput = orderItemForm.querySelector('input[name="unit_price"]');
+        if (productSelect && priceInput) {
+            productSelect.addEventListener('change', () => {
+                const isEditMode = (orderItemForm.dataset.mode || 'add') === 'edit';
+                updateOrderItemPriceFromProduct(productSelect, priceInput, isEditMode);
+            });
+        }
+
+        if (priceInput) {
+            priceInput.addEventListener('input', () => {
+                priceInput.dataset.userEdited = '1';
+            });
+        }
+    }
+
+    const itemsTable = document.querySelector('#orderDetailsContent table.order-items-table');
+    if (itemsTable) {
+        itemsTable.addEventListener('click', event => {
+            const editButton = event.target.closest('[data-action="edit-item"]');
+            if (editButton) {
+                event.preventDefault();
+                const itemId = parseInt(editButton.getAttribute('data-item-id'), 10);
+                prefillOrderItemForm(itemId);
+                return;
+            }
+
+            const deleteButton = event.target.closest('[data-action="delete-item"]');
+            if (deleteButton) {
+                event.preventDefault();
+                const itemId = parseInt(deleteButton.getAttribute('data-item-id'), 10);
+                deleteOrderItem(deleteButton, itemId);
+            }
+        });
+    }
+
+    resetOrderItemForm(true);
+}
+
+function refreshOrderDetails(orderId, options) {
+    const opts = options || {};
+    const resolvedId = Number(orderId || currentOrderId || 0);
+
+    if (!resolvedId) {
+        return Promise.resolve();
+    }
+
+    if (opts.showLoading) {
+        const container = document.getElementById('orderDetailsContent');
+        if (container) {
+            container.innerHTML = '<div class="loading" style="text-align: center; padding: 2rem; color: #666;">Se reîncarcă detaliile comenzii...</div>';
+        }
+    }
+
+    return fetch(`api/warehouse/order_details.php?id=${resolvedId}`)
+        .then(parseJsonResponse)
+        .then(data => {
+            if (data && data.data) {
+                displayOrderDetails(data.data);
+                if (opts.toast && opts.toast.message) {
+                    showOrdersToast(opts.toast.type || 'success', opts.toast.message);
+                }
+            }
+            return data;
+        })
+        .catch(error => {
+            console.error('refreshOrderDetails error:', error);
+            if (!opts.silent) {
+                showOrdersToast('warning', error.message || 'Nu s-au putut reîncărca detaliile comenzii.');
+            }
+            throw error;
+        });
+}
+
+function submitOrderContactForm(event) {
+    event.preventDefault();
+
+    if (!currentOrderDetails || !currentOrderDetails.id) {
+        return;
+    }
+
+    const form = event.target;
+    const submitButton = form.querySelector('button[type="submit"]');
+    if (submitButton) {
+        submitButton.disabled = true;
+    }
+
+    const payload = {
+        order_id: currentOrderDetails.id,
+        customer_email: form.customer_email ? form.customer_email.value.trim() : '',
+        shipping_address: form.shipping_address ? form.shipping_address.value.trim() : ''
+    };
+
+    fetch('api/warehouse/update_order_details.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify(payload)
+    })
+        .then(parseJsonResponse)
+        .then(response => {
+            const message = response.message || 'Detaliile comenzii au fost actualizate.';
+            return refreshOrderDetails(currentOrderDetails.id, {
+                toast: {
+                    type: 'success',
+                    message
+                }
+            });
+        })
+        .catch(error => {
+            console.error('submitOrderContactForm error:', error);
+            showOrdersToast('warning', error.message || 'Actualizarea detaliilor a eșuat.');
+        })
+        .finally(() => {
+            if (submitButton) {
+                submitButton.disabled = false;
+            }
+        });
+}
+
+function submitOrderItemForm(event) {
+    event.preventDefault();
+
+    if (!currentOrderDetails || !currentOrderDetails.id) {
+        return;
+    }
+
+    const form = event.target;
+    const mode = (form.dataset.mode || 'add') === 'edit' ? 'update' : 'create';
+    const productSelect = form.querySelector('select[name="product_id"]');
+    const quantityInput = form.querySelector('input[name="quantity"]');
+    const priceInput = form.querySelector('input[name="unit_price"]');
+    const submitButton = form.querySelector('button[type="submit"]');
+
+    const productId = productSelect ? parseInt(productSelect.value, 10) : 0;
+    const quantity = quantityInput ? parseInt(quantityInput.value, 10) : 0;
+    const unitPriceRaw = priceInput ? priceInput.value.trim() : '';
+
+    if (!productId) {
+        showOrdersToast('warning', 'Selectează un produs înainte de a salva.');
+        return;
+    }
+
+    if (!quantity || quantity <= 0) {
+        showOrdersToast('warning', 'Cantitatea trebuie să fie mai mare decât zero.');
+        return;
+    }
+
+    if (submitButton) {
+        submitButton.disabled = true;
+    }
+
+    const payload = {
+        action: mode,
+        order_id: currentOrderDetails.id,
+        product_id: productId,
+        quantity: quantity
+    };
+
+    if (mode === 'update') {
+        const itemId = form.dataset.itemId ? parseInt(form.dataset.itemId, 10) : 0;
+        if (itemId) {
+            payload.order_item_id = itemId;
+        }
+    }
+
+    if (unitPriceRaw !== '') {
+        payload.unit_price = unitPriceRaw;
+    }
+
+    fetch('api/warehouse/manage_order_item.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify(payload)
+    })
+        .then(parseJsonResponse)
+        .then(response => {
+            const message = response.message || 'Comanda a fost actualizată.';
+            resetOrderItemForm(true);
+            return refreshOrderDetails(currentOrderDetails.id, {
+                toast: {
+                    type: 'success',
+                    message
+                }
+            });
+        })
+        .catch(error => {
+            console.error('submitOrderItemForm error:', error);
+            showOrdersToast('warning', error.message || 'Actualizarea produsului a eșuat.');
+        })
+        .finally(() => {
+            if (submitButton) {
+                submitButton.disabled = false;
+            }
+        });
+}
+
+function resetOrderItemForm(skipFocus) {
+    const form = document.getElementById('orderItemForm');
+    if (!form) {
+        return;
+    }
+
+    form.dataset.mode = 'add';
+    form.dataset.itemId = '';
+
+    const hiddenInput = form.querySelector('input[name="order_item_id"]');
+    if (hiddenInput) {
+        hiddenInput.value = '';
+    }
+
+    const productSelect = form.querySelector('select[name="product_id"]');
+    if (productSelect) {
+        productSelect.value = '';
+    }
+
+    const quantityInput = form.querySelector('input[name="quantity"]');
+    if (quantityInput) {
+        quantityInput.value = 1;
+    }
+
+    const priceInput = form.querySelector('input[name="unit_price"]');
+    if (priceInput) {
+        priceInput.value = '';
+        priceInput.dataset.userEdited = '0';
+    }
+
+    const title = document.getElementById('orderItemFormTitle');
+    if (title) {
+        title.textContent = title.dataset.defaultTitle || 'Adaugă produs';
+    }
+
+    const submitButton = document.getElementById('orderItemFormSubmit');
+    if (submitButton) {
+        submitButton.textContent = submitButton.dataset.defaultLabel || 'Adaugă produs';
+    }
+
+    const resetButton = document.getElementById('orderItemFormReset');
+    if (resetButton) {
+        resetButton.textContent = 'Resetează';
+    }
+
+    if (!skipFocus && productSelect) {
+        productSelect.focus();
+    }
+}
+
+function prefillOrderItemForm(itemId) {
+    const form = document.getElementById('orderItemForm');
+    if (!form) {
+        return;
+    }
+
+    const item = getOrderItemById(itemId);
+    if (!item) {
+        showOrdersToast('warning', 'Produsul selectat nu a fost găsit în această comandă.');
+        return;
+    }
+
+    form.dataset.mode = 'edit';
+    form.dataset.itemId = String(itemId);
+
+    const hiddenInput = form.querySelector('input[name="order_item_id"]');
+    if (hiddenInput) {
+        hiddenInput.value = itemId;
+    }
+
+    const productSelect = form.querySelector('select[name="product_id"]');
+    if (productSelect) {
+        productSelect.value = item.product_id;
+    }
+
+    const quantityInput = form.querySelector('input[name="quantity"]');
+    if (quantityInput) {
+        const quantityValue = Number(item.quantity_ordered != null ? item.quantity_ordered : item.quantity) || 1;
+        quantityInput.value = quantityValue;
+    }
+
+    const priceInput = form.querySelector('input[name="unit_price"]');
+    if (priceInput) {
+        const priceValue = Number(item.unit_price);
+        if (!Number.isNaN(priceValue)) {
+            priceInput.value = priceValue.toFixed(2);
+        } else {
+            priceInput.value = '';
+        }
+        priceInput.dataset.userEdited = '0';
+    }
+
+    const title = document.getElementById('orderItemFormTitle');
+    if (title) {
+        title.textContent = 'Modifică produs';
+    }
+
+    const submitButton = document.getElementById('orderItemFormSubmit');
+    if (submitButton) {
+        submitButton.textContent = 'Actualizează produs';
+    }
+
+    const resetButton = document.getElementById('orderItemFormReset');
+    if (resetButton) {
+        resetButton.textContent = 'Renunță';
+    }
+
+    form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function deleteOrderItem(triggerElement, itemId) {
+    const orderId = currentOrderDetails && currentOrderDetails.id ? currentOrderDetails.id : 0;
+    if (!orderId || !itemId) {
+        return;
+    }
+
+    if (!window.confirm('Ești sigur că vrei să elimini acest produs din comandă?')) {
+        return;
+    }
+
+    if (triggerElement) {
+        triggerElement.disabled = true;
+    }
+
+    fetch('api/warehouse/manage_order_item.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({
+            action: 'delete',
+            order_id: orderId,
+            order_item_id: itemId
+        })
+    })
+        .then(parseJsonResponse)
+        .then(response => {
+            const message = response.message || 'Produsul a fost eliminat din comandă.';
+            return refreshOrderDetails(orderId, {
+                toast: {
+                    type: 'success',
+                    message
+                }
+            });
+        })
+        .catch(error => {
+            console.error('deleteOrderItem error:', error);
+            showOrdersToast('warning', error.message || 'Ștergerea produsului a eșuat.');
+        })
+        .finally(() => {
+            if (triggerElement) {
+                triggerElement.disabled = false;
+            }
+        });
+}
+
+function updateOrderItemPriceFromProduct(selectEl, priceInput, isEditMode) {
+    if (!selectEl || !priceInput) {
+        return;
+    }
+
+    const selectedOption = selectEl.options[selectEl.selectedIndex];
+    if (!selectedOption) {
+        if (!isEditMode) {
+            priceInput.value = '';
+            priceInput.dataset.userEdited = '0';
+        }
+        return;
+    }
+
+    const priceAttr = selectedOption.getAttribute('data-price');
+    if (priceAttr !== null && priceAttr !== '' && priceInput.dataset.userEdited !== '1') {
+        const numericPrice = Number(priceAttr);
+        if (!Number.isNaN(numericPrice)) {
+            priceInput.value = numericPrice.toFixed(2);
+            priceInput.dataset.userEdited = '0';
+        }
+    } else if (!isEditMode && priceInput.dataset.userEdited !== '1') {
+        priceInput.value = '';
+    }
+}
+
+function getOrderItemById(itemId) {
+    if (!currentOrderDetails || !Array.isArray(currentOrderDetails.items)) {
+        return null;
+    }
+
+    const numericId = Number(itemId);
+    return currentOrderDetails.items.find(item => Number(item.order_item_id) === numericId) || null;
+}
+
+function parseJsonResponse(response) {
+    return response.json().catch(() => ({})).then(data => {
+        const status = data && typeof data.status === 'string' ? data.status : (response.ok ? 'success' : 'error');
+        if (!response.ok || status !== 'success') {
+            const message = data && data.message ? data.message : `HTTP ${response.status}`;
+            throw new Error(message);
+        }
+        return data;
+    });
 }
 
 function closeOrderDetailsModal() {
@@ -975,6 +1494,8 @@ function closeOrderDetailsModal() {
     if (modal) {
         modal.style.display = 'none';
     }
+    currentOrderDetails = null;
+    currentOrderId = null;
     stopOrderPolling();
 }
 

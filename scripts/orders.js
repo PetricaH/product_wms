@@ -21,6 +21,15 @@ let ordersLatestTimestamp = null;
 let currentOrderDetails = null;
 let currentOrderId = null;
 
+const RECIPIENT_AUTOCOMPLETE_MIN_CHARS = 2;
+const RECIPIENT_AUTOCOMPLETE_DELAY_MS = 250;
+const recipientAutocompleteStates = [];
+let recipientAutocompleteDocumentListenerAttached = false;
+const recipientAutocompleteRegistry = {
+    county: null,
+    locality: null
+};
+
 function normalizeOrderStatus(status) {
     const value = (status ?? '').toString().trim().toLowerCase();
     if (value === 'cancelled') {
@@ -870,6 +879,14 @@ function displayOrderDetails(order) {
 
     const safeOrder = order || {};
     const items = Array.isArray(safeOrder.items) ? safeOrder.items : [];
+    const countyIdValue = safeOrder.recipient_county_id && Number(safeOrder.recipient_county_id) > 0
+        ? String(safeOrder.recipient_county_id)
+        : '';
+    const localityIdValue = safeOrder.recipient_locality_id && Number(safeOrder.recipient_locality_id) > 0
+        ? String(safeOrder.recipient_locality_id)
+        : '';
+    const countyIdDisplay = countyIdValue !== '' ? escapeHtml(countyIdValue) : '—';
+    const localityIdDisplay = localityIdValue !== '' ? escapeHtml(localityIdValue) : '—';
 
     let formattedDate = safeOrder.order_date || 'N/A';
     if (safeOrder.order_date && safeOrder.order_date !== 'N/A') {
@@ -925,7 +942,29 @@ function displayOrderDetails(order) {
                         </div>
                         <div class="form-group" style="display: flex; flex-direction: column; gap: 0.35rem;">
                             <label for="orderContactAddress" class="form-label">Adresă livrare</label>
-                            <textarea id="orderContactAddress" name="shipping_address" class="form-control" rows="3" placeholder="Introduce adresa completă">${escapeHtml(safeOrder.shipping_address || '')}</textarea>
+                            <textarea id="orderContactAddress" name="shipping_address" class="form-control" rows="2" placeholder="Introduce adresa completă">${escapeHtml(safeOrder.shipping_address || '')}</textarea>
+                        </div>
+                        <div class="form-group" style="display: flex; flex-direction: column; gap: 0.35rem;">
+                            <label for="orderContactAddressText" class="form-label">Adresă completă (text)</label>
+                            <textarea id="orderContactAddressText" name="address_text" class="form-control" rows="3" placeholder="Textul complet trimis către Cargus">${escapeHtml(safeOrder.address_text || '')}</textarea>
+                        </div>
+                        <div class="form-group" style="display: flex; flex-direction: column; gap: 0.35rem;">
+                            <label for="orderRecipientCountyName" class="form-label">Recipient County Name</label>
+                            <div class="recipient-autocomplete" data-autocomplete-wrapper style="position: relative;">
+                                <input type="text" id="orderRecipientCountyName" name="recipient_county_name" class="form-control" value="${escapeHtml(safeOrder.recipient_county_name || '')}" placeholder="Introduce județul" autocomplete="off" data-autocomplete-type="county">
+                                <input type="hidden" id="orderRecipientCountyId" name="recipient_county_id" value="${escapeHtml(countyIdValue)}">
+                                <div class="autocomplete-results" data-autocomplete-results="orderRecipientCountyName" style="position: absolute; top: calc(100% + 2px); left: 0; right: 0; background: #fff; border: 1px solid #ced4da; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); z-index: 1050; display: none; max-height: 240px; overflow-y: auto;"></div>
+                            </div>
+                            <small style="color: #6c757d;">Cargus County ID: <span id="orderRecipientCountyIdDisplay">${countyIdDisplay}</span></small>
+                        </div>
+                        <div class="form-group" style="display: flex; flex-direction: column; gap: 0.35rem;">
+                            <label for="orderRecipientLocalityName" class="form-label">Recipient Locality Name</label>
+                            <div class="recipient-autocomplete" data-autocomplete-wrapper style="position: relative;">
+                                <input type="text" id="orderRecipientLocalityName" name="recipient_locality_name" class="form-control" value="${escapeHtml(safeOrder.recipient_locality_name || '')}" placeholder="Introduce localitatea" autocomplete="off" data-autocomplete-type="locality" data-associated-county-input="orderRecipientCountyId">
+                                <input type="hidden" id="orderRecipientLocalityId" name="recipient_locality_id" value="${escapeHtml(localityIdValue)}">
+                                <div class="autocomplete-results" data-autocomplete-results="orderRecipientLocalityName" style="position: absolute; top: calc(100% + 2px); left: 0; right: 0; background: #fff; border: 1px solid #ced4da; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); z-index: 1050; display: none; max-height: 240px; overflow-y: auto;"></div>
+                            </div>
+                            <small style="color: #6c757d;">Cargus Locality ID: <span id="orderRecipientLocalityIdDisplay">${localityIdDisplay}</span></small>
                         </div>
                         <div class="form-actions" style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
                             <button type="submit" class="btn btn-primary">Salvează detalii</button>
@@ -1086,6 +1125,8 @@ function bindOrderDetailsEvents(order) {
         contactForm.addEventListener('submit', submitOrderContactForm);
     }
 
+    initRecipientAutocomplete(order || {});
+
     const orderItemForm = document.getElementById('orderItemForm');
     if (orderItemForm) {
         orderItemForm.addEventListener('submit', submitOrderItemForm);
@@ -1127,6 +1168,439 @@ function bindOrderDetailsEvents(order) {
     }
 
     resetOrderItemForm(true);
+}
+
+function initRecipientAutocomplete(order) {
+    recipientAutocompleteStates.length = 0;
+    recipientAutocompleteRegistry.county = null;
+    recipientAutocompleteRegistry.locality = null;
+
+    const countyState = createRecipientAutocompleteState({
+        type: 'county',
+        inputId: 'orderRecipientCountyName',
+        idInputId: 'orderRecipientCountyId',
+        idDisplayId: 'orderRecipientCountyIdDisplay'
+    });
+
+    if (countyState) {
+        recipientAutocompleteRegistry.county = countyState;
+        recipientAutocompleteStates.push(countyState);
+    }
+
+    const localityState = createRecipientAutocompleteState({
+        type: 'locality',
+        inputId: 'orderRecipientLocalityName',
+        idInputId: 'orderRecipientLocalityId',
+        idDisplayId: 'orderRecipientLocalityIdDisplay'
+    });
+
+    if (localityState) {
+        recipientAutocompleteRegistry.locality = localityState;
+        recipientAutocompleteStates.push(localityState);
+
+        const initialCountyId = order && order.recipient_county_id ? String(order.recipient_county_id) : '';
+        localityState.input.dataset.selectedCountyId = initialCountyId;
+        localityState.idInput.dataset.countyId = initialCountyId;
+        localityState.idInput.dataset.previousCountyId = initialCountyId;
+
+        if (order && order.recipient_locality_id) {
+            localityState.lastSelectedLabel = localityState.input.value.trim();
+        }
+    }
+
+    if (countyState && order && order.recipient_county_id) {
+        countyState.lastSelectedLabel = countyState.input.value.trim();
+    }
+
+    if (!recipientAutocompleteDocumentListenerAttached) {
+        document.addEventListener('click', event => {
+            recipientAutocompleteStates.forEach(state => {
+                if (!state.wrapper || state.wrapper.contains(event.target)) {
+                    return;
+                }
+                hideRecipientSuggestions(state);
+            });
+        });
+        recipientAutocompleteDocumentListenerAttached = true;
+    }
+}
+
+function createRecipientAutocompleteState(config) {
+    const input = document.getElementById(config.inputId);
+    const idInput = document.getElementById(config.idInputId);
+    const idDisplay = document.getElementById(config.idDisplayId);
+    const suggestionsEl = document.querySelector(`.autocomplete-results[data-autocomplete-results="${config.inputId}"]`);
+
+    if (!input || !idInput || !idDisplay || !suggestionsEl) {
+        return null;
+    }
+
+    const wrapper = input.closest('[data-autocomplete-wrapper]') || input.parentElement;
+
+    const state = {
+        type: config.type,
+        input,
+        idInput,
+        idDisplay,
+        suggestionsEl,
+        wrapper,
+        timer: null,
+        controller: null,
+        lastSelectedLabel: input.value.trim(),
+        isApplyingSelection: false,
+        pendingQuery: null
+    };
+
+    input.addEventListener('input', () => handleRecipientAutocompleteInput(state));
+    input.addEventListener('focus', () => {
+        if (state.input.value.trim().length >= RECIPIENT_AUTOCOMPLETE_MIN_CHARS) {
+            handleRecipientAutocompleteInput(state, { immediate: true });
+        }
+    });
+    input.addEventListener('keydown', event => {
+        if (event.key === 'Escape') {
+            hideRecipientSuggestions(state);
+        }
+    });
+
+    suggestionsEl.addEventListener('mousedown', event => {
+        event.preventDefault();
+    });
+
+    suggestionsEl.addEventListener('click', event => {
+        const option = event.target.closest('.autocomplete-option');
+        if (!option) {
+            return;
+        }
+        applyRecipientSelection(state, option.dataset);
+    });
+
+    return state;
+}
+
+function handleRecipientAutocompleteInput(state, options) {
+    if (!state || !state.input) {
+        return;
+    }
+
+    const immediate = Boolean(options && options.immediate);
+    const value = state.input.value.trim();
+
+    if (!state.isApplyingSelection && value !== state.lastSelectedLabel) {
+        setRecipientFieldId(state, '');
+        state.lastSelectedLabel = '';
+
+        if (state.type === 'county') {
+            handleCountyChanged('', '', { skipClear: false });
+        } else if (state.type === 'locality') {
+            state.idInput.dataset.countyId = state.idInput.dataset.countyId || '';
+        }
+    }
+
+    if (state.timer) {
+        clearTimeout(state.timer);
+        state.timer = null;
+    }
+
+    if (!immediate && value.length < RECIPIENT_AUTOCOMPLETE_MIN_CHARS) {
+        hideRecipientSuggestions(state);
+        state.pendingQuery = null;
+        return;
+    }
+
+    if (immediate && value.length < RECIPIENT_AUTOCOMPLETE_MIN_CHARS) {
+        hideRecipientSuggestions(state);
+        state.pendingQuery = null;
+        return;
+    }
+
+    const fetchSuggestions = () => {
+        state.pendingQuery = value;
+        fetchRecipientSuggestions(state, value);
+    };
+
+    if (immediate) {
+        fetchSuggestions();
+    } else {
+        state.timer = setTimeout(fetchSuggestions, RECIPIENT_AUTOCOMPLETE_DELAY_MS);
+    }
+}
+
+function fetchRecipientSuggestions(state, query) {
+    if (!state || !query) {
+        return;
+    }
+
+    if (state.controller) {
+        state.controller.abort();
+    }
+
+    const params = new URLSearchParams();
+    params.set('type', state.type);
+    params.set('query', query);
+
+    if (state.type === 'locality') {
+        const associated = state.input.dataset.selectedCountyId || state.idInput.dataset.countyId || '';
+        let countyId = associated;
+        if (!countyId && recipientAutocompleteRegistry.county && recipientAutocompleteRegistry.county.idInput.value) {
+            countyId = recipientAutocompleteRegistry.county.idInput.value;
+        }
+        if (countyId) {
+            params.set('county_id', countyId);
+        }
+    }
+
+    state.controller = new AbortController();
+
+    fetch(`api/warehouse/search_location_mappings.php?${params.toString()}`, {
+        signal: state.controller.signal,
+        credentials: 'same-origin'
+    })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            if (!data || data.status !== 'success' || !Array.isArray(data.data)) {
+                throw new Error('Răspuns invalid de la server.');
+            }
+
+            if (state.pendingQuery !== query) {
+                return;
+            }
+
+            renderRecipientSuggestions(state, data.data);
+        })
+        .catch(error => {
+            if (error.name === 'AbortError') {
+                return;
+            }
+            console.error('Autocomplete recipient search failed:', error);
+        })
+        .finally(() => {
+            state.controller = null;
+        });
+}
+
+function renderRecipientSuggestions(state, results) {
+    if (!state || !state.suggestionsEl) {
+        return;
+    }
+
+    if (!Array.isArray(results) || !results.length) {
+        hideRecipientSuggestions(state);
+        return;
+    }
+
+    const optionsHtml = results
+        .map(result => {
+            if (state.type === 'county') {
+                return buildCountySuggestionOption(result);
+            }
+            return buildLocalitySuggestionOption(result);
+        })
+        .filter(Boolean)
+        .join('');
+
+    if (!optionsHtml) {
+        hideRecipientSuggestions(state);
+        return;
+    }
+
+    state.suggestionsEl.innerHTML = optionsHtml;
+    state.suggestionsEl.style.display = 'block';
+    const options = state.suggestionsEl.querySelectorAll('.autocomplete-option');
+    if (options.length) {
+        options[options.length - 1].style.borderBottom = 'none';
+    }
+}
+
+function hideRecipientSuggestions(state) {
+    if (!state || !state.suggestionsEl) {
+        return;
+    }
+    state.suggestionsEl.innerHTML = '';
+    state.suggestionsEl.style.display = 'none';
+    state.pendingQuery = null;
+}
+
+function setRecipientFieldId(state, value) {
+    if (!state || !state.idInput || !state.idDisplay) {
+        return;
+    }
+    const normalized = value != null && value !== '' ? String(value) : '';
+    state.idInput.value = normalized;
+    state.idDisplay.textContent = normalized !== '' ? normalized : '—';
+}
+
+function applyRecipientSelection(state, dataset) {
+    if (!state || !dataset) {
+        return;
+    }
+
+    const label = (dataset.value || '').trim();
+    state.isApplyingSelection = true;
+    state.input.value = label;
+    state.lastSelectedLabel = label;
+
+    if (state.type === 'county') {
+        const countyId = dataset.id || dataset.countyId || '';
+        setRecipientFieldId(state, countyId);
+        handleCountyChanged(countyId, dataset.countyName || label, { skipClear: false });
+    } else {
+        const localityId = dataset.id || dataset.localityId || '';
+        const countyId = dataset.countyId || '';
+        setRecipientFieldId(state, localityId);
+        state.idInput.dataset.countyId = countyId;
+        state.input.dataset.selectedCountyId = countyId;
+        handleCountyChanged(countyId, dataset.countyName || '', { skipClear: true });
+        applyCountyFromLocality(dataset);
+    }
+
+    hideRecipientSuggestions(state);
+    state.isApplyingSelection = false;
+}
+
+function handleCountyChanged(newCountyId, newCountyName, options) {
+    const localityState = recipientAutocompleteRegistry.locality;
+    if (!localityState) {
+        return;
+    }
+
+    const normalizedId = newCountyId != null && newCountyId !== '' ? String(newCountyId) : '';
+    const previousCountyId = localityState.idInput.dataset.previousCountyId || '';
+    localityState.input.dataset.selectedCountyId = normalizedId;
+    localityState.idInput.dataset.countyId = normalizedId;
+
+    if (options && options.skipClear) {
+        localityState.idInput.dataset.previousCountyId = normalizedId;
+        return;
+    }
+
+    if (normalizedId === '') {
+        if (localityState.input.value || localityState.idInput.value) {
+            clearRecipientLocalitySelection(localityState);
+        }
+        localityState.idInput.dataset.previousCountyId = '';
+        return;
+    }
+
+    if (previousCountyId && previousCountyId !== normalizedId) {
+        clearRecipientLocalitySelection(localityState);
+    }
+
+    localityState.idInput.dataset.previousCountyId = normalizedId;
+    if (newCountyName && recipientAutocompleteRegistry.county && recipientAutocompleteRegistry.county.input) {
+        recipientAutocompleteRegistry.county.input.dataset.lastKnownCountyName = newCountyName;
+    }
+}
+
+function clearRecipientLocalitySelection(state) {
+    if (!state) {
+        return;
+    }
+    state.input.value = '';
+    state.lastSelectedLabel = '';
+    setRecipientFieldId(state, '');
+    state.idInput.dataset.countyId = '';
+    state.idInput.dataset.previousCountyId = '';
+    state.input.dataset.selectedCountyId = '';
+}
+
+function applyCountyFromLocality(dataset) {
+    const countyState = recipientAutocompleteRegistry.county;
+    if (!countyState) {
+        return;
+    }
+
+    const countyId = dataset.countyId || '';
+    if (!countyId) {
+        return;
+    }
+
+    const currentCountyId = countyState.idInput.value;
+    if (currentCountyId === String(countyId)) {
+        handleCountyChanged(countyId, dataset.countyName || countyState.input.value || '', { skipClear: true });
+        return;
+    }
+
+    countyState.isApplyingSelection = true;
+    const countyName = dataset.countyName || countyState.input.dataset.lastKnownCountyName || countyState.input.value || '';
+    if (countyName) {
+        countyState.input.value = countyName;
+        countyState.lastSelectedLabel = countyName.trim();
+    }
+    setRecipientFieldId(countyState, countyId);
+    hideRecipientSuggestions(countyState);
+    countyState.isApplyingSelection = false;
+    handleCountyChanged(countyId, countyName, { skipClear: true });
+}
+
+function buildCountySuggestionOption(result) {
+    if (!result) {
+        return '';
+    }
+    const countyId = Number(result.cargus_county_id);
+    const displayName = (result.cargus_county_name || result.county_name || '').trim();
+    if (!countyId || !displayName) {
+        return '';
+    }
+
+    const secondaryName = result.county_name && result.county_name !== displayName
+        ? `<div style="font-size: 0.78rem; color: #6c757d;">Mapare: ${escapeHtml(result.county_name)}</div>`
+        : '';
+
+    return `
+        <div class="autocomplete-option" role="button" tabindex="-1"
+            data-type="county"
+            data-id="${escapeHtml(String(countyId))}"
+            data-value="${escapeHtml(displayName)}"
+            data-county-id="${escapeHtml(String(countyId))}"
+            data-county-name="${escapeHtml(displayName)}"
+            style="padding: 0.45rem 0.75rem; cursor: pointer; border-bottom: 1px solid #f1f3f5;">
+            <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.5rem;">
+                <span>${escapeHtml(displayName)}</span>
+                <span style="color: #0d6efd; font-weight: 600;">${escapeHtml(String(countyId))}</span>
+            </div>
+            ${secondaryName}
+        </div>
+    `;
+}
+
+function buildLocalitySuggestionOption(result) {
+    if (!result) {
+        return '';
+    }
+    const localityId = Number(result.cargus_locality_id);
+    const localityName = (result.cargus_locality_name || result.locality_name || '').trim();
+    if (!localityId || !localityName) {
+        return '';
+    }
+
+    const countyId = result.cargus_county_id ? String(result.cargus_county_id) : '';
+    const countyName = (result.cargus_county_name || result.county_name || '').trim();
+
+    const countyInfo = countyName
+        ? `<div style="font-size: 0.78rem; color: #6c757d;">Județ: ${escapeHtml(countyName)}</div>`
+        : '';
+
+    return `
+        <div class="autocomplete-option" role="button" tabindex="-1"
+            data-type="locality"
+            data-id="${escapeHtml(String(localityId))}"
+            data-value="${escapeHtml(localityName)}"
+            data-county-id="${escapeHtml(countyId)}"
+            data-county-name="${escapeHtml(countyName)}"
+            style="padding: 0.45rem 0.75rem; cursor: pointer; border-bottom: 1px solid #f1f3f5;">
+            <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.5rem;">
+                <span>${escapeHtml(localityName)}</span>
+                <span style="color: #0d6efd; font-weight: 600;">${escapeHtml(String(localityId))}</span>
+            </div>
+            ${countyInfo}
+        </div>
+    `;
 }
 
 function refreshOrderDetails(orderId, options) {
@@ -1177,10 +1651,24 @@ function submitOrderContactForm(event) {
         submitButton.disabled = true;
     }
 
+    const parseIdField = value => {
+        const trimmed = String(value ?? '').trim();
+        if (!trimmed) {
+            return null;
+        }
+        const numeric = Number(trimmed);
+        return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
+    };
+
     const payload = {
         order_id: currentOrderDetails.id,
         customer_email: form.customer_email ? form.customer_email.value.trim() : '',
-        shipping_address: form.shipping_address ? form.shipping_address.value.trim() : ''
+        shipping_address: form.shipping_address ? form.shipping_address.value.trim() : '',
+        address_text: form.address_text ? form.address_text.value.trim() : '',
+        recipient_county_name: form.recipient_county_name ? form.recipient_county_name.value.trim() : '',
+        recipient_county_id: parseIdField(form.recipient_county_id ? form.recipient_county_id.value : null),
+        recipient_locality_name: form.recipient_locality_name ? form.recipient_locality_name.value.trim() : '',
+        recipient_locality_id: parseIdField(form.recipient_locality_id ? form.recipient_locality_id.value : null)
     };
 
     fetch('api/warehouse/update_order_details.php', {

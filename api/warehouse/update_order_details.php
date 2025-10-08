@@ -58,6 +58,21 @@ if (!$orderId) {
 
 $customerEmail = trim((string)($input['customer_email'] ?? ''));
 $shippingAddress = trim((string)($input['shipping_address'] ?? ''));
+$addressText = trim((string)($input['address_text'] ?? ''));
+$recipientCountyName = trim((string)($input['recipient_county_name'] ?? ''));
+$recipientCountyId = $input['recipient_county_id'] ?? null;
+$recipientLocalityName = trim((string)($input['recipient_locality_name'] ?? ''));
+$recipientLocalityId = $input['recipient_locality_id'] ?? null;
+
+$recipientCountyId = filter_var($recipientCountyId, FILTER_VALIDATE_INT, ['options' => ['default' => null]]);
+if ($recipientCountyId !== null && $recipientCountyId <= 0) {
+    $recipientCountyId = null;
+}
+
+$recipientLocalityId = filter_var($recipientLocalityId, FILTER_VALIDATE_INT, ['options' => ['default' => null]]);
+if ($recipientLocalityId !== null && $recipientLocalityId <= 0) {
+    $recipientLocalityId = null;
+}
 
 if ($customerEmail !== '' && !filter_var($customerEmail, FILTER_VALIDATE_EMAIL)) {
     http_response_code(422);
@@ -102,6 +117,41 @@ try {
         $params[':shipping_address'] = $shippingAddress;
     }
 
+    if ($addressText === '') {
+        $updateParts[] = 'address_text = NULL';
+    } else {
+        $updateParts[] = 'address_text = :address_text';
+        $params[':address_text'] = $addressText;
+    }
+
+    if ($recipientCountyId === null) {
+        $updateParts[] = 'recipient_county_id = NULL';
+    } else {
+        $updateParts[] = 'recipient_county_id = :recipient_county_id';
+        $params[':recipient_county_id'] = $recipientCountyId;
+    }
+
+    if ($recipientCountyName === '') {
+        $updateParts[] = 'recipient_county_name = NULL';
+    } else {
+        $updateParts[] = 'recipient_county_name = :recipient_county_name';
+        $params[':recipient_county_name'] = $recipientCountyName;
+    }
+
+    if ($recipientLocalityId === null) {
+        $updateParts[] = 'recipient_locality_id = NULL';
+    } else {
+        $updateParts[] = 'recipient_locality_id = :recipient_locality_id';
+        $params[':recipient_locality_id'] = $recipientLocalityId;
+    }
+
+    if ($recipientLocalityName === '') {
+        $updateParts[] = 'recipient_locality_name = NULL';
+    } else {
+        $updateParts[] = 'recipient_locality_name = :recipient_locality_name';
+        $params[':recipient_locality_name'] = $recipientLocalityName;
+    }
+
     $updateParts[] = 'updated_at = NOW()';
 
     $query = 'UPDATE orders SET ' . implode(', ', $updateParts) . ' WHERE id = :id LIMIT 1';
@@ -110,6 +160,8 @@ try {
     foreach ($params as $key => $value) {
         if ($value === null) {
             $stmt->bindValue($key, null, PDO::PARAM_NULL);
+        } elseif (is_int($value)) {
+            $stmt->bindValue($key, $value, PDO::PARAM_INT);
         } else {
             $stmt->bindValue($key, $value);
         }
@@ -124,11 +176,21 @@ try {
         'Actualizare detalii client pentru comandă',
         [
             'customer_email' => $existingOrder['customer_email'] ?? null,
-            'shipping_address' => $existingOrder['shipping_address'] ?? null
+            'shipping_address' => $existingOrder['shipping_address'] ?? null,
+            'address_text' => $existingOrder['address_text'] ?? null,
+            'recipient_county_id' => $existingOrder['recipient_county_id'] ?? null,
+            'recipient_county_name' => $existingOrder['recipient_county_name'] ?? null,
+            'recipient_locality_id' => $existingOrder['recipient_locality_id'] ?? null,
+            'recipient_locality_name' => $existingOrder['recipient_locality_name'] ?? null
         ],
         [
             'customer_email' => $customerEmail !== '' ? $customerEmail : null,
-            'shipping_address' => $shippingAddress !== '' ? $shippingAddress : null
+            'shipping_address' => $shippingAddress !== '' ? $shippingAddress : null,
+            'address_text' => $addressText !== '' ? $addressText : null,
+            'recipient_county_id' => $recipientCountyId,
+            'recipient_county_name' => $recipientCountyName !== '' ? $recipientCountyName : null,
+            'recipient_locality_id' => $recipientLocalityId,
+            'recipient_locality_name' => $recipientLocalityName !== '' ? $recipientLocalityName : null
         ]
     );
 

@@ -104,7 +104,7 @@ $currentPage = 'facturi_somatii';
                                     <div class="spinner"></div>
                                     <p>Factura este procesată, te rugăm să aștepți...</p>
                                 </div>
-                                <div class="results-display" id="results-display">
+                                <div class="results-display" id="results-display" data-n8n-webhook-url="<?= htmlspecialchars(getenv('N8N_WEBHOOK_URL') ?: '') ?>">
                                     <div class="placeholder">
                                         <span class="material-symbols-outlined">assignment_add</span>
                                         <p>Rezultatele procesării vor apărea aici.</p>
@@ -207,10 +207,12 @@ $currentPage = 'facturi_somatii';
     </div>
 
     <script>
+        const fsWebhookUrl = document.getElementById('results-display')?.dataset?.n8nWebhookUrl || '';
         window.WMS_CONFIG = {
             apiBase: '<?= htmlspecialchars(rtrim(BASE_URL, '/')) ?>/api',
             baseUrl: '<?= htmlspecialchars(rtrim(BASE_URL, '/')) ?>',
-            csrfToken: '<?= htmlspecialchars($_SESSION['csrf_token'] ?? '') ?>'
+            csrfToken: '<?= htmlspecialchars($_SESSION['csrf_token'] ?? '') ?>',
+            n8nWebhookUrl: fsWebhookUrl
         };
     </script>
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>

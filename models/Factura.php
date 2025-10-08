@@ -5,6 +5,7 @@ declare(strict_types=1);
 class Factura
 {
     private PDO $db;
+    private string $table = 'facturi_somatii';
 
     public function __construct(PDO $db)
     {
@@ -20,7 +21,7 @@ class Factura
      */
     public function create(array $data): int
     {
-        $sql = "INSERT INTO facturi_somatii
+        $sql = "INSERT INTO {$this->table}
             (nr_factura, nume_firma, cif, reg_com, adresa, data_emitere, termen_plata, suma, status, file_path, somatie_path, sha256)
             VALUES
             (:nr_factura, :nume_firma, :cif, :reg_com, :adresa, :data_emitere, :termen_plata, :suma, :status, :file_path, :somatie_path, :sha256)";
@@ -75,12 +76,12 @@ class Factura
             $params[':search'] = '%' . $filters['search'] . '%';
         }
 
-        $baseQuery = 'FROM facturi';
+        $baseQuery = "FROM {$this->table}";
         if ($where) {
             $baseQuery .= ' WHERE ' . implode(' AND ', $where);
         }
 
-        $total = (int)$this->db->query('SELECT COUNT(*) FROM facturi')->fetchColumn();
+        $total = (int)$this->db->query("SELECT COUNT(*) FROM {$this->table}")->fetchColumn();
 
         $countStmt = $this->db->prepare('SELECT COUNT(*) ' . $baseQuery);
         $countStmt->execute($params);
@@ -138,7 +139,7 @@ class Factura
      */
     public function getById(int $id): ?array
     {
-        $stmt = $this->db->prepare('SELECT * FROM facturi WHERE id = :id');
+        $stmt = $this->db->prepare("SELECT * FROM {$this->table} WHERE id = :id");
         $stmt->execute([':id' => $id]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -155,7 +156,7 @@ class Factura
                 SUM(status = 'neplatita') AS neplatite,
                 SUM(status = 'platita') AS platite,
                 COALESCE(SUM(suma), 0) AS suma_totala
-            FROM facturi_somatii");
+            FROM {$this->table}");
 
         $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
 
@@ -172,7 +173,7 @@ class Factura
      */
     public function updateStatus(int $id, string $status): bool
     {
-        $stmt = $this->db->prepare('UPDATE facturi_somatii SET status = :status WHERE id = :id');
+        $stmt = $this->db->prepare("UPDATE {$this->table} SET status = :status WHERE id = :id");
         return $stmt->execute([
             ':status' => $status,
             ':id' => $id,
@@ -184,7 +185,7 @@ class Factura
      */
     public function delete(int $id): bool
     {
-        $stmt = $this->db->prepare('DELETE FROM facturi_somatii WHERE id = :id');
+        $stmt = $this->db->prepare("DELETE FROM {$this->table} WHERE id = :id");
         return $stmt->execute([':id' => $id]);
     }
 }

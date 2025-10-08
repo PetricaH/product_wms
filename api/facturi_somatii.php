@@ -110,7 +110,7 @@ function processInvoice(Factura $facturiModel, PDO $pdo): void
 
     $sha256 = hash_file('sha256', $file['tmp_name']);
 
-    $webhookUrl = 'https://n8n.wartung.notsowms.ro/webhook/process-invoice-somatie';
+    $webhookUrl = 'https://wartung.app.n8n.cloud/webhook/5f608b58-4b20-4a99-a397-7361382f9f57';
     $curl = curl_init($webhookUrl);
 
     if ($curl === false) {
@@ -118,7 +118,7 @@ function processInvoice(Factura $facturiModel, PDO $pdo): void
     }
 
     $postFields = [
-        'invoice_image' => new CURLFile($file['tmp_name'], $mime, $file['name'])
+        'image' => new CURLFile($file['tmp_name'], $mime, $file['name'])
     ];
 
     if (!empty($_POST['metadata'])) {

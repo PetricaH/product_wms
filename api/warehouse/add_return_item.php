@@ -50,7 +50,15 @@ try {
     $productId = isset($payload['product_id']) ? (int)$payload['product_id'] : 0;
     $quantityReceived = isset($payload['quantity_received']) ? (int)$payload['quantity_received'] : 0;
     $condition = isset($payload['condition']) ? strtolower(trim((string)$payload['condition'])) : '';
-    $locationId = isset($payload['location_id']) ? (int)$payload['location_id'] : 0;
+    $locationRaw = $payload['location_id'] ?? null;
+    $locationId = null;
+    if ($locationRaw !== null && $locationRaw !== '') {
+        if (is_numeric($locationRaw)) {
+            $locationId = (int)$locationRaw;
+        } else {
+            throw new InvalidArgumentException('Locația selectată nu este validă.');
+        }
+    }
     $notes = isset($payload['notes']) ? trim((string)$payload['notes']) : '';
 
     if ($returnId <= 0) {
@@ -65,7 +73,8 @@ try {
     if ($quantityReceived < 0) {
         throw new InvalidArgumentException('Cantitatea primită trebuie să fie un număr pozitiv.');
     }
-    if ($locationId <= 0) {
+    $requiresLocation = $quantityReceived > 0;
+    if ($requiresLocation && (!$locationId || $locationId <= 0)) {
         throw new InvalidArgumentException('Selectați o locație de depozitare pentru produs.');
     }
 
@@ -109,11 +118,16 @@ try {
     }
 
     // Validate location exists and is active
-    $locStmt = $db->prepare("SELECT id, location_code, status FROM locations WHERE id = :id LIMIT 1");
-    $locStmt->execute([':id' => $locationId]);
-    $location = $locStmt->fetch(PDO::FETCH_ASSOC);
-    if (!$location || ($location['status'] ?? '') !== 'active') {
-        throw new InvalidArgumentException('Locația selectată nu este activă.');
+    $location = null;
+    if ($locationId && $locationId > 0) {
+        $locStmt = $db->prepare("SELECT id, location_code, status FROM locations WHERE id = :id LIMIT 1");
+        $locStmt->execute([':id' => $locationId]);
+        $location = $locStmt->fetch(PDO::FETCH_ASSOC);
+        if (!$location || ($location['status'] ?? '') !== 'active') {
+            throw new InvalidArgumentException('Locația selectată nu este activă.');
+        }
+    } else {
+        $locationId = null;
     }
 
     $expectedQuantity = (int)($orderItem['expected_quantity'] ?? 0);

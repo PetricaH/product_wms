@@ -110,12 +110,17 @@ try {
             'customer_name' => $order['customer_name'],
             'customer_email' => $order['customer_email'],
             'shipping_address' => $order['shipping_address'],
+            'address_text' => $order['address_text'],
             'order_date' => $order['order_date'],
             'status' => $order['status'],
             'status_label' => $statusTranslations[$order['status']] ?? $order['status'],
             'tracking_number' => $order['tracking_number'],
             'total_value' => number_format((float)$order['total_value'], 2),
             'notes' => $order['notes'],
+            'recipient_county_id' => $order['recipient_county_id'],
+            'recipient_county_name' => $order['recipient_county_name'],
+            'recipient_locality_id' => $order['recipient_locality_id'],
+            'recipient_locality_name' => $order['recipient_locality_name'],
             
             // Progress information
             'progress' => [

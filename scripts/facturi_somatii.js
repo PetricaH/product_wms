@@ -42,7 +42,85 @@
         closeModalBtn: '#close-modal-btn'
     };
 
+    function resolveWebhookUrl() {
+        const fromConfig = (window.WMS_CONFIG && typeof window.WMS_CONFIG.n8nWebhookUrl === 'string') ? window.WMS_CONFIG.n8nWebhookUrl.trim() : '';
+        if (fromConfig) {
+            return fromConfig;
+        }
+
+        const fromGlobal = typeof window.FS_WEBHOOK_URL === 'string' ? window.FS_WEBHOOK_URL.trim() : '';
+        if (fromGlobal) {
+            return fromGlobal;
+        }
+
+        const dataSource = document.querySelector('[data-n8n-webhook-url]');
+        if (dataSource) {
+            const fromDataset = (dataSource.dataset && typeof dataSource.dataset.n8nWebhookUrl === 'string') ? dataSource.dataset.n8nWebhookUrl.trim() : '';
+            if (fromDataset) {
+                return fromDataset;
+            }
+
+            if (typeof dataSource.value === 'string' && dataSource.value.trim()) {
+                return dataSource.value.trim();
+            }
+
+            const attrValue = dataSource.getAttribute('data-n8n-webhook-url');
+            if (typeof attrValue === 'string' && attrValue.trim()) {
+                return attrValue.trim();
+            }
+        }
+
+        return '';
+    }
+
+    function ensureResultsPanel() {
+        const container = document.querySelector(selectors.resultsDisplay);
+        if (!container) {
+            return null;
+        }
+
+        if (!document.getElementById('fs-styles')) {
+            const style = document.createElement('style');
+            style.id = 'fs-styles';
+            style.textContent = `
+                .fs-panel { margin-top: 1.5rem; padding: 1.25rem; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(22, 24, 28, 0.6); backdrop-filter: blur(6px); }
+                .fs-panel h3 { margin-top: 0; margin-bottom: 0.75rem; font-size: 1.05rem; }
+                .fs-summary { font-weight: 600; margin-bottom: 0.5rem; font-size: 0.95rem; }
+                .fs-files { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.75rem; }
+                .fs-file { display: flex; flex-direction: column; gap: 0.35rem; padding: 0.75rem; border-radius: 10px; background: rgba(255, 255, 255, 0.04); }
+                .fs-file-header { display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+                .fs-label { font-weight: 500; font-size: 0.95rem; word-break: break-word; }
+                .fs-file-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+                .fs-file-actions a { color: #4aa3ff; text-decoration: none; font-size: 0.875rem; font-weight: 500; }
+                .fs-file-actions a:hover { text-decoration: underline; }
+                .fs-print { border: none; border-radius: 6px; padding: 0.35rem 0.9rem; background: #4aa3ff; color: #fff; font-size: 0.85rem; cursor: pointer; transition: background 0.2s ease; }
+                .fs-print:hover { background: #3188dd; }
+                .fs-meta { font-size: 0.8rem; color: rgba(255, 255, 255, 0.65); }
+                .fs-warning { margin-top: 0.5rem; color: #f6c744; font-size: 0.85rem; }
+            `;
+            document.head.appendChild(style);
+        }
+
+        let panel = container.querySelector('#fs-results');
+        if (!panel) {
+            panel = document.createElement('div');
+            panel.id = 'fs-results';
+            panel.className = 'fs-panel';
+            panel.hidden = true;
+            panel.innerHTML = `
+                <div class="fs-summary" id="fs-summary" hidden></div>
+                <h3>Fișiere generate</h3>
+                <ul id="fs-files" class="fs-files"></ul>
+                <p id="fs-warning" class="fs-warning" hidden>Serviciul extern nu a returnat fișiere.</p>
+            `;
+            container.appendChild(panel);
+        }
+
+        return panel;
+    }
+
     function init() {
+        ensureResultsPanel();
         bindTabEvents();
         bindUploadEvents();
         bindCameraEvents();
@@ -121,7 +199,7 @@
 
     function openCamera() {
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-            notify('Camera nu este suportată pe acest dispozitiv.', 'error');
+            notify('error', 'Camera nu este suportată pe acest dispozitiv.');
             return;
         }
 
@@ -135,7 +213,7 @@
                 $(selectors.cameraContainer).prop('hidden', false);
             })
             .catch(err => {
-                notify('Nu s-a putut porni camera: ' + err.message, 'error');
+                notify('error', 'Nu s-a putut porni camera: ' + err.message);
             });
     }
 
@@ -150,7 +228,7 @@
     function capturePhoto() {
         const video = document.querySelector(selectors.cameraStream);
         if (!video || !mediaStream) {
-            notify('Camera nu este activă.', 'warning');
+            notify('warning', 'Camera nu este activă.');
             return;
         }
 
@@ -162,7 +240,7 @@
 
         canvas.toBlob(blob => {
             if (!blob) {
-                notify('Nu s-a putut captura imaginea.', 'error');
+                notify('error', 'Nu s-a putut captura imaginea.');
                 return;
             }
 
@@ -175,7 +253,7 @@
     function bindProcessingEvents() {
         $(selectors.processBtn).on('click', () => {
             if (!selectedFile) {
-                notify('Te rugăm să selectezi un fișier înainte de procesare.', 'warning');
+                notify('warning', 'Te rugăm să selectezi un fișier înainte de procesare.');
                 return;
             }
             processInvoice();
@@ -187,12 +265,12 @@
     function handleFileUpload(file) {
         const allowedTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'];
         if (!allowedTypes.includes(file.type) && !file.type.startsWith('image/')) {
-            notify('Tipul de fișier nu este acceptat.', 'error');
+            notify('error', 'Tipul de fișier nu este acceptat.');
             return;
         }
 
         if (file.size > 10 * 1024 * 1024) {
-            notify('Dimensiunea maximă este de 10MB.', 'error');
+            notify('error', 'Dimensiunea maximă este de 10MB.');
             return;
         }
 
@@ -215,7 +293,7 @@
 
         previewContainer.prop('hidden', false);
         $(selectors.resultsDisplay).find('.placeholder').remove();
-        notify('Fișier pregătit pentru procesare.', 'success');
+        notify('success', 'Fișier pregătit pentru procesare.');
     }
 
     function resetUpload() {
@@ -231,29 +309,50 @@
         toggleProcessing(true);
 
         const formData = new FormData();
-        formData.append('invoice_file', selectedFile);
+        if (selectedFile) {
+            formData.append('image', selectedFile, selectedFile.name);
+        }
 
-        try {
-            const response = await fetch(`${WMS_CONFIG.apiBase}/facturi_somatii.php?action=process`, {
-                method: 'POST',
-                body: formData,
-                credentials: 'same-origin'
-            });
-
-            const result = await response.json();
-            if (!response.ok || !result.success) {
-                throw new Error(result.message || 'Procesarea a eșuat.');
+        const procesareTab = document.getElementById('tab-procesare');
+        if (procesareTab) {
+            const nrFacturaInput = procesareTab.querySelector('input[name="nr_factura"]');
+            if (nrFacturaInput && nrFacturaInput.value.trim()) {
+                formData.append('nr_factura', nrFacturaInput.value.trim());
             }
 
-            displayResults(result.invoice, result);
-            notify(result.message || 'Factura a fost procesată.', 'success');
+            procesareTab.querySelectorAll('[data-fs-field]').forEach(element => {
+                const name = element.getAttribute('name') || element.getAttribute('data-fs-field');
+                if (!name) {
+                    return;
+                }
+                const value = element.value ?? element.textContent;
+                if (value !== undefined && value !== null && String(value).trim() !== '') {
+                    formData.append(name, String(value).trim());
+                }
+            });
+        }
+
+        try {
+            const result = await callN8n(formData);
+
+            if (result.invoice) {
+                displayResults(result.invoice, result);
+            } else {
+                const container = $(selectors.resultsDisplay);
+                if (container.length) {
+                    container.find('.placeholder').remove();
+                }
+            }
+
+            renderFiles(result);
+            notify('success', result.message || 'Factura a fost procesată.');
             resetUpload();
             fetchStats();
             if (facturiTable) {
                 facturiTable.ajax.reload(null, false);
             }
         } catch (error) {
-            notify(error.message || 'A apărut o eroare la procesare.', 'error');
+            notify('error', error.message || 'A apărut o eroare la procesare.');
         } finally {
             indicator.prop('hidden', true);
             toggleProcessing(false);
@@ -264,6 +363,213 @@
         $(selectors.processBtn).prop('disabled', isProcessing);
         $(selectors.selectFileBtn).prop('disabled', isProcessing);
         $(selectors.cameraBtn).prop('disabled', isProcessing);
+    }
+
+    async function callN8n(formData, timeoutMs = 20000) {
+        const webhookUrl = resolveWebhookUrl();
+        if (!webhookUrl) {
+            throw new Error('Adresa webhook n8n lipsește din configurare.');
+        }
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+        let response;
+        let responseText = '';
+
+        try {
+            response = await fetch(webhookUrl, {
+                method: 'POST',
+                body: formData,
+                signal: controller.signal,
+                credentials: 'omit'
+            });
+            responseText = await response.text();
+        } catch (error) {
+            if (error.name === 'AbortError') {
+                throw new Error('Timpul de așteptare a expirat (20s).');
+            }
+            throw new Error(`Nu s-a putut contacta serviciul extern: ${error.message}`);
+        } finally {
+            clearTimeout(timeoutId);
+        }
+
+        let data;
+        try {
+            data = responseText ? JSON.parse(responseText) : {};
+        } catch (parseError) {
+            throw new Error('Răspuns non-JSON de la serviciul extern.');
+        }
+
+        if (!response.ok) {
+            const message = data?.message || `Serviciul extern a returnat codul ${response.status}.`;
+            throw new Error(message);
+        }
+
+        if (!data || data.success !== true) {
+            const reason = data?.message || 'Răspuns invalid de la serviciul extern.';
+            throw new Error(`Răspuns invalid de la serviciul extern: ${reason}`);
+        }
+
+        if (!Array.isArray(data.files)) {
+            data.files = [];
+        }
+
+        return data;
+    }
+
+    function renderFiles(result) {
+        const panel = ensureResultsPanel();
+        if (!panel) {
+            return;
+        }
+
+        $(selectors.resultsDisplay).find('.placeholder').remove();
+
+        const summary = panel.querySelector('#fs-summary');
+        if (summary) {
+            if (result?.nr_factura) {
+                summary.textContent = `Factura: ${result.nr_factura}`;
+                summary.hidden = false;
+            } else {
+                summary.textContent = '';
+                summary.hidden = true;
+            }
+        }
+
+        const list = panel.querySelector('#fs-files');
+        const warning = panel.querySelector('#fs-warning');
+
+        if (list) {
+            list.innerHTML = '';
+        }
+
+        const files = Array.isArray(result?.files) ? result.files : [];
+
+        if (!files.length) {
+            if (warning) {
+                warning.hidden = false;
+            }
+        } else {
+            if (warning) {
+                warning.hidden = true;
+            }
+
+            files.forEach(file => {
+                const li = document.createElement('li');
+                li.className = 'fs-file';
+
+                const header = document.createElement('div');
+                header.className = 'fs-file-header';
+
+                const label = document.createElement('span');
+                label.className = 'fs-label';
+                label.textContent = file?.label || file?.filename || file?.url || 'Fișier';
+                header.appendChild(label);
+
+                const actions = document.createElement('div');
+                actions.className = 'fs-file-actions';
+
+                const hasUrl = Boolean(file?.url);
+
+                if (hasUrl) {
+                    const openLink = document.createElement('a');
+                    openLink.href = file.url;
+                    openLink.target = '_blank';
+                    openLink.rel = 'noopener';
+                    openLink.textContent = 'Deschide';
+                    actions.appendChild(openLink);
+
+                    const downloadLink = document.createElement('a');
+                    downloadLink.href = file.url;
+                    if (file?.filename) {
+                        downloadLink.setAttribute('download', file.filename);
+                    } else {
+                        downloadLink.setAttribute('download', '');
+                    }
+                    downloadLink.textContent = 'Descarcă';
+                    actions.appendChild(downloadLink);
+                }
+
+                const printButton = document.createElement('button');
+                printButton.type = 'button';
+                printButton.className = 'fs-print';
+                printButton.textContent = 'Printează';
+                printButton.disabled = !hasUrl;
+                printButton.addEventListener('click', () => {
+                    if (!hasUrl) {
+                        return;
+                    }
+                    printFile(file.url, file?.mime || 'application/octet-stream');
+                });
+                actions.appendChild(printButton);
+
+                header.appendChild(actions);
+                li.appendChild(header);
+
+                if (file?.type) {
+                    const meta = document.createElement('span');
+                    meta.className = 'fs-meta';
+                    meta.textContent = `Tip: ${file.type.toUpperCase()}`;
+                    li.appendChild(meta);
+                }
+
+                if (list) {
+                    list.appendChild(li);
+                }
+            });
+        }
+
+        panel.hidden = false;
+    }
+
+    async function printFile(url, mime) {
+        if (!url) {
+            notify('error', 'Nu există un fișier disponibil pentru imprimare.');
+            return;
+        }
+
+        let response;
+        try {
+            response = await fetch(url, { credentials: 'omit' });
+        } catch (error) {
+            notify('error', `Nu s-a putut descărca fișierul pentru imprimare: ${error.message}`);
+            return;
+        }
+
+        if (!response.ok) {
+            notify('error', `Descărcarea fișierului pentru imprimare a eșuat (cod ${response.status}).`);
+            return;
+        }
+
+        const blob = await response.blob();
+        const objectUrl = URL.createObjectURL(blob);
+
+        const printWindow = window.open('', '_blank');
+        if (!printWindow) {
+            notify('warning', 'Deblocați ferestrele pop-up pentru a imprima documentul.');
+            URL.revokeObjectURL(objectUrl);
+            return;
+        }
+
+        try {
+            if ((mime || '').startsWith('image/')) {
+                printWindow.document.write(`<!DOCTYPE html><html><head><title>Print</title></head><body style="margin:0;display:flex;align-items:center;justify-content:center;background:#fff;"><img src="${objectUrl}" style="max-width:100%;height:auto;"/></body></html>`);
+                printWindow.document.close();
+            } else {
+                printWindow.location.href = objectUrl;
+            }
+
+            setTimeout(() => {
+                try {
+                    printWindow.focus();
+                    printWindow.print();
+                } catch (err) {
+                    console.error('Print error', err);
+                }
+            }, 500);
+        } finally {
+            setTimeout(() => URL.revokeObjectURL(objectUrl), 10000);
+        }
     }
 
     function displayResults(invoice, fullResult) {
@@ -459,7 +765,7 @@
                 $(selectors.stats.suma).text(stats.suma_formatata || formatCurrency(0));
             })
             .catch(error => {
-                notify(error.message || 'Eroare la preluarea statisticilor.', 'error');
+                notify('error', error.message || 'Eroare la preluarea statisticilor.');
             });
     }
 
@@ -506,7 +812,7 @@
                 openModal();
             })
             .catch(error => {
-                notify(error.message || 'Eroare la încărcarea detaliilor facturii.', 'error');
+                notify('error', error.message || 'Eroare la încărcarea detaliilor facturii.');
             });
     }
 
@@ -529,14 +835,14 @@
                 if (!result.success) {
                     throw new Error(result.message || 'Actualizarea statusului a eșuat.');
                 }
-                notify(result.message || 'Status actualizat.', 'success');
+                notify('success', result.message || 'Status actualizat.');
                 if (facturiTable) {
                     facturiTable.ajax.reload(null, false);
                 }
                 fetchStats();
             })
             .catch(error => {
-                notify(error.message || 'Eroare la actualizarea statusului.', 'error');
+                notify('error', error.message || 'Eroare la actualizarea statusului.');
             });
     }
 
@@ -558,14 +864,14 @@
                 if (!result.success) {
                     throw new Error(result.message || 'Ștergerea a eșuat.');
                 }
-                notify(result.message || 'Factura a fost ștearsă.', 'success');
+                notify('success', result.message || 'Factura a fost ștearsă.');
                 if (facturiTable) {
                     facturiTable.ajax.reload(null, false);
                 }
                 fetchStats();
             })
             .catch(error => {
-                notify(error.message || 'Eroare la ștergere.', 'error');
+                notify('error', error.message || 'Eroare la ștergere.');
             });
     }
 
@@ -600,11 +906,20 @@
         $('body').removeClass('modal-open');
     }
 
-    function notify(message, type = 'info') {
+    function notify(type, message) {
+        if (message === undefined) {
+            message = type;
+            type = 'info';
+        }
+
         if (window.showToast) {
             window.showToast(message, type);
+        } else if (type === 'error') {
+            console.error(message);
+        } else if (type === 'warning') {
+            console.warn(message);
         } else {
-            console[type === 'error' ? 'error' : 'log'](message);
+            console.log(message);
         }
     }
 

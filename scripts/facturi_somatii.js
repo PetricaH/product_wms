@@ -36,7 +36,7 @@
         },
         applyFiltersBtn: '#apply-filters-btn',
         resetFiltersBtn: '#reset-filters-btn',
-        table: '#facturi-table',
+        table: '#facturi_somatii',
         modal: '#invoice-modal',
         modalBody: '#modal-body',
         closeModalBtn: '#close-modal-btn'

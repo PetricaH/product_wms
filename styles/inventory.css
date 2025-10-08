@@ -711,6 +711,20 @@
             font-size: 0.85rem;
         }
 
+        .filter-form .form-actions {
+            display: flex;
+            gap: 0.75rem;
+            align-items: center;
+            flex-wrap: wrap;
+            margin-top: 0.5rem;
+        }
+
+        .filter-form .form-actions .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+        }
+
         .checkbox-label {
             display: flex;
             align-items: center;

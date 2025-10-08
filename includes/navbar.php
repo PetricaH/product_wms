@@ -161,6 +161,17 @@ if ($incidentSidebarCount === null) {
         </li>
         <?php endif; ?>
 
+        <?php if (isset($_SESSION['role']) && in_array($_SESSION['role'], ['admin', 'manager'], true)): ?>
+        <li class="sidebar__item">
+            <a href="<?= getNavUrl('facturi_somatii.php') ?>"
+               class="sidebar__link <?= getActiveClass('facturi_somatii.php') ?>"
+               data-tooltip="Facturi &amp; Somații">
+                <span class="material-symbols-outlined">receipt_long</span>
+                <span class="link-text">Facturi &amp; Somații</span>
+            </a>
+        </li>
+        <?php endif; ?>
+
         <li class="sidebar__item">
             <a href="<?= getNavUrl('products.php') ?>"
                class="sidebar__link <?= getActiveClass('products.php') ?>"

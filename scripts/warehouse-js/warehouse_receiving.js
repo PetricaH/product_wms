@@ -623,7 +623,7 @@ class WarehouseReceiving {
                 throw new Error(result.message || 'Nu am putut încărca detaliile comenzii.');
             }
 
-            this.renderReturnOrderDetails(result);
+            await this.renderReturnOrderDetails(result);
         } catch (error) {
             console.error('Return order details error:', error);
             const details = document.getElementById('return-order-details');
@@ -657,7 +657,7 @@ class WarehouseReceiving {
         this.disableReturnRestockButton();
     }
 
-    renderReturnOrderDetails(data) {
+    async renderReturnOrderDetails(data) {
         const details = document.getElementById('return-order-details');
         if (!details) {
             return;
@@ -702,6 +702,8 @@ class WarehouseReceiving {
                 is_processed: Boolean(item.is_processed || item.return_item_id)
             };
         });
+
+        await this.applyReturnLocationSuggestions(normalizedItems);
 
         this.selectedReturnOrderDetails = {
             order,
@@ -811,9 +813,99 @@ class WarehouseReceiving {
             if (button) {
                 button.addEventListener('click', () => this.processReturnItem(index));
             }
+            this.setupReturnItemCardInteractivity(card, item);
         });
 
         this.updateReturnRestockState(allProcessed, processedCount, totalItems);
+    }
+
+    setupReturnItemCardInteractivity(card, item) {
+        if (!card) {
+            return;
+        }
+
+        const quantityInput = card.querySelector('input[name="quantity_received"]');
+        const locationSelect = card.querySelector('select[name="location_id"]');
+        const locationHint = card.querySelector('.return-item-location-hint');
+
+        if (!quantityInput || !locationSelect) {
+            return;
+        }
+
+        const toggleLocationRequirement = () => {
+            const quantity = Number(quantityInput.value);
+            const requiresLocation = Number.isFinite(quantity) && quantity > 0;
+
+            if (!item || !item.is_processed) {
+                locationSelect.disabled = !requiresLocation;
+            }
+
+            if (locationHint) {
+                locationHint.style.display = requiresLocation ? 'none' : 'block';
+            }
+        };
+
+        quantityInput.addEventListener('input', toggleLocationRequirement);
+        quantityInput.addEventListener('change', toggleLocationRequirement);
+        toggleLocationRequirement();
+    }
+
+    async applyReturnLocationSuggestions(items) {
+        if (!Array.isArray(items) || items.length === 0) {
+            return;
+        }
+
+        const suggestionTasks = [];
+        let locationsUpdated = false;
+
+        items.forEach((item) => {
+            if (!item || item.is_processed) {
+                return;
+            }
+
+            const hasLocation = Number.isFinite(Number(item.selected_location_id)) && Number(item.selected_location_id) > 0;
+            if (hasLocation) {
+                return;
+            }
+
+            const task = (async () => {
+                try {
+                    const suggestion = await this.fetchSuggestedLocation(item);
+                    if (!suggestion || (!suggestion.location_id && !suggestion.location_code)) {
+                        return;
+                    }
+
+                    const locationAdded = this.ensureLocationInConfig(suggestion);
+                    if (locationAdded) {
+                        locationsUpdated = true;
+                    }
+                    if (typeof this.ensureLocationLevelInConfig === 'function') {
+                        this.ensureLocationLevelInConfig(suggestion);
+                    }
+
+                    if (suggestion.location_id) {
+                        item.selected_location_id = Number(suggestion.location_id);
+                        item.default_location_id = Number(suggestion.location_id);
+                    }
+                    if (suggestion.location_code) {
+                        item.default_location_code = suggestion.location_code;
+                        item.location_code = suggestion.location_code;
+                    }
+                } catch (error) {
+                    console.warn('Auto location suggestion failed for return item', item?.sku || item?.product_id || '', error);
+                }
+            })();
+
+            suggestionTasks.push(task);
+        });
+
+        if (suggestionTasks.length > 0) {
+            await Promise.allSettled(suggestionTasks);
+        }
+
+        if (locationsUpdated) {
+            this.returnLocationOptions = null;
+        }
     }
 
     renderReturnItemCard(item, index) {
@@ -881,6 +973,9 @@ class WarehouseReceiving {
                                 <option value="">Selectați locația</option>
                                 ${locationOptionsMarkup}
                             </select>
+                            <div class="return-item-location-hint" data-role="location-hint" style="display:none;">
+                                Locația nu este necesară când cantitatea primită este 0.
+                            </div>
                         </div>
                         ${processed ? `
                         <div class="return-item-form-group return-item-processed-quantity">
@@ -1066,8 +1161,11 @@ class WarehouseReceiving {
             return;
         }
 
-        const locationValue = locationSelect ? Number(locationSelect.value) : 0;
-        if (!Number.isFinite(locationValue) || locationValue <= 0) {
+        const requiresLocation = quantityValue > 0;
+        const rawLocationValue = locationSelect ? locationSelect.value : '';
+        const hasLocationValue = rawLocationValue !== null && rawLocationValue !== '';
+        const locationValue = hasLocationValue ? Number(rawLocationValue) : null;
+        if (requiresLocation && (!Number.isFinite(locationValue) || locationValue <= 0)) {
             this.showError('Selectați o locație pentru acest produs.');
             return;
         }
@@ -1086,7 +1184,7 @@ class WarehouseReceiving {
             product_id: item.product_id,
             quantity_received: quantityValue,
             condition: conditionValue,
-            location_id: locationValue,
+            location_id: requiresLocation ? Number(locationValue) : null,
             notes: notesValue
         };
 
@@ -1830,22 +1928,30 @@ class WarehouseReceiving {
 
     ensureLocationInConfig(location) {
         if (!location || !location.location_code) {
-            return;
+            return false;
         }
 
         if (!Array.isArray(this.config.locations)) {
             this.config.locations = [];
         }
 
-        const exists = this.config.locations.some(loc => loc.location_code === location.location_code);
-        if (!exists) {
-            this.config.locations.push({
-                id: location.location_id || null,
-                location_code: location.location_code,
-                zone: location.zone || '---',
-                type: 'warehouse'
-            });
+        const exists = this.config.locations.some((loc) => {
+            const sameCode = loc.location_code === location.location_code;
+            const sameId = location.location_id && Number(loc.id) === Number(location.location_id);
+            return sameCode || sameId;
+        });
+        if (exists) {
+            return false;
         }
+
+        this.config.locations.push({
+            id: location.location_id || null,
+            location_code: location.location_code,
+            zone: location.zone || '---',
+            type: 'warehouse'
+        });
+        this.returnLocationOptions = null;
+        return true;
     }
 
     buildLocationLevelDisplay(locationCode, levelName, levelNumber) {

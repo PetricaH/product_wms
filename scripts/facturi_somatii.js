@@ -42,6 +42,37 @@
         closeModalBtn: '#close-modal-btn'
     };
 
+    function resolveWebhookUrl() {
+        const fromConfig = (window.WMS_CONFIG && typeof window.WMS_CONFIG.n8nWebhookUrl === 'string') ? window.WMS_CONFIG.n8nWebhookUrl.trim() : '';
+        if (fromConfig) {
+            return fromConfig;
+        }
+
+        const fromGlobal = typeof window.FS_WEBHOOK_URL === 'string' ? window.FS_WEBHOOK_URL.trim() : '';
+        if (fromGlobal) {
+            return fromGlobal;
+        }
+
+        const dataSource = document.querySelector('[data-n8n-webhook-url]');
+        if (dataSource) {
+            const fromDataset = (dataSource.dataset && typeof dataSource.dataset.n8nWebhookUrl === 'string') ? dataSource.dataset.n8nWebhookUrl.trim() : '';
+            if (fromDataset) {
+                return fromDataset;
+            }
+
+            if (typeof dataSource.value === 'string' && dataSource.value.trim()) {
+                return dataSource.value.trim();
+            }
+
+            const attrValue = dataSource.getAttribute('data-n8n-webhook-url');
+            if (typeof attrValue === 'string' && attrValue.trim()) {
+                return attrValue.trim();
+            }
+        }
+
+        return '';
+    }
+
     function ensureResultsPanel() {
         const container = document.querySelector(selectors.resultsDisplay);
         if (!container) {
@@ -168,7 +199,7 @@
 
     function openCamera() {
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-            notify('Camera nu este suportată pe acest dispozitiv.', 'error');
+            notify('error', 'Camera nu este suportată pe acest dispozitiv.');
             return;
         }
 
@@ -182,7 +213,7 @@
                 $(selectors.cameraContainer).prop('hidden', false);
             })
             .catch(err => {
-                notify('Nu s-a putut porni camera: ' + err.message, 'error');
+                notify('error', 'Nu s-a putut porni camera: ' + err.message);
             });
     }
 
@@ -197,7 +228,7 @@
     function capturePhoto() {
         const video = document.querySelector(selectors.cameraStream);
         if (!video || !mediaStream) {
-            notify('Camera nu este activă.', 'warning');
+            notify('warning', 'Camera nu este activă.');
             return;
         }
 
@@ -209,7 +240,7 @@
 
         canvas.toBlob(blob => {
             if (!blob) {
-                notify('Nu s-a putut captura imaginea.', 'error');
+                notify('error', 'Nu s-a putut captura imaginea.');
                 return;
             }
 
@@ -222,7 +253,7 @@
     function bindProcessingEvents() {
         $(selectors.processBtn).on('click', () => {
             if (!selectedFile) {
-                notify('Te rugăm să selectezi un fișier înainte de procesare.', 'warning');
+                notify('warning', 'Te rugăm să selectezi un fișier înainte de procesare.');
                 return;
             }
             processInvoice();
@@ -234,12 +265,12 @@
     function handleFileUpload(file) {
         const allowedTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'];
         if (!allowedTypes.includes(file.type) && !file.type.startsWith('image/')) {
-            notify('Tipul de fișier nu este acceptat.', 'error');
+            notify('error', 'Tipul de fișier nu este acceptat.');
             return;
         }
 
         if (file.size > 10 * 1024 * 1024) {
-            notify('Dimensiunea maximă este de 10MB.', 'error');
+            notify('error', 'Dimensiunea maximă este de 10MB.');
             return;
         }
 
@@ -262,7 +293,7 @@
 
         previewContainer.prop('hidden', false);
         $(selectors.resultsDisplay).find('.placeholder').remove();
-        notify('Fișier pregătit pentru procesare.', 'success');
+        notify('success', 'Fișier pregătit pentru procesare.');
     }
 
     function resetUpload() {
@@ -279,17 +310,21 @@
 
         const formData = new FormData();
         if (selectedFile) {
-            // n8n webhook expects 'image' field
             formData.append('image', selectedFile, selectedFile.name);
-            console.log('Processing file:', selectedFile.name, 'Size:', selectedFile.size, 'Type:', selectedFile.type);
         }
 
-        // Collect additional form fields if present
         const procesareTab = document.getElementById('tab-procesare');
         if (procesareTab) {
+            const nrFacturaInput = procesareTab.querySelector('input[name="nr_factura"]');
+            if (nrFacturaInput && nrFacturaInput.value.trim()) {
+                formData.append('nr_factura', nrFacturaInput.value.trim());
+            }
+
             procesareTab.querySelectorAll('[data-fs-field]').forEach(element => {
                 const name = element.getAttribute('name') || element.getAttribute('data-fs-field');
-                if (!name) return;
+                if (!name) {
+                    return;
+                }
                 const value = element.value ?? element.textContent;
                 if (value !== undefined && value !== null && String(value).trim() !== '') {
                     formData.append(name, String(value).trim());
@@ -298,29 +333,26 @@
         }
 
         try {
-            // Call n8n webhook directly
             const result = await callN8n(formData);
 
-            // Display invoice info if present (from backend DB)
             if (result.invoice) {
                 displayResults(result.invoice, result);
             } else {
-                // Clear old results if no invoice data
                 const container = $(selectors.resultsDisplay);
-                container.find('.results-card').remove();
+                if (container.length) {
+                    container.find('.placeholder').remove();
+                }
             }
 
-            // Render files from n8n response
             renderFiles(result);
-
-            notify(result.message || 'Factura a fost procesată.', 'success');
+            notify('success', result.message || 'Factura a fost procesată.');
             resetUpload();
             fetchStats();
             if (facturiTable) {
                 facturiTable.ajax.reload(null, false);
             }
         } catch (error) {
-            notify(error.message || 'A apărut o eroare la procesare.', 'error');
+            notify('error', error.message || 'A apărut o eroare la procesare.');
         } finally {
             indicator.prop('hidden', true);
             toggleProcessing(false);
@@ -334,13 +366,10 @@
     }
 
     async function callN8n(formData, timeoutMs = 20000) {
-        // Get webhook URL from config
-        const webhookUrl = window.WMS_CONFIG?.n8nWebhookUrl || window.FS_WEBHOOK_URL;
+        const webhookUrl = resolveWebhookUrl();
         if (!webhookUrl) {
             throw new Error('Adresa webhook n8n lipsește din configurare.');
         }
-
-        console.log('Calling n8n webhook:', webhookUrl);
 
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -354,7 +383,6 @@
                 signal: controller.signal,
                 credentials: 'omit'
             });
-            console.log('Response status:', response.status, 'Content-Type:', response.headers.get('Content-Type'));
             responseText = await response.text();
         } catch (error) {
             if (error.name === 'AbortError') {
@@ -365,43 +393,27 @@
             clearTimeout(timeoutId);
         }
 
-        // Log raw response for debugging
-        console.log('Raw response (first 500 chars):', responseText.substring(0, 500));
-
-        // Parse JSON response
         let data;
         try {
             data = responseText ? JSON.parse(responseText) : {};
-            console.log('Parsed response:', {
-                success: data?.success,
-                message: data?.message,
-                nr_factura: data?.nr_factura,
-                filesCount: data?.files?.length
-            });
         } catch (parseError) {
-            console.error('JSON parse error:', parseError);
             throw new Error('Răspuns non-JSON de la serviciul extern.');
         }
 
-        // Check HTTP status
         if (!response.ok) {
             const message = data?.message || `Serviciul extern a returnat codul ${response.status}.`;
             throw new Error(message);
         }
 
-        // Validate success flag
         if (!data || data.success !== true) {
-            const reason = data?.message || 'Lipsește câmpul "success: true".';
-            console.error('Unsuccessful response:', { success: data?.success, message: data?.message, fullData: data });
+            const reason = data?.message || 'Răspuns invalid de la serviciul extern.';
             throw new Error(`Răspuns invalid de la serviciul extern: ${reason}`);
         }
 
-        // Normalize files array
         if (!Array.isArray(data.files)) {
             data.files = [];
         }
 
-        console.log('N8n success:', { nr_factura: data.nr_factura, filesCount: data.files.length });
         return data;
     }
 
@@ -413,7 +425,6 @@
 
         $(selectors.resultsDisplay).find('.placeholder').remove();
 
-        // Update summary
         const summary = panel.querySelector('#fs-summary');
         if (summary) {
             if (result?.nr_factura) {
@@ -485,7 +496,9 @@
                 printButton.textContent = 'Printează';
                 printButton.disabled = !hasUrl;
                 printButton.addEventListener('click', () => {
-                    if (!hasUrl) return;
+                    if (!hasUrl) {
+                        return;
+                    }
                     printFile(file.url, file?.mime || 'application/octet-stream');
                 });
                 actions.appendChild(printButton);
@@ -511,7 +524,7 @@
 
     async function printFile(url, mime) {
         if (!url) {
-            notify('Nu există un fișier disponibil pentru imprimare.', 'error');
+            notify('error', 'Nu există un fișier disponibil pentru imprimare.');
             return;
         }
 
@@ -519,12 +532,12 @@
         try {
             response = await fetch(url, { credentials: 'omit' });
         } catch (error) {
-            notify(`Nu s-a putut descărca fișierul pentru imprimare: ${error.message}`, 'error');
+            notify('error', `Nu s-a putut descărca fișierul pentru imprimare: ${error.message}`);
             return;
         }
 
         if (!response.ok) {
-            notify(`Descărcarea fișierului pentru imprimare a eșuat (cod ${response.status}).`, 'error');
+            notify('error', `Descărcarea fișierului pentru imprimare a eșuat (cod ${response.status}).`);
             return;
         }
 
@@ -533,7 +546,7 @@
 
         const printWindow = window.open('', '_blank');
         if (!printWindow) {
-            notify('Deblocați ferestrele pop-up pentru a imprima documentul.', 'warning');
+            notify('warning', 'Deblocați ferestrele pop-up pentru a imprima documentul.');
             URL.revokeObjectURL(objectUrl);
             return;
         }
@@ -551,7 +564,7 @@
                     printWindow.focus();
                     printWindow.print();
                 } catch (err) {
-                    console.error('Print error:', err);
+                    console.error('Print error', err);
                 }
             }, 500);
         } finally {
@@ -752,7 +765,7 @@
                 $(selectors.stats.suma).text(stats.suma_formatata || formatCurrency(0));
             })
             .catch(error => {
-                notify(error.message || 'Eroare la preluarea statisticilor.', 'error');
+                notify('error', error.message || 'Eroare la preluarea statisticilor.');
             });
     }
 
@@ -799,7 +812,7 @@
                 openModal();
             })
             .catch(error => {
-                notify(error.message || 'Eroare la încărcarea detaliilor facturii.', 'error');
+                notify('error', error.message || 'Eroare la încărcarea detaliilor facturii.');
             });
     }
 
@@ -822,14 +835,14 @@
                 if (!result.success) {
                     throw new Error(result.message || 'Actualizarea statusului a eșuat.');
                 }
-                notify(result.message || 'Status actualizat.', 'success');
+                notify('success', result.message || 'Status actualizat.');
                 if (facturiTable) {
                     facturiTable.ajax.reload(null, false);
                 }
                 fetchStats();
             })
             .catch(error => {
-                notify(error.message || 'Eroare la actualizarea statusului.', 'error');
+                notify('error', error.message || 'Eroare la actualizarea statusului.');
             });
     }
 
@@ -851,14 +864,14 @@
                 if (!result.success) {
                     throw new Error(result.message || 'Ștergerea a eșuat.');
                 }
-                notify(result.message || 'Factura a fost ștearsă.', 'success');
+                notify('success', result.message || 'Factura a fost ștearsă.');
                 if (facturiTable) {
                     facturiTable.ajax.reload(null, false);
                 }
                 fetchStats();
             })
             .catch(error => {
-                notify(error.message || 'Eroare la ștergere.', 'error');
+                notify('error', error.message || 'Eroare la ștergere.');
             });
     }
 
@@ -893,11 +906,20 @@
         $('body').removeClass('modal-open');
     }
 
-    function notify(message, type = 'info') {
+    function notify(type, message) {
+        if (message === undefined) {
+            message = type;
+            type = 'info';
+        }
+
         if (window.showToast) {
             window.showToast(message, type);
+        } else if (type === 'error') {
+            console.error(message);
+        } else if (type === 'warning') {
+            console.warn(message);
         } else {
-            console[type === 'error' ? 'error' : 'log'](message);
+            console.log(message);
         }
     }
 

@@ -51,22 +51,69 @@ if ($query === '') {
     exit;
 }
 
-$limit = (int)($_GET['limit'] ?? 15);
-$limit = max(5, min(30, $limit));
+$romanianReplacementMap = [
+    'ă' => 'a',
+    'â' => 'a',
+    'î' => 'i',
+    'ș' => 's',
+    'ş' => 's',
+    'ț' => 't',
+    'ţ' => 't'
+];
 
-$params = [':search' => '%' . $query . '%'];
+$lowerQuery = function_exists('mb_strtolower')
+    ? mb_strtolower($query, 'UTF-8')
+    : strtolower($query);
+
+$normalizedQuery = strtr($lowerQuery, $romanianReplacementMap);
+
+$limit = (int)($_GET['limit'] ?? 15);
+$limit = max(5, min(40, $limit));
+
+$params = [
+    ':search' => '%' . $lowerQuery . '%',
+    ':normalized_search' => '%' . $normalizedQuery . '%',
+    ':exact' => $lowerQuery,
+    ':normalized_exact' => $normalizedQuery
+];
+
+$buildNormalizedExpression = static function (string $column) use ($romanianReplacementMap): string {
+    $expression = "LOWER(COALESCE($column, ''))";
+    foreach ($romanianReplacementMap as $from => $to) {
+        $expression = "REPLACE($expression, '" . $from . "', '" . $to . "')";
+    }
+
+    return $expression;
+};
 
 if ($type === 'county') {
+    $normalizedCountyExpr = $buildNormalizedExpression('county_name');
+    $normalizedCargusCountyExpr = $buildNormalizedExpression('cargus_county_name');
+
     $sql = "
         SELECT
             cargus_county_id,
             MAX(cargus_county_name) AS cargus_county_name,
-            MAX(county_name) AS county_name
+            MAX(county_name) AS county_name,
+            MIN(
+                CASE
+                    WHEN LOWER(COALESCE(cargus_county_name, '')) = :exact THEN 0
+                    WHEN LOWER(COALESCE(county_name, '')) = :exact THEN 0
+                    WHEN {$normalizedCargusCountyExpr} = :normalized_exact THEN 1
+                    WHEN {$normalizedCountyExpr} = :normalized_exact THEN 1
+                    ELSE 2
+                END
+            ) AS match_priority
         FROM address_location_mappings
-        WHERE (county_name LIKE :search OR cargus_county_name LIKE :search)
+        WHERE (
+                LOWER(COALESCE(county_name, '')) LIKE :search
+                OR LOWER(COALESCE(cargus_county_name, '')) LIKE :search
+                OR {$normalizedCountyExpr} LIKE :normalized_search
+                OR {$normalizedCargusCountyExpr} LIKE :normalized_search
+            )
           AND cargus_county_id IS NOT NULL AND cargus_county_id <> 0
         GROUP BY cargus_county_id
-        ORDER BY MAX(cargus_county_name) ASC
+        ORDER BY match_priority ASC, MAX(cargus_county_name) ASC
         LIMIT :limit
     ";
 } else {
@@ -79,6 +126,9 @@ if ($type === 'county') {
         $params[':county_id'] = $countyId;
     }
 
+    $normalizedLocalityExpr = $buildNormalizedExpression('locality_name');
+    $normalizedCargusLocalityExpr = $buildNormalizedExpression('cargus_locality_name');
+
     $sql = "
         SELECT
             cargus_locality_id,
@@ -86,13 +136,27 @@ if ($type === 'county') {
             MAX(locality_name) AS locality_name,
             MAX(cargus_county_id) AS cargus_county_id,
             MAX(cargus_county_name) AS cargus_county_name,
-            MAX(county_name) AS county_name
+            MAX(county_name) AS county_name,
+            MIN(
+                CASE
+                    WHEN LOWER(COALESCE(cargus_locality_name, '')) = :exact THEN 0
+                    WHEN LOWER(COALESCE(locality_name, '')) = :exact THEN 0
+                    WHEN {$normalizedCargusLocalityExpr} = :normalized_exact THEN 1
+                    WHEN {$normalizedLocalityExpr} = :normalized_exact THEN 1
+                    ELSE 2
+                END
+            ) AS match_priority
         FROM address_location_mappings
-        WHERE (locality_name LIKE :search OR cargus_locality_name LIKE :search)
+        WHERE (
+                LOWER(COALESCE(locality_name, '')) LIKE :search
+                OR LOWER(COALESCE(cargus_locality_name, '')) LIKE :search
+                OR {$normalizedLocalityExpr} LIKE :normalized_search
+                OR {$normalizedCargusLocalityExpr} LIKE :normalized_search
+            )
           AND cargus_locality_id IS NOT NULL AND cargus_locality_id <> 0
           {$whereCounty}
         GROUP BY cargus_locality_id
-        ORDER BY MAX(cargus_locality_name) ASC
+        ORDER BY match_priority ASC, MAX(cargus_locality_name) ASC
         LIMIT :limit
     ";
 }

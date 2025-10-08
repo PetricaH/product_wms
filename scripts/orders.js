@@ -953,7 +953,7 @@ function displayOrderDetails(order) {
                             <div class="recipient-autocomplete" data-autocomplete-wrapper style="position: relative;">
                                 <input type="text" id="orderRecipientCountyName" name="recipient_county_name" class="form-control" value="${escapeHtml(safeOrder.recipient_county_name || '')}" placeholder="Introduce județul" autocomplete="off" data-autocomplete-type="county">
                                 <input type="hidden" id="orderRecipientCountyId" name="recipient_county_id" value="${escapeHtml(countyIdValue)}">
-                                <div class="autocomplete-results" data-autocomplete-results="orderRecipientCountyName" style="position: absolute; top: calc(100% + 2px); left: 0; right: 0; background: #fff; border: 1px solid #ced4da; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); z-index: 1050; display: none; max-height: 240px; overflow-y: auto;"></div>
+                                <div class="autocomplete-results" data-autocomplete-results="orderRecipientCountyName" style="position: absolute; top: calc(100% + 2px); left: 0; right: 0; background: #fff; border: 1px solid #ced4da; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); z-index: 1050; display: none; max-height: 240px; overflow-y: auto; color: #212529;"></div>
                             </div>
                             <small style="color: #6c757d;">Cargus County ID: <span id="orderRecipientCountyIdDisplay">${countyIdDisplay}</span></small>
                         </div>
@@ -962,7 +962,7 @@ function displayOrderDetails(order) {
                             <div class="recipient-autocomplete" data-autocomplete-wrapper style="position: relative;">
                                 <input type="text" id="orderRecipientLocalityName" name="recipient_locality_name" class="form-control" value="${escapeHtml(safeOrder.recipient_locality_name || '')}" placeholder="Introduce localitatea" autocomplete="off" data-autocomplete-type="locality" data-associated-county-input="orderRecipientCountyId">
                                 <input type="hidden" id="orderRecipientLocalityId" name="recipient_locality_id" value="${escapeHtml(localityIdValue)}">
-                                <div class="autocomplete-results" data-autocomplete-results="orderRecipientLocalityName" style="position: absolute; top: calc(100% + 2px); left: 0; right: 0; background: #fff; border: 1px solid #ced4da; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); z-index: 1050; display: none; max-height: 240px; overflow-y: auto;"></div>
+                                <div class="autocomplete-results" data-autocomplete-results="orderRecipientLocalityName" style="position: absolute; top: calc(100% + 2px); left: 0; right: 0; background: #fff; border: 1px solid #ced4da; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); z-index: 1050; display: none; max-height: 240px; overflow-y: auto; color: #212529;"></div>
                             </div>
                             <small style="color: #6c757d;">Cargus Locality ID: <span id="orderRecipientLocalityIdDisplay">${localityIdDisplay}</span></small>
                         </div>
@@ -1338,6 +1338,7 @@ function fetchRecipientSuggestions(state, query) {
     const params = new URLSearchParams();
     params.set('type', state.type);
     params.set('query', query);
+    params.set('limit', state.type === 'locality' ? '40' : '25');
 
     if (state.type === 'locality') {
         const associated = state.input.dataset.selectedCountyId || state.idInput.dataset.countyId || '';
@@ -1410,10 +1411,20 @@ function renderRecipientSuggestions(state, results) {
     }
 
     state.suggestionsEl.innerHTML = optionsHtml;
+    state.suggestionsEl.style.backgroundColor = '#fff';
+    state.suggestionsEl.style.color = '#212529';
     state.suggestionsEl.style.display = 'block';
     const options = state.suggestionsEl.querySelectorAll('.autocomplete-option');
     if (options.length) {
         options[options.length - 1].style.borderBottom = 'none';
+        options.forEach(option => {
+            option.addEventListener('mouseenter', () => {
+                option.style.backgroundColor = '#f8f9fa';
+            });
+            option.addEventListener('mouseleave', () => {
+                option.style.backgroundColor = '#fff';
+            });
+        });
     }
 }
 
@@ -1559,7 +1570,7 @@ function buildCountySuggestionOption(result) {
             data-value="${escapeHtml(displayName)}"
             data-county-id="${escapeHtml(String(countyId))}"
             data-county-name="${escapeHtml(displayName)}"
-            style="padding: 0.45rem 0.75rem; cursor: pointer; border-bottom: 1px solid #f1f3f5;">
+            style="padding: 0.45rem 0.75rem; cursor: pointer; border-bottom: 1px solid #f1f3f5; background-color: #fff; color: #212529; transition: background-color 0.15s ease;">
             <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.5rem;">
                 <span>${escapeHtml(displayName)}</span>
                 <span style="color: #0d6efd; font-weight: 600;">${escapeHtml(String(countyId))}</span>
@@ -1593,7 +1604,7 @@ function buildLocalitySuggestionOption(result) {
             data-value="${escapeHtml(localityName)}"
             data-county-id="${escapeHtml(countyId)}"
             data-county-name="${escapeHtml(countyName)}"
-            style="padding: 0.45rem 0.75rem; cursor: pointer; border-bottom: 1px solid #f1f3f5;">
+            style="padding: 0.45rem 0.75rem; cursor: pointer; border-bottom: 1px solid #f1f3f5; background-color: #fff; color: #212529; transition: background-color 0.15s ease;">
             <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.5rem;">
                 <span>${escapeHtml(localityName)}</span>
                 <span style="color: #0d6efd; font-weight: 600;">${escapeHtml(String(localityId))}</span>

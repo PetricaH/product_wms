@@ -311,6 +311,221 @@ $inventoryExportColumns = [
     'expiry_date' => ['label' => 'Data Expirării', 'default' => false],
 ];
 
+if (isset($_GET['export_inventory_pdf'])) {
+    try {
+        if (!class_exists('FPDF')) {
+            $composerAutoload = BASE_PATH . '/vendor/autoload.php';
+            if (file_exists($composerAutoload)) {
+                require_once $composerAutoload;
+            }
+        }
+
+        if (!class_exists('FPDF') && file_exists(BASE_PATH . '/lib/fpdf.php')) {
+            require_once BASE_PATH . '/lib/fpdf.php';
+        }
+
+        if (!class_exists('FPDF')) {
+            throw new RuntimeException('Biblioteca FPDF nu este disponibilă pentru generarea raportului.');
+        }
+
+        $exportRows = $inventoryModel->getInventoryWithFilters(
+            $productFilter,
+            $locationFilter,
+            $lowStockOnly,
+            $inventoryFilterOptions
+        );
+
+        $totalQuantity = 0;
+        foreach ($exportRows as $row) {
+            $totalQuantity += (float)($row['quantity'] ?? 0);
+        }
+
+        $convertText = static function ($text) {
+            $text = (string)$text;
+            $converted = @iconv('UTF-8', 'ISO-8859-1//TRANSLIT', $text);
+            if ($converted === false) {
+                $converted = @iconv('UTF-8', 'ASCII//TRANSLIT', $text);
+            }
+            return $converted === false ? $text : $converted;
+        };
+
+        $formatDate = static function (?string $value, bool $includeTime = false): string {
+            if (empty($value)) {
+                return '-';
+            }
+            $timestamp = strtotime($value);
+            if ($timestamp === false) {
+                return '-';
+            }
+            return $includeTime ? date('d.m.Y H:i', $timestamp) : date('d.m.Y', $timestamp);
+        };
+
+        $filterDetails = [];
+
+        if ($productFilter !== '') {
+            try {
+                $productStmt = $db->prepare('SELECT name, sku FROM products WHERE product_id = :product_id LIMIT 1');
+                $productStmt->execute([':product_id' => $productFilter]);
+                $productInfo = $productStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+            } catch (Throwable $e) {
+                $productInfo = [];
+                error_log('[INVENTORY][PDF_EXPORT] Nu s-a putut prelua produsul filtrat: ' . $e->getMessage());
+            }
+
+            if (!empty($productInfo)) {
+                $parts = [];
+                if (!empty($productInfo['name'])) {
+                    $parts[] = $productInfo['name'];
+                }
+                if (!empty($productInfo['sku'])) {
+                    $parts[] = 'SKU: ' . $productInfo['sku'];
+                }
+                $filterDetails[] = 'Produs: ' . implode(' • ', $parts);
+            } else {
+                $filterDetails[] = 'Produs filtrat ID: ' . $productFilter;
+            }
+        }
+
+        if ($locationFilter !== '') {
+            try {
+                $locationStmt = $db->prepare('SELECT location_code FROM locations WHERE id = :location_id LIMIT 1');
+                $locationStmt->execute([':location_id' => $locationFilter]);
+                $locationInfo = $locationStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+            } catch (Throwable $e) {
+                $locationInfo = [];
+                error_log('[INVENTORY][PDF_EXPORT] Nu s-a putut prelua locația filtrată: ' . $e->getMessage());
+            }
+
+            if (!empty($locationInfo['location_code'])) {
+                $filterDetails[] = 'Locație: ' . $locationInfo['location_code'];
+            } else {
+                $filterDetails[] = 'Locație filtrată ID: ' . $locationFilter;
+            }
+        }
+
+        if ($lowStockOnly) {
+            $filterDetails[] = 'Doar poziții sub pragul minim.';
+        }
+
+        $intervalText = 'Interval selectat: toate înregistrările disponibile';
+        if ($receivedFrom !== '' && $receivedTo !== '') {
+            $intervalText = 'Interval selectat: ' . date('d.m.Y', strtotime($receivedFrom)) . ' - ' . date('d.m.Y', strtotime($receivedTo));
+        } elseif ($receivedFrom !== '') {
+            $intervalText = 'Interval selectat: de la ' . date('d.m.Y', strtotime($receivedFrom));
+        } elseif ($receivedTo !== '') {
+            $intervalText = 'Interval selectat: până la ' . date('d.m.Y', strtotime($receivedTo));
+        }
+
+        $pdf = new FPDF('L', 'mm', 'A4');
+        $pdf->SetTitle($convertText('Raport detaliat stocuri'));
+        $pdf->SetMargins(12, 15, 12);
+        $pdf->SetAutoPageBreak(true, 18);
+        $pdf->AddPage();
+
+        $pdf->SetFont('Arial', 'B', 16);
+        $pdf->Cell(0, 10, $convertText('Raport detaliat stocuri'), 0, 1, 'C');
+        $pdf->SetFont('Arial', '', 11);
+        $pdf->Cell(0, 7, $convertText($intervalText), 0, 1, 'C');
+        $pdf->Cell(0, 6, $convertText('Generat la: ' . date('d.m.Y H:i')), 0, 1, 'C');
+        $pdf->Ln(4);
+
+        $pdf->SetFont('Arial', '', 10);
+        $summaryLine = sprintf(
+            'Poziții incluse: %s | Cantitate totală: %s',
+            number_format(count($exportRows), 0, ',', '.'),
+            number_format($totalQuantity, 0, ',', '.')
+        );
+        $pdf->Cell(0, 6, $convertText($summaryLine), 0, 1, 'L');
+
+        if (!empty($filterDetails)) {
+            $pdf->MultiCell(0, 6, $convertText('Filtre aplicate: ' . implode(' | ', $filterDetails)));
+        } else {
+            $pdf->MultiCell(0, 6, $convertText('Filtre aplicate: toate produsele și locațiile active.'));
+        }
+
+        $pdf->Ln(2);
+
+        if (!empty($exportRows)) {
+            $columnWidths = [10, 32, 90, 45, 26, 40, 40, 30];
+
+            $renderHeader = static function () use ($pdf, $columnWidths, $convertText) {
+                $pdf->SetFont('Arial', 'B', 10);
+                $pdf->SetFillColor(240, 240, 240);
+                $pdf->Cell($columnWidths[0], 8, $convertText('Nr.'), 1, 0, 'C', true);
+                $pdf->Cell($columnWidths[1], 8, $convertText('SKU'), 1, 0, 'C', true);
+                $pdf->Cell($columnWidths[2], 8, $convertText('Produs'), 1, 0, 'C', true);
+                $pdf->Cell($columnWidths[3], 8, $convertText('Locație'), 1, 0, 'C', true);
+                $pdf->Cell($columnWidths[4], 8, $convertText('Cant.'), 1, 0, 'C', true);
+                $pdf->Cell($columnWidths[5], 8, $convertText('Data primirii'), 1, 0, 'C', true);
+                $pdf->Cell($columnWidths[6], 8, $convertText('Batch / Lot'), 1, 0, 'C', true);
+                $pdf->Cell($columnWidths[7], 8, $convertText('Expiră'), 1, 1, 'C', true);
+                $pdf->SetFont('Arial', '', 9);
+            };
+
+            $renderHeader();
+
+            $rowNumber = 1;
+            foreach ($exportRows as $row) {
+                if ($pdf->GetY() > $pdf->GetPageHeight() - 25) {
+                    $pdf->AddPage();
+                    $renderHeader();
+                }
+
+                $productName = $row['product_name'] ?? ($row['name'] ?? '');
+                $productName = mb_strlen($productName) > 70 ? mb_substr($productName, 0, 67) . '…' : $productName;
+
+                $locationParts = [];
+                if (!empty($row['location_code'])) {
+                    $locationParts[] = $row['location_code'];
+                }
+                if (!empty($row['shelf_level'])) {
+                    $locationParts[] = 'Raft ' . $row['shelf_level'];
+                }
+                if (!empty($row['subdivision_number'])) {
+                    $locationParts[] = 'Subdiv. ' . $row['subdivision_number'];
+                }
+                $locationText = !empty($locationParts) ? implode(' • ', $locationParts) : '-';
+
+                $lotParts = [];
+                if (!empty($row['batch_number'])) {
+                    $lotParts[] = 'Batch ' . $row['batch_number'];
+                }
+                if (!empty($row['lot_number'])) {
+                    $lotParts[] = 'Lot ' . $row['lot_number'];
+                }
+                $lotText = !empty($lotParts) ? implode(' | ', $lotParts) : '-';
+
+                $pdf->Cell($columnWidths[0], 8, $convertText((string)$rowNumber), 1, 0, 'C');
+                $pdf->Cell($columnWidths[1], 8, $convertText((string)($row['sku'] ?? '')), 1);
+                $pdf->Cell($columnWidths[2], 8, $convertText($productName), 1);
+                $pdf->Cell($columnWidths[3], 8, $convertText($locationText), 1);
+                $pdf->Cell($columnWidths[4], 8, $convertText(number_format((float)($row['quantity'] ?? 0), 0, ',', '.')), 1, 0, 'R');
+                $pdf->Cell($columnWidths[5], 8, $convertText($formatDate($row['received_at'] ?? null, true)), 1);
+                $pdf->Cell($columnWidths[6], 8, $convertText($lotText), 1);
+                $pdf->Cell($columnWidths[7], 8, $convertText($formatDate($row['expiry_date'] ?? null)), 1, 1);
+
+                ++$rowNumber;
+            }
+        } else {
+            $pdf->Ln(8);
+            $pdf->SetFont('Arial', 'I', 11);
+            $pdf->MultiCell(0, 7, $convertText('Nu au fost găsite înregistrări pentru criteriile selectate.'));
+        }
+
+        $pdf->Ln(6);
+        $pdf->SetFont('Arial', '', 9);
+        $pdf->MultiCell(0, 5, $convertText('Notă: Document generat automat din modulul „Stocuri - vizualizare detaliată”. Datele reflectă stocul disponibil la momentul exportului.'));
+
+        $fileName = 'raport_stocuri_' . date('Ymd_His') . '.pdf';
+        $pdf->Output('D', $fileName);
+        exit;
+    } catch (Throwable $exception) {
+        error_log('[INVENTORY][PDF_EXPORT] ' . $exception->getMessage());
+        $message = 'A apărut o eroare la generarea raportului PDF. Vă rugăm să încercați din nou.';
+        $messageType = 'error';
+    }
+}
+
 if (isset($_GET['export_inventory'])) {
     $requestedColumns = isset($_GET['columns']) && is_array($_GET['columns'])
         ? array_map('strval', $_GET['columns'])
@@ -1924,15 +2139,22 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                 </label>
                             </div>
                             
-                            <button type="submit" class="btn btn-secondary">
-                                <span class="material-symbols-outlined">filter_alt</span>
-                                Filtrează
-                            </button>
-                            
-                            <a href="?view=detailed" class="btn btn-secondary">
-                                <span class="material-symbols-outlined">refresh</span>
-                                Reset
-                            </a>
+                            <div class="form-actions">
+                                <button type="submit" class="btn btn-secondary">
+                                    <span class="material-symbols-outlined">filter_alt</span>
+                                    Filtrează
+                                </button>
+
+                                <a href="?view=detailed" class="btn btn-secondary">
+                                    <span class="material-symbols-outlined">refresh</span>
+                                    Reset
+                                </a>
+
+                                <button type="submit" name="export_inventory_pdf" value="1" class="btn btn-primary">
+                                    <span class="material-symbols-outlined">picture_as_pdf</span>
+                                    Exportă PDF
+                                </button>
+                            </div>
                         </form>
                     </div>
                     <?php endif; ?>

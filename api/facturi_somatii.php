@@ -118,7 +118,7 @@ function processInvoice(Factura $facturiModel, PDO $pdo): void
     }
 
     $postFields = [
-        'invoice_image' => new CURLFile($file['tmp_name'], $mime, $file['name'])
+        'image' => new CURLFile($file['tmp_name'], $mime, $file['name'])
     ];
 
     if (!empty($_POST['metadata'])) {

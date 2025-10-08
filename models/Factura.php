@@ -20,7 +20,7 @@ class Factura
      */
     public function create(array $data): int
     {
-        $sql = "INSERT INTO facturi
+        $sql = "INSERT INTO facturi_somatii
             (nr_factura, nume_firma, cif, reg_com, adresa, data_emitere, termen_plata, suma, status, file_path, somatie_path, sha256)
             VALUES
             (:nr_factura, :nume_firma, :cif, :reg_com, :adresa, :data_emitere, :termen_plata, :suma, :status, :file_path, :somatie_path, :sha256)";
@@ -155,7 +155,7 @@ class Factura
                 SUM(status = 'neplatita') AS neplatite,
                 SUM(status = 'platita') AS platite,
                 COALESCE(SUM(suma), 0) AS suma_totala
-            FROM facturi");
+            FROM facturi_somatii");
 
         $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
 
@@ -172,7 +172,7 @@ class Factura
      */
     public function updateStatus(int $id, string $status): bool
     {
-        $stmt = $this->db->prepare('UPDATE facturi SET status = :status WHERE id = :id');
+        $stmt = $this->db->prepare('UPDATE facturi_somatii SET status = :status WHERE id = :id');
         return $stmt->execute([
             ':status' => $status,
             ':id' => $id,
@@ -184,7 +184,7 @@ class Factura
      */
     public function delete(int $id): bool
     {
-        $stmt = $this->db->prepare('DELETE FROM facturi WHERE id = :id');
+        $stmt = $this->db->prepare('DELETE FROM facturi_somatii WHERE id = :id');
         return $stmt->execute([':id' => $id]);
     }
 }

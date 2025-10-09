@@ -646,20 +646,25 @@
                         const toggleIcon = row.status === 'platita' ? 'undo' : 'done';
                         return `
                             <div class="action-buttons">
-                                <button class="btn btn-icon view-invoice" data-id="${row.id}" title="Detalii">
+                                <button class="action-button view-invoice" data-id="${row.id}">
                                     <span class="material-symbols-outlined">visibility</span>
+                                    <span class="action-label">Detalii</span>
                                 </button>
-                                <button class="btn btn-icon download-factura" data-id="${row.id}" data-type="factura" title="Descarcă factura">
+                                <button class="action-button download-factura" data-id="${row.id}" data-type="factura">
                                     <span class="material-symbols-outlined">download</span>
+                                    <span class="action-label">Factura</span>
                                 </button>
-                                <button class="btn btn-icon download-somatie" data-id="${row.id}" data-type="somatie" title="Descarcă somația">
+                                <button class="action-button download-somatie" data-id="${row.id}" data-type="somatie">
                                     <span class="material-symbols-outlined">gavel</span>
+                                    <span class="action-label">Somație</span>
                                 </button>
-                                <button class="btn btn-icon status-toggle" data-id="${row.id}" data-status="${toggleStatus}" title="${toggleLabel}">
+                                <button class="action-button status-toggle" data-id="${row.id}" data-status="${toggleStatus}">
                                     <span class="material-symbols-outlined">${toggleIcon}</span>
+                                    <span class="action-label">${toggleLabel}</span>
                                 </button>
-                                <button class="btn btn-icon delete-invoice" data-id="${row.id}" title="Șterge factura">
+                                <button class="action-button action-danger delete-invoice" data-id="${row.id}">
                                     <span class="material-symbols-outlined">delete</span>
+                                    <span class="action-label">Șterge</span>
                                 </button>
                             </div>
                         `;

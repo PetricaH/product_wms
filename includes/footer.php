@@ -55,7 +55,8 @@ $pageSpecificJS = [
     'qc_management' => 'qc-management.js',
     'returns_dashboard' => 'returns_dashboard.js',
     'index' => 'index.js',
-    'warehouse_settings' => 'warehouse_settings.js'
+    'warehouse_settings' => 'warehouse_settings.js',
+    'facturi_somatii' => 'facturi_somatii.js'
 ];
 
 // Check if specific scripts are defined for the current page in our array.

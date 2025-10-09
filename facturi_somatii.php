@@ -16,7 +16,6 @@ $currentPage = 'facturi_somatii';
     <title>Facturi &amp; Somații - WMS</title>
     <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css">
     <link rel="stylesheet" href="https://cdn.datatables.net/responsive/2.5.0/css/responsive.dataTables.min.css">
-    <link rel="stylesheet" href="styles/facturi_somatii.css">
 </head>
 <body>
     <div class="app">
@@ -169,7 +168,7 @@ $currentPage = 'facturi_somatii';
                             </div>
 
                             <div class="table-card">
-                                <table id="facturi-table" class="display nowrap" style="width:100%">
+                                <table id="facturi_somatii" class="display nowrap" style="width:100%">
                                     <thead>
                                         <tr>
                                             <th>Nr. Factură</th>
@@ -218,6 +217,4 @@ $currentPage = 'facturi_somatii';
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
     <script src="https://cdn.datatables.net/responsive/2.5.0/js/dataTables.responsive.min.js"></script>
-    <script src="scripts/facturi_somatii.js"></script>
-</body>
-</html>
+       <?php require_once __DIR__ . '/includes/footer.php'; ?>

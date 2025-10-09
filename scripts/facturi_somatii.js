@@ -334,9 +334,17 @@
 
         try {
             const result = await callN8n(formData);
+            
+            // Extrage datele din structura imbricată
+            const responseData = result.data || result;
+            const rawInvoice = responseData.invoice;
+            const files = responseData.files;
 
-            if (result.invoice) {
-                displayResults(result.invoice, result);
+            // Normalizează datele facturii pentru afișare corectă
+            const invoice = normalizeInvoiceData(rawInvoice);
+
+            if (invoice) {
+                displayResults(invoice, responseData);
             } else {
                 const container = $(selectors.resultsDisplay);
                 if (container.length) {
@@ -344,7 +352,11 @@
                 }
             }
 
-            renderFiles(result);
+            // Pasăm datele cu structura corectă la renderFiles
+            renderFiles({ 
+                ...responseData,
+                files: files 
+            });
             notify('success', result.message || 'Factura a fost procesată.');
             resetUpload();
             fetchStats();
@@ -365,7 +377,7 @@
         $(selectors.cameraBtn).prop('disabled', isProcessing);
     }
 
-    async function callN8n(formData, timeoutMs = 20000) {
+    async function callN8n(formData, timeoutMs = 90000) {
         const webhookUrl = resolveWebhookUrl();
         if (!webhookUrl) {
             throw new Error('Adresa webhook n8n lipsește din configurare.');
@@ -410,8 +422,29 @@
             throw new Error(`Răspuns invalid de la serviciul extern: ${reason}`);
         }
 
-        if (!Array.isArray(data.files)) {
+        // Normalizează fișierele: acceptă atât array cât și obiect
+        if (!data.files) {
             data.files = [];
+        } else if (!Array.isArray(data.files)) {
+            // Dacă este obiect cu chei invoice/somatie, convertește în array
+            const filesObj = data.files;
+            data.files = [];
+            
+            if (filesObj.invoice) {
+                data.files.push({
+                    type: 'factura',
+                    label: 'Factură + Somație',
+                    ...filesObj.invoice
+                });
+            }
+            
+            if (filesObj.somatie) {
+                data.files.push({
+                    type: 'somatie',
+                    label: 'Somație separată',
+                    ...filesObj.somatie
+                });
+            }
         }
 
         return data;
@@ -933,6 +966,46 @@
             .replace(/>/g, '&gt;')
             .replace(/"/g, '&quot;')
             .replace(/'/g, '&#039;');
+    }
+
+    function normalizeInvoiceData(invoice) {
+    if (!invoice) return null;
+    
+        return {
+            ...invoice,
+            // Formatează datele dacă nu sunt deja formatate
+            data_emitere_formatata: invoice.data_emitere_formatata || formatDateFromString(invoice.data_emitere),
+            termen_plata_formatat: invoice.termen_plata_formatat || formatDateFromString(invoice.termen_plata),
+            suma_formatata: invoice.suma_formatata || formatCurrencyValue(parseFloat(invoice.suma || 0))
+        };
+    }
+
+    function formatDateFromString(dateStr) {
+        if (!dateStr) return '—';
+        
+        // Dacă e deja formatat (dd.mm.yyyy), returnează
+        if (/^\d{2}\.\d{2}\.\d{4}$/.test(dateStr)) {
+            return dateStr;
+        }
+        
+        // Convertește din dd/mm/yyyy în dd.mm.yyyy
+        if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateStr)) {
+            return dateStr.replace(/\//g, '.');
+        }
+        
+        // Încearcă să parseze data în format ISO sau alte formate
+        const date = new Date(dateStr);
+        if (isNaN(date.getTime())) return '—';
+        
+        const day = String(date.getDate()).padStart(2, '0');
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const year = date.getFullYear();
+        return `${day}.${month}.${year}`;
+    }
+
+    function formatCurrencyValue(value) {
+        if (isNaN(value)) return '0,00 RON';
+        return value.toFixed(2).replace('.', ',') + ' RON';
     }
 
     function formatCurrency(value) {

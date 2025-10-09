@@ -30,6 +30,11 @@ const recipientAutocompleteRegistry = {
     locality: null
 };
 
+const MANUAL_PRODUCT_SEARCH_MIN_CHARS = 2;
+const MANUAL_PRODUCT_SEARCH_DELAY_MS = 200;
+const manualProductSearchTimers = new WeakMap();
+const manualProductSearchCache = new Map();
+
 function normalizeOrderStatus(status) {
     const value = (status ?? '').toString().trim().toLowerCase();
     if (value === 'cancelled') {
@@ -710,6 +715,419 @@ function escapeJsString(value) {
         .replace(/"/g, '\\"');
 }
 
+function normalizeManualProductRecord(raw) {
+    if (!raw || typeof raw !== 'object') {
+        return null;
+    }
+
+    const rawId = raw.product_id ?? raw.id ?? raw.internal_product_id ?? raw.internal_id;
+    const id = Number(rawId);
+    if (!Number.isFinite(id) || id <= 0) {
+        return null;
+    }
+
+    const name = raw.name ?? '';
+    const sku = raw.sku ?? raw.code ?? raw.product_code ?? '';
+    const unit = raw.unit_of_measure ?? raw.unit ?? raw.measure ?? '';
+    const priceValue = raw.price ?? raw.unit_price ?? raw.default_price;
+    const price = priceValue === null || priceValue === undefined ? null : Number(priceValue);
+
+    return {
+        id,
+        name,
+        sku,
+        unit,
+        price: Number.isFinite(price) ? price : null
+    };
+}
+
+function getManualProductResultsElement(input) {
+    if (!input) {
+        return null;
+    }
+    const wrapper = input.closest('[data-product-field]');
+    return wrapper ? wrapper.querySelector('.manual-product-results') : null;
+}
+
+function showManualProductLoading(resultsEl) {
+    if (!resultsEl) {
+        return;
+    }
+    resultsEl.innerHTML = '<div class="manual-product-option manual-product-option-loading" style="padding: 0.5rem 0.75rem; color: #495057; font-size: 0.9rem;">Se caută…</div>';
+    resultsEl.style.display = 'block';
+    resultsEl.dataset.hasResults = '0';
+    resultsEl.dataset.activeIndex = '-1';
+}
+
+function hideManualProductResults(resultsEl) {
+    if (!resultsEl) {
+        return;
+    }
+    resultsEl.style.display = 'none';
+    resultsEl.dataset.activeIndex = '-1';
+}
+
+function closeAllManualProductResults(exceptEl) {
+    document.querySelectorAll('.manual-product-results').forEach(resultsEl => {
+        if (resultsEl !== exceptEl) {
+            hideManualProductResults(resultsEl);
+        }
+    });
+}
+
+function mergeManualProductResults(primary = [], secondary = []) {
+    const unique = new Map();
+    [...primary, ...secondary].forEach(item => {
+        const normalized = normalizeManualProductRecord(item);
+        if (!normalized) {
+            return;
+        }
+        if (!unique.has(normalized.id)) {
+            unique.set(normalized.id, normalized);
+        }
+    });
+    return Array.from(unique.values());
+}
+
+function renderManualProductResults(input, products, query) {
+    const resultsEl = getManualProductResultsElement(input);
+    if (!resultsEl) {
+        return;
+    }
+
+    resultsEl.dataset.currentQuery = query;
+    resultsEl.dataset.activeIndex = '-1';
+
+    if (!products || products.length === 0) {
+        const message = query && query.length
+            ? `Nu s-au găsit produse pentru „${escapeHtml(query)}”`
+            : 'Nu există produse disponibile';
+        resultsEl.innerHTML = `<div class="manual-product-option manual-product-option-empty" style="padding: 0.5rem 0.75rem; color: #868e96; font-size: 0.9rem;">${message}</div>`;
+        resultsEl.dataset.hasResults = '0';
+        resultsEl.style.display = 'block';
+        return;
+    }
+
+    const optionHtml = products.map(product => {
+        const name = escapeHtml(product.name || 'Produs fără nume');
+        const sku = product.sku ? escapeHtml(product.sku) : '';
+        const unit = product.unit ? escapeHtml(product.unit) : '';
+        const priceValue = Number(product.price);
+        const hasPrice = Number.isFinite(priceValue) && priceValue > 0;
+        const metaParts = [];
+        if (sku) {
+            metaParts.push(sku);
+        }
+        if (unit) {
+            metaParts.push(unit);
+        }
+        if (hasPrice) {
+            metaParts.push(`${priceValue.toFixed(2)} RON`);
+        }
+        const meta = metaParts.length
+            ? `<div class="manual-product-option__meta" style="font-size: 0.8rem; color: #868e96;">${metaParts.join(' · ')}</div>`
+            : '';
+
+        return `
+            <div class="manual-product-option" role="button" tabindex="-1"
+                data-product-id="${product.id}"
+                data-product-name="${name}"
+                data-product-sku="${sku}"
+                data-product-unit="${unit}"
+                data-product-price="${hasPrice ? priceValue : ''}"
+                style="padding: 0.5rem 0.75rem; cursor: pointer; display: flex; flex-direction: column; gap: 0.125rem; border-bottom: 1px solid #f1f3f5;">
+                <div class="manual-product-option__title" style="font-weight: 600; color: #212529;">${name}</div>
+                ${meta}
+            </div>
+        `;
+    }).join('');
+
+    resultsEl.innerHTML = optionHtml;
+    resultsEl.dataset.hasResults = '1';
+    resultsEl.style.display = 'block';
+}
+
+function getLocalManualProductMatches(query, limit = 8) {
+    if (!query || query.length < MANUAL_PRODUCT_SEARCH_MIN_CHARS) {
+        return [];
+    }
+
+    const products = Array.isArray(window.orderProductsList) ? window.orderProductsList : [];
+    const normalizedQuery = query.toLowerCase();
+    const matches = [];
+
+    for (let index = 0; index < products.length; index += 1) {
+        const normalized = normalizeManualProductRecord(products[index]);
+        if (!normalized) {
+            continue;
+        }
+
+        const nameMatch = (normalized.name || '').toLowerCase().includes(normalizedQuery);
+        const skuMatch = (normalized.sku || '').toLowerCase().includes(normalizedQuery);
+
+        if (nameMatch || skuMatch) {
+            matches.push(normalized);
+        }
+
+        if (matches.length >= limit) {
+            break;
+        }
+    }
+
+    return matches;
+}
+
+function fetchManualProductSuggestions(query) {
+    const trimmed = (query || '').trim();
+    if (!trimmed) {
+        return Promise.resolve([]);
+    }
+
+    const cacheKey = trimmed.toLowerCase();
+    if (manualProductSearchCache.has(cacheKey)) {
+        return Promise.resolve(manualProductSearchCache.get(cacheKey));
+    }
+
+    return fetch(`api/products.php?search=${encodeURIComponent(trimmed)}&limit=15`, {
+        credentials: 'same-origin'
+    })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+            return response.json();
+        })
+        .then(payload => {
+            const list = Array.isArray(payload)
+                ? payload
+                : (Array.isArray(payload.data) ? payload.data : []);
+            const normalized = list
+                .map(normalizeManualProductRecord)
+                .filter(Boolean);
+            manualProductSearchCache.set(cacheKey, normalized);
+            return normalized;
+        })
+        .catch(error => {
+            console.warn('Manual product search failed:', error);
+            return [];
+        });
+}
+
+function highlightManualProductOption(resultsEl, nextIndex) {
+    if (!resultsEl) {
+        return;
+    }
+
+    const options = Array.from(resultsEl.querySelectorAll('.manual-product-option[role="button"]'));
+    if (!options.length) {
+        resultsEl.dataset.activeIndex = '-1';
+        return;
+    }
+
+    let targetIndex = Number(nextIndex);
+    if (!Number.isFinite(targetIndex)) {
+        targetIndex = -1;
+    }
+
+    if (targetIndex < 0) {
+        options.forEach(option => {
+            option.classList.remove('is-active');
+            option.style.backgroundColor = '';
+        });
+        resultsEl.dataset.activeIndex = '-1';
+        return;
+    }
+
+    const normalizedIndex = Math.max(0, Math.min(options.length - 1, targetIndex));
+    options.forEach((option, idx) => {
+        if (idx === normalizedIndex) {
+            option.classList.add('is-active');
+            option.style.backgroundColor = '#f1f3f5';
+            option.scrollIntoView({ block: 'nearest' });
+        } else {
+            option.classList.remove('is-active');
+            option.style.backgroundColor = '';
+        }
+    });
+
+    resultsEl.dataset.activeIndex = String(normalizedIndex);
+}
+
+function selectManualProductFromOption(optionEl) {
+    if (!optionEl) {
+        return;
+    }
+
+    const wrapper = optionEl.closest('[data-product-field]');
+    if (!wrapper) {
+        return;
+    }
+
+    const priceAttr = optionEl.dataset.productPrice;
+    const product = {
+        id: Number(optionEl.dataset.productId || 0),
+        name: optionEl.dataset.productName || '',
+        sku: optionEl.dataset.productSku || '',
+        unit: optionEl.dataset.productUnit || '',
+        price: priceAttr === '' || priceAttr === undefined ? null : Number(priceAttr)
+    };
+
+    selectManualProduct(wrapper, product);
+}
+
+function selectManualProduct(wrapper, product) {
+    if (!wrapper || !product || !Number.isFinite(Number(product.id)) || Number(product.id) <= 0) {
+        return;
+    }
+
+    const hiddenInput = wrapper.querySelector('.manual-product-id');
+    if (hiddenInput) {
+        hiddenInput.value = String(product.id);
+    }
+
+    const searchInput = wrapper.querySelector('.manual-product-search');
+    if (searchInput) {
+        const displayLabel = product.sku ? `${product.name} (${product.sku})` : product.name;
+        searchInput.value = displayLabel;
+        searchInput.dataset.selectedProductId = String(product.id);
+        searchInput.dataset.currentQuery = displayLabel;
+    }
+
+    const resultsEl = wrapper.querySelector('.manual-product-results');
+    if (resultsEl) {
+        hideManualProductResults(resultsEl);
+    }
+
+    const orderItemRow = wrapper.closest('.order-item');
+    if (orderItemRow) {
+        const priceInput = orderItemRow.querySelector('input[name*="[unit_price]"]');
+        const priceValue = Number(product.price);
+        if (priceInput && (!priceInput.value || Number(priceInput.value) === 0) && Number.isFinite(priceValue) && priceValue > 0) {
+            priceInput.value = priceValue.toFixed(2);
+        }
+
+        const quantityInput = orderItemRow.querySelector('input[name*="[quantity]"]');
+        if (quantityInput && !quantityInput.value) {
+            quantityInput.focus();
+        }
+    }
+}
+
+function handleManualProductSearchInput(input) {
+    if (!input) {
+        return;
+    }
+
+    const wrapper = input.closest('[data-product-field]');
+    if (!wrapper) {
+        return;
+    }
+
+    const hiddenInput = wrapper.querySelector('.manual-product-id');
+    if (hiddenInput) {
+        hiddenInput.value = '';
+    }
+
+    input.dataset.selectedProductId = '';
+
+    const resultsEl = getManualProductResultsElement(input);
+    if (!resultsEl) {
+        return;
+    }
+
+    const query = input.value.trim();
+    resultsEl.dataset.currentQuery = query;
+
+    if (query.length < MANUAL_PRODUCT_SEARCH_MIN_CHARS) {
+        resultsEl.innerHTML = '';
+        hideManualProductResults(resultsEl);
+        resultsEl.dataset.hasResults = '0';
+        return;
+    }
+
+    const localMatches = getLocalManualProductMatches(query, 8);
+    if (localMatches.length > 0) {
+        renderManualProductResults(input, localMatches, query);
+    } else {
+        showManualProductLoading(resultsEl);
+    }
+
+    if (manualProductSearchTimers.has(input)) {
+        clearTimeout(manualProductSearchTimers.get(input));
+    }
+
+    const timeoutId = window.setTimeout(() => {
+        manualProductSearchTimers.delete(input);
+        fetchManualProductSuggestions(query).then(remoteMatches => {
+            if (input.dataset.currentQuery !== query) {
+                return;
+            }
+            const combined = mergeManualProductResults(localMatches, remoteMatches);
+            renderManualProductResults(input, combined, query);
+        });
+    }, MANUAL_PRODUCT_SEARCH_DELAY_MS);
+
+    manualProductSearchTimers.set(input, timeoutId);
+}
+
+function handleManualProductKeydown(event) {
+    const input = event.target;
+    if (!input.classList || !input.classList.contains('manual-product-search')) {
+        return;
+    }
+
+    const resultsEl = getManualProductResultsElement(input);
+    if (!resultsEl) {
+        return;
+    }
+
+    const options = Array.from(resultsEl.querySelectorAll('.manual-product-option[role="button"]'));
+    switch (event.key) {
+        case 'ArrowDown': {
+            if (resultsEl.style.display === 'none') {
+                handleManualProductSearchInput(input);
+            } else if (options.length) {
+                const currentIndex = Number(resultsEl.dataset.activeIndex ?? -1);
+                const nextIndex = Number.isFinite(currentIndex) && currentIndex >= 0
+                    ? (currentIndex + 1) % options.length
+                    : 0;
+                highlightManualProductOption(resultsEl, nextIndex);
+            }
+            event.preventDefault();
+            break;
+        }
+        case 'ArrowUp': {
+            if (options.length) {
+                const currentIndex = Number(resultsEl.dataset.activeIndex ?? -1);
+                const nextIndex = Number.isFinite(currentIndex) && currentIndex >= 0
+                    ? (currentIndex - 1 + options.length) % options.length
+                    : options.length - 1;
+                highlightManualProductOption(resultsEl, nextIndex);
+            }
+            event.preventDefault();
+            break;
+        }
+        case 'Enter': {
+            if (resultsEl.style.display !== 'none' && options.length) {
+                const activeIndex = Number(resultsEl.dataset.activeIndex ?? -1);
+                const option = options[activeIndex >= 0 ? activeIndex : 0];
+                if (option) {
+                    selectManualProductFromOption(option);
+                    event.preventDefault();
+                }
+            }
+            break;
+        }
+        case 'Escape': {
+            hideManualProductResults(resultsEl);
+            event.preventDefault();
+            break;
+        }
+        default:
+            break;
+    }
+}
+
 function formatCurrency(value) {
     const number = Number(value || 0);
     return number.toLocaleString('ro-RO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -738,22 +1156,68 @@ function capitalize(value) {
     return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
+function generateManualOrderNumber() {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const seconds = String(now.getSeconds()).padStart(2, '0');
+    const random = String(Math.floor(Math.random() * 9000) + 1000);
+    return `MAN-${year}${month}${day}-${hours}${minutes}${seconds}-${random}`;
+}
+
 let itemCounter = 1;
 
 /**
  * Opens the modal for creating a new order.
  */
 function openCreateModal() {
-    document.getElementById('createOrderModal').classList.add('show');
+    if (typeof closeOrderDetailsModal === 'function') {
+        closeOrderDetailsModal();
+    }
+
+    const modal = document.getElementById('createOrderModal');
+    if (!modal) {
+        return;
+    }
+
+    const orderNumberInput = document.getElementById('order_number');
+    if (orderNumberInput) {
+        orderNumberInput.value = generateManualOrderNumber();
+    }
+
+    const orderDateInput = document.getElementById('order_date');
+    if (orderDateInput) {
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        const hours = String(now.getHours()).padStart(2, '0');
+        const minutes = String(now.getMinutes()).padStart(2, '0');
+        orderDateInput.value = `${year}-${month}-${day}T${hours}:${minutes}`;
+    }
+
+    const customerNameInput = document.getElementById('customer_name');
+    const contactInput = document.getElementById('recipient_contact_person');
+    if (customerNameInput && contactInput && contactInput.dataset.userEdited !== '1') {
+        contactInput.value = customerNameInput.value;
+    }
+
+    setupCreateOrderAutocomplete();
+    modal.classList.add('show');
 }
 
 /**
  * Closes and resets the "Create Order" modal.
  */
 function closeCreateModal() {
-    document.getElementById('createOrderModal').classList.remove('show');
-    document.getElementById('createOrderForm').reset();
-    resetOrderItems();
+    const modal = document.getElementById('createOrderModal');
+    if (modal) {
+        modal.classList.remove('show');
+    }
+    resetCreateOrderForm();
 }
 
 /**
@@ -1170,16 +1634,25 @@ function bindOrderDetailsEvents(order) {
     resetOrderItemForm(true);
 }
 
-function initRecipientAutocomplete(order) {
+function initRecipientAutocomplete(order, config) {
     recipientAutocompleteStates.length = 0;
     recipientAutocompleteRegistry.county = null;
     recipientAutocompleteRegistry.locality = null;
 
+    const settings = Object.assign({
+        countyInputId: 'orderRecipientCountyName',
+        countyIdInputId: 'orderRecipientCountyId',
+        countyDisplayId: 'orderRecipientCountyIdDisplay',
+        localityInputId: 'orderRecipientLocalityName',
+        localityIdInputId: 'orderRecipientLocalityId',
+        localityDisplayId: 'orderRecipientLocalityIdDisplay'
+    }, config || {});
+
     const countyState = createRecipientAutocompleteState({
         type: 'county',
-        inputId: 'orderRecipientCountyName',
-        idInputId: 'orderRecipientCountyId',
-        idDisplayId: 'orderRecipientCountyIdDisplay'
+        inputId: settings.countyInputId,
+        idInputId: settings.countyIdInputId,
+        idDisplayId: settings.countyDisplayId
     });
 
     if (countyState) {
@@ -1189,9 +1662,9 @@ function initRecipientAutocomplete(order) {
 
     const localityState = createRecipientAutocompleteState({
         type: 'locality',
-        inputId: 'orderRecipientLocalityName',
-        idInputId: 'orderRecipientLocalityId',
-        idDisplayId: 'orderRecipientLocalityIdDisplay'
+        inputId: settings.localityInputId,
+        idInputId: settings.localityIdInputId,
+        idDisplayId: settings.localityDisplayId
     });
 
     if (localityState) {
@@ -1236,6 +1709,7 @@ function createRecipientAutocompleteState(config) {
     }
 
     const wrapper = input.closest('[data-autocomplete-wrapper]') || input.parentElement;
+    const alreadyInitialized = input.dataset.autocompleteInitialized === '1';
 
     const state = {
         type: config.type,
@@ -1251,29 +1725,33 @@ function createRecipientAutocompleteState(config) {
         pendingQuery: null
     };
 
-    input.addEventListener('input', () => handleRecipientAutocompleteInput(state));
-    input.addEventListener('focus', () => {
-        if (state.input.value.trim().length >= RECIPIENT_AUTOCOMPLETE_MIN_CHARS) {
-            handleRecipientAutocompleteInput(state, { immediate: true });
-        }
-    });
-    input.addEventListener('keydown', event => {
-        if (event.key === 'Escape') {
-            hideRecipientSuggestions(state);
-        }
-    });
+    if (!alreadyInitialized) {
+        input.addEventListener('input', () => handleRecipientAutocompleteInput(state));
+        input.addEventListener('focus', () => {
+            if (state.input.value.trim().length >= RECIPIENT_AUTOCOMPLETE_MIN_CHARS) {
+                handleRecipientAutocompleteInput(state, { immediate: true });
+            }
+        });
+        input.addEventListener('keydown', event => {
+            if (event.key === 'Escape') {
+                hideRecipientSuggestions(state);
+            }
+        });
 
-    suggestionsEl.addEventListener('mousedown', event => {
-        event.preventDefault();
-    });
+        suggestionsEl.addEventListener('mousedown', event => {
+            event.preventDefault();
+        });
 
-    suggestionsEl.addEventListener('click', event => {
-        const option = event.target.closest('.autocomplete-option');
-        if (!option) {
-            return;
-        }
-        applyRecipientSelection(state, option.dataset);
-    });
+        suggestionsEl.addEventListener('click', event => {
+            const option = event.target.closest('.autocomplete-option');
+            if (!option) {
+                return;
+            }
+            applyRecipientSelection(state, option.dataset);
+        });
+
+        input.dataset.autocompleteInitialized = '1';
+    }
 
     return state;
 }
@@ -2609,18 +3087,23 @@ function addOrderItem() {
     newItem.innerHTML = `
         <div class="row">
             <div class="form-group">
-                <select name="items[${itemCounter}][product_id]" class="form-control item-product" required>
-                    <option value="">Selectează produs</option>
-                    ${getProductOptions()}
-                </select>
+                <label class="form-label">Produs</label>
+                <div class="manual-product-field" data-product-field style="position: relative;">
+                    <input type="hidden" name="items[${itemCounter}][product_id]" class="manual-product-id">
+                    <input type="text" name="items[${itemCounter}][product_search]" class="form-control manual-product-search" placeholder="Caută produs după nume sau SKU" autocomplete="off" data-product-index="${itemCounter}" required>
+                    <div class="autocomplete-results manual-product-results" data-product-results style="position: absolute; top: calc(100% + 2px); left: 0; right: 0; background: #fff; border: 1px solid #ced4da; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); z-index: 1050; display: none; max-height: 240px; overflow-y: auto;"></div>
+                </div>
             </div>
             <div class="form-group">
+                <label class="form-label">Cantitate</label>
                 <input type="number" name="items[${itemCounter}][quantity]" class="form-control item-quantity" placeholder="Cant." min="1" required>
             </div>
             <div class="form-group">
+                <label class="form-label">Preț Unitar (opțional)</label>
                 <input type="number" name="items[${itemCounter}][unit_price]" class="form-control item-price" placeholder="Preț (opțional)" step="0.01" min="0">
             </div>
             <div class="form-group form-group-sm">
+                <label class="form-label">&nbsp;</label>
                 <button type="button" class="btn btn-danger btn-sm" onclick="removeOrderItem(this)" title="Șterge produs">
                     <span class="material-symbols-outlined">delete</span>
                 </button>
@@ -2650,25 +3133,95 @@ function removeOrderItem(button) {
  */
 function resetOrderItems() {
     const container = document.getElementById('orderItems');
+    if (!container) {
+        return;
+    }
+
     const items = container.querySelectorAll('.order-item');
     for (let i = 1; i < items.length; i++) {
         items[i].remove();
     }
-    container.querySelector('.order-item').querySelectorAll('select, input').forEach(field => {
-        field.value = '';
-    });
+
+    const firstItem = container.querySelector('.order-item');
+    if (firstItem) {
+        firstItem.querySelectorAll('input').forEach(field => {
+            if (['hidden', 'text', 'number'].includes(field.type)) {
+                field.value = '';
+            }
+            if (field.classList.contains('manual-product-search')) {
+                field.dataset.selectedProductId = '';
+                field.dataset.currentQuery = '';
+            }
+        });
+
+        const resultsEl = firstItem.querySelector('.manual-product-results');
+        if (resultsEl) {
+            resultsEl.innerHTML = '';
+            hideManualProductResults(resultsEl);
+            resultsEl.dataset.hasResults = '0';
+        }
+    }
+
+    closeAllManualProductResults();
     itemCounter = 1;
 }
 
-/**
- * Gets the HTML <option> tags from the first product dropdown to use in new rows.
- * @returns {string} A string of HTML <option> elements.
- */
-function getProductOptions() {
-    const originalSelect = document.querySelector('select[name="items[0][product_id]"]');
-    return Array.from(originalSelect.options)
-        .map(option => `<option value="${option.value}" data-price="${option.dataset.price || ''}">${escapeHTML(option.textContent)}</option>`)
-        .join('');
+function resetCreateOrderForm() {
+    const form = document.getElementById('createOrderForm');
+    if (form) {
+        form.reset();
+    }
+
+    resetOrderItems();
+
+    const countyInput = document.getElementById('createOrderRecipientCountyName');
+    const countyIdInput = document.getElementById('createOrderRecipientCountyId');
+    const countyDisplay = document.getElementById('createOrderRecipientCountyIdDisplay');
+    if (countyInput) {
+        countyInput.value = '';
+    }
+    if (countyIdInput) {
+        countyIdInput.value = '';
+    }
+    if (countyDisplay) {
+        countyDisplay.textContent = '—';
+    }
+
+    const localityInput = document.getElementById('createOrderRecipientLocalityName');
+    const localityIdInput = document.getElementById('createOrderRecipientLocalityId');
+    const localityDisplay = document.getElementById('createOrderRecipientLocalityIdDisplay');
+    if (localityInput) {
+        localityInput.value = '';
+    }
+    if (localityIdInput) {
+        localityIdInput.value = '';
+    }
+    if (localityDisplay) {
+        localityDisplay.textContent = '—';
+    }
+
+    const contactInput = document.getElementById('recipient_contact_person');
+    if (contactInput) {
+        delete contactInput.dataset.userEdited;
+    }
+
+    setupCreateOrderAutocomplete();
+}
+
+function setupCreateOrderAutocomplete() {
+    const form = document.getElementById('createOrderForm');
+    if (!form) {
+        return;
+    }
+
+    initRecipientAutocomplete({}, {
+        countyInputId: 'createOrderRecipientCountyName',
+        countyIdInputId: 'createOrderRecipientCountyId',
+        countyDisplayId: 'createOrderRecipientCountyIdDisplay',
+        localityInputId: 'createOrderRecipientLocalityName',
+        localityIdInputId: 'createOrderRecipientLocalityId',
+        localityDisplayId: 'createOrderRecipientLocalityIdDisplay'
+    });
 }
 
 /**
@@ -2689,14 +3242,82 @@ function escapeHTML(str) {
 
 // Set up event listeners for page interactions.
 function setupEventListeners() {
-    // Listener for auto-filling the price when a product is selected.
+    // Listener for auto-filling the price when a product is selected from legacy dropdowns.
     document.addEventListener('change', function(e) {
         if (e.target.matches('select[name*="[product_id]"]')) {
             const selectedOption = e.target.options[e.target.selectedIndex];
             const priceInput = e.target.closest('.row').querySelector('input[name*="unit_price"]');
-            if (selectedOption.dataset.price && priceInput) {
+            if (selectedOption && selectedOption.dataset.price && priceInput) {
                 priceInput.value = selectedOption.dataset.price;
             }
+        }
+    });
+
+    document.addEventListener('input', function(event) {
+        if (event.target.classList && event.target.classList.contains('manual-product-search')) {
+            handleManualProductSearchInput(event.target);
+        }
+    });
+
+    document.addEventListener('keydown', function(event) {
+        if (event.target.classList && event.target.classList.contains('manual-product-search')) {
+            handleManualProductKeydown(event);
+        }
+    });
+
+    document.addEventListener('focusin', function(event) {
+        if (event.target.classList && event.target.classList.contains('manual-product-search')) {
+            const resultsEl = getManualProductResultsElement(event.target);
+            if (resultsEl && resultsEl.dataset.hasResults === '1') {
+                resultsEl.style.display = 'block';
+            }
+        }
+    });
+
+    document.addEventListener('focusout', function(event) {
+        if (event.target.classList && event.target.classList.contains('manual-product-search')) {
+            const input = event.target;
+            setTimeout(() => {
+                const wrapper = input.closest('[data-product-field]');
+                if (!wrapper) {
+                    return;
+                }
+                const activeEl = document.activeElement;
+                if (activeEl && wrapper.contains(activeEl)) {
+                    return;
+                }
+                const resultsEl = getManualProductResultsElement(input);
+                if (resultsEl) {
+                    hideManualProductResults(resultsEl);
+                }
+            }, 120);
+        }
+    });
+
+    document.addEventListener('mouseover', function(event) {
+        const option = event.target.closest('.manual-product-option[role="button"]');
+        if (option) {
+            const resultsEl = option.closest('.manual-product-results');
+            if (resultsEl) {
+                const options = Array.from(resultsEl.querySelectorAll('.manual-product-option[role="button"]'));
+                const index = options.indexOf(option);
+                if (index >= 0) {
+                    highlightManualProductOption(resultsEl, index);
+                }
+            }
+        }
+    });
+
+    document.addEventListener('mousedown', function(event) {
+        const option = event.target.closest('.manual-product-option[role="button"]');
+        if (option) {
+            selectManualProductFromOption(option);
+            event.preventDefault();
+            return;
+        }
+
+        if (!event.target.closest('.manual-product-field')) {
+            closeAllManualProductResults();
         }
     });
 
@@ -2726,20 +3347,118 @@ function setupEventListeners() {
                 alert('Numele clientului este obligatoriu!');
                 return;
             }
-            
+
+            const invoiceFileInput = document.getElementById('invoice_pdf');
+            if (invoiceFileInput && invoiceFileInput.files && invoiceFileInput.files.length > 0) {
+                const invoiceNumberInput = document.getElementById('invoice_number');
+                const invoiceCuiInput = document.getElementById('invoice_cui');
+                const invoiceNumberValue = invoiceNumberInput ? invoiceNumberInput.value.trim() : '';
+                const invoiceCuiValue = invoiceCuiInput ? invoiceCuiInput.value.trim() : '';
+
+                if (!invoiceNumberValue) {
+                    event.preventDefault();
+                    alert('Introdu numărul facturii pentru fișierul încărcat.');
+                    if (invoiceNumberInput) {
+                        invoiceNumberInput.focus();
+                    }
+                    return;
+                }
+
+                const normalizedInvoiceNumber = invoiceNumberValue
+                    .replace(/[\\/.,;]+/g, '-')
+                    .replace(/\s+/g, '-')
+                    .replace(/-+/g, '-');
+                if (!/^[0-9A-Za-z_-]+$/.test(normalizedInvoiceNumber)) {
+                    event.preventDefault();
+                    alert('Numărul facturii poate conține doar litere, cifre, minus sau underscore.');
+                    if (invoiceNumberInput) {
+                        invoiceNumberInput.focus();
+                    }
+                    return;
+                }
+
+                if (!invoiceCuiValue) {
+                    event.preventDefault();
+                    alert('Introdu CUI-ul companiei pentru fișierul facturii.');
+                    if (invoiceCuiInput) {
+                        invoiceCuiInput.focus();
+                    }
+                    return;
+                }
+
+                const normalizedInvoiceCui = invoiceCuiValue.replace(/^RO/i, '').replace(/[^0-9A-Za-z]/g, '');
+                if (normalizedInvoiceCui.length === 0) {
+                    event.preventDefault();
+                    alert('CUI-ul introdus conține caractere invalide.');
+                    if (invoiceCuiInput) {
+                        invoiceCuiInput.focus();
+                    }
+                    return;
+                }
+
+                const invoiceFile = invoiceFileInput.files[0];
+                if (invoiceFile) {
+                    const fileName = invoiceFile.name ? invoiceFile.name.toLowerCase() : '';
+                    const mimeType = (invoiceFile.type || '').toLowerCase();
+                    if (mimeType && mimeType !== 'application/pdf' && !fileName.endsWith('.pdf')) {
+                        event.preventDefault();
+                        alert('Fișierul de factură trebuie să fie în format PDF.');
+                        return;
+                    }
+                }
+            }
+
             const items = document.querySelectorAll('#orderItems .order-item');
             let hasValidItems = false;
+            let incompleteProductInput = null;
+
             items.forEach(item => {
-                const productSelect = item.querySelector('select[name*="product_id"]');
-                const quantityInput = item.querySelector('input[name*="quantity"]');
-                if (productSelect.value && quantityInput.value) {
+                const productHidden = item.querySelector('input[name*="[product_id]"]');
+                const productSelect = item.querySelector('select[name*="[product_id]"]');
+                const quantityInput = item.querySelector('input[name*="[quantity]"]');
+
+                const productValue = productHidden && productHidden.value
+                    ? productHidden.value
+                    : (productSelect ? productSelect.value : '');
+                const quantityValue = quantityInput ? Number(quantityInput.value) : 0;
+
+                if (!productValue) {
+                    const searchInput = item.querySelector('.manual-product-search');
+                    if (searchInput && searchInput.value.trim() !== '' && !incompleteProductInput) {
+                        incompleteProductInput = searchInput;
+                    }
+                }
+
+                if (productValue && Number.isFinite(quantityValue) && quantityValue > 0) {
                     hasValidItems = true;
                 }
             });
-            
+
+            if (incompleteProductInput) {
+                event.preventDefault();
+                alert('Te rugăm să selectezi un produs din lista sugerată pentru fiecare rând.');
+                incompleteProductInput.focus();
+                return;
+            }
+
             if (!hasValidItems) {
                 event.preventDefault();
                 alert('Comanda trebuie să conțină cel puțin un produs valid (produs și cantitate).');
+            }
+        });
+    }
+
+    const customerNameInput = document.getElementById('customer_name');
+    const contactInput = document.getElementById('recipient_contact_person');
+    if (contactInput) {
+        contactInput.addEventListener('input', () => {
+            contactInput.dataset.userEdited = '1';
+        });
+    }
+    if (customerNameInput && contactInput) {
+        customerNameInput.addEventListener('input', () => {
+            if (contactInput.dataset.userEdited !== '1') {
+                contactInput.value = customerNameInput.value;
             }
         });
     }

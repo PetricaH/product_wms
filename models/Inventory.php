@@ -118,6 +118,19 @@ class Inventory {
 
         $params = [];
 
+        $returnTransactionTypes = [
+            'return',
+            'return_good',
+            'return_damaged',
+            'return_defective',
+            'return_opened',
+        ];
+
+        $returnTypeParams = [];
+        foreach ($returnTransactionTypes as $index => $transactionType) {
+            $returnTypeParams[sprintf(':return_type_%d', $index)] = $transactionType;
+        }
+
         $baseQuery = "SELECT i.*,
                             p.sku, p.name as product_name, p.description as product_description,
                             p.category, p.min_stock_level, p.price,
@@ -127,17 +140,19 @@ class Inventory {
         $hasTransactions = $this->hasInventoryTransactions();
         $returnWindowMinutes = isset($options['return_window_minutes'])
             ? max(1, (int)$options['return_window_minutes'])
-            : 30;
+            : 1440;
 
         if ($hasTransactions) {
+            $returnTypePlaceholders = implode(', ', array_keys($returnTypeParams));
             $returnMatchSql = "(SELECT t.created_at
                                  FROM inventory_transactions t
-                                 WHERE t.transaction_type = 'return'
+                                 WHERE t.transaction_type IN ({$returnTypePlaceholders})
                                    AND t.product_id = i.product_id
                                    AND (t.location_id = i.location_id OR (t.location_id IS NULL AND i.location_id IS NULL))
                                    AND ABS(TIMESTAMPDIFF(MINUTE, t.created_at, i.received_at)) <= :return_window_minutes
                                  ORDER BY ABS(TIMESTAMPDIFF(SECOND, t.created_at, i.received_at)), t.created_at DESC
                                  LIMIT 1)";
+            $params = array_merge($params, $returnTypeParams);
             $params[':return_window_minutes'] = $returnWindowMinutes;
         } else {
             if ($onlyReturns) {

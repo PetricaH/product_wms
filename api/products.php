@@ -18,11 +18,13 @@ try {
                 p.name,
                 p.sku as code,
                 p.category,
+                p.price,
+                p.unit_of_measure,
                 COUNT(pu.id) as configured_units
             FROM products p
             LEFT JOIN product_units pu ON p.product_id = pu.product_id AND pu.active = 1
             WHERE p.product_id = :id
-            GROUP BY p.product_id, p.name, p.sku, p.category
+            GROUP BY p.product_id, p.name, p.sku, p.category, p.price, p.unit_of_measure
         ";
         
         $stmt = $db->prepare($query);
@@ -36,6 +38,8 @@ try {
                 'name' => $product['name'],
                 'code' => $product['code'] ?: 'N/A',
                 'category' => $product['category'] ?: 'General',
+                'price' => isset($product['price']) ? (float)$product['price'] : null,
+                'unit_of_measure' => $product['unit_of_measure'] ?? null,
                 'configured_units' => (int)$product['configured_units']
             ];
             
@@ -57,6 +61,8 @@ try {
             p.name,
             p.sku as code,
             p.category,
+            p.price,
+            p.unit_of_measure,
             COUNT(pu.id) as configured_units
         FROM products p
         LEFT JOIN product_units pu ON p.product_id = pu.product_id AND pu.active = 1
@@ -69,7 +75,7 @@ try {
         $params[':search'] = '%' . $search . '%';
     }
     
-    $query = "$baseQuery $where GROUP BY p.product_id, p.name, p.sku, p.category ORDER BY p.name ASC LIMIT :limit OFFSET :offset";
+    $query = "$baseQuery $where GROUP BY p.product_id, p.name, p.sku, p.category, p.price, p.unit_of_measure ORDER BY p.name ASC LIMIT :limit OFFSET :offset";
     
     $stmt = $db->prepare($query);
     foreach ($params as $k => $v) {
@@ -86,6 +92,8 @@ try {
             'name' => $row['name'],
             'code' => $row['code'] ?: 'N/A',
             'category' => $row['category'] ?: 'General',
+            'price' => isset($row['price']) ? (float)$row['price'] : null,
+            'unit_of_measure' => $row['unit_of_measure'] ?? null,
             'configured_units' => (int)$row['configured_units']
         ];
     }, $products);

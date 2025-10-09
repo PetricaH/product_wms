@@ -6,13 +6,11 @@
     let facturiTable = null;
 
     const selectors = {
-        tabButtons: '.tab-button',
-        tabPanels: '.tab-panel',
         uploadArea: '#upload-area',
         fileInput: '#invoice-file',
         selectFileBtn: '#select-file-btn',
         cameraBtn: '#camera-btn',
-        cameraContainer: '#camera-container',
+        cameraOverlay: '#camera-fullscreen',
         cameraStream: '#camera-stream',
         captureBtn: '#capture-btn',
         closeCameraBtn: '#close-camera-btn',
@@ -121,7 +119,6 @@
 
     function init() {
         ensureResultsPanel();
-        bindTabEvents();
         bindUploadEvents();
         bindCameraEvents();
         bindProcessingEvents();
@@ -129,25 +126,6 @@
         fetchStats();
         bindFilterEvents();
         bindModalEvents();
-    }
-
-    function bindTabEvents() {
-        $(document).on('click', selectors.tabButtons, function () {
-            const tab = $(this).data('tab');
-            switchTab(tab);
-        });
-    }
-
-    function switchTab(tabName) {
-        $(selectors.tabButtons).removeClass('active').attr('aria-selected', 'false');
-        $(selectors.tabPanels).removeClass('active').attr('aria-hidden', 'true');
-
-        $(`${selectors.tabButtons}[data-tab="${tabName}"]`).addClass('active').attr('aria-selected', 'true');
-        $(`#tab-${tabName}`).addClass('active').attr('aria-hidden', 'false');
-
-        if (tabName === 'management' && facturiTable) {
-            facturiTable.columns.adjust();
-        }
     }
 
     function bindUploadEvents() {
@@ -203,6 +181,12 @@
             return;
         }
 
+        const overlay = document.querySelector(selectors.cameraOverlay);
+        if (!overlay) {
+            notify('error', 'Interfața camerei nu a putut fi inițializată.');
+            return;
+        }
+
         navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
             .then(stream => {
                 mediaStream = stream;
@@ -210,19 +194,55 @@
                 if (video) {
                     video.srcObject = stream;
                 }
-                $(selectors.cameraContainer).prop('hidden', false);
+                overlay.hidden = false;
+                document.body.classList.add('camera-open');
+
+                const requestFullscreen = element => {
+                    if (!element) {
+                        return;
+                    }
+
+                    const enter = element.requestFullscreen
+                        || element.webkitRequestFullscreen
+                        || element.mozRequestFullScreen
+                        || element.msRequestFullscreen;
+
+                    if (enter) {
+                        Promise.resolve().then(() => enter.call(element)).catch(() => {
+                            /* Ignorăm erorile de fullscreen (permisiuni sau platformă) */
+                        });
+                    }
+                };
+
+                requestFullscreen(overlay);
             })
             .catch(err => {
                 notify('error', 'Nu s-a putut porni camera: ' + err.message);
+                closeCamera();
             });
     }
 
     function closeCamera() {
+        const overlay = document.querySelector(selectors.cameraOverlay);
         if (mediaStream) {
             mediaStream.getTracks().forEach(track => track.stop());
             mediaStream = null;
         }
-        $(selectors.cameraContainer).prop('hidden', true);
+        if (overlay) {
+            overlay.hidden = true;
+        }
+        document.body.classList.remove('camera-open');
+
+        const exit = document.exitFullscreen
+            || document.webkitExitFullscreen
+            || document.mozCancelFullScreen
+            || document.msExitFullscreen;
+
+        if (exit && (document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement)) {
+            Promise.resolve().then(() => exit.call(document)).catch(() => {
+                /* Ignorăm erorile la ieșirea din fullscreen */
+            });
+        }
     }
 
     function capturePhoto() {
@@ -313,14 +333,14 @@
             formData.append('image', selectedFile, selectedFile.name);
         }
 
-        const procesareTab = document.getElementById('tab-procesare');
-        if (procesareTab) {
-            const nrFacturaInput = procesareTab.querySelector('input[name="nr_factura"]');
+        const procesareSection = document.getElementById('invoice-processing');
+        if (procesareSection) {
+            const nrFacturaInput = procesareSection.querySelector('input[name="nr_factura"]');
             if (nrFacturaInput && nrFacturaInput.value.trim()) {
                 formData.append('nr_factura', nrFacturaInput.value.trim());
             }
 
-            procesareTab.querySelectorAll('[data-fs-field]').forEach(element => {
+            procesareSection.querySelectorAll('[data-fs-field]').forEach(element => {
                 const name = element.getAttribute('name') || element.getAttribute('data-fs-field');
                 if (!name) {
                     return;
@@ -734,6 +754,12 @@
                 url: 'https://cdn.datatables.net/plug-ins/1.13.6/i18n/ro.json'
             }
         });
+
+        setTimeout(() => {
+            if (facturiTable) {
+                facturiTable.columns.adjust().responsive.recalc();
+            }
+        }, 200);
 
         $(selectors.table).on('click', '.view-invoice', function () {
             const id = $(this).data('id');

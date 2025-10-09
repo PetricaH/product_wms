@@ -18,6 +18,7 @@ class Order
     private $hasCanceledAtColumn = false;
     private $hasCanceledByColumn = false;
     private ?array $tableColumns = null;
+    private ?array $itemTableColumns = null;
     private const CANCELED_STATUS_CANONICAL = 'canceled';
     private const CANCELED_STATUS_STORAGE = 'cancelled';
     private const CANCELED_STATUS_ALIASES = ['canceled', 'cancelled'];
@@ -75,6 +76,31 @@ class Order
     private function tableHasColumn(string $column): bool
     {
         return in_array($column, $this->getTableColumns(), true);
+    }
+
+    private function getItemTableColumns(): array
+    {
+        if ($this->itemTableColumns !== null) {
+            return $this->itemTableColumns;
+        }
+
+        try {
+            $query = sprintf('SHOW COLUMNS FROM `%s`', $this->itemsTable);
+            $stmt = $this->conn->prepare($query);
+            $stmt->execute();
+            $this->itemTableColumns = $stmt->fetchAll(PDO::FETCH_COLUMN);
+            $stmt->closeCursor();
+        } catch (PDOException $e) {
+            error_log('Unable to fetch order item columns: ' . $e->getMessage());
+            $this->itemTableColumns = [];
+        }
+
+        return $this->itemTableColumns;
+    }
+
+    private function itemTableHasColumn(string $column): bool
+    {
+        return in_array($column, $this->getItemTableColumns(), true);
     }
 
     public function hasCancellationMetadata(): bool
@@ -1383,23 +1409,71 @@ class Order
             $stmt->execute();
             $orderId = (int)$this->conn->lastInsertId();
 
-            $itemSql = 'INSERT INTO order_items (
-                    order_id, product_id, quantity, unit_measure,
-                    unit_price, total_price, notes
-                ) VALUES (
-                    :order_id, :product_id, :quantity, :unit_measure,
-                    :unit_price, :total_price, :notes
-                )';
+            $itemColumnBuilders = [
+                'order_id' => static function (array $item, int $orderId): array {
+                    return [$orderId, PDO::PARAM_INT];
+                },
+                'product_id' => static function (array $item, int $orderId): array {
+                    return [isset($item['product_id']) ? (int)$item['product_id'] : 0, PDO::PARAM_INT];
+                },
+                'quantity' => static function (array $item, int $orderId): array {
+                    return [isset($item['quantity']) ? (int)$item['quantity'] : 0, PDO::PARAM_INT];
+                },
+                'unit_measure' => static function (array $item, int $orderId): array {
+                    return [$item['unit_measure'] ?? 'buc', PDO::PARAM_STR];
+                },
+                'unit_price' => static function (array $item, int $orderId): array {
+                    return [isset($item['unit_price']) ? (float)$item['unit_price'] : 0, null];
+                },
+                'total_price' => static function (array $item, int $orderId): array {
+                    $calculated = (isset($item['quantity']) ? (float)$item['quantity'] : 0)
+                        * (isset($item['unit_price']) ? (float)$item['unit_price'] : 0);
+
+                    $value = isset($item['total_price'])
+                        ? (float)$item['total_price']
+                        : $calculated;
+
+                    return [$value, null];
+                },
+                'notes' => static function (array $item, int $orderId): array {
+                    return [$item['notes'] ?? '', PDO::PARAM_STR];
+                }
+            ];
+
+            $availableItemColumns = $this->getItemTableColumns();
+            $filteredItemBuilders = [];
+            foreach ($itemColumnBuilders as $column => $builder) {
+                if (in_array($column, $availableItemColumns, true)) {
+                    $filteredItemBuilders[$column] = $builder;
+                }
+            }
+
+            if (!isset($filteredItemBuilders['order_id'], $filteredItemBuilders['product_id'], $filteredItemBuilders['quantity'])) {
+                throw new RuntimeException('Order items table is missing required columns.');
+            }
+
+            $itemFields = array_keys($filteredItemBuilders);
+            $itemPlaceholders = array_map(static function (string $column): string {
+                return ':' . $column;
+            }, $itemFields);
+
+            $itemSql = 'INSERT INTO ' . $this->itemsTable . ' (' . implode(', ', $itemFields) . ')
+                        VALUES (' . implode(', ', $itemPlaceholders) . ')';
 
             $itemStmt = $this->conn->prepare($itemSql);
             foreach ($items as $item) {
-                $itemStmt->bindValue(':order_id', $orderId, PDO::PARAM_INT);
-                $itemStmt->bindValue(':product_id', (int)$item['product_id'], PDO::PARAM_INT);
-                $itemStmt->bindValue(':quantity', (int)$item['quantity'], PDO::PARAM_INT);
-                $itemStmt->bindValue(':unit_measure', $item['unit_measure'] ?? 'buc');
-                $itemStmt->bindValue(':unit_price', (float)($item['unit_price'] ?? 0));
-                $itemStmt->bindValue(':total_price', (float)($item['total_price'] ?? 0));
-                $itemStmt->bindValue(':notes', $item['notes'] ?? '');
+                foreach ($filteredItemBuilders as $column => $builder) {
+                    [$value, $type] = $builder($item, $orderId);
+
+                    if ($value === null) {
+                        $itemStmt->bindValue(':' . $column, null, PDO::PARAM_NULL);
+                    } elseif ($type !== null) {
+                        $itemStmt->bindValue(':' . $column, $value, $type);
+                    } else {
+                        $itemStmt->bindValue(':' . $column, $value);
+                    }
+                }
+
                 $itemStmt->execute();
             }
 

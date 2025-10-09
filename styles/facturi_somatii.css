@@ -171,6 +171,10 @@
     border: 1px solid rgba(96, 134, 255, 0.2);
 }
 
+.processing-indicator[hidden] {
+    display: none !important;
+}
+
 .processing-indicator p {
     margin: 0;
     color: rgba(255, 255, 255, 0.75);
@@ -305,6 +309,54 @@
     color: rgba(255, 255, 255, 0.65);
 }
 
+.filters-bar input[type="date"],
+.filters-bar input[type="text"],
+.filters-bar select {
+    appearance: none;
+    background: rgba(15, 18, 26, 0.85);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    color: #fff;
+    padding: 0.55rem 0.75rem;
+    font-size: 0.95rem;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.filters-bar select {
+    padding-right: 2.25rem;
+    background-image: url('data:image/svg+xml;charset=UTF-8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" stroke="%23ffffff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>');
+    background-repeat: no-repeat;
+    background-position: right 0.65rem center;
+    background-size: 1.05rem;
+}
+
+.filters-bar input[type="date"]::-webkit-calendar-picker-indicator {
+    filter: invert(1);
+    opacity: 0.65;
+}
+
+.filters-bar input[type="date"]:hover::-webkit-calendar-picker-indicator {
+    opacity: 0.85;
+}
+
+.filters-bar input[type="date"],
+.filters-bar input[type="text"],
+.filters-bar select {
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.filters-bar input[type="date"]:focus,
+.filters-bar input[type="text"]:focus,
+.filters-bar select:focus {
+    outline: none;
+    border-color: rgba(96, 134, 255, 0.65);
+    box-shadow: 0 0 0 3px rgba(96, 134, 255, 0.18);
+}
+
+.filters-bar input[type="text"]::placeholder {
+    color: rgba(255, 255, 255, 0.45);
+}
+
 .filter-actions {
     display: flex;
     gap: 0.75rem;
@@ -319,8 +371,201 @@
     padding: 1.5rem;
 }
 
+.table-card .table-scroll {
+    width: 100%;
+    overflow-x: auto;
+    padding-bottom: 0.5rem;
+    scrollbar-color: rgba(96, 134, 255, 0.5) rgba(17, 19, 26, 0.85);
+}
+
+.table-card .table-scroll::-webkit-scrollbar {
+    height: 8px;
+}
+
+.table-card .table-scroll::-webkit-scrollbar-track {
+    background: rgba(17, 19, 26, 0.85);
+    border-radius: 999px;
+}
+
+.table-card .table-scroll::-webkit-scrollbar-thumb {
+    background: rgba(96, 134, 255, 0.5);
+    border-radius: 999px;
+}
+
 .table-card table {
     width: 100% !important;
+    min-width: 900px;
+}
+
+.action-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    justify-content: flex-start;
+}
+
+.action-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.45rem 0.75rem;
+    border-radius: 12px;
+    border: 1px solid rgba(96, 134, 255, 0.3);
+    background: rgba(15, 18, 26, 0.75);
+    color: #fff;
+    font-size: 0.85rem;
+    line-height: 1.1;
+    cursor: pointer;
+    transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+    text-decoration: none;
+}
+
+.action-button .material-symbols-outlined {
+    font-size: 1.1rem;
+}
+
+.action-button:hover {
+    background: rgba(27, 33, 46, 0.9);
+    border-color: rgba(130, 173, 255, 0.6);
+    transform: translateY(-1px);
+}
+
+.action-button:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(96, 134, 255, 0.25);
+}
+
+.action-button.action-danger {
+    border-color: rgba(255, 99, 99, 0.45);
+    background: rgba(45, 16, 22, 0.7);
+}
+
+.action-button.action-danger:hover {
+    border-color: rgba(255, 132, 132, 0.75);
+    background: rgba(72, 24, 30, 0.85);
+}
+
+.action-label {
+    font-weight: 500;
+}
+
+.modal {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(8, 9, 14, 0.75);
+    z-index: 1050;
+    transition: opacity 0.2s ease;
+    opacity: 0;
+}
+
+.modal[aria-hidden="true"] {
+    display: none;
+}
+
+.modal.open {
+    opacity: 1;
+}
+
+.modal-dialog {
+    width: min(720px, 92vw);
+    margin: 0;
+}
+
+.modal-content {
+    background: rgba(18, 20, 28, 0.95);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 18px;
+    box-shadow: 0 35px 80px -40px rgba(0, 0, 0, 0.9);
+    overflow: hidden;
+}
+
+.modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1.1rem 1.5rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.modal-title {
+    margin: 0;
+    font-size: 1.2rem;
+    font-weight: 600;
+}
+
+.modal-close {
+    border: none;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.75);
+    cursor: pointer;
+    padding: 0.25rem;
+    border-radius: 8px;
+    transition: background 0.2s ease, color 0.2s ease;
+}
+
+.modal-close:hover,
+.modal-close:focus-visible {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.08);
+    outline: none;
+}
+
+.modal-body {
+    padding: 1.25rem 1.5rem 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+}
+
+.modal-section h4 {
+    margin: 0 0 0.75rem;
+    font-size: 1.05rem;
+    font-weight: 600;
+}
+
+.modal-section ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 0.5rem;
+}
+
+.modal-section li {
+    display: flex;
+    gap: 0.5rem;
+    font-size: 0.95rem;
+    line-height: 1.4;
+}
+
+.modal-section li strong {
+    color: rgba(255, 255, 255, 0.75);
+    min-width: 140px;
+}
+
+.modal-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+}
+
+.modal-actions .btn {
+    flex: 1 1 180px;
+    justify-content: center;
+}
+
+.modal-actions .btn .material-symbols-outlined {
+    font-size: 1.15rem;
+}
+
+.modal-section .status-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .modal .modal-dialog {

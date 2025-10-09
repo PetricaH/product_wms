@@ -153,27 +153,29 @@ $currentPage = 'facturi_somatii';
                     </section>
 
                     <section class="table-card">
-                        <table id="facturi_somatii" class="display nowrap" style="width:100%">
-                            <thead>
-                                <tr>
-                                    <th>Nr. Factură</th>
-                                    <th>Nume firmă</th>
-                                    <th>CIF</th>
-                                    <th>Data emitere</th>
-                                    <th>Termen plată</th>
-                                    <th>Sumă</th>
-                                    <th>Status</th>
-                                    <th>Acțiuni</th>
-                                </tr>
-                            </thead>
-                            <tbody></tbody>
-                        </table>
+                        <div class="table-scroll">
+                            <table id="facturi_somatii" class="display nowrap" style="width:100%">
+                                <thead>
+                                    <tr>
+                                        <th>Nr. Factură</th>
+                                        <th>Nume firmă</th>
+                                        <th>CIF</th>
+                                        <th>Data emitere</th>
+                                        <th>Termen plată</th>
+                                        <th>Sumă</th>
+                                        <th>Status</th>
+                                        <th>Acțiuni</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
                     </section>
                 </div>
             </div>
         </div>
 
-        <div class="modal" id="invoice-modal" aria-hidden="true">
+        <div class="modal" id="invoice-modal" aria-hidden="true" aria-modal="true" role="dialog">
             <div class="modal-dialog">
                 <div class="modal-content">
                     <div class="modal-header">

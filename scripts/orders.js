@@ -34,6 +34,14 @@ const MANUAL_PRODUCT_SEARCH_MIN_CHARS = 2;
 const MANUAL_PRODUCT_SEARCH_DELAY_MS = 200;
 const manualProductSearchTimers = new WeakMap();
 const manualProductSearchCache = new Map();
+const manualProductLocalQueryCache = new Map();
+const manualProductLocalQueryCacheOrder = [];
+const MANUAL_PRODUCT_LOCAL_QUERY_CACHE_LIMIT = 40;
+const manualProductLocalCacheState = {
+    source: null,
+    length: 0,
+    items: []
+};
 
 function normalizeOrderStatus(status) {
     const value = (status ?? '').toString().trim().toLowerCase();
@@ -741,6 +749,54 @@ function normalizeManualProductRecord(raw) {
     };
 }
 
+function resetManualProductLocalQueryCache() {
+    manualProductLocalQueryCache.clear();
+    manualProductLocalQueryCacheOrder.length = 0;
+}
+
+function getManualProductLocalItems() {
+    const products = Array.isArray(window.orderProductsList) ? window.orderProductsList : [];
+    const hasDifferentSource = manualProductLocalCacheState.source !== products;
+    const hasDifferentLength = manualProductLocalCacheState.length !== products.length;
+
+    if (hasDifferentSource || hasDifferentLength) {
+        manualProductLocalCacheState.source = products;
+        manualProductLocalCacheState.length = products.length;
+        manualProductLocalCacheState.items = products
+            .map(normalizeManualProductRecord)
+            .filter(Boolean)
+            .map(record => {
+                const searchParts = [];
+                if (record.name) {
+                    searchParts.push(record.name.toLowerCase());
+                }
+                if (record.sku) {
+                    searchParts.push(record.sku.toLowerCase());
+                }
+                searchParts.push(String(record.id));
+                return {
+                    record,
+                    searchText: searchParts.join(' ').trim()
+                };
+            });
+        resetManualProductLocalQueryCache();
+    }
+
+    return manualProductLocalCacheState.items;
+}
+
+function rememberManualProductLocalQuery(query, results) {
+    manualProductLocalQueryCache.set(query, results);
+    manualProductLocalQueryCacheOrder.push(query);
+
+    while (manualProductLocalQueryCacheOrder.length > MANUAL_PRODUCT_LOCAL_QUERY_CACHE_LIMIT) {
+        const oldestKey = manualProductLocalQueryCacheOrder.shift();
+        if (oldestKey !== undefined) {
+            manualProductLocalQueryCache.delete(oldestKey);
+        }
+    }
+}
+
 function getManualProductResultsElement(input) {
     if (!input) {
         return null;
@@ -852,21 +908,23 @@ function getLocalManualProductMatches(query, limit = 8) {
         return [];
     }
 
-    const products = Array.isArray(window.orderProductsList) ? window.orderProductsList : [];
     const normalizedQuery = query.toLowerCase();
+    if (manualProductLocalQueryCache.has(normalizedQuery)) {
+        const cached = manualProductLocalQueryCache.get(normalizedQuery);
+        return Array.isArray(cached) ? cached.slice(0, limit) : [];
+    }
+
+    const localItems = getManualProductLocalItems();
     const matches = [];
 
-    for (let index = 0; index < products.length; index += 1) {
-        const normalized = normalizeManualProductRecord(products[index]);
-        if (!normalized) {
+    for (let index = 0; index < localItems.length; index += 1) {
+        const entry = localItems[index];
+        if (!entry) {
             continue;
         }
 
-        const nameMatch = (normalized.name || '').toLowerCase().includes(normalizedQuery);
-        const skuMatch = (normalized.sku || '').toLowerCase().includes(normalizedQuery);
-
-        if (nameMatch || skuMatch) {
-            matches.push(normalized);
+        if (entry.searchText ? entry.searchText.includes(normalizedQuery) : false) {
+            matches.push(entry.record);
         }
 
         if (matches.length >= limit) {
@@ -874,6 +932,7 @@ function getLocalManualProductMatches(query, limit = 8) {
         }
     }
 
+    rememberManualProductLocalQuery(normalizedQuery, matches.slice());
     return matches;
 }
 
@@ -980,6 +1039,7 @@ function selectManualProduct(wrapper, product) {
         return;
     }
 
+    const forcePriceUpdate = wrapper.dataset.forcePriceUpdate === '1';
     const hiddenInput = wrapper.querySelector('.manual-product-id');
     if (hiddenInput) {
         hiddenInput.value = String(product.id);
@@ -999,17 +1059,38 @@ function selectManualProduct(wrapper, product) {
     }
 
     const orderItemRow = wrapper.closest('.order-item');
-    if (orderItemRow) {
-        const priceInput = orderItemRow.querySelector('input[name*="[unit_price]"]');
-        const priceValue = Number(product.price);
-        if (priceInput && (!priceInput.value || Number(priceInput.value) === 0) && Number.isFinite(priceValue) && priceValue > 0) {
-            priceInput.value = priceValue.toFixed(2);
-        }
+    let priceInput = null;
+    let quantityInput = null;
 
-        const quantityInput = orderItemRow.querySelector('input[name*="[quantity]"]');
-        if (quantityInput && !quantityInput.value) {
-            quantityInput.focus();
+    if (orderItemRow) {
+        priceInput = orderItemRow.querySelector('input[name*="[unit_price]"]');
+        quantityInput = orderItemRow.querySelector('input[name*="[quantity]"]');
+    } else {
+        const form = wrapper.closest('form');
+        if (form) {
+            priceInput = form.querySelector('input[name="unit_price"]');
+            quantityInput = form.querySelector('input[name="quantity"]');
         }
+    }
+
+    const priceValue = Number(product.price);
+    if (priceInput && Number.isFinite(priceValue) && priceValue > 0) {
+        const currentNumeric = Number(priceInput.value);
+        const shouldUpdatePrice = forcePriceUpdate
+            || !priceInput.value
+            || Number.isNaN(currentNumeric)
+            || currentNumeric === 0;
+
+        if (shouldUpdatePrice) {
+            priceInput.value = priceValue.toFixed(2);
+            if (priceInput.dataset) {
+                priceInput.dataset.userEdited = '0';
+            }
+        }
+    }
+
+    if (quantityInput && !quantityInput.value) {
+        quantityInput.focus();
     }
 }
 

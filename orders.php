@@ -78,42 +78,256 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'customer_email' => trim($_POST['customer_email'] ?? ''),
                     'shipping_address' => trim($_POST['shipping_address'] ?? ''),
                     'order_date' => $_POST['order_date'] ?? date('Y-m-d H:i:s'),
-                    'status' => $_POST['status'] ?? 'Pending',
+                    'status' => strtolower(trim((string)($_POST['status'] ?? 'pending'))),
                     'priority' => $_POST['priority'] ?? 'normal',
                     'notes' => trim($_POST['notes'] ?? ''),
                     'created_by' => $_SESSION['user_id'],
+                    'address_text' => trim($_POST['address_text'] ?? ''),
+                    'recipient_contact_person' => trim($_POST['recipient_contact_person'] ?? ''),
+                    'recipient_phone' => trim($_POST['recipient_phone'] ?? ''),
+                    'recipient_county_name' => trim($_POST['recipient_county_name'] ?? ''),
+                    'recipient_locality_name' => trim($_POST['recipient_locality_name'] ?? ''),
+                    'recipient_county_id' => isset($_POST['recipient_county_id']) ? (int)$_POST['recipient_county_id'] : null,
+                    'recipient_locality_id' => isset($_POST['recipient_locality_id']) ? (int)$_POST['recipient_locality_id'] : null,
                 ];
 
-                $items = [];
-                if (!empty($_POST['items'])) {
-                    foreach ($_POST['items'] as $item) {
-                        if (!empty($item['product_id']) && !empty($item['quantity'])) {
-                            $unitPrice = 0.0;
-                            if (isset($item['unit_price']) && $item['unit_price'] !== '') {
-                                $unitPrice = floatval($item['unit_price']);
-                            }
+                $invoiceNumberRaw = trim($_POST['invoice_number'] ?? '');
+                $invoiceCuiRaw = trim($_POST['invoice_cui'] ?? '');
+                $invoiceFile = $_FILES['invoice_pdf'] ?? null;
 
-                            $items[] = [
-                                'product_id' => intval($item['product_id']),
-                                'quantity' => intval($item['quantity']),
-                                'unit_price' => $unitPrice
-                            ];
+                $normalizeInvoiceReference = static function (string $value): string {
+                    $value = str_replace(['\\', '/', '.', ',', ';'], '-', $value);
+                    $value = preg_replace('/\s+/', '-', $value);
+                    $value = preg_replace('/-+/', '-', $value);
+                    $value = preg_replace('/[^A-Za-z0-9_-]/', '', $value);
+                    return trim((string)$value, '-_');
+                };
+
+                $normalizeInvoiceCui = static function (string $value): string {
+                    $value = strtoupper($value);
+                    $value = preg_replace('/^RO/i', '', $value);
+                    $value = preg_replace('/[^A-Za-z0-9]/', '', $value);
+                    return (string)$value;
+                };
+
+                $invoiceReference = $invoiceNumberRaw !== '' ? $normalizeInvoiceReference($invoiceNumberRaw) : '';
+                if ($invoiceNumberRaw !== '' && $invoiceReference === '') {
+                    throw new Exception('Numărul facturii conține caractere invalide. Folosește doar litere, cifre, minus și underscore.');
+                }
+
+                $invoiceCuiNormalized = $invoiceCuiRaw !== '' ? $normalizeInvoiceCui($invoiceCuiRaw) : '';
+                if ($invoiceCuiRaw !== '' && $invoiceCuiNormalized === '') {
+                    throw new Exception('CUI-ul facturii conține caractere invalide.');
+                }
+
+                $invoiceFileTargetPath = null;
+                $invoiceFileFinalName = null;
+                $shouldUploadInvoice = is_array($invoiceFile)
+                    && isset($invoiceFile['error'])
+                    && (int)$invoiceFile['error'] !== UPLOAD_ERR_NO_FILE;
+
+                if ($orderData['recipient_county_id'] !== null && $orderData['recipient_county_id'] <= 0) {
+                    $orderData['recipient_county_id'] = null;
+                }
+
+                if ($orderData['recipient_locality_id'] !== null && $orderData['recipient_locality_id'] <= 0) {
+                    $orderData['recipient_locality_id'] = null;
+                }
+
+                $items = [];
+                $packageLines = [];
+                $totalValue = 0.0;
+
+                if (!empty($_POST['items']) && is_array($_POST['items'])) {
+                    foreach ($_POST['items'] as $item) {
+                        $productId = isset($item['product_id']) ? (int)$item['product_id'] : 0;
+                        $quantity = isset($item['quantity']) ? (int)$item['quantity'] : 0;
+
+                        if ($productId <= 0 || $quantity <= 0) {
+                            continue;
                         }
+
+                        $product = $productModel->findById($productId);
+                        if (!$product) {
+                            throw new Exception('Produsul selectat nu a fost găsit în catalog.');
+                        }
+
+                        $unitMeasure = $product['unit_of_measure'] ?? $product['unit_measure'] ?? 'buc';
+                        $defaultPrice = isset($product['price']) ? (float)$product['price'] : 0.0;
+
+                        $unitPrice = $defaultPrice;
+                        if (isset($item['unit_price']) && $item['unit_price'] !== '') {
+                            $unitPrice = (float)$item['unit_price'];
+                        }
+
+                        if ($unitPrice < 0) {
+                            $unitPrice = 0.0;
+                        }
+
+                        $lineTotal = round($unitPrice * $quantity, 2);
+                        $totalValue += $lineTotal;
+
+                        $packageLines[] = sprintf('%s x %d', $product['name'] ?? ('Produs #' . $productId), $quantity);
+
+                        $items[] = [
+                            'product_id' => $productId,
+                            'quantity' => $quantity,
+                            'unit_measure' => $unitMeasure,
+                            'unit_price' => $unitPrice,
+                            'total_price' => $lineTotal,
+                            'notes' => ''
+                        ];
                     }
                 }
 
+                if (empty($orderData['order_number'])) {
+                    throw new Exception('Numărul comenzii este obligatoriu.');
+                }
                 if (empty($orderData['customer_name'])) {
                     throw new Exception('Numele clientului este obligatoriu.');
+                }
+                if (empty($orderData['shipping_address'])) {
+                    throw new Exception('Adresa de livrare este obligatorie.');
+                }
+                if (empty($orderData['recipient_phone'])) {
+                    throw new Exception('Telefonul de contact este obligatoriu pentru AWB.');
+                }
+                if (!preg_match('/^[0-9+\s\-()]{7,}$/', $orderData['recipient_phone'])) {
+                    throw new Exception('Numărul de telefon introdus nu este valid.');
                 }
                 if (empty($items)) {
                     throw new Exception('Comanda trebuie să conțină cel puțin un produs.');
                 }
 
-                if ($orderModel->createOrder($orderData, $items)) {
+                if ($shouldUploadInvoice) {
+                    $invoiceError = (int)($invoiceFile['error'] ?? UPLOAD_ERR_OK);
+                    if ($invoiceError !== UPLOAD_ERR_OK) {
+                        throw new Exception('Încărcarea fișierului de factură a eșuat. Încearcă din nou.');
+                    }
+
+                    if ($invoiceReference === '') {
+                        throw new Exception('Introdu numărul facturii pentru fișierul PDF încărcat.');
+                    }
+
+                    if ($invoiceCuiNormalized === '') {
+                        throw new Exception('Introdu CUI-ul companiei pentru fișierul facturii.');
+                    }
+
+                    $invoiceTmpName = $invoiceFile['tmp_name'] ?? '';
+                    if ($invoiceTmpName === '' || !is_uploaded_file($invoiceTmpName)) {
+                        throw new Exception('Fișierul de factură încărcat nu este valid.');
+                    }
+
+                    $extension = strtolower((string)pathinfo($invoiceFile['name'] ?? '', PATHINFO_EXTENSION));
+                    if ($extension !== 'pdf') {
+                        throw new Exception('Fișierul facturii trebuie să fie în format PDF.');
+                    }
+
+                    $storageCandidates = ['/var/www/wartung.notsowms.ro/storage/order_pdf_invoices'];
+                    if (defined('BASE_PATH')) {
+                        $storageCandidates[] = BASE_PATH . '/storage/order_pdf_invoices';
+                    }
+
+                    $invoiceStorageDir = null;
+                    foreach ($storageCandidates as $candidate) {
+                        if (empty($candidate)) {
+                            continue;
+                        }
+
+                        if (!is_dir($candidate)) {
+                            @mkdir($candidate, 0775, true);
+                        }
+
+                        if (is_dir($candidate) && is_writable($candidate)) {
+                            $invoiceStorageDir = $candidate;
+                            break;
+                        }
+                    }
+
+                    if ($invoiceStorageDir === null) {
+                        throw new Exception('Nu s-a putut accesa directorul pentru facturile PDF.');
+                    }
+
+                    $invoiceFileFinalName = sprintf('factura-%s-cui-RO%s.pdf', $invoiceReference, $invoiceCuiNormalized);
+                    $invoiceFileTargetPath = rtrim($invoiceStorageDir, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . $invoiceFileFinalName;
+
+                    if (file_exists($invoiceFileTargetPath) && !@unlink($invoiceFileTargetPath)) {
+                        throw new Exception('Există deja o factură salvată cu același număr și CUI. Șterge fișierul existent sau folosește alte valori.');
+                    }
+
+                    if (!move_uploaded_file($invoiceTmpName, $invoiceFileTargetPath)) {
+                        throw new Exception('Nu s-a putut salva fișierul de factură încărcat.');
+                    }
+
+                    @chmod($invoiceFileTargetPath, 0644);
+                }
+
+                $totalValue = round($totalValue, 2);
+
+                $manualOrderData = [
+                    'order_number' => $orderData['order_number'],
+                    'type' => 'outbound',
+                    'status' => $orderData['status'] ?: 'pending',
+                    'priority' => $orderData['priority'] ?? 'normal',
+                    'customer_name' => $orderData['customer_name'],
+                    'customer_email' => $orderData['customer_email'],
+                    'shipping_address' => $orderData['shipping_address'],
+                    'address_text' => $orderData['address_text'],
+                    'order_date' => $orderData['order_date'],
+                    'notes' => $orderData['notes'],
+                    'created_by' => $orderData['created_by'],
+                    'recipient_name' => $orderData['customer_name'],
+                    'recipient_contact_person' => $orderData['recipient_contact_person'] ?: $orderData['customer_name'],
+                    'recipient_phone' => $orderData['recipient_phone'],
+                    'recipient_email' => $orderData['customer_email'],
+                    'recipient_county_id' => $orderData['recipient_county_id'],
+                    'recipient_county_name' => $orderData['recipient_county_name'],
+                    'recipient_locality_id' => $orderData['recipient_locality_id'],
+                    'recipient_locality_name' => $orderData['recipient_locality_name'],
+                    'total_value' => $totalValue,
+                    'declared_value' => $totalValue,
+                    'observations' => $orderData['notes'],
+                    'package_content' => implode(', ', $packageLines),
+                    'invoice_reference' => $invoiceReference !== '' ? $invoiceReference : null,
+                    'customer_id' => null,
+                    'parcels_count' => 1,
+                    'envelopes_count' => 0,
+                    'cash_repayment' => 0,
+                    'bank_repayment' => 0,
+                    'saturday_delivery' => 0,
+                    'morning_delivery' => 0,
+                    'open_package' => 0
+                ];
+
+                $orderDateObj = null;
+                if (!empty($orderData['order_date'])) {
+                    $orderDateObj = DateTimeImmutable::createFromFormat('Y-m-d\TH:i', $orderData['order_date'])
+                        ?: DateTimeImmutable::createFromFormat(DateTimeInterface::ATOM, $orderData['order_date']);
+                }
+                if ($orderDateObj instanceof DateTimeImmutable) {
+                    $manualOrderData['order_date'] = $orderDateObj->format('Y-m-d H:i:s');
+                } else {
+                    $manualOrderData['order_date'] = date('Y-m-d H:i:s');
+                }
+
+                try {
+                    $creationResult = $orderModel->createManualOrder($manualOrderData, $items);
+                } catch (Throwable $creationException) {
+                    if ($invoiceFileTargetPath !== null && is_file($invoiceFileTargetPath)) {
+                        @unlink($invoiceFileTargetPath);
+                    }
+                    throw $creationException;
+                }
+
+                if (!empty($creationResult['success'])) {
                     $message = 'Comanda a fost creată cu succes.';
                     $messageType = 'success';
                 } else {
-                    throw new Exception('Eroare la crearea comenzii.');
+                    if ($invoiceFileTargetPath !== null && is_file($invoiceFileTargetPath)) {
+                        @unlink($invoiceFileTargetPath);
+                    }
+                    $errorMessage = $creationResult['error'] ?? 'Eroare la crearea comenzii.';
+                    throw new Exception($errorMessage);
                 }
                 break;
                 
@@ -618,6 +832,27 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/vis-timeline@7.7.2/dist/vis-timeline-graph2d.min.js"></script>
     <style>
+        .page-header-content {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .page-header-actions {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .page-header-actions .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+        }
+
         .orders-view-toggle {
             display: flex;
             gap: 0.5rem;
@@ -721,10 +956,16 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                             <span class="material-symbols-outlined">shopping_cart</span>
                             Gestionare Comenzi
                         </h1>
-                        <a href="<?= htmlspecialchars($exportButtonUrl) ?>" class="btn btn-primary">
-                            <span class="material-symbols-outlined">picture_as_pdf</span>
-                            Exportă AWB-uri de azi (PDF)
-                        </a>
+                        <div class="page-header-actions">
+                            <button type="button" class="btn btn-success" onclick="openCreateModal()">
+                                <span class="material-symbols-outlined">add_circle</span>
+                                Creeaza Comanda Manual
+                            </button>
+                            <a href="<?= htmlspecialchars($exportButtonUrl) ?>" class="btn btn-primary">
+                                <span class="material-symbols-outlined">picture_as_pdf</span>
+                                Exportă AWB-uri de azi (PDF)
+                            </a>
+                        </div>
                     </div>
                 </header>
 
@@ -1277,7 +1518,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                         <span class="material-symbols-outlined">close</span>
                     </button>
                 </div>
-                <form id="createOrderForm" method="POST">
+                <form id="createOrderForm" method="POST" enctype="multipart/form-data">
                     <div class="modal-body">
                         <input type="hidden" name="action" value="create">
                         
@@ -1307,19 +1548,56 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                         
                         <div class="form-group">
                             <label for="shipping_address" class="form-label">Adresă Livrare</label>
-                            <textarea name="shipping_address" id="shipping_address" class="form-control" rows="2"></textarea>
+                            <textarea name="shipping_address" id="shipping_address" class="form-control" rows="2" required></textarea>
+                        </div>
+
+                        <div class="row">
+                            <div class="form-group">
+                                <label for="recipient_contact_person" class="form-label">Persoană de Contact</label>
+                                <input type="text" name="recipient_contact_person" id="recipient_contact_person" class="form-control" placeholder="Nume destinatar" />
+                            </div>
+                            <div class="form-group">
+                                <label for="recipient_phone" class="form-label">Telefon Contact *</label>
+                                <input type="tel" name="recipient_phone" id="recipient_phone" class="form-control" placeholder="07xx xxx xxx" required />
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="address_text" class="form-label">Adresă completă (text)</label>
+                            <textarea name="address_text" id="address_text" class="form-control" rows="2" placeholder="Adresă completă pentru curier"></textarea>
+                        </div>
+
+                        <div class="row">
+                            <div class="form-group">
+                                <label for="createOrderRecipientCountyName" class="form-label">Județ</label>
+                                <div class="recipient-autocomplete" data-autocomplete-wrapper>
+                                    <input type="text" id="createOrderRecipientCountyName" name="recipient_county_name" class="form-control" placeholder="Introduce județul" autocomplete="off" data-autocomplete-type="county">
+                                    <input type="hidden" id="createOrderRecipientCountyId" name="recipient_county_id">
+                                    <div class="autocomplete-results" data-autocomplete-results="createOrderRecipientCountyName"></div>
+                                </div>
+                                <small class="text-muted">Cargus County ID: <span id="createOrderRecipientCountyIdDisplay">—</span></small>
+                            </div>
+                            <div class="form-group">
+                                <label for="createOrderRecipientLocalityName" class="form-label">Localitate</label>
+                                <div class="recipient-autocomplete" data-autocomplete-wrapper>
+                                    <input type="text" id="createOrderRecipientLocalityName" name="recipient_locality_name" class="form-control" placeholder="Introduce localitatea" autocomplete="off" data-autocomplete-type="locality" data-associated-county-input="createOrderRecipientCountyId">
+                                    <input type="hidden" id="createOrderRecipientLocalityId" name="recipient_locality_id">
+                                    <div class="autocomplete-results" data-autocomplete-results="createOrderRecipientLocalityName"></div>
+                                </div>
+                                <small class="text-muted">Cargus Locality ID: <span id="createOrderRecipientLocalityIdDisplay">—</span></small>
+                            </div>
                         </div>
                         
                         <div class="row">
                             <div class="form-group">
                                 <label for="status" class="form-label">Status</label>
                                 <select name="status" id="status" class="form-control">
-                                    <option value="Pending">Pending</option>
-                                    <option value="Processing">Processing</option>
-                                    <option value="Picked">Picked</option>
-                                    <option value="Shipped">Shipped</option>
-                                    <option value="Delivered">Delivered</option>
-                                    <option value="Canceled">Canceled</option>
+                                    <option value="pending">Pending</option>
+                                    <option value="processing">Processing</option>
+                                    <option value="picked">Picked</option>
+                                    <option value="shipped">Shipped</option>
+                                    <option value="delivered">Delivered</option>
+                                    <option value="canceled">Canceled</option>
                                 </select>
                             </div>
                             <div class="form-group">
@@ -1336,7 +1614,25 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                             <label for="notes" class="form-label">Observații</label>
                             <textarea name="notes" id="notes" class="form-control" rows="2"></textarea>
                         </div>
-                        
+
+                        <h4>Factură</h4>
+                        <div class="row">
+                            <div class="form-group">
+                                <label for="invoice_number" class="form-label">Număr Factură</label>
+                                <input type="text" name="invoice_number" id="invoice_number" class="form-control" value="<?= htmlspecialchars($_POST['invoice_number'] ?? '') ?>" placeholder="Ex: 12345" autocomplete="off">
+                                <small class="text-muted">Valoarea va fi folosită în numele fișierului: factura-(număr)-cui-RO(CUI).pdf</small>
+                            </div>
+                            <div class="form-group">
+                                <label for="invoice_cui" class="form-label">CUI Companie</label>
+                                <input type="text" name="invoice_cui" id="invoice_cui" class="form-control" value="<?= htmlspecialchars($_POST['invoice_cui'] ?? '') ?>" placeholder="Ex: RO12345678" autocomplete="off">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="invoice_pdf" class="form-label">Fișier Factură (PDF)</label>
+                            <input type="file" name="invoice_pdf" id="invoice_pdf" class="form-control" accept="application/pdf,.pdf">
+                            <small class="text-muted">Încarcă factura aferentă comenzii. Fișierul se va salva în directorul de facturi al WMS.</small>
+                        </div>
+
                         <!-- Order Items -->
                         <h4>Produse Comandă</h4>
                         <div id="orderItems">
@@ -1344,14 +1640,11 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                 <div class="row">
                                     <div class="form-group">
                                         <label class="form-label">Produs</label>
-                                        <select name="items[0][product_id]" class="form-control" required>
-                                            <option value="">Selectează produs</option>
-                                            <?php foreach ($allProducts as $product): ?>
-                                                <option value="<?= $product['product_id'] ?>" data-price="<?= $product['price'] ?>">
-                                                    <?= htmlspecialchars($product['name']) ?> (<?= htmlspecialchars($product['sku']) ?>)
-                                                </option>
-                                            <?php endforeach; ?>
-                                        </select>
+                                        <div class="manual-product-field" data-product-field style="position: relative;">
+                                            <input type="hidden" name="items[0][product_id]" class="manual-product-id">
+                                            <input type="text" name="items[0][product_search]" class="form-control manual-product-search" placeholder="Caută produs după nume sau SKU" autocomplete="off" data-product-index="0" required>
+                                            <div class="autocomplete-results manual-product-results" data-product-results style="position: absolute; top: calc(100% + 2px); left: 0; right: 0; background: #fff; border: 1px solid #ced4da; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); z-index: 1050; display: none; max-height: 240px; overflow-y: auto;"></div>
+                                        </div>
                                     </div>
                                     <div class="form-group">
                                         <label class="form-label">Cantitate</label>

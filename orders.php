@@ -78,42 +78,147 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'customer_email' => trim($_POST['customer_email'] ?? ''),
                     'shipping_address' => trim($_POST['shipping_address'] ?? ''),
                     'order_date' => $_POST['order_date'] ?? date('Y-m-d H:i:s'),
-                    'status' => $_POST['status'] ?? 'Pending',
+                    'status' => strtolower(trim((string)($_POST['status'] ?? 'pending'))),
                     'priority' => $_POST['priority'] ?? 'normal',
                     'notes' => trim($_POST['notes'] ?? ''),
                     'created_by' => $_SESSION['user_id'],
+                    'address_text' => trim($_POST['address_text'] ?? ''),
+                    'recipient_contact_person' => trim($_POST['recipient_contact_person'] ?? ''),
+                    'recipient_phone' => trim($_POST['recipient_phone'] ?? ''),
+                    'recipient_county_name' => trim($_POST['recipient_county_name'] ?? ''),
+                    'recipient_locality_name' => trim($_POST['recipient_locality_name'] ?? ''),
+                    'recipient_county_id' => isset($_POST['recipient_county_id']) ? (int)$_POST['recipient_county_id'] : null,
+                    'recipient_locality_id' => isset($_POST['recipient_locality_id']) ? (int)$_POST['recipient_locality_id'] : null,
                 ];
 
-                $items = [];
-                if (!empty($_POST['items'])) {
-                    foreach ($_POST['items'] as $item) {
-                        if (!empty($item['product_id']) && !empty($item['quantity'])) {
-                            $unitPrice = 0.0;
-                            if (isset($item['unit_price']) && $item['unit_price'] !== '') {
-                                $unitPrice = floatval($item['unit_price']);
-                            }
+                if ($orderData['recipient_county_id'] !== null && $orderData['recipient_county_id'] <= 0) {
+                    $orderData['recipient_county_id'] = null;
+                }
 
-                            $items[] = [
-                                'product_id' => intval($item['product_id']),
-                                'quantity' => intval($item['quantity']),
-                                'unit_price' => $unitPrice
-                            ];
+                if ($orderData['recipient_locality_id'] !== null && $orderData['recipient_locality_id'] <= 0) {
+                    $orderData['recipient_locality_id'] = null;
+                }
+
+                $items = [];
+                $packageLines = [];
+                $totalValue = 0.0;
+
+                if (!empty($_POST['items']) && is_array($_POST['items'])) {
+                    foreach ($_POST['items'] as $item) {
+                        $productId = isset($item['product_id']) ? (int)$item['product_id'] : 0;
+                        $quantity = isset($item['quantity']) ? (int)$item['quantity'] : 0;
+
+                        if ($productId <= 0 || $quantity <= 0) {
+                            continue;
                         }
+
+                        $product = $productModel->findById($productId);
+                        if (!$product) {
+                            throw new Exception('Produsul selectat nu a fost găsit în catalog.');
+                        }
+
+                        $unitMeasure = $product['unit_of_measure'] ?? $product['unit_measure'] ?? 'buc';
+                        $defaultPrice = isset($product['price']) ? (float)$product['price'] : 0.0;
+
+                        $unitPrice = $defaultPrice;
+                        if (isset($item['unit_price']) && $item['unit_price'] !== '') {
+                            $unitPrice = (float)$item['unit_price'];
+                        }
+
+                        if ($unitPrice < 0) {
+                            $unitPrice = 0.0;
+                        }
+
+                        $lineTotal = round($unitPrice * $quantity, 2);
+                        $totalValue += $lineTotal;
+
+                        $packageLines[] = sprintf('%s x %d', $product['name'] ?? ('Produs #' . $productId), $quantity);
+
+                        $items[] = [
+                            'product_id' => $productId,
+                            'quantity' => $quantity,
+                            'unit_measure' => $unitMeasure,
+                            'unit_price' => $unitPrice,
+                            'total_price' => $lineTotal,
+                            'notes' => ''
+                        ];
                     }
                 }
 
+                if (empty($orderData['order_number'])) {
+                    throw new Exception('Numărul comenzii este obligatoriu.');
+                }
                 if (empty($orderData['customer_name'])) {
                     throw new Exception('Numele clientului este obligatoriu.');
+                }
+                if (empty($orderData['shipping_address'])) {
+                    throw new Exception('Adresa de livrare este obligatorie.');
+                }
+                if (empty($orderData['recipient_phone'])) {
+                    throw new Exception('Telefonul de contact este obligatoriu pentru AWB.');
+                }
+                if (!preg_match('/^[0-9+\s\-()]{7,}$/', $orderData['recipient_phone'])) {
+                    throw new Exception('Numărul de telefon introdus nu este valid.');
                 }
                 if (empty($items)) {
                     throw new Exception('Comanda trebuie să conțină cel puțin un produs.');
                 }
 
-                if ($orderModel->createOrder($orderData, $items)) {
+                $totalValue = round($totalValue, 2);
+
+                $manualOrderData = [
+                    'order_number' => $orderData['order_number'],
+                    'type' => 'outbound',
+                    'status' => $orderData['status'] ?: 'pending',
+                    'priority' => $orderData['priority'] ?? 'normal',
+                    'customer_name' => $orderData['customer_name'],
+                    'customer_email' => $orderData['customer_email'],
+                    'shipping_address' => $orderData['shipping_address'],
+                    'address_text' => $orderData['address_text'],
+                    'order_date' => $orderData['order_date'],
+                    'notes' => $orderData['notes'],
+                    'created_by' => $orderData['created_by'],
+                    'recipient_name' => $orderData['customer_name'],
+                    'recipient_contact_person' => $orderData['recipient_contact_person'] ?: $orderData['customer_name'],
+                    'recipient_phone' => $orderData['recipient_phone'],
+                    'recipient_email' => $orderData['customer_email'],
+                    'recipient_county_id' => $orderData['recipient_county_id'],
+                    'recipient_county_name' => $orderData['recipient_county_name'],
+                    'recipient_locality_id' => $orderData['recipient_locality_id'],
+                    'recipient_locality_name' => $orderData['recipient_locality_name'],
+                    'total_value' => $totalValue,
+                    'declared_value' => $totalValue,
+                    'observations' => $orderData['notes'],
+                    'package_content' => implode(', ', $packageLines),
+                    'customer_id' => null,
+                    'parcels_count' => 1,
+                    'envelopes_count' => 0,
+                    'cash_repayment' => 0,
+                    'bank_repayment' => 0,
+                    'saturday_delivery' => 0,
+                    'morning_delivery' => 0,
+                    'open_package' => 0
+                ];
+
+                $orderDateObj = null;
+                if (!empty($orderData['order_date'])) {
+                    $orderDateObj = DateTimeImmutable::createFromFormat('Y-m-d\TH:i', $orderData['order_date'])
+                        ?: DateTimeImmutable::createFromFormat(DateTimeInterface::ATOM, $orderData['order_date']);
+                }
+                if ($orderDateObj instanceof DateTimeImmutable) {
+                    $manualOrderData['order_date'] = $orderDateObj->format('Y-m-d H:i:s');
+                } else {
+                    $manualOrderData['order_date'] = date('Y-m-d H:i:s');
+                }
+
+                $creationResult = $orderModel->createManualOrder($manualOrderData, $items);
+
+                if (!empty($creationResult['success'])) {
                     $message = 'Comanda a fost creată cu succes.';
                     $messageType = 'success';
                 } else {
-                    throw new Exception('Eroare la crearea comenzii.');
+                    $errorMessage = $creationResult['error'] ?? 'Eroare la crearea comenzii.';
+                    throw new Exception($errorMessage);
                 }
                 break;
                 
@@ -618,6 +723,27 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/vis-timeline@7.7.2/dist/vis-timeline-graph2d.min.js"></script>
     <style>
+        .page-header-content {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .page-header-actions {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .page-header-actions .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+        }
+
         .orders-view-toggle {
             display: flex;
             gap: 0.5rem;
@@ -721,10 +847,16 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                             <span class="material-symbols-outlined">shopping_cart</span>
                             Gestionare Comenzi
                         </h1>
-                        <a href="<?= htmlspecialchars($exportButtonUrl) ?>" class="btn btn-primary">
-                            <span class="material-symbols-outlined">picture_as_pdf</span>
-                            Exportă AWB-uri de azi (PDF)
-                        </a>
+                        <div class="page-header-actions">
+                            <button type="button" class="btn btn-success" onclick="openCreateModal()">
+                                <span class="material-symbols-outlined">add_circle</span>
+                                Creeaza Comanda Manual
+                            </button>
+                            <a href="<?= htmlspecialchars($exportButtonUrl) ?>" class="btn btn-primary">
+                                <span class="material-symbols-outlined">picture_as_pdf</span>
+                                Exportă AWB-uri de azi (PDF)
+                            </a>
+                        </div>
                     </div>
                 </header>
 
@@ -1307,19 +1439,56 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                         
                         <div class="form-group">
                             <label for="shipping_address" class="form-label">Adresă Livrare</label>
-                            <textarea name="shipping_address" id="shipping_address" class="form-control" rows="2"></textarea>
+                            <textarea name="shipping_address" id="shipping_address" class="form-control" rows="2" required></textarea>
+                        </div>
+
+                        <div class="row">
+                            <div class="form-group">
+                                <label for="recipient_contact_person" class="form-label">Persoană de Contact</label>
+                                <input type="text" name="recipient_contact_person" id="recipient_contact_person" class="form-control" placeholder="Nume destinatar" />
+                            </div>
+                            <div class="form-group">
+                                <label for="recipient_phone" class="form-label">Telefon Contact *</label>
+                                <input type="tel" name="recipient_phone" id="recipient_phone" class="form-control" placeholder="07xx xxx xxx" required />
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="address_text" class="form-label">Adresă completă (text)</label>
+                            <textarea name="address_text" id="address_text" class="form-control" rows="2" placeholder="Adresă completă pentru curier"></textarea>
+                        </div>
+
+                        <div class="row">
+                            <div class="form-group">
+                                <label for="createOrderRecipientCountyName" class="form-label">Județ</label>
+                                <div class="recipient-autocomplete" data-autocomplete-wrapper>
+                                    <input type="text" id="createOrderRecipientCountyName" name="recipient_county_name" class="form-control" placeholder="Introduce județul" autocomplete="off" data-autocomplete-type="county">
+                                    <input type="hidden" id="createOrderRecipientCountyId" name="recipient_county_id">
+                                    <div class="autocomplete-results" data-autocomplete-results="createOrderRecipientCountyName"></div>
+                                </div>
+                                <small class="text-muted">Cargus County ID: <span id="createOrderRecipientCountyIdDisplay">—</span></small>
+                            </div>
+                            <div class="form-group">
+                                <label for="createOrderRecipientLocalityName" class="form-label">Localitate</label>
+                                <div class="recipient-autocomplete" data-autocomplete-wrapper>
+                                    <input type="text" id="createOrderRecipientLocalityName" name="recipient_locality_name" class="form-control" placeholder="Introduce localitatea" autocomplete="off" data-autocomplete-type="locality" data-associated-county-input="createOrderRecipientCountyId">
+                                    <input type="hidden" id="createOrderRecipientLocalityId" name="recipient_locality_id">
+                                    <div class="autocomplete-results" data-autocomplete-results="createOrderRecipientLocalityName"></div>
+                                </div>
+                                <small class="text-muted">Cargus Locality ID: <span id="createOrderRecipientLocalityIdDisplay">—</span></small>
+                            </div>
                         </div>
                         
                         <div class="row">
                             <div class="form-group">
                                 <label for="status" class="form-label">Status</label>
                                 <select name="status" id="status" class="form-control">
-                                    <option value="Pending">Pending</option>
-                                    <option value="Processing">Processing</option>
-                                    <option value="Picked">Picked</option>
-                                    <option value="Shipped">Shipped</option>
-                                    <option value="Delivered">Delivered</option>
-                                    <option value="Canceled">Canceled</option>
+                                    <option value="pending">Pending</option>
+                                    <option value="processing">Processing</option>
+                                    <option value="picked">Picked</option>
+                                    <option value="shipped">Shipped</option>
+                                    <option value="delivered">Delivered</option>
+                                    <option value="canceled">Canceled</option>
                                 </select>
                             </div>
                             <div class="form-group">

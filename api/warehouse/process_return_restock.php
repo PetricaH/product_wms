@@ -114,11 +114,18 @@ try {
 
     $processedCount = 0;
     $totalQuantity = 0;
+    $hasProblemItems = false;
 
     foreach ($items as $item) {
         $productId = (int)($item['product_id'] ?? 0);
         $locationId = (int)($item['location_id'] ?? 0);
         $restockQty = (int)($item['quantity_returned'] ?? 0);
+        $condition = strtolower((string)($item['item_condition'] ?? ''));
+        $isExtraItem = ((int)($item['is_extra'] ?? 0)) === 1;
+
+        if (in_array($condition, ['damaged', 'defective'], true) || $isExtraItem) {
+            $hasProblemItems = true;
+        }
 
         if ($productId <= 0 || $locationId <= 0 || $restockQty <= 0) {
             continue; // Skip items without quantity or location
@@ -188,6 +195,36 @@ try {
 
     if ($processedCount === 0) {
         throw new RuntimeException('Niciun produs valid nu a fost găsit pentru readăugare.');
+    }
+
+    $discrepancyStmt = $db->prepare('SELECT COUNT(*) FROM return_discrepancies WHERE return_id = :return_id');
+    $discrepancyStmt->execute([':return_id' => $returnId]);
+    $hasDiscrepancies = (int)$discrepancyStmt->fetchColumn() > 0;
+
+    $currentStatus = strtolower((string)($returnRow['status'] ?? ''));
+    $eligibleForCompletion = !$hasProblemItems && !$hasDiscrepancies;
+
+    if ($eligibleForCompletion && !in_array($currentStatus, ['completed', 'cancelled', 'rejected'], true)) {
+        $setClauses = ["status = 'completed'"];
+        $bindVerifiedBy = false;
+
+        if ($userId > 0 && empty($returnRow['verified_by'])) {
+            $setClauses[] = 'verified_by = :verified_by';
+            $setClauses[] = 'verified_at = NOW()';
+            $bindVerifiedBy = true;
+        } elseif (empty($returnRow['verified_at'])) {
+            $setClauses[] = 'verified_at = NOW()';
+        }
+
+        $updateSql = 'UPDATE returns SET ' . implode(', ', $setClauses) . ' WHERE id = :return_id';
+        $updateStmt = $db->prepare($updateSql);
+        $updateStmt->bindValue(':return_id', $returnId, PDO::PARAM_INT);
+
+        if ($bindVerifiedBy) {
+            $updateStmt->bindValue(':verified_by', $userId, PDO::PARAM_INT);
+        }
+
+        $updateStmt->execute();
     }
 
     echo json_encode([

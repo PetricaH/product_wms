@@ -1513,14 +1513,11 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                 <div class="row">
                                     <div class="form-group">
                                         <label class="form-label">Produs</label>
-                                        <select name="items[0][product_id]" class="form-control" required>
-                                            <option value="">Selectează produs</option>
-                                            <?php foreach ($allProducts as $product): ?>
-                                                <option value="<?= $product['product_id'] ?>" data-price="<?= $product['price'] ?>">
-                                                    <?= htmlspecialchars($product['name']) ?> (<?= htmlspecialchars($product['sku']) ?>)
-                                                </option>
-                                            <?php endforeach; ?>
-                                        </select>
+                                        <div class="manual-product-field" data-product-field style="position: relative;">
+                                            <input type="hidden" name="items[0][product_id]" class="manual-product-id">
+                                            <input type="text" name="items[0][product_search]" class="form-control manual-product-search" placeholder="Caută produs după nume sau SKU" autocomplete="off" data-product-index="0" required>
+                                            <div class="autocomplete-results manual-product-results" data-product-results style="position: absolute; top: calc(100% + 2px); left: 0; right: 0; background: #fff; border: 1px solid #ced4da; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); z-index: 1050; display: none; max-height: 240px; overflow-y: auto;"></div>
+                                        </div>
                                     </div>
                                     <div class="form-group">
                                         <label class="form-label">Cantitate</label>

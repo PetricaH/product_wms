@@ -1419,6 +1419,16 @@ class Order
                 'quantity' => static function (array $item, int $orderId): array {
                     return [isset($item['quantity']) ? (int)$item['quantity'] : 0, PDO::PARAM_INT];
                 },
+                'quantity_ordered' => static function (array $item, int $orderId): array {
+                    if (isset($item['quantity_ordered'])) {
+                        return [(int)$item['quantity_ordered'], PDO::PARAM_INT];
+                    }
+
+                    return [isset($item['quantity']) ? (int)$item['quantity'] : 0, PDO::PARAM_INT];
+                },
+                'picked_quantity' => static function (array $item, int $orderId): array {
+                    return [isset($item['picked_quantity']) ? (int)$item['picked_quantity'] : 0, PDO::PARAM_INT];
+                },
                 'unit_measure' => static function (array $item, int $orderId): array {
                     return [$item['unit_measure'] ?? 'buc', PDO::PARAM_STR];
                 },

@@ -54,6 +54,7 @@ try {
     $search = trim($_GET['search'] ?? '');
     $limit = max(1, intval($_GET['limit'] ?? 10));
     $offset = max(0, intval($_GET['offset'] ?? 0));
+    $fast = filter_var($_GET['fast'] ?? false, FILTER_VALIDATE_BOOLEAN);
     
     $baseQuery = "
         SELECT
@@ -76,7 +77,7 @@ try {
     }
     
     $query = "$baseQuery $where GROUP BY p.product_id, p.name, p.sku, p.category, p.price, p.unit_of_measure ORDER BY p.name ASC LIMIT :limit OFFSET :offset";
-    
+
     $stmt = $db->prepare($query);
     foreach ($params as $k => $v) {
         $stmt->bindValue($k, $v);
@@ -85,7 +86,7 @@ try {
     $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
     $stmt->execute();
     $products = $stmt->fetchAll(PDO::FETCH_ASSOC);
-    
+
     $formattedProducts = array_map(function($row) {
         return [
             'id' => (int)$row['id'],
@@ -97,6 +98,19 @@ try {
             'configured_units' => (int)$row['configured_units']
         ];
     }, $products);
+
+    if ($fast) {
+        echo json_encode([
+            'data' => $formattedProducts,
+            'total' => null,
+            'pagination' => [
+                'limit' => $limit,
+                'offset' => $offset,
+                'has_next' => null
+            ]
+        ]);
+        exit;
+    }
 
     $countQuery = "SELECT COUNT(*) FROM products p" . ($where ? " $where" : '');
     $countStmt = $db->prepare($countQuery);

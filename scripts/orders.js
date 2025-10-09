@@ -32,16 +32,15 @@ const recipientAutocompleteRegistry = {
 
 const MANUAL_PRODUCT_SEARCH_MIN_CHARS = 2;
 const MANUAL_PRODUCT_SEARCH_DELAY_MS = 200;
+const MANUAL_PRODUCT_RESULTS_LIMIT = 15;
+const MANUAL_PRODUCT_SEARCH_CACHE_SIZE = 80;
+const MANUAL_PRODUCT_SEARCH_CACHE_RESULT_LIMIT = 40;
 const manualProductSearchTimers = new WeakMap();
 const manualProductSearchCache = new Map();
-const manualProductLocalQueryCache = new Map();
-const manualProductLocalQueryCacheOrder = [];
-const MANUAL_PRODUCT_LOCAL_QUERY_CACHE_LIMIT = 40;
-const manualProductLocalCacheState = {
-    source: null,
-    length: 0,
-    items: []
-};
+const manualProductSearchControllers = new WeakMap();
+
+let manualProductLocalRawReference = null;
+let manualProductLocalNormalized = null;
 
 function normalizeOrderStatus(status) {
     const value = (status ?? '').toString().trim().toLowerCase();
@@ -749,52 +748,18 @@ function normalizeManualProductRecord(raw) {
     };
 }
 
-function resetManualProductLocalQueryCache() {
-    manualProductLocalQueryCache.clear();
-    manualProductLocalQueryCacheOrder.length = 0;
-}
-
-function getManualProductLocalItems() {
-    const products = Array.isArray(window.orderProductsList) ? window.orderProductsList : [];
-    const hasDifferentSource = manualProductLocalCacheState.source !== products;
-    const hasDifferentLength = manualProductLocalCacheState.length !== products.length;
-
-    if (hasDifferentSource || hasDifferentLength) {
-        manualProductLocalCacheState.source = products;
-        manualProductLocalCacheState.length = products.length;
-        manualProductLocalCacheState.items = products
-            .map(normalizeManualProductRecord)
-            .filter(Boolean)
-            .map(record => {
-                const searchParts = [];
-                if (record.name) {
-                    searchParts.push(record.name.toLowerCase());
-                }
-                if (record.sku) {
-                    searchParts.push(record.sku.toLowerCase());
-                }
-                searchParts.push(String(record.id));
-                return {
-                    record,
-                    searchText: searchParts.join(' ').trim()
-                };
-            });
-        resetManualProductLocalQueryCache();
+function getNormalizedManualProducts() {
+    const rawList = Array.isArray(window.orderProductsList) ? window.orderProductsList : [];
+    if (manualProductLocalNormalized && manualProductLocalRawReference === rawList) {
+        return manualProductLocalNormalized;
     }
 
-    return manualProductLocalCacheState.items;
-}
+    manualProductLocalRawReference = rawList;
+    manualProductLocalNormalized = rawList
+        .map(normalizeManualProductRecord)
+        .filter(Boolean);
 
-function rememberManualProductLocalQuery(query, results) {
-    manualProductLocalQueryCache.set(query, results);
-    manualProductLocalQueryCacheOrder.push(query);
-
-    while (manualProductLocalQueryCacheOrder.length > MANUAL_PRODUCT_LOCAL_QUERY_CACHE_LIMIT) {
-        const oldestKey = manualProductLocalQueryCacheOrder.shift();
-        if (oldestKey !== undefined) {
-            manualProductLocalQueryCache.delete(oldestKey);
-        }
-    }
+    return manualProductLocalNormalized;
 }
 
 function getManualProductResultsElement(input) {
@@ -831,18 +796,96 @@ function closeAllManualProductResults(exceptEl) {
     });
 }
 
-function mergeManualProductResults(primary = [], secondary = []) {
+function mergeManualProductResults(...sources) {
     const unique = new Map();
-    [...primary, ...secondary].forEach(item => {
-        const normalized = normalizeManualProductRecord(item);
-        if (!normalized) {
+    sources.forEach(source => {
+        if (!Array.isArray(source) || !source.length) {
             return;
         }
-        if (!unique.has(normalized.id)) {
-            unique.set(normalized.id, normalized);
-        }
+
+        source.forEach(item => {
+            const normalized = normalizeManualProductRecord(item);
+            if (!normalized) {
+                return;
+            }
+
+            if (!unique.has(normalized.id)) {
+                unique.set(normalized.id, normalized);
+            }
+        });
     });
+
     return Array.from(unique.values());
+}
+
+function cacheManualProductResults(cacheKey, products) {
+    if (!cacheKey) {
+        return;
+    }
+
+    const normalizedKey = cacheKey.toLowerCase();
+    const trimmedList = Array.isArray(products)
+        ? products.slice(0, MANUAL_PRODUCT_SEARCH_CACHE_RESULT_LIMIT)
+        : [];
+
+    if (manualProductSearchCache.size >= MANUAL_PRODUCT_SEARCH_CACHE_SIZE) {
+        const oldestKey = manualProductSearchCache.keys().next().value;
+        if (oldestKey !== undefined) {
+            manualProductSearchCache.delete(oldestKey);
+        }
+    }
+
+    manualProductSearchCache.set(normalizedKey, trimmedList);
+}
+
+function getCachedManualProductMatches(query, limit = MANUAL_PRODUCT_RESULTS_LIMIT) {
+    const trimmed = (query || '').trim();
+    if (!trimmed || trimmed.length < MANUAL_PRODUCT_SEARCH_MIN_CHARS) {
+        return [];
+    }
+
+    const normalizedQuery = trimmed.toLowerCase();
+    const bufferLimit = limit * 3;
+    const aggregated = [];
+
+    for (const [cacheKey, products] of manualProductSearchCache.entries()) {
+        if (!cacheKey || !products || !products.length) {
+            continue;
+        }
+
+        if (!cacheKey.includes(normalizedQuery) && !normalizedQuery.includes(cacheKey)) {
+            continue;
+        }
+
+        for (let index = 0; index < products.length; index += 1) {
+            const normalized = normalizeManualProductRecord(products[index]);
+            if (!normalized) {
+                continue;
+            }
+
+            const name = (normalized.name || '').toLowerCase();
+            const sku = (normalized.sku || '').toLowerCase();
+            if (!name.includes(normalizedQuery) && !sku.includes(normalizedQuery)) {
+                continue;
+            }
+
+            aggregated.push(normalized);
+
+            if (aggregated.length >= bufferLimit) {
+                break;
+            }
+        }
+
+        if (aggregated.length >= bufferLimit) {
+            break;
+        }
+    }
+
+    if (!aggregated.length) {
+        return [];
+    }
+
+    return mergeManualProductResults(aggregated).slice(0, limit);
 }
 
 function renderManualProductResults(input, products, query) {
@@ -854,7 +897,9 @@ function renderManualProductResults(input, products, query) {
     resultsEl.dataset.currentQuery = query;
     resultsEl.dataset.activeIndex = '-1';
 
-    if (!products || products.length === 0) {
+    const safeProducts = Array.isArray(products) ? products : [];
+
+    if (safeProducts.length === 0) {
         const message = query && query.length
             ? `Nu s-au găsit produse pentru „${escapeHtml(query)}”`
             : 'Nu există produse disponibile';
@@ -864,7 +909,7 @@ function renderManualProductResults(input, products, query) {
         return;
     }
 
-    const optionHtml = products.map(product => {
+    const optionHtml = safeProducts.slice(0, MANUAL_PRODUCT_RESULTS_LIMIT).map(product => {
         const name = escapeHtml(product.name || 'Produs fără nume');
         const sku = product.sku ? escapeHtml(product.sku) : '';
         const unit = product.unit ? escapeHtml(product.unit) : '';
@@ -903,28 +948,23 @@ function renderManualProductResults(input, products, query) {
     resultsEl.style.display = 'block';
 }
 
-function getLocalManualProductMatches(query, limit = 8) {
+function getLocalManualProductMatches(query, limit = MANUAL_PRODUCT_RESULTS_LIMIT) {
     if (!query || query.length < MANUAL_PRODUCT_SEARCH_MIN_CHARS) {
         return [];
     }
 
+    const products = getNormalizedManualProducts();
     const normalizedQuery = query.toLowerCase();
-    if (manualProductLocalQueryCache.has(normalizedQuery)) {
-        const cached = manualProductLocalQueryCache.get(normalizedQuery);
-        return Array.isArray(cached) ? cached.slice(0, limit) : [];
-    }
-
-    const localItems = getManualProductLocalItems();
     const matches = [];
 
-    for (let index = 0; index < localItems.length; index += 1) {
-        const entry = localItems[index];
-        if (!entry) {
-            continue;
-        }
+    for (let index = 0; index < products.length; index += 1) {
+        const normalized = products[index];
 
-        if (entry.searchText ? entry.searchText.includes(normalizedQuery) : false) {
-            matches.push(entry.record);
+        const nameMatch = (normalized.name || '').toLowerCase().includes(normalizedQuery);
+        const skuMatch = (normalized.sku || '').toLowerCase().includes(normalizedQuery);
+
+        if (nameMatch || skuMatch) {
+            matches.push(normalized);
         }
 
         if (matches.length >= limit) {
@@ -932,11 +972,10 @@ function getLocalManualProductMatches(query, limit = 8) {
         }
     }
 
-    rememberManualProductLocalQuery(normalizedQuery, matches.slice());
     return matches;
 }
 
-function fetchManualProductSuggestions(query) {
+function fetchManualProductSuggestions(query, input) {
     const trimmed = (query || '').trim();
     if (!trimmed) {
         return Promise.resolve([]);
@@ -947,8 +986,26 @@ function fetchManualProductSuggestions(query) {
         return Promise.resolve(manualProductSearchCache.get(cacheKey));
     }
 
-    return fetch(`api/products.php?search=${encodeURIComponent(trimmed)}&limit=15`, {
-        credentials: 'same-origin'
+    let controller = null;
+    if (input && typeof AbortController === 'function') {
+        const existing = manualProductSearchControllers.get(input);
+        if (existing) {
+            existing.abort();
+        }
+
+        controller = new AbortController();
+        manualProductSearchControllers.set(input, controller);
+    }
+
+    const params = new URLSearchParams({
+        search: trimmed,
+        limit: String(Math.max(MANUAL_PRODUCT_RESULTS_LIMIT, 15)),
+        fast: '1'
+    });
+
+    return fetch(`api/products.php?${params.toString()}`, {
+        credentials: 'same-origin',
+        signal: controller ? controller.signal : undefined
     })
         .then(response => {
             if (!response.ok) {
@@ -963,12 +1020,26 @@ function fetchManualProductSuggestions(query) {
             const normalized = list
                 .map(normalizeManualProductRecord)
                 .filter(Boolean);
-            manualProductSearchCache.set(cacheKey, normalized);
-            return normalized;
+            cacheManualProductResults(cacheKey, normalized);
+            return manualProductSearchCache.get(cacheKey) || [];
         })
         .catch(error => {
+            if (error && error.name === 'AbortError') {
+                return [];
+            }
+
             console.warn('Manual product search failed:', error);
             return [];
+        })
+        .finally(() => {
+            if (!input) {
+                return;
+            }
+
+            const active = manualProductSearchControllers.get(input);
+            if (active === controller) {
+                manualProductSearchControllers.delete(input);
+            }
         });
 }
 
@@ -1039,7 +1110,6 @@ function selectManualProduct(wrapper, product) {
         return;
     }
 
-    const forcePriceUpdate = wrapper.dataset.forcePriceUpdate === '1';
     const hiddenInput = wrapper.querySelector('.manual-product-id');
     if (hiddenInput) {
         hiddenInput.value = String(product.id);
@@ -1059,38 +1129,17 @@ function selectManualProduct(wrapper, product) {
     }
 
     const orderItemRow = wrapper.closest('.order-item');
-    let priceInput = null;
-    let quantityInput = null;
-
     if (orderItemRow) {
-        priceInput = orderItemRow.querySelector('input[name*="[unit_price]"]');
-        quantityInput = orderItemRow.querySelector('input[name*="[quantity]"]');
-    } else {
-        const form = wrapper.closest('form');
-        if (form) {
-            priceInput = form.querySelector('input[name="unit_price"]');
-            quantityInput = form.querySelector('input[name="quantity"]');
-        }
-    }
-
-    const priceValue = Number(product.price);
-    if (priceInput && Number.isFinite(priceValue) && priceValue > 0) {
-        const currentNumeric = Number(priceInput.value);
-        const shouldUpdatePrice = forcePriceUpdate
-            || !priceInput.value
-            || Number.isNaN(currentNumeric)
-            || currentNumeric === 0;
-
-        if (shouldUpdatePrice) {
+        const priceInput = orderItemRow.querySelector('input[name*="[unit_price]"]');
+        const priceValue = Number(product.price);
+        if (priceInput && (!priceInput.value || Number(priceInput.value) === 0) && Number.isFinite(priceValue) && priceValue > 0) {
             priceInput.value = priceValue.toFixed(2);
-            if (priceInput.dataset) {
-                priceInput.dataset.userEdited = '0';
-            }
         }
-    }
 
-    if (quantityInput && !quantityInput.value) {
-        quantityInput.focus();
+        const quantityInput = orderItemRow.querySelector('input[name*="[quantity]"]');
+        if (quantityInput && !quantityInput.value) {
+            quantityInput.focus();
+        }
     }
 }
 
@@ -1117,6 +1166,7 @@ function handleManualProductSearchInput(input) {
     }
 
     const query = input.value.trim();
+    input.dataset.currentQuery = query;
     resultsEl.dataset.currentQuery = query;
 
     if (query.length < MANUAL_PRODUCT_SEARCH_MIN_CHARS) {
@@ -1126,9 +1176,12 @@ function handleManualProductSearchInput(input) {
         return;
     }
 
-    const localMatches = getLocalManualProductMatches(query, 8);
-    if (localMatches.length > 0) {
-        renderManualProductResults(input, localMatches, query);
+    const localMatches = getLocalManualProductMatches(query, MANUAL_PRODUCT_RESULTS_LIMIT);
+    const cachedMatches = getCachedManualProductMatches(query, MANUAL_PRODUCT_RESULTS_LIMIT);
+    const baseMatches = mergeManualProductResults(localMatches, cachedMatches).slice(0, MANUAL_PRODUCT_RESULTS_LIMIT);
+
+    if (baseMatches.length > 0) {
+        renderManualProductResults(input, baseMatches, query);
     } else {
         showManualProductLoading(resultsEl);
     }
@@ -1139,11 +1192,11 @@ function handleManualProductSearchInput(input) {
 
     const timeoutId = window.setTimeout(() => {
         manualProductSearchTimers.delete(input);
-        fetchManualProductSuggestions(query).then(remoteMatches => {
+        fetchManualProductSuggestions(query, input).then(remoteMatches => {
             if (input.dataset.currentQuery !== query) {
                 return;
             }
-            const combined = mergeManualProductResults(localMatches, remoteMatches);
+            const combined = mergeManualProductResults(baseMatches, remoteMatches).slice(0, MANUAL_PRODUCT_RESULTS_LIMIT);
             renderManualProductResults(input, combined, query);
         });
     }, MANUAL_PRODUCT_SEARCH_DELAY_MS);

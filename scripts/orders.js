@@ -980,7 +980,6 @@ function selectManualProduct(wrapper, product) {
         return;
     }
 
-    const forcePriceUpdate = wrapper.dataset.forcePriceUpdate === '1';
     const hiddenInput = wrapper.querySelector('.manual-product-id');
     if (hiddenInput) {
         hiddenInput.value = String(product.id);
@@ -1000,38 +999,17 @@ function selectManualProduct(wrapper, product) {
     }
 
     const orderItemRow = wrapper.closest('.order-item');
-    let priceInput = null;
-    let quantityInput = null;
-
     if (orderItemRow) {
-        priceInput = orderItemRow.querySelector('input[name*="[unit_price]"]');
-        quantityInput = orderItemRow.querySelector('input[name*="[quantity]"]');
-    } else {
-        const form = wrapper.closest('form');
-        if (form) {
-            priceInput = form.querySelector('input[name="unit_price"]');
-            quantityInput = form.querySelector('input[name="quantity"]');
-        }
-    }
-
-    const priceValue = Number(product.price);
-    if (priceInput && Number.isFinite(priceValue) && priceValue > 0) {
-        const currentNumeric = Number(priceInput.value);
-        const shouldUpdatePrice = forcePriceUpdate
-            || !priceInput.value
-            || Number.isNaN(currentNumeric)
-            || currentNumeric === 0;
-
-        if (shouldUpdatePrice) {
+        const priceInput = orderItemRow.querySelector('input[name*="[unit_price]"]');
+        const priceValue = Number(product.price);
+        if (priceInput && (!priceInput.value || Number(priceInput.value) === 0) && Number.isFinite(priceValue) && priceValue > 0) {
             priceInput.value = priceValue.toFixed(2);
-            if (priceInput.dataset) {
-                priceInput.dataset.userEdited = '0';
-            }
         }
-    }
 
-    if (quantityInput && !quantityInput.value) {
-        quantityInput.focus();
+        const quantityInput = orderItemRow.querySelector('input[name*="[quantity]"]');
+        if (quantityInput && !quantityInput.value) {
+            quantityInput.focus();
+        }
     }
 }
 
@@ -3357,6 +3335,66 @@ function setupEventListeners() {
                 event.preventDefault();
                 alert('Numele clientului este obligatoriu!');
                 return;
+            }
+
+            const invoiceFileInput = document.getElementById('invoice_pdf');
+            if (invoiceFileInput && invoiceFileInput.files && invoiceFileInput.files.length > 0) {
+                const invoiceNumberInput = document.getElementById('invoice_number');
+                const invoiceCuiInput = document.getElementById('invoice_cui');
+                const invoiceNumberValue = invoiceNumberInput ? invoiceNumberInput.value.trim() : '';
+                const invoiceCuiValue = invoiceCuiInput ? invoiceCuiInput.value.trim() : '';
+
+                if (!invoiceNumberValue) {
+                    event.preventDefault();
+                    alert('Introdu numărul facturii pentru fișierul încărcat.');
+                    if (invoiceNumberInput) {
+                        invoiceNumberInput.focus();
+                    }
+                    return;
+                }
+
+                const normalizedInvoiceNumber = invoiceNumberValue
+                    .replace(/[\\/.,;]+/g, '-')
+                    .replace(/\s+/g, '-')
+                    .replace(/-+/g, '-');
+                if (!/^[0-9A-Za-z_-]+$/.test(normalizedInvoiceNumber)) {
+                    event.preventDefault();
+                    alert('Numărul facturii poate conține doar litere, cifre, minus sau underscore.');
+                    if (invoiceNumberInput) {
+                        invoiceNumberInput.focus();
+                    }
+                    return;
+                }
+
+                if (!invoiceCuiValue) {
+                    event.preventDefault();
+                    alert('Introdu CUI-ul companiei pentru fișierul facturii.');
+                    if (invoiceCuiInput) {
+                        invoiceCuiInput.focus();
+                    }
+                    return;
+                }
+
+                const normalizedInvoiceCui = invoiceCuiValue.replace(/^RO/i, '').replace(/[^0-9A-Za-z]/g, '');
+                if (normalizedInvoiceCui.length === 0) {
+                    event.preventDefault();
+                    alert('CUI-ul introdus conține caractere invalide.');
+                    if (invoiceCuiInput) {
+                        invoiceCuiInput.focus();
+                    }
+                    return;
+                }
+
+                const invoiceFile = invoiceFileInput.files[0];
+                if (invoiceFile) {
+                    const fileName = invoiceFile.name ? invoiceFile.name.toLowerCase() : '';
+                    const mimeType = (invoiceFile.type || '').toLowerCase();
+                    if (mimeType && mimeType !== 'application/pdf' && !fileName.endsWith('.pdf')) {
+                        event.preventDefault();
+                        alert('Fișierul de factură trebuie să fie în format PDF.');
+                        return;
+                    }
+                }
             }
 
             const items = document.querySelectorAll('#orderItems .order-item');

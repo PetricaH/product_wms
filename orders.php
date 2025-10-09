@@ -91,6 +91,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'recipient_locality_id' => isset($_POST['recipient_locality_id']) ? (int)$_POST['recipient_locality_id'] : null,
                 ];
 
+                $invoiceNumberRaw = trim($_POST['invoice_number'] ?? '');
+                $invoiceCuiRaw = trim($_POST['invoice_cui'] ?? '');
+                $invoiceFile = $_FILES['invoice_pdf'] ?? null;
+
+                $normalizeInvoiceReference = static function (string $value): string {
+                    $value = str_replace(['\\', '/', '.', ',', ';'], '-', $value);
+                    $value = preg_replace('/\s+/', '-', $value);
+                    $value = preg_replace('/-+/', '-', $value);
+                    $value = preg_replace('/[^A-Za-z0-9_-]/', '', $value);
+                    return trim((string)$value, '-_');
+                };
+
+                $normalizeInvoiceCui = static function (string $value): string {
+                    $value = strtoupper($value);
+                    $value = preg_replace('/^RO/i', '', $value);
+                    $value = preg_replace('/[^A-Za-z0-9]/', '', $value);
+                    return (string)$value;
+                };
+
+                $invoiceReference = $invoiceNumberRaw !== '' ? $normalizeInvoiceReference($invoiceNumberRaw) : '';
+                if ($invoiceNumberRaw !== '' && $invoiceReference === '') {
+                    throw new Exception('Numărul facturii conține caractere invalide. Folosește doar litere, cifre, minus și underscore.');
+                }
+
+                $invoiceCuiNormalized = $invoiceCuiRaw !== '' ? $normalizeInvoiceCui($invoiceCuiRaw) : '';
+                if ($invoiceCuiRaw !== '' && $invoiceCuiNormalized === '') {
+                    throw new Exception('CUI-ul facturii conține caractere invalide.');
+                }
+
+                $invoiceFileTargetPath = null;
+                $invoiceFileFinalName = null;
+                $shouldUploadInvoice = is_array($invoiceFile)
+                    && isset($invoiceFile['error'])
+                    && (int)$invoiceFile['error'] !== UPLOAD_ERR_NO_FILE;
+
                 if ($orderData['recipient_county_id'] !== null && $orderData['recipient_county_id'] <= 0) {
                     $orderData['recipient_county_id'] = null;
                 }
@@ -164,6 +199,69 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     throw new Exception('Comanda trebuie să conțină cel puțin un produs.');
                 }
 
+                if ($shouldUploadInvoice) {
+                    $invoiceError = (int)($invoiceFile['error'] ?? UPLOAD_ERR_OK);
+                    if ($invoiceError !== UPLOAD_ERR_OK) {
+                        throw new Exception('Încărcarea fișierului de factură a eșuat. Încearcă din nou.');
+                    }
+
+                    if ($invoiceReference === '') {
+                        throw new Exception('Introdu numărul facturii pentru fișierul PDF încărcat.');
+                    }
+
+                    if ($invoiceCuiNormalized === '') {
+                        throw new Exception('Introdu CUI-ul companiei pentru fișierul facturii.');
+                    }
+
+                    $invoiceTmpName = $invoiceFile['tmp_name'] ?? '';
+                    if ($invoiceTmpName === '' || !is_uploaded_file($invoiceTmpName)) {
+                        throw new Exception('Fișierul de factură încărcat nu este valid.');
+                    }
+
+                    $extension = strtolower((string)pathinfo($invoiceFile['name'] ?? '', PATHINFO_EXTENSION));
+                    if ($extension !== 'pdf') {
+                        throw new Exception('Fișierul facturii trebuie să fie în format PDF.');
+                    }
+
+                    $storageCandidates = ['/var/www/wartung.notsowms.ro/storage/order_pdf_invoices'];
+                    if (defined('BASE_PATH')) {
+                        $storageCandidates[] = BASE_PATH . '/storage/order_pdf_invoices';
+                    }
+
+                    $invoiceStorageDir = null;
+                    foreach ($storageCandidates as $candidate) {
+                        if (empty($candidate)) {
+                            continue;
+                        }
+
+                        if (!is_dir($candidate)) {
+                            @mkdir($candidate, 0775, true);
+                        }
+
+                        if (is_dir($candidate) && is_writable($candidate)) {
+                            $invoiceStorageDir = $candidate;
+                            break;
+                        }
+                    }
+
+                    if ($invoiceStorageDir === null) {
+                        throw new Exception('Nu s-a putut accesa directorul pentru facturile PDF.');
+                    }
+
+                    $invoiceFileFinalName = sprintf('factura-%s-cui-RO%s.pdf', $invoiceReference, $invoiceCuiNormalized);
+                    $invoiceFileTargetPath = rtrim($invoiceStorageDir, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . $invoiceFileFinalName;
+
+                    if (file_exists($invoiceFileTargetPath) && !@unlink($invoiceFileTargetPath)) {
+                        throw new Exception('Există deja o factură salvată cu același număr și CUI. Șterge fișierul existent sau folosește alte valori.');
+                    }
+
+                    if (!move_uploaded_file($invoiceTmpName, $invoiceFileTargetPath)) {
+                        throw new Exception('Nu s-a putut salva fișierul de factură încărcat.');
+                    }
+
+                    @chmod($invoiceFileTargetPath, 0644);
+                }
+
                 $totalValue = round($totalValue, 2);
 
                 $manualOrderData = [
@@ -190,6 +288,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'declared_value' => $totalValue,
                     'observations' => $orderData['notes'],
                     'package_content' => implode(', ', $packageLines),
+                    'invoice_reference' => $invoiceReference !== '' ? $invoiceReference : null,
                     'customer_id' => null,
                     'parcels_count' => 1,
                     'envelopes_count' => 0,
@@ -211,12 +310,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $manualOrderData['order_date'] = date('Y-m-d H:i:s');
                 }
 
-                $creationResult = $orderModel->createManualOrder($manualOrderData, $items);
+                try {
+                    $creationResult = $orderModel->createManualOrder($manualOrderData, $items);
+                } catch (Throwable $creationException) {
+                    if ($invoiceFileTargetPath !== null && is_file($invoiceFileTargetPath)) {
+                        @unlink($invoiceFileTargetPath);
+                    }
+                    throw $creationException;
+                }
 
                 if (!empty($creationResult['success'])) {
                     $message = 'Comanda a fost creată cu succes.';
                     $messageType = 'success';
                 } else {
+                    if ($invoiceFileTargetPath !== null && is_file($invoiceFileTargetPath)) {
+                        @unlink($invoiceFileTargetPath);
+                    }
                     $errorMessage = $creationResult['error'] ?? 'Eroare la crearea comenzii.';
                     throw new Exception($errorMessage);
                 }
@@ -1409,7 +1518,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                         <span class="material-symbols-outlined">close</span>
                     </button>
                 </div>
-                <form id="createOrderForm" method="POST">
+                <form id="createOrderForm" method="POST" enctype="multipart/form-data">
                     <div class="modal-body">
                         <input type="hidden" name="action" value="create">
                         
@@ -1505,7 +1614,25 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                             <label for="notes" class="form-label">Observații</label>
                             <textarea name="notes" id="notes" class="form-control" rows="2"></textarea>
                         </div>
-                        
+
+                        <h4>Factură</h4>
+                        <div class="row">
+                            <div class="form-group">
+                                <label for="invoice_number" class="form-label">Număr Factură</label>
+                                <input type="text" name="invoice_number" id="invoice_number" class="form-control" value="<?= htmlspecialchars($_POST['invoice_number'] ?? '') ?>" placeholder="Ex: 12345" autocomplete="off">
+                                <small class="text-muted">Valoarea va fi folosită în numele fișierului: factura-(număr)-cui-RO(CUI).pdf</small>
+                            </div>
+                            <div class="form-group">
+                                <label for="invoice_cui" class="form-label">CUI Companie</label>
+                                <input type="text" name="invoice_cui" id="invoice_cui" class="form-control" value="<?= htmlspecialchars($_POST['invoice_cui'] ?? '') ?>" placeholder="Ex: RO12345678" autocomplete="off">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="invoice_pdf" class="form-label">Fișier Factură (PDF)</label>
+                            <input type="file" name="invoice_pdf" id="invoice_pdf" class="form-control" accept="application/pdf,.pdf">
+                            <small class="text-muted">Încarcă factura aferentă comenzii. Fișierul se va salva în directorul de facturi al WMS.</small>
+                        </div>
+
                         <!-- Order Items -->
                         <h4>Produse Comandă</h4>
                         <div id="orderItems">

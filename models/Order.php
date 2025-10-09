@@ -1271,6 +1271,7 @@ class Order
             'address_text' => $orderData['address_text'] ?? null,
             'order_date' => $orderData['order_date'] ?? date('Y-m-d H:i:s'),
             'notes' => $orderData['notes'] ?? null,
+            'invoice_reference' => $orderData['invoice_reference'] ?? null,
             'total_value' => $orderData['total_value'] ?? 0,
             'declared_value' => $orderData['declared_value'] ?? $orderData['total_value'] ?? 0,
             'recipient_name' => $orderData['recipient_name'] ?? null,

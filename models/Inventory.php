@@ -112,58 +112,117 @@ class Inventory {
      * @return array Array of inventory records
      */
     public function getInventoryWithFilters($productFilter = '', $locationFilter = '', $lowStockOnly = false, array $options = []): array {
-        $query = "SELECT i.*,
-                        p.sku, p.name as product_name, p.description as product_description,
-                        p.category, p.min_stock_level, p.price,
-                        l.location_code, l.notes as location_description,
-                        l.zone, l.type as location_type
+        $receivedFrom = $options['received_from'] ?? '';
+        $receivedTo = $options['received_to'] ?? '';
+        $onlyReturns = !empty($options['only_returns']);
+
+        $params = [];
+
+        $returnTransactionTypes = [
+            'return',
+            'return_good',
+            'return_damaged',
+            'return_defective',
+            'return_opened',
+        ];
+
+        $returnTypeParams = [];
+        foreach ($returnTransactionTypes as $index => $transactionType) {
+            $returnTypeParams[sprintf(':return_type_%d', $index)] = $transactionType;
+        }
+
+        $baseQuery = "SELECT i.*,
+                            p.sku, p.name as product_name, p.description as product_description,
+                            p.category, p.min_stock_level, p.price,
+                            l.location_code, l.notes as location_description,
+                            l.zone, l.type as location_type";
+
+        $hasTransactions = $this->hasInventoryTransactions();
+        $returnWindowMinutes = isset($options['return_window_minutes'])
+            ? max(1, (int)$options['return_window_minutes'])
+            : 1440;
+
+        if ($hasTransactions) {
+            $returnTypePlaceholders = implode(', ', array_keys($returnTypeParams));
+            $returnMatchSql = "(SELECT t.created_at
+                                 FROM inventory_transactions t
+                                 WHERE t.transaction_type IN ({$returnTypePlaceholders})
+                                   AND t.product_id = i.product_id
+                                   AND (t.location_id = i.location_id OR (t.location_id IS NULL AND i.location_id IS NULL))
+                                   AND ABS(TIMESTAMPDIFF(MINUTE, t.created_at, i.received_at)) <= :return_window_minutes
+                                 ORDER BY ABS(TIMESTAMPDIFF(SECOND, t.created_at, i.received_at)), t.created_at DESC
+                                 LIMIT 1)";
+            $params = array_merge($params, $returnTypeParams);
+            $params[':return_window_minutes'] = $returnWindowMinutes;
+        } else {
+            if ($onlyReturns) {
+                return [];
+            }
+            $returnMatchSql = 'NULL';
+        }
+
+        $baseQuery .= ", {$returnMatchSql} AS return_transaction_at
                 FROM {$this->inventoryTable} i
                 LEFT JOIN {$this->productsTable} p ON i.product_id = p.product_id
                 LEFT JOIN {$this->locationsTable} l ON i.location_id = l.id
                 WHERE i.quantity > 0";
 
-        $params = [];
-
-        $receivedFrom = $options['received_from'] ?? '';
-        $receivedTo = $options['received_to'] ?? '';
-
         if (!empty($receivedFrom)) {
-            $query .= " AND i.received_at >= :received_from";
+            $baseQuery .= " AND i.received_at >= :received_from";
             $params[':received_from'] = $receivedFrom . ' 00:00:00';
         }
 
         if (!empty($receivedTo)) {
-            $query .= " AND i.received_at <= :received_to";
+            $baseQuery .= " AND i.received_at <= :received_to";
             $params[':received_to'] = $receivedTo . ' 23:59:59';
         }
 
-        // Apply product filter
         if (!empty($productFilter)) {
-            $query .= " AND i.product_id = :product_id";
+            $baseQuery .= " AND i.product_id = :product_id";
             $params[':product_id'] = $productFilter;
         }
 
-        // Apply location filter
         if (!empty($locationFilter)) {
-            $query .= " AND i.location_id = :location_id";
+            $baseQuery .= " AND i.location_id = :location_id";
             $params[':location_id'] = $locationFilter;
         }
 
-        // Apply low stock filter
         if ($lowStockOnly) {
-            $query .= " AND i.quantity <= COALESCE(p.min_stock_level, 5)";
+            $baseQuery .= " AND i.quantity <= COALESCE(p.min_stock_level, 5)";
+        }
+
+        $query = "SELECT base_query.*,
+                         CASE WHEN base_query.return_transaction_at IS NULL THEN 0 ELSE 1 END AS is_return_entry
+                  FROM (" . $baseQuery . ") AS base_query";
+
+        if ($onlyReturns && $hasTransactions) {
+            $query .= " WHERE base_query.return_transaction_at IS NOT NULL";
         }
 
         if (!empty($receivedFrom) || !empty($receivedTo)) {
-            $query .= " ORDER BY i.received_at DESC, p.name ASC, l.location_code ASC";
+            $query .= " ORDER BY base_query.received_at DESC, base_query.product_name ASC, base_query.location_code ASC";
         } else {
-            $query .= " ORDER BY p.name ASC, l.location_code ASC, i.received_at ASC";
+            $query .= " ORDER BY base_query.product_name ASC, base_query.location_code ASC, base_query.received_at ASC";
         }
 
         try {
             $stmt = $this->conn->prepare($query);
-            $stmt->execute($params);
-            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+            foreach ($params as $key => $value) {
+                if ($key === ':return_window_minutes') {
+                    $stmt->bindValue($key, $value, PDO::PARAM_INT);
+                } else {
+                    $stmt->bindValue($key, $value);
+                }
+            }
+
+            $stmt->execute();
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+            foreach ($rows as &$row) {
+                $row['is_return_entry'] = !empty($row['is_return_entry']);
+            }
+
+            return $rows;
         } catch (PDOException $e) {
             error_log("Error fetching inventory with filters: " . $e->getMessage());
             return [];

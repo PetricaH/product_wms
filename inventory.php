@@ -240,6 +240,7 @@ $lowStockOnly = isset($_GET['low_stock']);
 $receivedFrom = $_GET['received_from'] ?? '';
 $receivedTo = $_GET['received_to'] ?? '';
 $receivedQuick = $_GET['received_quick'] ?? '';
+$onlyReturnsFilter = isset($_GET['only_returns']) && $_GET['only_returns'] === '1';
 
 $receivedFrom = is_string($receivedFrom) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $receivedFrom) ? $receivedFrom : '';
 $receivedTo = is_string($receivedTo) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $receivedTo) ? $receivedTo : '';
@@ -249,6 +250,12 @@ if ($receivedQuick === 'today') {
     $today = date('Y-m-d');
     $receivedFrom = $today;
     $receivedTo = $today;
+    $onlyReturnsFilter = false;
+} elseif ($receivedQuick === 'returns_today') {
+    $today = date('Y-m-d');
+    $receivedFrom = $today;
+    $receivedTo = $today;
+    $onlyReturnsFilter = true;
 }
 
 if ($receivedFrom && $receivedTo && $receivedFrom > $receivedTo) {
@@ -260,6 +267,7 @@ if ($receivedFrom && $receivedTo && $receivedFrom > $receivedTo) {
 $inventoryFilterOptions = [
     'received_from' => $receivedFrom,
     'received_to' => $receivedTo,
+    'only_returns' => $onlyReturnsFilter,
 ];
 
 $detailedBaseParams = [
@@ -288,6 +296,10 @@ if ($receivedTo !== '') {
 
 if ($receivedQuick !== '') {
     $detailedBaseParams['received_quick'] = $receivedQuick;
+}
+
+if ($onlyReturnsFilter) {
+    $detailedBaseParams['only_returns'] = '1';
 }
 
 $detailedPageLink = static function (int $pageNumber) use ($detailedBaseParams): string {
@@ -998,6 +1010,14 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
             background: rgba(22, 163, 74, 0.12);
         }
 
+        .table-row--return {
+            background: rgba(59, 130, 246, 0.08);
+        }
+
+        .table-row--return:hover {
+            background: rgba(37, 99, 235, 0.12);
+        }
+
         .received-info {
             display: flex;
             flex-direction: column;
@@ -1019,6 +1039,23 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
         }
 
         .badge-recent .material-symbols-outlined {
+            font-size: 1rem;
+        }
+
+        .badge-return {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.2rem;
+            margin-top: 0.35rem;
+            padding: 0.2rem 0.6rem;
+            border-radius: 999px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            background: rgba(59, 130, 246, 0.18);
+            color: #1d4ed8;
+        }
+
+        .badge-return .material-symbols-outlined {
             font-size: 1rem;
         }
 
@@ -2074,7 +2111,13 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                         <!-- Filters -->
                         <form method="GET" class="filter-form">
                             <input type="hidden" name="view" value="detailed">
-                            
+                            <?php if ($receivedQuick !== ''): ?>
+                                <input type="hidden" name="received_quick" value="<?= htmlspecialchars($receivedQuick) ?>">
+                            <?php endif; ?>
+                            <?php if ($onlyReturnsFilter): ?>
+                                <input type="hidden" name="only_returns" value="1">
+                            <?php endif; ?>
+
                             <div class="form-group">
                                 <label class="form-label" for="product-search-input">Produs</label>
                                 <div class="product-search-container" data-product-search='<?= htmlspecialchars(json_encode($productSearchOptions, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP), ENT_QUOTES, 'UTF-8') ?>'>
@@ -2128,6 +2171,10 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                     <button type="submit" name="received_quick" value="today" class="btn btn-quick-filter <?= $receivedQuick === 'today' ? 'active' : '' ?>">
                                         <span class="material-symbols-outlined">today</span>
                                         Azi
+                                    </button>
+                                    <button type="submit" name="received_quick" value="returns_today" class="btn btn-quick-filter <?= $receivedQuick === 'returns_today' ? 'active' : '' ?>">
+                                        <span class="material-symbols-outlined">undo</span>
+                                        Retururi Azi
                                     </button>
                                 </div>
                             </div>
@@ -2203,9 +2250,18 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                 $receivedAtRaw = $item['received_at'] ?? null;
                                                 $receivedAtDate = $receivedAtRaw ? date('Y-m-d', strtotime($receivedAtRaw)) : null;
                                                 $isRecent = $view === 'detailed' && $receivedAtDate === $todayDate;
-                                                $rowClass = $isRecent ? 'table-row--recent' : '';
+                                                $isReturnEntry = !empty($item['is_return_entry']);
+                                                $rowClassParts = [];
+                                                if ($isRecent) {
+                                                    $rowClassParts[] = 'table-row--recent';
+                                                }
+                                                if ($isReturnEntry) {
+                                                    $rowClassParts[] = 'table-row--return';
+                                                }
+                                                $rowClass = implode(' ', $rowClassParts);
+                                                $rowClassAttribute = $rowClass !== '' ? ' class="' . htmlspecialchars($rowClass) . '"' : '';
                                             ?>
-                                            <tr class="<?= $rowClass ?>">
+                                            <tr<?= $rowClassAttribute ?>>
                                                 <?php if ($view === 'summary'): ?>
                                                     <td>
                                                         <code class="sku-code"><?= htmlspecialchars($item['sku']) ?></code>
@@ -2309,6 +2365,12 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                                 <span class="badge badge-recent">
                                                                     <span class="material-symbols-outlined">new_releases</span>
                                                                     Azi
+                                                                </span>
+                                                            <?php endif; ?>
+                                                            <?php if ($isReturnEntry): ?>
+                                                                <span class="badge badge-return" title="Stoc provenit din retur">
+                                                                    <span class="material-symbols-outlined">undo</span>
+                                                                    Retur
                                                                 </span>
                                                             <?php endif; ?>
                                                         <?php else: ?>

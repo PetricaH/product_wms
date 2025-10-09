@@ -17,6 +17,8 @@ class Order
     private $itemsTable = "order_items";
     private $hasCanceledAtColumn = false;
     private $hasCanceledByColumn = false;
+    private ?array $tableColumns = null;
+    private ?array $itemTableColumns = null;
     private const CANCELED_STATUS_CANONICAL = 'canceled';
     private const CANCELED_STATUS_STORAGE = 'cancelled';
     private const CANCELED_STATUS_ALIASES = ['canceled', 'cancelled'];
@@ -49,6 +51,56 @@ class Order
             $this->hasCanceledAtColumn = false;
             $this->hasCanceledByColumn = false;
         }
+    }
+
+    private function getTableColumns(): array
+    {
+        if ($this->tableColumns !== null) {
+            return $this->tableColumns;
+        }
+
+        try {
+            $query = sprintf('SHOW COLUMNS FROM `%s`', $this->table);
+            $stmt = $this->conn->prepare($query);
+            $stmt->execute();
+            $this->tableColumns = $stmt->fetchAll(PDO::FETCH_COLUMN);
+            $stmt->closeCursor();
+        } catch (PDOException $e) {
+            error_log('Unable to fetch order columns: ' . $e->getMessage());
+            $this->tableColumns = [];
+        }
+
+        return $this->tableColumns;
+    }
+
+    private function tableHasColumn(string $column): bool
+    {
+        return in_array($column, $this->getTableColumns(), true);
+    }
+
+    private function getItemTableColumns(): array
+    {
+        if ($this->itemTableColumns !== null) {
+            return $this->itemTableColumns;
+        }
+
+        try {
+            $query = sprintf('SHOW COLUMNS FROM `%s`', $this->itemsTable);
+            $stmt = $this->conn->prepare($query);
+            $stmt->execute();
+            $this->itemTableColumns = $stmt->fetchAll(PDO::FETCH_COLUMN);
+            $stmt->closeCursor();
+        } catch (PDOException $e) {
+            error_log('Unable to fetch order item columns: ' . $e->getMessage());
+            $this->itemTableColumns = [];
+        }
+
+        return $this->itemTableColumns;
+    }
+
+    private function itemTableHasColumn(string $column): bool
+    {
+        return in_array($column, $this->getItemTableColumns(), true);
     }
 
     public function hasCancellationMetadata(): bool
@@ -1151,7 +1203,7 @@ class Order
     public function createOrder($orderData) {
         try {
             $this->conn->beginTransaction();
-            
+
             // Insert main order
             $orderQuery = "
                 INSERT INTO orders (
@@ -1223,6 +1275,228 @@ class Order
             
         } catch (Exception $e) {
             $this->conn->rollBack();
+            return [
+                'success' => false,
+                'error' => $e->getMessage()
+            ];
+        }
+    }
+
+    /**
+     * Create a manual order directly from the WMS interface.
+     *
+     * @param array $orderData Structured order fields.
+     * @param array $items     Order items with product metadata.
+     *
+     * @return array{success:bool, order_id?:int, error?:string}
+     */
+    public function createManualOrder(array $orderData, array $items): array
+    {
+        if (empty($orderData['order_number'])) {
+            return [
+                'success' => false,
+                'error' => 'Order number is required.'
+            ];
+        }
+
+        if (empty($items)) {
+            return [
+                'success' => false,
+                'error' => 'Manual orders must contain at least one product.'
+            ];
+        }
+
+        $normalizedStatus = strtolower(trim((string)($orderData['status'] ?? 'pending')));
+        if ($normalizedStatus === '') {
+            $normalizedStatus = 'pending';
+        }
+
+        $availableColumns = $this->getTableColumns();
+
+        $columns = [
+            'order_number' => $orderData['order_number'],
+            'type' => $orderData['type'] ?? 'outbound',
+            'status' => $normalizedStatus,
+            'priority' => $orderData['priority'] ?? 'normal',
+            'customer_id' => $orderData['customer_id'] ?? null,
+            'customer_name' => $orderData['customer_name'] ?? null,
+            'customer_email' => $orderData['customer_email'] ?? null,
+            'shipping_address' => $orderData['shipping_address'] ?? null,
+            'address_text' => $orderData['address_text'] ?? null,
+            'order_date' => $orderData['order_date'] ?? date('Y-m-d H:i:s'),
+            'notes' => $orderData['notes'] ?? null,
+            'invoice_reference' => $orderData['invoice_reference'] ?? null,
+            'total_value' => $orderData['total_value'] ?? 0,
+            'declared_value' => $orderData['declared_value'] ?? $orderData['total_value'] ?? 0,
+            'recipient_name' => $orderData['recipient_name'] ?? null,
+            'recipient_contact_person' => $orderData['recipient_contact_person'] ?? null,
+            'recipient_phone' => $orderData['recipient_phone'] ?? null,
+            'recipient_email' => $orderData['recipient_email'] ?? null,
+            'recipient_county_id' => $orderData['recipient_county_id'] ?? null,
+            'recipient_county_name' => $orderData['recipient_county_name'] ?? null,
+            'recipient_locality_id' => $orderData['recipient_locality_id'] ?? null,
+            'recipient_locality_name' => $orderData['recipient_locality_name'] ?? null,
+            'recipient_street_id' => $orderData['recipient_street_id'] ?? null,
+            'recipient_street_name' => $orderData['recipient_street_name'] ?? null,
+            'recipient_building_number' => $orderData['recipient_building_number'] ?? null,
+            'parcels_count' => $orderData['parcels_count'] ?? 1,
+            'envelopes_count' => $orderData['envelopes_count'] ?? 0,
+            'cash_repayment' => $orderData['cash_repayment'] ?? 0,
+            'bank_repayment' => $orderData['bank_repayment'] ?? 0,
+            'saturday_delivery' => !empty($orderData['saturday_delivery']) ? 1 : 0,
+            'morning_delivery' => !empty($orderData['morning_delivery']) ? 1 : 0,
+            'open_package' => !empty($orderData['open_package']) ? 1 : 0,
+            'observations' => $orderData['observations'] ?? null,
+            'package_content' => $orderData['package_content'] ?? null,
+            'created_by' => $orderData['created_by'] ?? null,
+            'total_weight' => $orderData['total_weight'] ?? 0
+        ];
+
+        // Ensure required auditing field is present
+        if (!$this->tableHasColumn('created_by')) {
+            unset($columns['created_by']);
+        } elseif ($columns['created_by'] === null) {
+            return [
+                'success' => false,
+                'error' => 'Creator user is required to create an order.'
+            ];
+        }
+
+        if (!$this->tableHasColumn('customer_id')) {
+            unset($columns['customer_id']);
+        }
+
+        $columnLookup = array_flip($availableColumns);
+        $columns = array_filter(
+            $columns,
+            static function (string $key) use ($columnLookup): bool {
+                return isset($columnLookup[$key]);
+            },
+            ARRAY_FILTER_USE_KEY
+        );
+
+        if (!isset($columns['order_number'])) {
+            return [
+                'success' => false,
+                'error' => 'Orders table is missing required columns.'
+            ];
+        }
+
+        try {
+            $this->conn->beginTransaction();
+
+            $fields = array_keys($columns);
+            $placeholders = array_map(static function ($column) {
+                return ':' . $column;
+            }, $fields);
+
+            $insertSql = 'INSERT INTO orders (' . implode(', ', $fields) . ')
+                           VALUES (' . implode(', ', $placeholders) . ')';
+
+            $stmt = $this->conn->prepare($insertSql);
+            foreach ($columns as $column => $value) {
+                if ($value === null) {
+                    $stmt->bindValue(':' . $column, null, PDO::PARAM_NULL);
+                } elseif (is_int($value)) {
+                    $stmt->bindValue(':' . $column, $value, PDO::PARAM_INT);
+                } elseif (is_bool($value)) {
+                    $stmt->bindValue(':' . $column, $value ? 1 : 0, PDO::PARAM_INT);
+                } else {
+                    $stmt->bindValue(':' . $column, $value);
+                }
+            }
+
+            $stmt->execute();
+            $orderId = (int)$this->conn->lastInsertId();
+
+            $itemColumnBuilders = [
+                'order_id' => static function (array $item, int $orderId): array {
+                    return [$orderId, PDO::PARAM_INT];
+                },
+                'product_id' => static function (array $item, int $orderId): array {
+                    return [isset($item['product_id']) ? (int)$item['product_id'] : 0, PDO::PARAM_INT];
+                },
+                'quantity' => static function (array $item, int $orderId): array {
+                    return [isset($item['quantity']) ? (int)$item['quantity'] : 0, PDO::PARAM_INT];
+                },
+                'unit_measure' => static function (array $item, int $orderId): array {
+                    return [$item['unit_measure'] ?? 'buc', PDO::PARAM_STR];
+                },
+                'unit_price' => static function (array $item, int $orderId): array {
+                    return [isset($item['unit_price']) ? (float)$item['unit_price'] : 0, null];
+                },
+                'total_price' => static function (array $item, int $orderId): array {
+                    $calculated = (isset($item['quantity']) ? (float)$item['quantity'] : 0)
+                        * (isset($item['unit_price']) ? (float)$item['unit_price'] : 0);
+
+                    $value = isset($item['total_price'])
+                        ? (float)$item['total_price']
+                        : $calculated;
+
+                    return [$value, null];
+                },
+                'notes' => static function (array $item, int $orderId): array {
+                    return [$item['notes'] ?? '', PDO::PARAM_STR];
+                }
+            ];
+
+            $availableItemColumns = $this->getItemTableColumns();
+            $filteredItemBuilders = [];
+            foreach ($itemColumnBuilders as $column => $builder) {
+                if (in_array($column, $availableItemColumns, true)) {
+                    $filteredItemBuilders[$column] = $builder;
+                }
+            }
+
+            if (!isset($filteredItemBuilders['order_id'], $filteredItemBuilders['product_id'], $filteredItemBuilders['quantity'])) {
+                throw new RuntimeException('Order items table is missing required columns.');
+            }
+
+            $itemFields = array_keys($filteredItemBuilders);
+            $itemPlaceholders = array_map(static function (string $column): string {
+                return ':' . $column;
+            }, $itemFields);
+
+            $itemSql = 'INSERT INTO ' . $this->itemsTable . ' (' . implode(', ', $itemFields) . ')
+                        VALUES (' . implode(', ', $itemPlaceholders) . ')';
+
+            $itemStmt = $this->conn->prepare($itemSql);
+            foreach ($items as $item) {
+                foreach ($filteredItemBuilders as $column => $builder) {
+                    [$value, $type] = $builder($item, $orderId);
+
+                    if ($value === null) {
+                        $itemStmt->bindValue(':' . $column, null, PDO::PARAM_NULL);
+                    } elseif ($type !== null) {
+                        $itemStmt->bindValue(':' . $column, $value, $type);
+                    } else {
+                        $itemStmt->bindValue(':' . $column, $value);
+                    }
+                }
+
+                $itemStmt->execute();
+            }
+
+            // Recalculate shipping metrics once items exist
+            try {
+                $shippingData = $this->weightCalculator->calculateOrderShipping($orderId);
+                if (!empty($shippingData)) {
+                    $this->updateShippingData($orderId, $shippingData);
+                }
+            } catch (Exception $inner) {
+                error_log('Manual order shipping calculation failed: ' . $inner->getMessage());
+            }
+
+            $this->conn->commit();
+
+            return [
+                'success' => true,
+                'order_id' => $orderId
+            ];
+        } catch (Exception $e) {
+            $this->conn->rollBack();
+            error_log('Manual order creation failed: ' . $e->getMessage());
+
             return [
                 'success' => false,
                 'error' => $e->getMessage()

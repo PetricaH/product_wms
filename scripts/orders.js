@@ -738,22 +738,68 @@ function capitalize(value) {
     return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
+function generateManualOrderNumber() {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const seconds = String(now.getSeconds()).padStart(2, '0');
+    const random = String(Math.floor(Math.random() * 9000) + 1000);
+    return `MAN-${year}${month}${day}-${hours}${minutes}${seconds}-${random}`;
+}
+
 let itemCounter = 1;
 
 /**
  * Opens the modal for creating a new order.
  */
 function openCreateModal() {
-    document.getElementById('createOrderModal').classList.add('show');
+    if (typeof closeOrderDetailsModal === 'function') {
+        closeOrderDetailsModal();
+    }
+
+    const modal = document.getElementById('createOrderModal');
+    if (!modal) {
+        return;
+    }
+
+    const orderNumberInput = document.getElementById('order_number');
+    if (orderNumberInput) {
+        orderNumberInput.value = generateManualOrderNumber();
+    }
+
+    const orderDateInput = document.getElementById('order_date');
+    if (orderDateInput) {
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        const hours = String(now.getHours()).padStart(2, '0');
+        const minutes = String(now.getMinutes()).padStart(2, '0');
+        orderDateInput.value = `${year}-${month}-${day}T${hours}:${minutes}`;
+    }
+
+    const customerNameInput = document.getElementById('customer_name');
+    const contactInput = document.getElementById('recipient_contact_person');
+    if (customerNameInput && contactInput && contactInput.dataset.userEdited !== '1') {
+        contactInput.value = customerNameInput.value;
+    }
+
+    setupCreateOrderAutocomplete();
+    modal.classList.add('show');
 }
 
 /**
  * Closes and resets the "Create Order" modal.
  */
 function closeCreateModal() {
-    document.getElementById('createOrderModal').classList.remove('show');
-    document.getElementById('createOrderForm').reset();
-    resetOrderItems();
+    const modal = document.getElementById('createOrderModal');
+    if (modal) {
+        modal.classList.remove('show');
+    }
+    resetCreateOrderForm();
 }
 
 /**
@@ -1170,16 +1216,25 @@ function bindOrderDetailsEvents(order) {
     resetOrderItemForm(true);
 }
 
-function initRecipientAutocomplete(order) {
+function initRecipientAutocomplete(order, config) {
     recipientAutocompleteStates.length = 0;
     recipientAutocompleteRegistry.county = null;
     recipientAutocompleteRegistry.locality = null;
 
+    const settings = Object.assign({
+        countyInputId: 'orderRecipientCountyName',
+        countyIdInputId: 'orderRecipientCountyId',
+        countyDisplayId: 'orderRecipientCountyIdDisplay',
+        localityInputId: 'orderRecipientLocalityName',
+        localityIdInputId: 'orderRecipientLocalityId',
+        localityDisplayId: 'orderRecipientLocalityIdDisplay'
+    }, config || {});
+
     const countyState = createRecipientAutocompleteState({
         type: 'county',
-        inputId: 'orderRecipientCountyName',
-        idInputId: 'orderRecipientCountyId',
-        idDisplayId: 'orderRecipientCountyIdDisplay'
+        inputId: settings.countyInputId,
+        idInputId: settings.countyIdInputId,
+        idDisplayId: settings.countyDisplayId
     });
 
     if (countyState) {
@@ -1189,9 +1244,9 @@ function initRecipientAutocomplete(order) {
 
     const localityState = createRecipientAutocompleteState({
         type: 'locality',
-        inputId: 'orderRecipientLocalityName',
-        idInputId: 'orderRecipientLocalityId',
-        idDisplayId: 'orderRecipientLocalityIdDisplay'
+        inputId: settings.localityInputId,
+        idInputId: settings.localityIdInputId,
+        idDisplayId: settings.localityDisplayId
     });
 
     if (localityState) {
@@ -1236,6 +1291,7 @@ function createRecipientAutocompleteState(config) {
     }
 
     const wrapper = input.closest('[data-autocomplete-wrapper]') || input.parentElement;
+    const alreadyInitialized = input.dataset.autocompleteInitialized === '1';
 
     const state = {
         type: config.type,
@@ -1251,29 +1307,33 @@ function createRecipientAutocompleteState(config) {
         pendingQuery: null
     };
 
-    input.addEventListener('input', () => handleRecipientAutocompleteInput(state));
-    input.addEventListener('focus', () => {
-        if (state.input.value.trim().length >= RECIPIENT_AUTOCOMPLETE_MIN_CHARS) {
-            handleRecipientAutocompleteInput(state, { immediate: true });
-        }
-    });
-    input.addEventListener('keydown', event => {
-        if (event.key === 'Escape') {
-            hideRecipientSuggestions(state);
-        }
-    });
+    if (!alreadyInitialized) {
+        input.addEventListener('input', () => handleRecipientAutocompleteInput(state));
+        input.addEventListener('focus', () => {
+            if (state.input.value.trim().length >= RECIPIENT_AUTOCOMPLETE_MIN_CHARS) {
+                handleRecipientAutocompleteInput(state, { immediate: true });
+            }
+        });
+        input.addEventListener('keydown', event => {
+            if (event.key === 'Escape') {
+                hideRecipientSuggestions(state);
+            }
+        });
 
-    suggestionsEl.addEventListener('mousedown', event => {
-        event.preventDefault();
-    });
+        suggestionsEl.addEventListener('mousedown', event => {
+            event.preventDefault();
+        });
 
-    suggestionsEl.addEventListener('click', event => {
-        const option = event.target.closest('.autocomplete-option');
-        if (!option) {
-            return;
-        }
-        applyRecipientSelection(state, option.dataset);
-    });
+        suggestionsEl.addEventListener('click', event => {
+            const option = event.target.closest('.autocomplete-option');
+            if (!option) {
+                return;
+            }
+            applyRecipientSelection(state, option.dataset);
+        });
+
+        input.dataset.autocompleteInitialized = '1';
+    }
 
     return state;
 }
@@ -2660,6 +2720,64 @@ function resetOrderItems() {
     itemCounter = 1;
 }
 
+function resetCreateOrderForm() {
+    const form = document.getElementById('createOrderForm');
+    if (form) {
+        form.reset();
+    }
+
+    resetOrderItems();
+
+    const countyInput = document.getElementById('createOrderRecipientCountyName');
+    const countyIdInput = document.getElementById('createOrderRecipientCountyId');
+    const countyDisplay = document.getElementById('createOrderRecipientCountyIdDisplay');
+    if (countyInput) {
+        countyInput.value = '';
+    }
+    if (countyIdInput) {
+        countyIdInput.value = '';
+    }
+    if (countyDisplay) {
+        countyDisplay.textContent = '—';
+    }
+
+    const localityInput = document.getElementById('createOrderRecipientLocalityName');
+    const localityIdInput = document.getElementById('createOrderRecipientLocalityId');
+    const localityDisplay = document.getElementById('createOrderRecipientLocalityIdDisplay');
+    if (localityInput) {
+        localityInput.value = '';
+    }
+    if (localityIdInput) {
+        localityIdInput.value = '';
+    }
+    if (localityDisplay) {
+        localityDisplay.textContent = '—';
+    }
+
+    const contactInput = document.getElementById('recipient_contact_person');
+    if (contactInput) {
+        delete contactInput.dataset.userEdited;
+    }
+
+    setupCreateOrderAutocomplete();
+}
+
+function setupCreateOrderAutocomplete() {
+    const form = document.getElementById('createOrderForm');
+    if (!form) {
+        return;
+    }
+
+    initRecipientAutocomplete({}, {
+        countyInputId: 'createOrderRecipientCountyName',
+        countyIdInputId: 'createOrderRecipientCountyId',
+        countyDisplayId: 'createOrderRecipientCountyIdDisplay',
+        localityInputId: 'createOrderRecipientLocalityName',
+        localityIdInputId: 'createOrderRecipientLocalityId',
+        localityDisplayId: 'createOrderRecipientLocalityIdDisplay'
+    });
+}
+
 /**
  * Gets the HTML <option> tags from the first product dropdown to use in new rows.
  * @returns {string} A string of HTML <option> elements.
@@ -2726,7 +2844,7 @@ function setupEventListeners() {
                 alert('Numele clientului este obligatoriu!');
                 return;
             }
-            
+
             const items = document.querySelectorAll('#orderItems .order-item');
             let hasValidItems = false;
             items.forEach(item => {
@@ -2736,10 +2854,25 @@ function setupEventListeners() {
                     hasValidItems = true;
                 }
             });
-            
+
             if (!hasValidItems) {
                 event.preventDefault();
                 alert('Comanda trebuie să conțină cel puțin un produs valid (produs și cantitate).');
+            }
+        });
+    }
+
+    const customerNameInput = document.getElementById('customer_name');
+    const contactInput = document.getElementById('recipient_contact_person');
+    if (contactInput) {
+        contactInput.addEventListener('input', () => {
+            contactInput.dataset.userEdited = '1';
+        });
+    }
+    if (customerNameInput && contactInput) {
+        customerNameInput.addEventListener('input', () => {
+            if (contactInput.dataset.userEdited !== '1') {
+                contactInput.value = customerNameInput.value;
             }
         });
     }

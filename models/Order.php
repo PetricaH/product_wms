@@ -17,6 +17,7 @@ class Order
     private $itemsTable = "order_items";
     private $hasCanceledAtColumn = false;
     private $hasCanceledByColumn = false;
+    private ?array $tableColumns = null;
     private const CANCELED_STATUS_CANONICAL = 'canceled';
     private const CANCELED_STATUS_STORAGE = 'cancelled';
     private const CANCELED_STATUS_ALIASES = ['canceled', 'cancelled'];
@@ -49,6 +50,31 @@ class Order
             $this->hasCanceledAtColumn = false;
             $this->hasCanceledByColumn = false;
         }
+    }
+
+    private function getTableColumns(): array
+    {
+        if ($this->tableColumns !== null) {
+            return $this->tableColumns;
+        }
+
+        try {
+            $query = sprintf('SHOW COLUMNS FROM `%s`', $this->table);
+            $stmt = $this->conn->prepare($query);
+            $stmt->execute();
+            $this->tableColumns = $stmt->fetchAll(PDO::FETCH_COLUMN);
+            $stmt->closeCursor();
+        } catch (PDOException $e) {
+            error_log('Unable to fetch order columns: ' . $e->getMessage());
+            $this->tableColumns = [];
+        }
+
+        return $this->tableColumns;
+    }
+
+    private function tableHasColumn(string $column): bool
+    {
+        return in_array($column, $this->getTableColumns(), true);
     }
 
     public function hasCancellationMetadata(): bool
@@ -1259,6 +1285,8 @@ class Order
             $normalizedStatus = 'pending';
         }
 
+        $availableColumns = $this->getTableColumns();
+
         $columns = [
             'order_number' => $orderData['order_number'],
             'type' => $orderData['type'] ?? 'outbound',
@@ -1299,10 +1327,32 @@ class Order
         ];
 
         // Ensure required auditing field is present
-        if ($columns['created_by'] === null) {
+        if (!$this->tableHasColumn('created_by')) {
+            unset($columns['created_by']);
+        } elseif ($columns['created_by'] === null) {
             return [
                 'success' => false,
                 'error' => 'Creator user is required to create an order.'
+            ];
+        }
+
+        if (!$this->tableHasColumn('customer_id')) {
+            unset($columns['customer_id']);
+        }
+
+        $columnLookup = array_flip($availableColumns);
+        $columns = array_filter(
+            $columns,
+            static function (string $key) use ($columnLookup): bool {
+                return isset($columnLookup[$key]);
+            },
+            ARRAY_FILTER_USE_KEY
+        );
+
+        if (!isset($columns['order_number'])) {
+            return [
+                'success' => false,
+                'error' => 'Orders table is missing required columns.'
             ];
         }
 

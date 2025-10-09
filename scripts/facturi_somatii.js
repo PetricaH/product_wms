@@ -2,20 +2,14 @@
     'use strict';
 
     let selectedFile = null;
-    let mediaStream = null;
     let facturiTable = null;
 
     const selectors = {
-        tabButtons: '.tab-button',
-        tabPanels: '.tab-panel',
         uploadArea: '#upload-area',
         fileInput: '#invoice-file',
+        cameraInput: '#invoice-camera',
         selectFileBtn: '#select-file-btn',
         cameraBtn: '#camera-btn',
-        cameraContainer: '#camera-container',
-        cameraStream: '#camera-stream',
-        captureBtn: '#capture-btn',
-        closeCameraBtn: '#close-camera-btn',
         previewContainer: '#preview-container',
         previewImage: '#preview-image',
         processBtn: '#process-btn',
@@ -121,7 +115,6 @@
 
     function init() {
         ensureResultsPanel();
-        bindTabEvents();
         bindUploadEvents();
         bindCameraEvents();
         bindProcessingEvents();
@@ -129,25 +122,6 @@
         fetchStats();
         bindFilterEvents();
         bindModalEvents();
-    }
-
-    function bindTabEvents() {
-        $(document).on('click', selectors.tabButtons, function () {
-            const tab = $(this).data('tab');
-            switchTab(tab);
-        });
-    }
-
-    function switchTab(tabName) {
-        $(selectors.tabButtons).removeClass('active').attr('aria-selected', 'false');
-        $(selectors.tabPanels).removeClass('active').attr('aria-hidden', 'true');
-
-        $(`${selectors.tabButtons}[data-tab="${tabName}"]`).addClass('active').attr('aria-selected', 'true');
-        $(`#tab-${tabName}`).addClass('active').attr('aria-hidden', 'false');
-
-        if (tabName === 'management' && facturiTable) {
-            facturiTable.columns.adjust();
-        }
     }
 
     function bindUploadEvents() {
@@ -192,62 +166,24 @@
     }
 
     function bindCameraEvents() {
-        $(selectors.cameraBtn).on('click', openCamera);
-        $(selectors.closeCameraBtn).on('click', closeCamera);
-        $(selectors.captureBtn).on('click', capturePhoto);
-    }
+        const cameraInput = $(selectors.cameraInput);
 
-    function openCamera() {
-        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-            notify('error', 'Camera nu este suportată pe acest dispozitiv.');
-            return;
-        }
-
-        navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
-            .then(stream => {
-                mediaStream = stream;
-                const video = document.querySelector(selectors.cameraStream);
-                if (video) {
-                    video.srcObject = stream;
-                }
-                $(selectors.cameraContainer).prop('hidden', false);
-            })
-            .catch(err => {
-                notify('error', 'Nu s-a putut porni camera: ' + err.message);
-            });
-    }
-
-    function closeCamera() {
-        if (mediaStream) {
-            mediaStream.getTracks().forEach(track => track.stop());
-            mediaStream = null;
-        }
-        $(selectors.cameraContainer).prop('hidden', true);
-    }
-
-    function capturePhoto() {
-        const video = document.querySelector(selectors.cameraStream);
-        if (!video || !mediaStream) {
-            notify('warning', 'Camera nu este activă.');
-            return;
-        }
-
-        const canvas = document.createElement('canvas');
-        canvas.width = video.videoWidth || 1280;
-        canvas.height = video.videoHeight || 720;
-        const context = canvas.getContext('2d');
-        context.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-        canvas.toBlob(blob => {
-            if (!blob) {
-                notify('error', 'Nu s-a putut captura imaginea.');
+        $(selectors.cameraBtn).on('click', event => {
+            event.preventDefault();
+            if (!cameraInput.length) {
+                notify('error', 'Camera nu este disponibilă în această interfață.');
                 return;
             }
 
-            const file = new File([blob], `factura_${Date.now()}.jpg`, { type: 'image/jpeg' });
-            handleFileUpload(file);
-            closeCamera();
-        }, 'image/jpeg', 0.95);
+            cameraInput.trigger('click');
+        });
+
+        cameraInput.on('change', function () {
+            if (this.files && this.files[0]) {
+                handleFileUpload(this.files[0]);
+                this.value = '';
+            }
+        });
     }
 
     function bindProcessingEvents() {
@@ -313,14 +249,14 @@
             formData.append('image', selectedFile, selectedFile.name);
         }
 
-        const procesareTab = document.getElementById('tab-procesare');
-        if (procesareTab) {
-            const nrFacturaInput = procesareTab.querySelector('input[name="nr_factura"]');
+        const procesareSection = document.getElementById('invoice-processing');
+        if (procesareSection) {
+            const nrFacturaInput = procesareSection.querySelector('input[name="nr_factura"]');
             if (nrFacturaInput && nrFacturaInput.value.trim()) {
                 formData.append('nr_factura', nrFacturaInput.value.trim());
             }
 
-            procesareTab.querySelectorAll('[data-fs-field]').forEach(element => {
+            procesareSection.querySelectorAll('[data-fs-field]').forEach(element => {
                 const name = element.getAttribute('name') || element.getAttribute('data-fs-field');
                 if (!name) {
                     return;
@@ -734,6 +670,12 @@
                 url: 'https://cdn.datatables.net/plug-ins/1.13.6/i18n/ro.json'
             }
         });
+
+        setTimeout(() => {
+            if (facturiTable) {
+                facturiTable.columns.adjust().responsive.recalc();
+            }
+        }, 200);
 
         $(selectors.table).on('click', '.view-invoice', function () {
             const id = $(this).data('id');

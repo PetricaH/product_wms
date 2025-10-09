@@ -38,6 +38,7 @@ $currentPage = 'facturi_somatii';
                         <div class="upload-stack">
                             <div class="upload-area" id="upload-area">
                                 <input type="file" id="invoice-file" accept="image/*,application/pdf" hidden>
+                                <input type="file" id="invoice-camera" accept="image/*" capture="environment" hidden>
                                 <div class="upload-illustration">
                                     <span class="material-symbols-outlined">cloud_upload</span>
                                 </div>
@@ -79,20 +80,6 @@ $currentPage = 'facturi_somatii';
                             </div>
                         </div>
                     </section>
-
-                    <div class="camera-fullscreen" id="camera-fullscreen" hidden>
-                        <video id="camera-stream" autoplay playsinline></video>
-                        <div class="camera-overlay-controls">
-                            <button type="button" class="btn btn-primary" id="capture-btn">
-                                <span class="material-symbols-outlined">camera</span>
-                                Fotografiază
-                            </button>
-                            <button type="button" class="btn btn-secondary" id="close-camera-btn">
-                                <span class="material-symbols-outlined">close</span>
-                                Închide cameră
-                            </button>
-                        </div>
-                    </div>
 
                     <section class="results-section">
                         <div class="results-card" id="results-display" data-n8n-webhook-url="<?= htmlspecialchars(getenv('N8N_WEBHOOK_URL') ?: '') ?>">

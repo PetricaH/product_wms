@@ -2,18 +2,14 @@
     'use strict';
 
     let selectedFile = null;
-    let mediaStream = null;
     let facturiTable = null;
 
     const selectors = {
         uploadArea: '#upload-area',
         fileInput: '#invoice-file',
+        cameraInput: '#invoice-camera',
         selectFileBtn: '#select-file-btn',
         cameraBtn: '#camera-btn',
-        cameraOverlay: '#camera-fullscreen',
-        cameraStream: '#camera-stream',
-        captureBtn: '#capture-btn',
-        closeCameraBtn: '#close-camera-btn',
         previewContainer: '#preview-container',
         previewImage: '#preview-image',
         processBtn: '#process-btn',
@@ -170,104 +166,24 @@
     }
 
     function bindCameraEvents() {
-        $(selectors.cameraBtn).on('click', openCamera);
-        $(selectors.closeCameraBtn).on('click', closeCamera);
-        $(selectors.captureBtn).on('click', capturePhoto);
-    }
+        const cameraInput = $(selectors.cameraInput);
 
-    function openCamera() {
-        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-            notify('error', 'Camera nu este suportată pe acest dispozitiv.');
-            return;
-        }
-
-        const overlay = document.querySelector(selectors.cameraOverlay);
-        if (!overlay) {
-            notify('error', 'Interfața camerei nu a putut fi inițializată.');
-            return;
-        }
-
-        navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
-            .then(stream => {
-                mediaStream = stream;
-                const video = document.querySelector(selectors.cameraStream);
-                if (video) {
-                    video.srcObject = stream;
-                }
-                overlay.hidden = false;
-                document.body.classList.add('camera-open');
-
-                const requestFullscreen = element => {
-                    if (!element) {
-                        return;
-                    }
-
-                    const enter = element.requestFullscreen
-                        || element.webkitRequestFullscreen
-                        || element.mozRequestFullScreen
-                        || element.msRequestFullscreen;
-
-                    if (enter) {
-                        Promise.resolve().then(() => enter.call(element)).catch(() => {
-                            /* Ignorăm erorile de fullscreen (permisiuni sau platformă) */
-                        });
-                    }
-                };
-
-                requestFullscreen(overlay);
-            })
-            .catch(err => {
-                notify('error', 'Nu s-a putut porni camera: ' + err.message);
-                closeCamera();
-            });
-    }
-
-    function closeCamera() {
-        const overlay = document.querySelector(selectors.cameraOverlay);
-        if (mediaStream) {
-            mediaStream.getTracks().forEach(track => track.stop());
-            mediaStream = null;
-        }
-        if (overlay) {
-            overlay.hidden = true;
-        }
-        document.body.classList.remove('camera-open');
-
-        const exit = document.exitFullscreen
-            || document.webkitExitFullscreen
-            || document.mozCancelFullScreen
-            || document.msExitFullscreen;
-
-        if (exit && (document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement)) {
-            Promise.resolve().then(() => exit.call(document)).catch(() => {
-                /* Ignorăm erorile la ieșirea din fullscreen */
-            });
-        }
-    }
-
-    function capturePhoto() {
-        const video = document.querySelector(selectors.cameraStream);
-        if (!video || !mediaStream) {
-            notify('warning', 'Camera nu este activă.');
-            return;
-        }
-
-        const canvas = document.createElement('canvas');
-        canvas.width = video.videoWidth || 1280;
-        canvas.height = video.videoHeight || 720;
-        const context = canvas.getContext('2d');
-        context.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-        canvas.toBlob(blob => {
-            if (!blob) {
-                notify('error', 'Nu s-a putut captura imaginea.');
+        $(selectors.cameraBtn).on('click', event => {
+            event.preventDefault();
+            if (!cameraInput.length) {
+                notify('error', 'Camera nu este disponibilă în această interfață.');
                 return;
             }
 
-            const file = new File([blob], `factura_${Date.now()}.jpg`, { type: 'image/jpeg' });
-            handleFileUpload(file);
-            closeCamera();
-        }, 'image/jpeg', 0.95);
+            cameraInput.trigger('click');
+        });
+
+        cameraInput.on('change', function () {
+            if (this.files && this.files[0]) {
+                handleFileUpload(this.files[0]);
+                this.value = '';
+            }
+        });
     }
 
     function bindProcessingEvents() {

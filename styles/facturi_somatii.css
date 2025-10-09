@@ -126,56 +126,6 @@
     gap: 0.5rem;
 }
 
-
-.camera-fullscreen {
-    position: fixed;
-    inset: 0;
-    background: radial-gradient(circle at center, rgba(12, 16, 24, 0.96), rgba(5, 7, 12, 0.98));
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 1.5rem;
-    z-index: 9999;
-}
-
-.camera-fullscreen video {
-    width: 100%;
-    height: 100%;
-    max-width: 100%;
-    max-height: 100%;
-    object-fit: contain;
-    border-radius: 20px;
-    box-shadow: 0 25px 80px -40px rgba(0, 0, 0, 0.9);
-    background: rgba(0, 0, 0, 0.65);
-}
-
-.camera-fullscreen .camera-overlay-controls {
-    position: fixed;
-    bottom: 2rem;
-    left: 50%;
-    transform: translateX(-50%);
-    display: flex;
-    gap: 1rem;
-    flex-wrap: wrap;
-    justify-content: center;
-    background: rgba(5, 7, 12, 0.75);
-    padding: 0.75rem 1.25rem;
-    border-radius: 999px;
-    box-shadow: 0 12px 30px -20px rgba(0, 0, 0, 0.9);
-}
-
-.camera-overlay-controls .btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    min-width: 160px;
-    justify-content: center;
-}
-
-body.camera-open {
-    overflow: hidden;
-}
-
 .preview-processing {
     display: flex;
     flex-direction: column;
@@ -421,16 +371,6 @@ body.camera-open {
 }
 
 @media (max-width: 600px) {
-    .camera-fullscreen video {
-        border-radius: 12px;
-    }
-
-    .camera-fullscreen .camera-overlay-controls {
-        width: calc(100% - 2rem);
-        border-radius: 20px;
-        bottom: 1.25rem;
-    }
-
     .upload-actions {
         flex-direction: column;
     }

@@ -32,8 +32,10 @@ const recipientAutocompleteRegistry = {
 
 const MANUAL_PRODUCT_SEARCH_MIN_CHARS = 2;
 const MANUAL_PRODUCT_SEARCH_DELAY_MS = 200;
+const MANUAL_PRODUCT_SEARCH_RESULT_LIMIT = 20;
 const manualProductSearchTimers = new WeakMap();
 const manualProductSearchCache = new Map();
+const manualProductSearchControllers = new WeakMap();
 
 function normalizeOrderStatus(status) {
     const value = (status ?? '').toString().trim().toLowerCase();
@@ -775,20 +777,6 @@ function closeAllManualProductResults(exceptEl) {
     });
 }
 
-function mergeManualProductResults(primary = [], secondary = []) {
-    const unique = new Map();
-    [...primary, ...secondary].forEach(item => {
-        const normalized = normalizeManualProductRecord(item);
-        if (!normalized) {
-            return;
-        }
-        if (!unique.has(normalized.id)) {
-            unique.set(normalized.id, normalized);
-        }
-    });
-    return Array.from(unique.values());
-}
-
 function renderManualProductResults(input, products, query) {
     const resultsEl = getManualProductResultsElement(input);
     if (!resultsEl) {
@@ -847,37 +835,7 @@ function renderManualProductResults(input, products, query) {
     resultsEl.style.display = 'block';
 }
 
-function getLocalManualProductMatches(query, limit = 8) {
-    if (!query || query.length < MANUAL_PRODUCT_SEARCH_MIN_CHARS) {
-        return [];
-    }
-
-    const products = Array.isArray(window.orderProductsList) ? window.orderProductsList : [];
-    const normalizedQuery = query.toLowerCase();
-    const matches = [];
-
-    for (let index = 0; index < products.length; index += 1) {
-        const normalized = normalizeManualProductRecord(products[index]);
-        if (!normalized) {
-            continue;
-        }
-
-        const nameMatch = (normalized.name || '').toLowerCase().includes(normalizedQuery);
-        const skuMatch = (normalized.sku || '').toLowerCase().includes(normalizedQuery);
-
-        if (nameMatch || skuMatch) {
-            matches.push(normalized);
-        }
-
-        if (matches.length >= limit) {
-            break;
-        }
-    }
-
-    return matches;
-}
-
-function fetchManualProductSuggestions(query) {
+function fetchManualProductSuggestions(query, options = {}) {
     const trimmed = (query || '').trim();
     if (!trimmed) {
         return Promise.resolve([]);
@@ -888,8 +846,14 @@ function fetchManualProductSuggestions(query) {
         return Promise.resolve(manualProductSearchCache.get(cacheKey));
     }
 
-    return fetch(`api/products.php?search=${encodeURIComponent(trimmed)}&limit=15`, {
-        credentials: 'same-origin'
+    const params = new URLSearchParams({
+        search: trimmed,
+        limit: String(MANUAL_PRODUCT_SEARCH_RESULT_LIMIT)
+    });
+
+    return fetch(`api/products.php?${params.toString()}`, {
+        credentials: 'same-origin',
+        signal: options.signal
     })
         .then(response => {
             if (!response.ok) {
@@ -908,6 +872,9 @@ function fetchManualProductSuggestions(query) {
             return normalized;
         })
         .catch(error => {
+            if (error.name === 'AbortError') {
+                throw error;
+            }
             console.warn('Manual product search failed:', error);
             return [];
         });
@@ -980,6 +947,7 @@ function selectManualProduct(wrapper, product) {
         return;
     }
 
+    const forcePriceUpdate = wrapper.dataset.forcePriceUpdate === '1';
     const hiddenInput = wrapper.querySelector('.manual-product-id');
     if (hiddenInput) {
         hiddenInput.value = String(product.id);
@@ -999,17 +967,38 @@ function selectManualProduct(wrapper, product) {
     }
 
     const orderItemRow = wrapper.closest('.order-item');
-    if (orderItemRow) {
-        const priceInput = orderItemRow.querySelector('input[name*="[unit_price]"]');
-        const priceValue = Number(product.price);
-        if (priceInput && (!priceInput.value || Number(priceInput.value) === 0) && Number.isFinite(priceValue) && priceValue > 0) {
-            priceInput.value = priceValue.toFixed(2);
-        }
+    let priceInput = null;
+    let quantityInput = null;
 
-        const quantityInput = orderItemRow.querySelector('input[name*="[quantity]"]');
-        if (quantityInput && !quantityInput.value) {
-            quantityInput.focus();
+    if (orderItemRow) {
+        priceInput = orderItemRow.querySelector('input[name*="[unit_price]"]');
+        quantityInput = orderItemRow.querySelector('input[name*="[quantity]"]');
+    } else {
+        const form = wrapper.closest('form');
+        if (form) {
+            priceInput = form.querySelector('input[name="unit_price"]');
+            quantityInput = form.querySelector('input[name="quantity"]');
         }
+    }
+
+    const priceValue = Number(product.price);
+    if (priceInput && Number.isFinite(priceValue) && priceValue > 0) {
+        const currentNumeric = Number(priceInput.value);
+        const shouldUpdatePrice = forcePriceUpdate
+            || !priceInput.value
+            || Number.isNaN(currentNumeric)
+            || currentNumeric === 0;
+
+        if (shouldUpdatePrice) {
+            priceInput.value = priceValue.toFixed(2);
+            if (priceInput.dataset) {
+                priceInput.dataset.userEdited = '0';
+            }
+        }
+    }
+
+    if (quantityInput && !quantityInput.value) {
+        quantityInput.focus();
     }
 }
 
@@ -1038,6 +1027,19 @@ function handleManualProductSearchInput(input) {
     const query = input.value.trim();
     resultsEl.dataset.currentQuery = query;
 
+    if (manualProductSearchTimers.has(input)) {
+        clearTimeout(manualProductSearchTimers.get(input));
+        manualProductSearchTimers.delete(input);
+    }
+
+    if (manualProductSearchControllers.has(input)) {
+        const controller = manualProductSearchControllers.get(input);
+        if (controller) {
+            controller.abort();
+        }
+        manualProductSearchControllers.delete(input);
+    }
+
     if (query.length < MANUAL_PRODUCT_SEARCH_MIN_CHARS) {
         resultsEl.innerHTML = '';
         hideManualProductResults(resultsEl);
@@ -1045,26 +1047,48 @@ function handleManualProductSearchInput(input) {
         return;
     }
 
-    const localMatches = getLocalManualProductMatches(query, 8);
-    if (localMatches.length > 0) {
-        renderManualProductResults(input, localMatches, query);
+    closeAllManualProductResults(resultsEl);
+
+    const cacheKey = query.toLowerCase();
+    if (manualProductSearchCache.has(cacheKey)) {
+        const cached = manualProductSearchCache.get(cacheKey) || [];
+        renderManualProductResults(input, cached, query);
     } else {
         showManualProductLoading(resultsEl);
     }
 
-    if (manualProductSearchTimers.has(input)) {
-        clearTimeout(manualProductSearchTimers.get(input));
-    }
-
     const timeoutId = window.setTimeout(() => {
         manualProductSearchTimers.delete(input);
-        fetchManualProductSuggestions(query).then(remoteMatches => {
-            if (input.dataset.currentQuery !== query) {
-                return;
+
+        if (manualProductSearchCache.has(cacheKey)) {
+            const cached = manualProductSearchCache.get(cacheKey) || [];
+            if (input.dataset.currentQuery === query) {
+                renderManualProductResults(input, cached, query);
             }
-            const combined = mergeManualProductResults(localMatches, remoteMatches);
-            renderManualProductResults(input, combined, query);
-        });
+            return;
+        }
+
+        const controller = new AbortController();
+        manualProductSearchControllers.set(input, controller);
+
+        fetchManualProductSuggestions(query, { signal: controller.signal })
+            .then(results => {
+                manualProductSearchControllers.delete(input);
+                if (controller.signal.aborted || input.dataset.currentQuery !== query) {
+                    return;
+                }
+                renderManualProductResults(input, results, query);
+            })
+            .catch(error => {
+                manualProductSearchControllers.delete(input);
+                if (error && error.name === 'AbortError') {
+                    return;
+                }
+                console.warn('Manual product search failed:', error);
+                if (input.dataset.currentQuery === query) {
+                    renderManualProductResults(input, [], query);
+                }
+            });
     }, MANUAL_PRODUCT_SEARCH_DELAY_MS);
 
     manualProductSearchTimers.set(input, timeoutId);
@@ -1457,7 +1481,6 @@ function displayOrderDetails(order) {
 }
 
 function renderOrderItemsSection(order, items) {
-    const productOptions = buildProductOptions();
     let rowsHtml = '';
 
     if (Array.isArray(items) && items.length) {
@@ -1535,10 +1558,12 @@ function renderOrderItemsSection(order, items) {
                     <input type="hidden" name="order_item_id" value="">
                     <div class="row" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem;">
                         <div class="form-group" style="display: flex; flex-direction: column; gap: 0.35rem;">
-                            <label class="form-label" for="orderItemProduct">Produs</label>
-                            <select id="orderItemProduct" name="product_id" class="form-control" required>
-                                ${productOptions}
-                            </select>
+                            <label class="form-label" for="orderItemProductSearch">Produs</label>
+                            <div class="manual-product-field order-item-product-field" data-product-field data-force-price-update="1" style="position: relative;">
+                                <input type="hidden" name="product_id" class="manual-product-id">
+                                <input type="text" id="orderItemProductSearch" name="product_search" class="form-control manual-product-search" placeholder="Caută produs după nume sau SKU" autocomplete="off">
+                                <div class="autocomplete-results manual-product-results" data-product-results style="position: absolute; top: calc(100% + 2px); left: 0; right: 0; background: #fff; border: 1px solid #ced4da; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); z-index: 1050; display: none; max-height: 240px; overflow-y: auto;"></div>
+                            </div>
                         </div>
                         <div class="form-group" style="display: flex; flex-direction: column; gap: 0.35rem;">
                             <label class="form-label" for="orderItemQuantity">Cantitate</label>
@@ -1559,30 +1584,6 @@ function renderOrderItemsSection(order, items) {
     `;
 }
 
-function buildProductOptions(selectedId) {
-    const products = Array.isArray(window.orderProductsList) ? window.orderProductsList : [];
-    const selectedValue = Number(selectedId);
-    const options = ['<option value="">Selectează produs</option>'];
-
-    products.forEach(product => {
-        const productId = Number(product.product_id);
-        if (!productId) {
-            return;
-        }
-
-        const isSelected = productId === selectedValue ? ' selected' : '';
-        const numericPrice = Number(product.price);
-        const priceAttr = Number.isFinite(numericPrice) ? ` data-price="${numericPrice}"` : '';
-        const unit = product.unit_of_measure ? ` data-unit="${escapeHtml(product.unit_of_measure)}"` : '';
-        const sku = product.sku ? ` (${product.sku})` : '';
-        const label = `${product.name || `Produs #${productId}`}${sku}`;
-
-        options.push(`<option value="${productId}"${isSelected}${priceAttr}${unit}>${escapeHtml(label)}</option>`);
-    });
-
-    return options.join('');
-}
-
 function bindOrderDetailsEvents(order) {
     const contactForm = document.getElementById('orderContactForm');
     if (contactForm) {
@@ -1595,15 +1596,7 @@ function bindOrderDetailsEvents(order) {
     if (orderItemForm) {
         orderItemForm.addEventListener('submit', submitOrderItemForm);
 
-        const productSelect = orderItemForm.querySelector('select[name="product_id"]');
         const priceInput = orderItemForm.querySelector('input[name="unit_price"]');
-        if (productSelect && priceInput) {
-            productSelect.addEventListener('change', () => {
-                const isEditMode = (orderItemForm.dataset.mode || 'add') === 'edit';
-                updateOrderItemPriceFromProduct(productSelect, priceInput, isEditMode);
-            });
-        }
-
         if (priceInput) {
             priceInput.addEventListener('input', () => {
                 priceInput.dataset.userEdited = '1';
@@ -2196,17 +2189,21 @@ function submitOrderItemForm(event) {
 
     const form = event.target;
     const mode = (form.dataset.mode || 'add') === 'edit' ? 'update' : 'create';
-    const productSelect = form.querySelector('select[name="product_id"]');
+    const productInput = form.querySelector('input[name="product_id"]');
+    const productSearchInput = form.querySelector('.manual-product-search');
     const quantityInput = form.querySelector('input[name="quantity"]');
     const priceInput = form.querySelector('input[name="unit_price"]');
     const submitButton = form.querySelector('button[type="submit"]');
 
-    const productId = productSelect ? parseInt(productSelect.value, 10) : 0;
+    const productId = productInput ? parseInt(productInput.value, 10) : 0;
     const quantity = quantityInput ? parseInt(quantityInput.value, 10) : 0;
     const unitPriceRaw = priceInput ? priceInput.value.trim() : '';
 
     if (!productId) {
         showOrdersToast('warning', 'Selectează un produs înainte de a salva.');
+        if (productSearchInput) {
+            productSearchInput.focus();
+        }
         return;
     }
 
@@ -2279,9 +2276,27 @@ function resetOrderItemForm(skipFocus) {
         hiddenInput.value = '';
     }
 
-    const productSelect = form.querySelector('select[name="product_id"]');
-    if (productSelect) {
-        productSelect.value = '';
+    const productField = form.querySelector('.order-item-product-field');
+    const productIdInput = productField ? productField.querySelector('input[name="product_id"]') : null;
+    const productSearchInput = productField ? productField.querySelector('.manual-product-search') : null;
+    const productResults = productField ? productField.querySelector('.manual-product-results') : null;
+
+    if (productIdInput) {
+        productIdInput.value = '';
+    }
+
+    if (productSearchInput) {
+        productSearchInput.value = '';
+        productSearchInput.dataset.selectedProductId = '';
+        productSearchInput.dataset.currentQuery = '';
+    }
+
+    if (productResults) {
+        productResults.innerHTML = '';
+        hideManualProductResults(productResults);
+        productResults.dataset.hasResults = '0';
+        productResults.dataset.activeIndex = '-1';
+        productResults.dataset.currentQuery = '';
     }
 
     const quantityInput = form.querySelector('input[name="quantity"]');
@@ -2310,8 +2325,8 @@ function resetOrderItemForm(skipFocus) {
         resetButton.textContent = 'Resetează';
     }
 
-    if (!skipFocus && productSelect) {
-        productSelect.focus();
+    if (!skipFocus && productSearchInput) {
+        productSearchInput.focus();
     }
 }
 
@@ -2335,9 +2350,33 @@ function prefillOrderItemForm(itemId) {
         hiddenInput.value = itemId;
     }
 
-    const productSelect = form.querySelector('select[name="product_id"]');
-    if (productSelect) {
-        productSelect.value = item.product_id;
+    const productField = form.querySelector('.order-item-product-field');
+    const productIdInput = productField ? productField.querySelector('input[name="product_id"]') : null;
+    const productSearchInput = productField ? productField.querySelector('.manual-product-search') : null;
+    const productResults = productField ? productField.querySelector('.manual-product-results') : null;
+
+    if (productIdInput) {
+        productIdInput.value = item.product_id != null ? String(item.product_id) : '';
+    }
+
+    const displayName = (() => {
+        const name = item.product_name || `Produs #${item.product_id}`;
+        const sku = item.sku || item.product_sku || '';
+        return sku ? `${name} (${sku})` : name;
+    })();
+
+    if (productSearchInput) {
+        productSearchInput.value = displayName;
+        productSearchInput.dataset.selectedProductId = String(item.product_id || '');
+        productSearchInput.dataset.currentQuery = displayName;
+    }
+
+    if (productResults) {
+        productResults.innerHTML = '';
+        hideManualProductResults(productResults);
+        productResults.dataset.hasResults = '0';
+        productResults.dataset.activeIndex = '-1';
+        productResults.dataset.currentQuery = '';
     }
 
     const quantityInput = form.querySelector('input[name="quantity"]');
@@ -2418,32 +2457,6 @@ function deleteOrderItem(triggerElement, itemId) {
                 triggerElement.disabled = false;
             }
         });
-}
-
-function updateOrderItemPriceFromProduct(selectEl, priceInput, isEditMode) {
-    if (!selectEl || !priceInput) {
-        return;
-    }
-
-    const selectedOption = selectEl.options[selectEl.selectedIndex];
-    if (!selectedOption) {
-        if (!isEditMode) {
-            priceInput.value = '';
-            priceInput.dataset.userEdited = '0';
-        }
-        return;
-    }
-
-    const priceAttr = selectedOption.getAttribute('data-price');
-    if (priceAttr !== null && priceAttr !== '' && priceInput.dataset.userEdited !== '1') {
-        const numericPrice = Number(priceAttr);
-        if (!Number.isNaN(numericPrice)) {
-            priceInput.value = numericPrice.toFixed(2);
-            priceInput.dataset.userEdited = '0';
-        }
-    } else if (!isEditMode && priceInput.dataset.userEdited !== '1') {
-        priceInput.value = '';
-    }
 }
 
 function getOrderItemById(itemId) {

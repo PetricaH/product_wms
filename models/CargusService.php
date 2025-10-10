@@ -708,17 +708,42 @@ class CargusService
                     $content = $detailContent ?? 'Colet ' . ($parcelIndex + 1);
                 }
 
-                $parcelCodes[] = [
-                    'Code' => (string)$parcelIndex,
-                    'Type' => 1,
-                    'Weight' => max(1, (int)round($weight)),
-                    'Length' => max(1, (int)round($length)),
-                    'Width' => max(1, (int)round($width)),
-                    'Height' => max(1, (int)round($height)),
-                    'ParcelContent' => $content
-                ];
+                // Split parcels that exceed 31kg limit
+                $maxWeightPerParcel = 31;
+                $roundedWeight = (int)round($weight);
 
-                $parcelIndex++;
+                if ($roundedWeight > $maxWeightPerParcel) {
+                    // Split into multiple sub-parcels
+                    $numSplits = (int)ceil($weight / $maxWeightPerParcel);
+                    $weightPerSplit = $weight / $numSplits;
+
+                    $this->debugLog("⚠️ Splitting heavy parcel: {$weight}kg into {$numSplits} parcels of ~{$weightPerSplit}kg each");
+
+                    for ($i = 0; $i < $numSplits; $i++) {
+                        $parcelCodes[] = [
+                            'Code' => (string)$parcelIndex,
+                            'Type' => 1,
+                            'Weight' => max(1, (int)round($weightPerSplit)),
+                            'Length' => max(1, (int)round($length)),
+                            'Width' => max(1, (int)round($width)),
+                            'Height' => max(1, (int)round($height)),
+                            'ParcelContent' => $content . " (Parte " . ($i + 1) . "/" . $numSplits . ")"
+                        ];
+                        $parcelIndex++;
+                    }
+                } else {
+                    // Normal parcel - under 31kg
+                    $parcelCodes[] = [
+                        'Code' => (string)$parcelIndex,
+                        'Type' => 1,
+                        'Weight' => max(1, $roundedWeight),
+                        'Length' => max(1, (int)round($length)),
+                        'Width' => max(1, (int)round($width)),
+                        'Height' => max(1, (int)round($height)),
+                        'ParcelContent' => $content
+                    ];
+                    $parcelIndex++;
+                }
             }
         }
 
@@ -1233,24 +1258,75 @@ class CargusService
         $this->debugLog("Raw weight from calculator: " . $calculatedData['total_weight'] . " kg");
 
         $totalWeightKg = (float)$calculatedData['total_weight'];
-        $totalWeight = (int)round($totalWeightKg); // send real kilograms
+        $totalWeight = (int)round($totalWeightKg);
 
         $this->debugLog("Processed weight: " . $totalWeightKg . " kg");
         $this->debugLog("API weight (kg): " . $totalWeight);
         $this->debugLog("Parcels: " . $parcelsCount);
+        $this->debugLog("Envelopes: " . $envelopesCount);
 
-        if ($totalWeight > 31) {
-            $this->debugLog("🚨 PROBLEM: API weight " . $totalWeight . " exceeds 31kg limit!");
-        } else {
-            $this->debugLog("✅ API weight " . $totalWeight . " is within 31kg limit");
+        // ========================================
+        // AUTOMATIC MULTIPIECE DETECTION
+        // ========================================
+
+        // Check maximum individual parcel weight
+        $maxIndividualWeight = 0;
+        $needsMultipiece = false;
+
+        if (!empty($parcelDetails)) {
+            foreach ($parcelDetails as $parcel) {
+                $parcelWeight = (float)($parcel['weight'] ?? 0);
+                $maxIndividualWeight = max($maxIndividualWeight, $parcelWeight);
+
+                if ($parcelWeight > 31) {
+                    $this->debugLog("⚠️ WARNING: Parcel weight {$parcelWeight}kg exceeds 31kg limit!");
+                }
+            }
         }
 
-        $serviceId = 34;
-        if ($totalWeightKg > 31) {
+        // Determine correct service based on Cargus rules
+        $serviceId = 34; // Default: Economic Standard (0-31kg)
+
+        if ($totalWeightKg > 465) {
+            // Exceeds Multipiece limit
+            $this->debugLog("🚨 CRITICAL: Weight exceeds 465kg Multipiece limit!");
+            $serviceId = 50; // Palet
+            $needsMultipiece = false;
+
+        } elseif ($maxIndividualWeight > 31) {
+            // Individual parcel exceeds 31kg - MUST use Palet
+            $this->debugLog("📦 Using Palet service (individual parcel >31kg)");
+            $serviceId = 50;
+            $needsMultipiece = false;
+
+        } elseif ($totalWeightKg > 50 && $parcelsCount >= 2) {
+            // Multiple parcels with total >50kg BUT each <31kg - PERFECT for Multipiece
+            $this->debugLog("📦 Using MULTIPIECE service (total >50kg, {$parcelsCount} parcels, each <31kg)");
+            $serviceId = 39;
+            $needsMultipiece = true;
+
+            // Validate Multipiece constraints
+            if ($parcelsCount > 15) {
+                $this->debugLog("⚠️ WARNING: {$parcelsCount} parcels exceeds Multipiece limit of 15!");
+                $serviceId = 50; // Fall back to Palet
+                $needsMultipiece = false;
+            }
+
+        } elseif ($totalWeightKg > 31 && $totalWeightKg <= 50) {
+            // Standard Plus: 31-50kg total
+            $this->debugLog("📦 Using Standard Plus service (31-50kg)");
             $serviceId = 35;
+            $needsMultipiece = false;
+
+        } else {
+            // Economic Standard: 0-31kg total
+            $this->debugLog("📦 Using Economic Standard service (0-31kg)");
+            $serviceId = 34;
+            $needsMultipiece = false;
         }
 
-        $this->debugLog("Service ID: " . $serviceId);
+        $this->debugLog("Service ID: " . $serviceId . ($needsMultipiece ? " (MULTIPIECE)" : ""));
+        $this->debugLog("Max individual parcel weight: " . $maxIndividualWeight . " kg");
         $this->debugLog("=== CARGUS AWB DEBUG END ===");
 
         return [

@@ -1266,12 +1266,11 @@ class CargusService
         $this->debugLog("Envelopes: " . $envelopesCount);
 
         // ========================================
-        // AUTOMATIC MULTIPIECE DETECTION
+        // AUTOMATIC SERVICE DETECTION
         // ========================================
 
         // Check maximum individual parcel weight
         $maxIndividualWeight = 0;
-        $needsMultipiece = false;
 
         if (!empty($parcelDetails)) {
             foreach ($parcelDetails as $parcel) {
@@ -1284,48 +1283,42 @@ class CargusService
             }
         }
 
-        // Determine correct service based on Cargus rules
-        $serviceId = 34; // Default: Economic Standard (0-31kg)
+        // Determine correct service based on ACTUAL Cargus API rules
+        // ServiceId 34: 0-31kg (Standard)
+        // ServiceId 35: 31-50kg (Standard 31+)
+        // ServiceId 36: 50kg+ (Standard 50+)
+        $serviceId = 34; // Default: Standard (0-31kg)
 
-        if ($totalWeightKg > 465) {
-            // Exceeds Multipiece limit
-            $this->debugLog("🚨 CRITICAL: Weight exceeds 465kg Multipiece limit!");
-            $serviceId = 50; // Palet
-            $needsMultipiece = false;
+        if ($totalWeightKg > 50) {
+            // Total weight exceeds 50kg - use Standard 50+
+            $this->debugLog("📦 Using Standard 50+ service (total >50kg: {$totalWeightKg}kg)");
+            $serviceId = 36;
 
-        } elseif ($maxIndividualWeight > 31) {
-            // Individual parcel exceeds 31kg - MUST use Palet
-            $this->debugLog("📦 Using Palet service (individual parcel >31kg)");
-            $serviceId = 50;
-            $needsMultipiece = false;
-
-        } elseif ($totalWeightKg > 50 && $parcelsCount >= 2) {
-            // Multiple parcels with total >50kg BUT each <31kg - PERFECT for Multipiece
-            $this->debugLog("📦 Using MULTIPIECE service (total >50kg, {$parcelsCount} parcels, each <31kg)");
-            $serviceId = 39;
-            $needsMultipiece = true;
-
-            // Validate Multipiece constraints
-            if ($parcelsCount > 15) {
-                $this->debugLog("⚠️ WARNING: {$parcelsCount} parcels exceeds Multipiece limit of 15!");
-                $serviceId = 50; // Fall back to Palet
-                $needsMultipiece = false;
+            // Verify all individual parcels are under 31kg
+            if ($maxIndividualWeight > 31) {
+                $this->debugLog("⚠️ WARNING: Individual parcel {$maxIndividualWeight}kg exceeds 31kg limit for Standard 50+!");
+                $this->debugLog("⚠️ You may need to split this parcel further or contact Cargus for special handling");
             }
 
-        } elseif ($totalWeightKg > 31 && $totalWeightKg <= 50) {
-            // Standard Plus: 31-50kg total
-            $this->debugLog("📦 Using Standard Plus service (31-50kg)");
+            // Verify parcel count doesn't exceed limits
+            if ($parcelsCount > 20) {
+                $this->debugLog("⚠️ WARNING: {$parcelsCount} parcels may exceed service limits!");
+            }
+
+        } elseif ($totalWeightKg > 31) {
+            // Total weight 31-50kg - use Standard 31+
+            $this->debugLog("📦 Using Standard 31+ service (31-50kg: {$totalWeightKg}kg)");
             $serviceId = 35;
-            $needsMultipiece = false;
 
         } else {
-            // Economic Standard: 0-31kg total
-            $this->debugLog("📦 Using Economic Standard service (0-31kg)");
+            // Total weight 0-31kg - use Standard
+            $this->debugLog("📦 Using Standard service (0-31kg: {$totalWeightKg}kg)");
             $serviceId = 34;
-            $needsMultipiece = false;
         }
 
-        $this->debugLog("Service ID: " . $serviceId . ($needsMultipiece ? " (MULTIPIECE)" : ""));
+        $this->debugLog("Service ID: " . $serviceId);
+        $this->debugLog("Total weight: {$totalWeightKg} kg");
+        $this->debugLog("Parcels count: {$parcelsCount}");
         $this->debugLog("Max individual parcel weight: " . $maxIndividualWeight . " kg");
         $this->debugLog("=== CARGUS AWB DEBUG END ===");
 

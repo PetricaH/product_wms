@@ -169,7 +169,7 @@ function detail(PDO $db, int $id) {
 
     $stmt = $db->prepare("SELECT r.id, r.status, r.notes, r.created_at, r.verified_at,
                                    r.return_awb, r.auto_created, r.return_date,
-                                   o.order_number, o.customer_name,
+                                   o.id AS order_id, o.order_number, o.customer_name,
                                    u.username AS processed_by, v.username AS verified_by
                            FROM returns r
                            JOIN orders o ON r.order_id = o.id
@@ -200,6 +200,7 @@ function detail(PDO $db, int $id) {
     $discrepancies = $discStmt->fetchAll(PDO::FETCH_ASSOC);
 
     $return['auto_created'] = (bool)$return['auto_created'];
+    $return['order_id'] = isset($return['order_id']) ? (int)$return['order_id'] : null;
 
     echo json_encode([
         'success' => true,

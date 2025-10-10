@@ -10,6 +10,42 @@ if (!defined('BASE_PATH')) {
 require_once BASE_PATH . '/bootstrap.php';
 $config = require BASE_PATH . '/config/config.php';
 
+$locations = [];
+$locationLevels = [];
+
+try {
+    $db = ($config['connection_factory'] ?? null) ? ($config['connection_factory'])() : null;
+    if ($db) {
+        require_once BASE_PATH . '/models/Location.php';
+        $locationModel = new Location($db);
+        $locations = $locationModel->getActiveLocations();
+        $locationLevels = $locationModel->getActiveLocationLevels();
+    }
+} catch (Throwable $e) {
+    error_log('Returns dashboard location preload failed: ' . $e->getMessage());
+}
+
+$locationsConfig = array_map(static function ($loc) {
+    return [
+        'id' => isset($loc['id']) ? (int)$loc['id'] : null,
+        'location_code' => $loc['location_code'] ?? '',
+        'zone' => $loc['zone'] ?? null,
+        'type' => $loc['type'] ?? null,
+    ];
+}, $locations ?? []);
+
+$locationLevelsConfig = array_map(static function ($level) {
+    return [
+        'location_id' => isset($level['location_id']) ? (int)$level['location_id'] : null,
+        'location_code' => $level['location_code'] ?? '',
+        'zone' => $level['zone'] ?? null,
+        'type' => $level['type'] ?? null,
+        'level_number' => isset($level['level_number']) ? (int)$level['level_number'] : null,
+        'level_name' => $level['level_name'] ?? null,
+        'display_code' => $level['display_code'] ?? null,
+    ];
+}, $locationLevels ?? []);
+
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
@@ -158,7 +194,9 @@ $currentPage = 'returns_dashboard';
                 'id' => $_SESSION['user_id'] ?? null,
                 'username' => $_SESSION['username'] ?? 'Unknown',
                 'role' => $_SESSION['role'] ?? 'unknown'
-            ]) ?>
+            ]) ?>,
+            locations: <?= json_encode($locationsConfig, JSON_UNESCAPED_UNICODE) ?>,
+            locationLevels: <?= json_encode($locationLevelsConfig, JSON_UNESCAPED_UNICODE) ?>
         };
         
         // Debug logging

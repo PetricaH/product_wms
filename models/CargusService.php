@@ -1431,44 +1431,66 @@ class CargusService
             }
         }
 
-        // Determine correct service based on ACTUAL Cargus API rules
-        // ServiceId 34: 0-31kg (Standard)
-        // ServiceId 35: 31-50kg (Standard 31+)
-        // ServiceId 36: 50kg+ (Standard 50+)
-        $serviceId = 34; // Default: Standard (0-31kg)
+        // ========================================
+        // CRITICAL: Determine if multipiece service is needed
+        // ServiceId 39 (Multipiece) is required when parcelsCount > 1
+        // ========================================
+        $isMultipiece = $parcelsCount > 1;
 
-        if ($totalWeightKg > 50) {
-            // Total weight exceeds 50kg - use Standard 50+
-            $this->debugLog("📦 Using Standard 50+ service (total >50kg: {$totalWeightKg}kg)");
-            $serviceId = 36;
+        $this->debugLog("Service detection: parcelsCount={$parcelsCount}, totalWeight={$totalWeightKg}kg, maxParcel={$maxIndividualWeight}kg, isMultipiece=" . ($isMultipiece ? 'YES' : 'NO'));
 
-            // Verify all individual parcels are under 31kg
+        if ($isMultipiece) {
+            // ========================================
+            // MULTIPIECE SERVICE (ServiceId 39)
+            // ========================================
+            $serviceId = 39;
+
+            $this->debugLog("📦 Using MULTIPIECE service (ID 39) - {$parcelsCount} parcels, total: {$totalWeightKg}kg");
+
+            // Validate multipiece constraints
+            $errors = [];
+
             if ($maxIndividualWeight > 31) {
-                $this->debugLog("⚠️ WARNING: Individual parcel {$maxIndividualWeight}kg exceeds 31kg limit for Standard 50+!");
-                $this->debugLog("⚠️ You may need to split this parcel further or contact Cargus for special handling");
+                $errors[] = "Individual parcel {$maxIndividualWeight}kg exceeds 31kg limit";
+                $this->debugLog("⚠️ ERROR: " . end($errors));
             }
 
-            // Verify parcel count doesn't exceed limits
-            if ($parcelsCount > 20) {
-                $this->debugLog("⚠️ WARNING: {$parcelsCount} parcels may exceed service limits!");
+            if ($parcelsCount > 15) {
+                $errors[] = "Parcel count {$parcelsCount} exceeds multipiece limit of 15";
+                $this->debugLog("⚠️ ERROR: " . end($errors));
             }
 
-        } elseif ($totalWeightKg > 31) {
-            // Total weight 31-50kg - use Standard 31+
-            $this->debugLog("📦 Using Standard 31+ service (31-50kg: {$totalWeightKg}kg)");
-            $serviceId = 35;
+            if ($totalWeightKg > 465) {
+                $errors[] = "Total weight {$totalWeightKg}kg exceeds multipiece limit of 465kg";
+                $this->debugLog("⚠️ ERROR: " . end($errors));
+            }
+
+            if (!empty($errors)) {
+                $this->debugLog("🚨 MULTIPIECE VALIDATION FAILED: " . implode('; ', $errors));
+            }
 
         } else {
-            // Total weight 0-31kg - use Standard
-            $this->debugLog("📦 Using Standard service (0-31kg: {$totalWeightKg}kg)");
-            $serviceId = 34;
+            // ========================================
+            // SINGLE-PIECE SERVICES (ServiceId 34/35/36)
+            // ========================================
+
+            if ($totalWeightKg > 50) {
+                $serviceId = 36; // Palet Standard (50kg+)
+                $this->debugLog("📦 Using Palet Standard service (ID 36) - weight: {$totalWeightKg}kg");
+            } elseif ($totalWeightKg > 31) {
+                $serviceId = 35; // Standard Plus (31-50kg)
+                $this->debugLog("📦 Using Standard Plus service (ID 35) - weight: {$totalWeightKg}kg");
+            } else {
+                $serviceId = 34; // Economic Standard (0-31kg)
+                $this->debugLog("📦 Using Economic Standard service (ID 34) - weight: {$totalWeightKg}kg");
+            }
         }
 
-        $this->debugLog("Service ID: " . $serviceId);
-        $this->debugLog("Total weight: {$totalWeightKg} kg");
-        $this->debugLog("Parcels count: {$parcelsCount}");
-        $this->debugLog("Max individual parcel weight: " . $maxIndividualWeight . " kg");
-        $this->debugLog("=== CARGUS AWB DEBUG END ===");
+        $this->debugLog("=== SERVICE SELECTION COMPLETE ===");
+        $this->debugLog("Final ServiceId: {$serviceId}");
+        $this->debugLog("Parcels: {$parcelsCount}, Envelopes: {$envelopesCount}");
+        $this->debugLog("Total weight: {$totalWeightKg}kg, Max individual: {$maxIndividualWeight}kg");
+        $this->debugLog("=================================");
 
         return [
             'Sender' => [

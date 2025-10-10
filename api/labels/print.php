@@ -74,7 +74,7 @@ try {
     $pdfUrl  = $baseUrl . '/storage/label_pdfs/' . $fileName;
 
     $printerName = $printer ?: ($config['default_printer'] ?? 'godex');
-    $printServerUrl = $config['print_server_url'] ?? 'http://86.124.196.102:3000/print_server.php';
+    $printServerUrl = resolvePrintServerUrl($config);
     $result = sendToPrintServer($printServerUrl, $pdfUrl, $printerName);
 
     if ($result['success']) {
@@ -95,7 +95,8 @@ function getBaseUrl(): string {
 }
 
 function sendToPrintServer(string $url, string $pdfUrl, string $printer): array {
-    $requestUrl = $url . '?' . http_build_query([
+    $separator = (strpos($url, '?') === false) ? '?' : '&';
+    $requestUrl = $url . $separator . http_build_query([
         'url'     => $pdfUrl,
         'printer' => $printer
     ]);
@@ -110,9 +111,21 @@ function sendToPrintServer(string $url, string $pdfUrl, string $printer): array 
     ]);
 
     $response = @file_get_contents($requestUrl, false, $context);
+    $statusCode = extractHttpStatusCode($http_response_header ?? []);
 
     if ($response === false) {
-        return ['success' => false, 'error' => 'Failed to connect to print server'];
+        $message = 'Failed to connect to print server';
+        if ($statusCode !== null) {
+            $message .= sprintf(' (HTTP %d)', $statusCode);
+        }
+        return ['success' => false, 'error' => $message];
+    }
+
+    if ($statusCode !== null && $statusCode >= 400) {
+        return [
+            'success' => false,
+            'error'   => sprintf('Print server returned HTTP %d: %s', $statusCode, trim($response))
+        ];
     }
 
     foreach (['Trimis la imprimantă', 'sent to printer', 'Print successful'] as $indicator) {
@@ -122,4 +135,25 @@ function sendToPrintServer(string $url, string $pdfUrl, string $printer): array 
     }
 
     return ['success' => false, 'error' => 'Print server response: ' . $response];
+}
+
+function resolvePrintServerUrl(array $config): string {
+    if (!empty($config['print_server_url'])) {
+        return $config['print_server_url'];
+    }
+
+    $host = rtrim($_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? 'localhost', '/');
+    $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+
+    return sprintf('%s://%s/print_server.php', $scheme, $host);
+}
+
+function extractHttpStatusCode(array $headers): ?int {
+    foreach ($headers as $header) {
+        if (stripos($header, 'HTTP/') === 0 && preg_match('/HTTP\/\d+\.\d+\s+(\d+)/', $header, $matches)) {
+            return (int)$matches[1];
+        }
+    }
+
+    return null;
 }

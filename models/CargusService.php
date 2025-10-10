@@ -675,12 +675,151 @@ class CargusService
 
     
     /**
+     * Consolidate parcels to meet Multipiece service limits (max 15 parcels)
+     */
+    private function consolidateParcels($parcelDetails, $maxParcels = 15) {
+        if (count($parcelDetails) <= $maxParcels) {
+            return $parcelDetails; // No consolidation needed
+        }
+
+        $this->debugLog("⚠️ Starting consolidation: " . count($parcelDetails) . " parcels → max {$maxParcels} parcels");
+
+        $consolidated = [];
+        $currentParcel = null;
+        $maxWeightPerParcel = 31; // Cargus hard limit per parcel
+
+        foreach ($parcelDetails as $detail) {
+            $weight = (float)($detail['weight'] ?? 0);
+            $productType = strtolower($detail['product_type'] ?? 'normal');
+
+            // Start new parcel if:
+            // 1. No current parcel exists, OR
+            // 2. Adding this would exceed 31kg limit, OR
+            // 3. Different product type
+            if ($currentParcel === null ||
+                ($currentParcel['weight'] + $weight) > $maxWeightPerParcel ||
+                $currentParcel['product_type'] !== $productType) {
+
+                // Save current parcel if exists
+                if ($currentParcel !== null) {
+                    $consolidated[] = $currentParcel;
+                }
+
+                // Start new parcel
+                $currentParcel = [
+                    'weight' => $weight,
+                    'items' => $detail['items'] ?? 1,
+                    'length' => $detail['length'] ?? 20,
+                    'width' => $detail['width'] ?? 20,
+                    'height' => $detail['height'] ?? 20,
+                    'product_type' => $productType,
+                    'content' => $detail['content'] ?? 'Colet',
+                    'content_items' => [$detail['content'] ?? 'Produse']
+                ];
+            } else {
+                // Add to current parcel (combine)
+                $currentParcel['weight'] += $weight;
+                $currentParcel['items'] += $detail['items'] ?? 1;
+                $currentParcel['height'] += $detail['height'] ?? 0; // Stack items vertically
+                $currentParcel['length'] = max($currentParcel['length'], $detail['length'] ?? 0);
+                $currentParcel['width'] = max($currentParcel['width'], $detail['width'] ?? 0);
+                $currentParcel['content_items'][] = $detail['content'] ?? 'Produse';
+            }
+        }
+
+        // Add last parcel
+        if ($currentParcel !== null) {
+            $consolidated[] = $currentParcel;
+        }
+
+        // Final pass: if still too many parcels, force merge smallest ones
+        $iterations = 0;
+        while (count($consolidated) > $maxParcels && $iterations < 10) {
+            $iterations++;
+            $this->debugLog("⚠️ Iteration {$iterations}: Still have " . count($consolidated) . " parcels, force merging...");
+
+            // Find two adjacent parcels that can be merged (total weight <= 31kg)
+            $merged = [];
+            $didMerge = false;
+
+            for ($i = 0; $i < count($consolidated); $i++) {
+                if (!$didMerge && $i < count($consolidated) - 1) {
+                    $totalWeight = $consolidated[$i]['weight'] + $consolidated[$i + 1]['weight'];
+
+                    // Can we merge these two?
+                    if ($totalWeight <= $maxWeightPerParcel) {
+                        // Merge parcels i and i+1
+                        $merged[] = [
+                            'weight' => $totalWeight,
+                            'items' => $consolidated[$i]['items'] + $consolidated[$i + 1]['items'],
+                            'length' => max($consolidated[$i]['length'], $consolidated[$i + 1]['length']),
+                            'width' => max($consolidated[$i]['width'], $consolidated[$i + 1]['width']),
+                            'height' => $consolidated[$i]['height'] + $consolidated[$i + 1]['height'],
+                            'product_type' => $consolidated[$i]['product_type'],
+                            'content' => 'Colete combinate',
+                            'content_items' => array_merge(
+                                $consolidated[$i]['content_items'] ?? [$consolidated[$i]['content'] ?? 'Produse'],
+                                $consolidated[$i + 1]['content_items'] ?? [$consolidated[$i + 1]['content'] ?? 'Produse']
+                            )
+                        ];
+
+                        $didMerge = true;
+                        $i++; // Skip next parcel (already merged)
+                    } else {
+                        $merged[] = $consolidated[$i];
+                    }
+                } else {
+                    $merged[] = $consolidated[$i];
+                }
+            }
+
+            $consolidated = $merged;
+
+            if (!$didMerge) {
+                $this->debugLog("⚠️ Cannot merge further without exceeding 31kg limit");
+                break;
+            }
+        }
+
+        // Update content descriptions for merged parcels
+        foreach ($consolidated as &$parcel) {
+            if (!empty($parcel['content_items'])) {
+                $uniqueItems = array_unique($parcel['content_items']);
+                $parcel['content'] = implode(', ', array_slice($uniqueItems, 0, 3));
+                if (count($uniqueItems) > 3) {
+                    $parcel['content'] .= ' +' . (count($uniqueItems) - 3) . ' mai multe';
+                }
+                unset($parcel['content_items']);
+            }
+        }
+
+        $this->debugLog("✅ Consolidation complete: " . count($consolidated) . " parcels");
+
+        return $consolidated;
+    }
+
+    /**
      * Generate ParcelCodes array to match Parcels + Envelopes count
      */
     private function generateParcelCodes($parcelsCount, $envelopesCount, $totalWeightAPI, $calculatedData) {
         $parcelCodes = [];
         $parcelDetails = $calculatedData['parcels_detail'] ?? [];
         $parcelIndex = 0;
+
+        // ========================================
+        // CONSOLIDATE PARCELS IF EXCEEDS LIMITS
+        // ========================================
+        $maxParcelsAllowed = 15; // Cargus Multipiece limit
+
+        if (!empty($parcelDetails) && count($parcelDetails) > $maxParcelsAllowed) {
+            $this->debugLog("⚠️ Order has " . count($parcelDetails) . " parcels, exceeds Multipiece limit of {$maxParcelsAllowed}");
+
+            // Consolidate parcels to meet service requirements
+            $parcelDetails = $this->consolidateParcels($parcelDetails, $maxParcelsAllowed);
+            $parcelsCount = count($parcelDetails);
+
+            $this->debugLog("✅ Consolidated to {$parcelsCount} parcels for Cargus");
+        }
 
         if (!empty($parcelDetails)) {
             foreach ($parcelDetails as $detail) {

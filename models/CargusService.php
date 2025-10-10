@@ -900,16 +900,19 @@ class CargusService
             $parcelIndex++;
         }
 
-        // Always append a single envelope for documents
-        $parcelCodes[] = [
-            'Code' => (string)$parcelIndex,
-            'Type' => 0,
-            'Weight' => 1,
-            'Length' => 25,
-            'Width' => 15,
-            'Height' => 1,
-            'ParcelContent' => 'Documente'
-        ];
+        for ($envelopeIndex = 0; $envelopeIndex < $envelopesCount; $envelopeIndex++, $parcelIndex++) {
+            $parcelCodes[] = [
+                'Code' => (string)$parcelIndex,
+                'Type' => 0,
+                'Weight' => 1,
+                'Length' => 25,
+                'Width' => 15,
+                'Height' => 1,
+                'ParcelContent' => $envelopesCount > 1
+                    ? 'Documente ' . ($envelopeIndex + 1)
+                    : 'Documente'
+            ];
+        }
 
         return $parcelCodes;
     }
@@ -1387,19 +1390,17 @@ class CargusService
         } else {
             $parcelsCount = max(1, (int)($calculatedData['parcels_count'] ?? 1));
         }
-        $envelopesValue = $calculatedData['envelopes_count'] ?? ($order['envelopes_count'] ?? 1);
-        $envelopesCount = (int)$envelopesValue;
-        if ($envelopesCount < 0) {
+        if (array_key_exists('envelopes_count', $calculatedData)) {
+            $envelopesCount = (int)$calculatedData['envelopes_count'];
+        } elseif (is_array($order) && array_key_exists('envelopes_count', $order)) {
+            $envelopesCount = (int)$order['envelopes_count'];
+        } else {
             $envelopesCount = 0;
         }
 
-        $orderHasEnvelopeOverride = is_array($order) && array_key_exists('envelopes_count', $order);
-        $explicitEnvelopeOverride = array_key_exists('envelopes_count', $calculatedData) || $orderHasEnvelopeOverride;
-        if ($envelopesCount <= 0 && !$explicitEnvelopeOverride) {
-            $envelopesCount = 1;
+        if ($envelopesCount < 0) {
+            $envelopesCount = 0;
         }
-
-        $envelopesCount = max(1, (int)$envelopesCount);
 
         $this->debugLog("=== CARGUS AWB DEBUG START ===");
         $this->debugLog("Order Number: " . $order['order_number']);

@@ -1410,8 +1410,12 @@ class CargusService
 
         $this->debugLog("Processed weight: " . $totalWeightKg . " kg");
         $this->debugLog("API weight (kg): " . $totalWeight);
-        $this->debugLog("Parcels: " . $parcelsCount);
+        $this->debugLog("Parcels (initial): " . $parcelsCount);
         $this->debugLog("Envelopes: " . $envelopesCount);
+
+        // Prepare ParcelCodes ahead of service detection so we can determine
+        // the real number of physical parcels after any automatic splitting
+        $parcelCodes = $this->generateParcelCodes($parcelsCount, $envelopesCount, $totalWeight, $calculatedData);
 
         // ========================================
         // AUTOMATIC SERVICE DETECTION
@@ -1430,6 +1434,29 @@ class CargusService
                 }
             }
         }
+
+        // Recalculate parcel count and max weight using the generated ParcelCodes
+        $actualParcelCount = 0;
+        $maxWeightFromCodes = 0.0;
+
+        foreach ($parcelCodes as $code) {
+            if ((int)($code['Type'] ?? 1) === 1) {
+                $actualParcelCount++;
+                $maxWeightFromCodes = max($maxWeightFromCodes, (float)($code['Weight'] ?? 0));
+            }
+        }
+
+        if ($actualParcelCount > 0) {
+            if ($actualParcelCount !== $parcelsCount) {
+                $this->debugLog("🔄 Adjusting parcel count from {$parcelsCount} to {$actualParcelCount} based on generated ParcelCodes");
+            }
+
+            $parcelsCount = $actualParcelCount;
+            $maxIndividualWeight = max($maxIndividualWeight, $maxWeightFromCodes);
+        }
+
+        $this->debugLog("Parcels (effective): {$parcelsCount}");
+        $this->debugLog("Max parcel weight (effective): {$maxIndividualWeight}kg");
 
         // ========================================
         // CRITICAL: Determine if multipiece service is needed
@@ -1556,7 +1583,7 @@ class CargusService
             'RecipientReference2' => $order['recipient_reference2'] ?? '',
             'InvoiceReference' => $order['invoice_reference'] ?? $order['invoice_number'] ?? '',
             'ServiceId' => $serviceId,
-            'ParcelCodes' => $this->generateParcelCodes($parcelsCount, $envelopesCount, $totalWeight, $calculatedData)
+            'ParcelCodes' => $parcelCodes
         ];
     }
     

@@ -900,16 +900,19 @@ class CargusService
             $parcelIndex++;
         }
 
-        // Always append a single envelope for documents
-        $parcelCodes[] = [
-            'Code' => (string)$parcelIndex,
-            'Type' => 0,
-            'Weight' => 1,
-            'Length' => 25,
-            'Width' => 15,
-            'Height' => 1,
-            'ParcelContent' => 'Documente'
-        ];
+        for ($envelopeIndex = 0; $envelopeIndex < $envelopesCount; $envelopeIndex++, $parcelIndex++) {
+            $parcelCodes[] = [
+                'Code' => (string)$parcelIndex,
+                'Type' => 0,
+                'Weight' => 1,
+                'Length' => 25,
+                'Width' => 15,
+                'Height' => 1,
+                'ParcelContent' => $envelopesCount > 1
+                    ? 'Documente ' . ($envelopeIndex + 1)
+                    : 'Documente'
+            ];
+        }
 
         return $parcelCodes;
     }
@@ -1387,19 +1390,19 @@ class CargusService
         } else {
             $parcelsCount = max(1, (int)($calculatedData['parcels_count'] ?? 1));
         }
-        $envelopesValue = $calculatedData['envelopes_count'] ?? ($order['envelopes_count'] ?? 1);
-        $envelopesCount = (int)$envelopesValue;
-        if ($envelopesCount < 0) {
-            $envelopesCount = 0;
+        // Always include one document envelope for each shipment
+        $requestedEnvelopes = null;
+        if (array_key_exists('envelopes_count', $calculatedData)) {
+            $requestedEnvelopes = (int)$calculatedData['envelopes_count'];
+        } elseif (is_array($order) && array_key_exists('envelopes_count', $order)) {
+            $requestedEnvelopes = (int)$order['envelopes_count'];
         }
 
-        $orderHasEnvelopeOverride = is_array($order) && array_key_exists('envelopes_count', $order);
-        $explicitEnvelopeOverride = array_key_exists('envelopes_count', $calculatedData) || $orderHasEnvelopeOverride;
-        if ($envelopesCount <= 0 && !$explicitEnvelopeOverride) {
-            $envelopesCount = 1;
+        if ($requestedEnvelopes !== null && $requestedEnvelopes > 1) {
+            $this->debugLog('⚠️ Requested more than one envelope, forcing to 1 as per business rule');
         }
 
-        $envelopesCount = max(1, (int)$envelopesCount);
+        $envelopesCount = 1; // Mandatory envelope
 
         $this->debugLog("=== CARGUS AWB DEBUG START ===");
         $this->debugLog("Order Number: " . $order['order_number']);
@@ -1410,8 +1413,12 @@ class CargusService
 
         $this->debugLog("Processed weight: " . $totalWeightKg . " kg");
         $this->debugLog("API weight (kg): " . $totalWeight);
-        $this->debugLog("Parcels: " . $parcelsCount);
+        $this->debugLog("Parcels (initial): " . $parcelsCount);
         $this->debugLog("Envelopes: " . $envelopesCount);
+
+        // Prepare ParcelCodes ahead of service detection so we can determine
+        // the real number of physical parcels after any automatic splitting
+        $parcelCodes = $this->generateParcelCodes($parcelsCount, $envelopesCount, $totalWeight, $calculatedData);
 
         // ========================================
         // AUTOMATIC SERVICE DETECTION
@@ -1431,44 +1438,89 @@ class CargusService
             }
         }
 
-        // Determine correct service based on ACTUAL Cargus API rules
-        // ServiceId 34: 0-31kg (Standard)
-        // ServiceId 35: 31-50kg (Standard 31+)
-        // ServiceId 36: 50kg+ (Standard 50+)
-        $serviceId = 34; // Default: Standard (0-31kg)
+        // Recalculate parcel count and max weight using the generated ParcelCodes
+        $actualParcelCount = 0;
+        $maxWeightFromCodes = 0.0;
 
-        if ($totalWeightKg > 50) {
-            // Total weight exceeds 50kg - use Standard 50+
-            $this->debugLog("📦 Using Standard 50+ service (total >50kg: {$totalWeightKg}kg)");
-            $serviceId = 36;
-
-            // Verify all individual parcels are under 31kg
-            if ($maxIndividualWeight > 31) {
-                $this->debugLog("⚠️ WARNING: Individual parcel {$maxIndividualWeight}kg exceeds 31kg limit for Standard 50+!");
-                $this->debugLog("⚠️ You may need to split this parcel further or contact Cargus for special handling");
+        foreach ($parcelCodes as $code) {
+            if ((int)($code['Type'] ?? 1) === 1) {
+                $actualParcelCount++;
+                $maxWeightFromCodes = max($maxWeightFromCodes, (float)($code['Weight'] ?? 0));
             }
-
-            // Verify parcel count doesn't exceed limits
-            if ($parcelsCount > 20) {
-                $this->debugLog("⚠️ WARNING: {$parcelsCount} parcels may exceed service limits!");
-            }
-
-        } elseif ($totalWeightKg > 31) {
-            // Total weight 31-50kg - use Standard 31+
-            $this->debugLog("📦 Using Standard 31+ service (31-50kg: {$totalWeightKg}kg)");
-            $serviceId = 35;
-
-        } else {
-            // Total weight 0-31kg - use Standard
-            $this->debugLog("📦 Using Standard service (0-31kg: {$totalWeightKg}kg)");
-            $serviceId = 34;
         }
 
-        $this->debugLog("Service ID: " . $serviceId);
-        $this->debugLog("Total weight: {$totalWeightKg} kg");
-        $this->debugLog("Parcels count: {$parcelsCount}");
-        $this->debugLog("Max individual parcel weight: " . $maxIndividualWeight . " kg");
-        $this->debugLog("=== CARGUS AWB DEBUG END ===");
+        if ($actualParcelCount > 0) {
+            if ($actualParcelCount !== $parcelsCount) {
+                $this->debugLog("🔄 Adjusting parcel count from {$parcelsCount} to {$actualParcelCount} based on generated ParcelCodes");
+            }
+
+            $parcelsCount = $actualParcelCount;
+            $maxIndividualWeight = max($maxIndividualWeight, $maxWeightFromCodes);
+        }
+
+        $this->debugLog("Parcels (effective): {$parcelsCount}");
+        $this->debugLog("Max parcel weight (effective): {$maxIndividualWeight}kg");
+
+        // ========================================
+        // CRITICAL: Determine if multipiece service is needed
+        // ServiceId 39 (Multipiece) is required when parcelsCount > 1
+        // ========================================
+        $isMultipiece = $parcelsCount > 1;
+
+        $this->debugLog("Service detection: parcelsCount={$parcelsCount}, totalWeight={$totalWeightKg}kg, maxParcel={$maxIndividualWeight}kg, isMultipiece=" . ($isMultipiece ? 'YES' : 'NO'));
+
+        if ($isMultipiece) {
+            // ========================================
+            // MULTIPIECE SERVICE (ServiceId 39)
+            // ========================================
+            $serviceId = 39;
+
+            $this->debugLog("📦 Using MULTIPIECE service (ID 39) - {$parcelsCount} parcels, total: {$totalWeightKg}kg");
+
+            // Validate multipiece constraints
+            $errors = [];
+
+            if ($maxIndividualWeight > 31) {
+                $errors[] = "Individual parcel {$maxIndividualWeight}kg exceeds 31kg limit";
+                $this->debugLog("⚠️ ERROR: " . end($errors));
+            }
+
+            if ($parcelsCount > 15) {
+                $errors[] = "Parcel count {$parcelsCount} exceeds multipiece limit of 15";
+                $this->debugLog("⚠️ ERROR: " . end($errors));
+            }
+
+            if ($totalWeightKg > 465) {
+                $errors[] = "Total weight {$totalWeightKg}kg exceeds multipiece limit of 465kg";
+                $this->debugLog("⚠️ ERROR: " . end($errors));
+            }
+
+            if (!empty($errors)) {
+                $this->debugLog("🚨 MULTIPIECE VALIDATION FAILED: " . implode('; ', $errors));
+            }
+
+        } else {
+            // ========================================
+            // SINGLE-PIECE SERVICES (ServiceId 34/35/36)
+            // ========================================
+
+            if ($totalWeightKg > 50) {
+                $serviceId = 36; // Palet Standard (50kg+)
+                $this->debugLog("📦 Using Palet Standard service (ID 36) - weight: {$totalWeightKg}kg");
+            } elseif ($totalWeightKg > 31) {
+                $serviceId = 35; // Standard Plus (31-50kg)
+                $this->debugLog("📦 Using Standard Plus service (ID 35) - weight: {$totalWeightKg}kg");
+            } else {
+                $serviceId = 34; // Economic Standard (0-31kg)
+                $this->debugLog("📦 Using Economic Standard service (ID 34) - weight: {$totalWeightKg}kg");
+            }
+        }
+
+        $this->debugLog("=== SERVICE SELECTION COMPLETE ===");
+        $this->debugLog("Final ServiceId: {$serviceId}");
+        $this->debugLog("Parcels: {$parcelsCount}, Envelopes: {$envelopesCount}");
+        $this->debugLog("Total weight: {$totalWeightKg}kg, Max individual: {$maxIndividualWeight}kg");
+        $this->debugLog("=================================");
 
         return [
             'Sender' => [
@@ -1534,7 +1586,7 @@ class CargusService
             'RecipientReference2' => $order['recipient_reference2'] ?? '',
             'InvoiceReference' => $order['invoice_reference'] ?? $order['invoice_number'] ?? '',
             'ServiceId' => $serviceId,
-            'ParcelCodes' => $this->generateParcelCodes($parcelsCount, $envelopesCount, $totalWeight, $calculatedData)
+            'ParcelCodes' => $parcelCodes
         ];
     }
     

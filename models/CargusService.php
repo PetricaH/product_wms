@@ -708,17 +708,42 @@ class CargusService
                     $content = $detailContent ?? 'Colet ' . ($parcelIndex + 1);
                 }
 
-                $parcelCodes[] = [
-                    'Code' => (string)$parcelIndex,
-                    'Type' => 1,
-                    'Weight' => max(1, (int)round($weight)),
-                    'Length' => max(1, (int)round($length)),
-                    'Width' => max(1, (int)round($width)),
-                    'Height' => max(1, (int)round($height)),
-                    'ParcelContent' => $content
-                ];
+                // Split parcels that exceed 31kg limit
+                $maxWeightPerParcel = 31;
+                $roundedWeight = (int)round($weight);
 
-                $parcelIndex++;
+                if ($roundedWeight > $maxWeightPerParcel) {
+                    // Split into multiple sub-parcels
+                    $numSplits = (int)ceil($weight / $maxWeightPerParcel);
+                    $weightPerSplit = $weight / $numSplits;
+
+                    $this->debugLog("⚠️ Splitting heavy parcel: {$weight}kg into {$numSplits} parcels of ~{$weightPerSplit}kg each");
+
+                    for ($i = 0; $i < $numSplits; $i++) {
+                        $parcelCodes[] = [
+                            'Code' => (string)$parcelIndex,
+                            'Type' => 1,
+                            'Weight' => max(1, (int)round($weightPerSplit)),
+                            'Length' => max(1, (int)round($length)),
+                            'Width' => max(1, (int)round($width)),
+                            'Height' => max(1, (int)round($height)),
+                            'ParcelContent' => $content . " (Parte " . ($i + 1) . "/" . $numSplits . ")"
+                        ];
+                        $parcelIndex++;
+                    }
+                } else {
+                    // Normal parcel - under 31kg
+                    $parcelCodes[] = [
+                        'Code' => (string)$parcelIndex,
+                        'Type' => 1,
+                        'Weight' => max(1, $roundedWeight),
+                        'Length' => max(1, (int)round($length)),
+                        'Width' => max(1, (int)round($width)),
+                        'Height' => max(1, (int)round($height)),
+                        'ParcelContent' => $content
+                    ];
+                    $parcelIndex++;
+                }
             }
         }
 
@@ -1233,24 +1258,68 @@ class CargusService
         $this->debugLog("Raw weight from calculator: " . $calculatedData['total_weight'] . " kg");
 
         $totalWeightKg = (float)$calculatedData['total_weight'];
-        $totalWeight = (int)round($totalWeightKg); // send real kilograms
+        $totalWeight = (int)round($totalWeightKg);
 
         $this->debugLog("Processed weight: " . $totalWeightKg . " kg");
         $this->debugLog("API weight (kg): " . $totalWeight);
         $this->debugLog("Parcels: " . $parcelsCount);
+        $this->debugLog("Envelopes: " . $envelopesCount);
 
-        if ($totalWeight > 31) {
-            $this->debugLog("🚨 PROBLEM: API weight " . $totalWeight . " exceeds 31kg limit!");
-        } else {
-            $this->debugLog("✅ API weight " . $totalWeight . " is within 31kg limit");
+        // ========================================
+        // AUTOMATIC SERVICE DETECTION
+        // ========================================
+
+        // Check maximum individual parcel weight
+        $maxIndividualWeight = 0;
+
+        if (!empty($parcelDetails)) {
+            foreach ($parcelDetails as $parcel) {
+                $parcelWeight = (float)($parcel['weight'] ?? 0);
+                $maxIndividualWeight = max($maxIndividualWeight, $parcelWeight);
+
+                if ($parcelWeight > 31) {
+                    $this->debugLog("⚠️ WARNING: Parcel weight {$parcelWeight}kg exceeds 31kg limit!");
+                }
+            }
         }
 
-        $serviceId = 34;
-        if ($totalWeightKg > 31) {
+        // Determine correct service based on ACTUAL Cargus API rules
+        // ServiceId 34: 0-31kg (Standard)
+        // ServiceId 35: 31-50kg (Standard 31+)
+        // ServiceId 36: 50kg+ (Standard 50+)
+        $serviceId = 34; // Default: Standard (0-31kg)
+
+        if ($totalWeightKg > 50) {
+            // Total weight exceeds 50kg - use Standard 50+
+            $this->debugLog("📦 Using Standard 50+ service (total >50kg: {$totalWeightKg}kg)");
+            $serviceId = 36;
+
+            // Verify all individual parcels are under 31kg
+            if ($maxIndividualWeight > 31) {
+                $this->debugLog("⚠️ WARNING: Individual parcel {$maxIndividualWeight}kg exceeds 31kg limit for Standard 50+!");
+                $this->debugLog("⚠️ You may need to split this parcel further or contact Cargus for special handling");
+            }
+
+            // Verify parcel count doesn't exceed limits
+            if ($parcelsCount > 20) {
+                $this->debugLog("⚠️ WARNING: {$parcelsCount} parcels may exceed service limits!");
+            }
+
+        } elseif ($totalWeightKg > 31) {
+            // Total weight 31-50kg - use Standard 31+
+            $this->debugLog("📦 Using Standard 31+ service (31-50kg: {$totalWeightKg}kg)");
             $serviceId = 35;
+
+        } else {
+            // Total weight 0-31kg - use Standard
+            $this->debugLog("📦 Using Standard service (0-31kg: {$totalWeightKg}kg)");
+            $serviceId = 34;
         }
 
         $this->debugLog("Service ID: " . $serviceId);
+        $this->debugLog("Total weight: {$totalWeightKg} kg");
+        $this->debugLog("Parcels count: {$parcelsCount}");
+        $this->debugLog("Max individual parcel weight: " . $maxIndividualWeight . " kg");
         $this->debugLog("=== CARGUS AWB DEBUG END ===");
 
         return [

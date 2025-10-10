@@ -1373,6 +1373,25 @@ class CargusService
     private function buildAWBData($order, $calculatedData, $senderLocation) {
 
         $parcelDetails = $calculatedData['parcels_detail'] ?? [];
+
+        // ========================================
+        // CONSOLIDATE PARCELS EARLY (BEFORE COUNTING)
+        // ========================================
+        $maxParcelsAllowed = 15; // Cargus Multipiece limit
+
+        if (!empty($parcelDetails) && count($parcelDetails) > $maxParcelsAllowed) {
+            $this->debugLog("⚠️ buildAWBData: Order has " . count($parcelDetails) . " parcels, exceeds limit of {$maxParcelsAllowed}");
+
+            // Consolidate parcels BEFORE setting count
+            $parcelDetails = $this->consolidateParcels($parcelDetails, $maxParcelsAllowed);
+
+            // Update calculatedData with consolidated parcels
+            $calculatedData['parcels_detail'] = $parcelDetails;
+
+            $this->debugLog("✅ buildAWBData: Consolidated to " . count($parcelDetails) . " parcels");
+        }
+
+        // NOW set the count based on (possibly consolidated) parcels
         if (!empty($parcelDetails)) {
             $parcelsCount = count($parcelDetails);
         } else {

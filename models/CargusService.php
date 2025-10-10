@@ -806,6 +806,21 @@ class CargusService
         $parcelDetails = $calculatedData['parcels_detail'] ?? [];
         $parcelIndex = 0;
 
+        // ========================================
+        // CONSOLIDATE PARCELS IF EXCEEDS LIMITS
+        // ========================================
+        $maxParcelsAllowed = 15; // Cargus Multipiece limit
+
+        if (!empty($parcelDetails) && count($parcelDetails) > $maxParcelsAllowed) {
+            $this->debugLog("⚠️ Order has " . count($parcelDetails) . " parcels, exceeds Multipiece limit of {$maxParcelsAllowed}");
+
+            // Consolidate parcels to meet service requirements
+            $parcelDetails = $this->consolidateParcels($parcelDetails, $maxParcelsAllowed);
+            $parcelsCount = count($parcelDetails);
+
+            $this->debugLog("✅ Consolidated to {$parcelsCount} parcels for Cargus");
+        }
+
         if (!empty($parcelDetails)) {
             foreach ($parcelDetails as $detail) {
                 $productType = strtolower($detail['product_type'] ?? 'normal');

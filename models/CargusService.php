@@ -1390,17 +1390,19 @@ class CargusService
         } else {
             $parcelsCount = max(1, (int)($calculatedData['parcels_count'] ?? 1));
         }
+        // Always include one document envelope for each shipment
+        $requestedEnvelopes = null;
         if (array_key_exists('envelopes_count', $calculatedData)) {
-            $envelopesCount = (int)$calculatedData['envelopes_count'];
+            $requestedEnvelopes = (int)$calculatedData['envelopes_count'];
         } elseif (is_array($order) && array_key_exists('envelopes_count', $order)) {
-            $envelopesCount = (int)$order['envelopes_count'];
-        } else {
-            $envelopesCount = 0;
+            $requestedEnvelopes = (int)$order['envelopes_count'];
         }
 
-        if ($envelopesCount < 0) {
-            $envelopesCount = 0;
+        if ($requestedEnvelopes !== null && $requestedEnvelopes > 1) {
+            $this->debugLog('⚠️ Requested more than one envelope, forcing to 1 as per business rule');
         }
+
+        $envelopesCount = 1; // Mandatory envelope
 
         $this->debugLog("=== CARGUS AWB DEBUG START ===");
         $this->debugLog("Order Number: " . $order['order_number']);

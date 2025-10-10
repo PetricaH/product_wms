@@ -1,6 +1,7 @@
 // Clean Returns Dashboard Logic - No Duplicates
 let returnsTable;
 let returnsChart;
+let currentReturnContext = null;
 
 // Enhanced fetchSummary with loading states and error handling
 async function fetchSummary() {
@@ -188,75 +189,632 @@ function attachRowClickHandlers() {
     });
 }
 
-// Enhanced loadReturnDetail with better UX
+const locationOptionCache = {
+    options: null
+};
+
+function escapeHtml(value) {
+    if (value === null || typeof value === 'undefined') {
+        return '';
+    }
+    return String(value).replace(/[&<>"']/g, (match) => {
+        const escapeMap = {
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#039;'
+        };
+        return escapeMap[match] || match;
+    });
+}
+
+function buildLocationOptionCache() {
+    if (locationOptionCache.options) {
+        return;
+    }
+
+    const baseLocations = Array.isArray(window.WMS_CONFIG?.locations)
+        ? window.WMS_CONFIG.locations
+        : [];
+    const levelDescriptions = new Map();
+
+    if (Array.isArray(window.WMS_CONFIG?.locationLevels)) {
+        window.WMS_CONFIG.locationLevels.forEach((level) => {
+            const locationId = Number(level.location_id);
+            if (!Number.isFinite(locationId) || locationId <= 0) {
+                return;
+            }
+            if (levelDescriptions.has(locationId)) {
+                return;
+            }
+            const display = level.display_code || level.level_name || '';
+            if (display) {
+                levelDescriptions.set(locationId, display);
+            }
+        });
+    }
+
+    const options = baseLocations
+        .map((loc) => {
+            const id = Number(loc.id);
+            if (!Number.isFinite(id) || id <= 0) {
+                return null;
+            }
+            const code = loc.location_code || `Locație #${id}`;
+            const zone = loc.zone ? `Zona ${loc.zone}` : '';
+            const extra = levelDescriptions.get(id) || zone;
+            const label = extra && !extra.includes(code)
+                ? `${code} - ${extra}`
+                : code;
+            return { id, label };
+        })
+        .filter(Boolean);
+
+    options.sort((a, b) => a.label.localeCompare(b.label, 'ro-RO'));
+    locationOptionCache.options = options;
+}
+
+function getLocationOptions(selectedId = null, fallbackCode = '') {
+    buildLocationOptionCache();
+    const options = Array.isArray(locationOptionCache.options)
+        ? [...locationOptionCache.options]
+        : [];
+
+    const numericSelected = Number(selectedId);
+    if (Number.isFinite(numericSelected) && numericSelected > 0 && !options.some((opt) => Number(opt.id) === numericSelected)) {
+        const label = fallbackCode ? fallbackCode : `Locație #${numericSelected}`;
+        options.push({ id: numericSelected, label });
+    }
+
+    options.sort((a, b) => a.label.localeCompare(b.label, 'ro-RO'));
+    return options;
+}
+
+function buildLocationOptionsMarkup(selectedId = null, fallbackCode = '') {
+    return getLocationOptions(selectedId, fallbackCode)
+        .map((option) => {
+            const isSelected = Number(option.id) === Number(selectedId);
+            return `<option value="${option.id}" ${isSelected ? 'selected' : ''}>${escapeHtml(option.label)}</option>`;
+        })
+        .join('');
+}
+
+function renderConditionOptions(selected) {
+    const options = [
+        { value: 'good', label: 'Bun' },
+        { value: 'damaged', label: 'Deteriorat' },
+        { value: 'defective', label: 'Defect' },
+        { value: 'opened', label: 'Deschis' }
+    ];
+
+    const normalized = options.some((opt) => opt.value === selected) ? selected : 'good';
+
+    return options
+        .map((opt) => `<option value="${opt.value}" ${opt.value === normalized ? 'selected' : ''}>${escapeHtml(opt.label)}</option>`)
+        .join('');
+}
+
+function renderStatusBadge(status) {
+    if (!status) {
+        return '';
+    }
+    const slug = String(status).toLowerCase().replace(/[^a-z0-9_-]+/g, '-');
+    return `<span class="status-badge status-${escapeHtml(slug)}">${escapeHtml(status)}</span>`;
+}
+
+function toNumber(value, fallback = 0) {
+    const num = Number(value);
+    return Number.isFinite(num) ? num : fallback;
+}
+
+function computeProcessingState(items, processingInfo = {}, totals = {}) {
+    const totalItems = Number.isFinite(Number(processingInfo.total_items))
+        ? Number(processingInfo.total_items)
+        : (Array.isArray(items) ? items.length : 0);
+    const processedItems = Number.isFinite(Number(processingInfo.processed_items))
+        ? Number(processingInfo.processed_items)
+        : (Array.isArray(items) ? items.filter((item) => item && (item.is_processed || item.return_item_id)).length : 0);
+    const expectedUnits = Number.isFinite(Number(totals.expected_quantity))
+        ? Number(totals.expected_quantity)
+        : (Array.isArray(items) ? items.reduce((sum, item) => sum + toNumber(item?.expected_quantity), 0) : 0);
+    const processedUnits = Number.isFinite(Number(totals.processed_quantity))
+        ? Number(totals.processed_quantity)
+        : (Array.isArray(items) ? items.reduce((sum, item) => sum + toNumber(item?.processed_quantity ?? item?.quantity_returned), 0) : 0);
+
+    const allProcessed = typeof processingInfo.all_processed !== 'undefined'
+        ? Boolean(processingInfo.all_processed)
+        : (totalItems > 0 && processedItems === totalItems);
+
+    return {
+        allProcessed,
+        processedItems,
+        totalItems,
+        expectedUnits,
+        processedUnits
+    };
+}
+
+async function fetchReturnContext(id) {
+    const returnId = Number(id);
+    if (!Number.isFinite(returnId) || returnId <= 0) {
+        throw new Error('ID retur invalid');
+    }
+
+    const detailRes = await fetch(`${WMS_CONFIG.apiBase}/returns/admin.php?action=detail&id=${returnId}`);
+    if (!detailRes.ok) {
+        throw new Error(`HTTP ${detailRes.status}: ${detailRes.statusText}`);
+    }
+    const detailJson = await detailRes.json();
+    if (!detailJson || !detailJson.success) {
+        throw new Error(detailJson?.message || 'Nu am putut încărca detaliile returului.');
+    }
+
+    const returnInfo = detailJson.return || {};
+    const orderId = Number(returnInfo.order_id);
+    if (!Number.isFinite(orderId) || orderId <= 0) {
+        throw new Error('Comanda asociată returului nu a fost găsită.');
+    }
+
+    const params = new URLSearchParams({
+        order_id: String(orderId),
+        return_id: String(returnId)
+    });
+    const orderRes = await fetch(`${WMS_CONFIG.apiBase}/warehouse/return_order_details.php?${params.toString()}`);
+    if (!orderRes.ok) {
+        throw new Error(`HTTP ${orderRes.status}: ${orderRes.statusText}`);
+    }
+    const orderJson = await orderRes.json();
+    if (!orderJson || !orderJson.success) {
+        throw new Error(orderJson?.message || 'Nu am putut încărca produsele din retur.');
+    }
+
+    return {
+        returnId,
+        orderId,
+        detail: detailJson,
+        order: orderJson
+    };
+}
+
 async function loadReturnDetail(id) {
     try {
-        const res = await fetch(`${WMS_CONFIG.apiBase}/returns/admin.php?action=detail&id=${id}`);
-        
-        if (!res.ok) {
-            throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-        }
-        
-        const data = await res.json();
-        
-        if (!data || !data.success) {
-            throw new Error('Failed to load return details');
-        }
-        
-        const r = data.return;
-        let html = `
-            <div class="return-header">
-                <h3>Return #${r.id} - ${r.order_number}</h3>
-                <div class="return-meta">
-                    <p><strong>Status:</strong> <span class="status-badge status-${r.status}">${r.status}</span></p>
-                    <p><strong>Client:</strong> ${r.customer_name}</p>
-                    <p><strong>AWB retur:</strong> ${r.return_awb || '—'}</p>
-                    <p><strong>Return automat:</strong> ${r.auto_created ? 'Da' : 'Nu'}</p>
-                    ${r.return_date ? `<p><strong>Data retur:</strong> ${r.return_date}</p>` : ''}
-                    <p><strong>Created:</strong> ${r.created_at}</p>
-                    ${r.verified_at ? `<p><strong>Verified:</strong> ${r.verified_at}</p>` : ''}
-                </div>
-            </div>
-        `;
-        
-        html += '<div class="return-section"><h4><span class="material-symbols-outlined">inventory_2</span> Products</h4><ul class="products-list">';
-        if (data.items && data.items.length > 0) {
-            data.items.forEach(i => {
-                html += `
-                    <li class="product-item">
-                        <div class="product-info">
-                            <strong>${i.sku}</strong> - ${i.name}
-                            <br><small>Quantity: ${i.quantity_returned} | Condition: ${i.item_condition}</small>
-                        </div>
-                    </li>`;
-            });
-        } else {
-            html += '<li>No products found</li>';
-        }
-        html += '</ul></div>';
-        
-        html += '<div class="return-section"><h4><span class="material-symbols-outlined">warning</span> Discrepancies</h4><ul class="discrepancies-list">';
-        if (!data.discrepancies || data.discrepancies.length === 0) {
-            html += '<li class="no-discrepancies"><span class="material-symbols-outlined">check_circle</span> No discrepancies found</li>';
-        } else {
-            data.discrepancies.forEach(d => {
-                html += `
-                    <li class="discrepancy-item ${d.resolution_status}">
-                        <div class="discrepancy-info">
-                            <strong>${d.sku}</strong> - ${d.discrepancy_type}
-                            <br><small>Status: ${d.resolution_status}</small>
-                        </div>
-                    </li>`;
-            });
-        }
-        html += '</ul></div>';
-        
-        document.getElementById('return-details').innerHTML = html;
+        const context = await fetchReturnContext(id);
+        currentReturnContext = context;
+        renderReturnModal(context);
         showModal('return-modal');
-        
     } catch (err) {
         console.error('Detail error', err);
-        showErrorToast('Failed to load return details: ' + err.message);
+        showErrorToast(err.message || 'Failed to load return details.');
+    }
+}
+
+function renderReturnModal(context) {
+    const container = document.getElementById('return-details');
+    if (!container) {
+        return;
+    }
+
+    const detail = context.detail || {};
+    const returnInfo = detail.return || {};
+    const orderData = context.order || {};
+    const orderInfo = orderData.order || {};
+    const items = Array.isArray(orderData.items) ? orderData.items : [];
+    const totals = orderData.totals || {};
+    const processingInfo = orderData.processing || {};
+    const discrepancies = Array.isArray(detail.discrepancies) ? detail.discrepancies : [];
+    const extraItems = Array.isArray(detail.items) ? detail.items.filter((item) => item && item.is_extra) : [];
+
+    const statusSlug = String(returnInfo.status || '').toLowerCase();
+    const isFinalized = ['completed', 'cancelled', 'rejected'].includes(statusSlug);
+    const processingState = computeProcessingState(items, processingInfo, totals);
+
+    currentReturnContext.processingState = processingState;
+
+    const summarySection = `
+        <section class="return-summary-card">
+            <header class="return-summary-header">
+                <div>
+                    <h3>Retur #${escapeHtml(returnInfo.id ?? context.returnId)}</h3>
+                    <div class="return-summary-subtitle">
+                        <span>${escapeHtml(orderInfo.order_number || 'Comandă necunoscută')}</span>
+                        ${renderStatusBadge(returnInfo.status)}
+                    </div>
+                </div>
+            </header>
+            <div class="return-summary-grid">
+                <div>
+                    <span class="label">Client</span>
+                    <span class="value">${escapeHtml(orderInfo.customer_name || '—')}</span>
+                </div>
+                <div>
+                    <span class="label">AWB retur</span>
+                    <span class="value">${escapeHtml(returnInfo.return_awb || '—')}</span>
+                </div>
+                <div>
+                    <span class="label">Return automat</span>
+                    <span class="value">${returnInfo.auto_created ? 'Da' : 'Nu'}</span>
+                </div>
+                <div>
+                    <span class="label">Data retur</span>
+                    <span class="value">${escapeHtml(returnInfo.return_date || '—')}</span>
+                </div>
+                <div>
+                    <span class="label">Creat</span>
+                    <span class="value">${escapeHtml(returnInfo.created_at || '—')}</span>
+                </div>
+                <div>
+                    <span class="label">Verificat</span>
+                    <span class="value">${escapeHtml(returnInfo.verified_at || '—')}</span>
+                </div>
+            </div>
+            ${returnInfo.notes ? `<div class="return-notes"><span class="label">Notă</span><p>${escapeHtml(returnInfo.notes)}</p></div>` : ''}
+        </section>
+    `;
+
+    const actionHint = isFinalized
+        ? 'Returul este finalizat - modificările sunt blocate.'
+        : (processingState.allProcessed
+            ? 'Toate produsele sunt înregistrate. Poți readăuga în stoc.'
+            : 'Înregistrează toate produsele pentru a activa readăugarea în stoc.');
+
+    const actionsSection = `
+        <section class="return-actions-card">
+            <div class="actions-header">
+                <h4><span class="material-symbols-outlined">playlist_add_check</span> Procesare retur</h4>
+                <div class="processing-chips">
+                    <span class="processing-chip"><span class="material-symbols-outlined">inventory</span>${processingState.processedItems}/${processingState.totalItems} produse</span>
+                    <span class="processing-chip"><span class="material-symbols-outlined">countertops</span>${processingState.processedUnits}/${processingState.expectedUnits} buc</span>
+                </div>
+            </div>
+            <button type="button" class="btn btn-success" id="restock-return-btn" data-return-id="${context.returnId}" data-order-id="${context.orderId}" ${(!processingState.allProcessed || isFinalized) ? 'disabled' : ''}>
+                <span class="material-symbols-outlined">inventory_2</span>
+                Readaugă în stoc
+            </button>
+            <p class="action-hint ${processingState.allProcessed && !isFinalized ? 'success' : ''}">${escapeHtml(actionHint)}</p>
+        </section>
+    `;
+
+    const itemsSection = renderReturnItemsSection(items, { isFinalized });
+    const extraSection = renderExtraItemsSection(extraItems);
+    const discrepanciesSection = renderDiscrepanciesSection(discrepancies);
+
+    container.innerHTML = `
+        <div class="return-modal-sections">
+            ${summarySection}
+            ${actionsSection}
+            ${itemsSection}
+            ${extraSection}
+            ${discrepanciesSection}
+        </div>
+    `;
+
+    setupReturnModalInteractions({ isFinalized });
+}
+
+function renderReturnItemsSection(items, { isFinalized }) {
+    if (!Array.isArray(items) || items.length === 0) {
+        return `
+            <section class="return-section">
+                <h4><span class="material-symbols-outlined">inventory</span> Produse din retur</h4>
+                <div class="empty-state">
+                    <span class="material-symbols-outlined">checklist_rtl</span>
+                    <p>Nu există produse de înregistrat pentru acest retur.</p>
+                </div>
+            </section>
+        `;
+    }
+
+    const rows = items.map((item) => {
+        const orderItemId = Number(item.order_item_id);
+        const productId = Number(item.product_id);
+        const processed = Boolean(item.is_processed || item.return_item_id);
+        const expectedQty = toNumber(item.expected_quantity || item.picked_quantity || item.quantity_ordered, 0);
+        const processedQty = processed ? toNumber(item.processed_quantity ?? item.quantity_returned, 0) : 0;
+        const quantityValue = processed ? processedQty : expectedQty;
+        const selectedCondition = item.processed_condition || item.item_condition || 'good';
+        const selectedLocationId = item.processed_location_id || item.default_location_id || item.location_id || null;
+        const fallbackLocationCode = item.processed_location_code || item.default_location_code || item.location_code || '';
+        const notesValue = item.processed_notes || item.notes || '';
+        const canEdit = !isFinalized;
+        const statusBadge = processed
+            ? '<span class="badge badge-success">Înregistrat</span>'
+            : '<span class="badge badge-warning">În așteptare</span>';
+
+        return `
+            <tr class="${processed ? 'processed' : 'pending'}" data-order-item-id="${orderItemId}" data-product-id="${productId}">
+                <td class="product-cell">
+                    <div class="product-sku">${escapeHtml(item.sku || '')}</div>
+                    <div class="product-name">${escapeHtml(item.product_name || '')}</div>
+                    ${statusBadge}
+                </td>
+                <td class="metric-cell">
+                    <div><span>Comandă:</span> ${toNumber(item.quantity_ordered)}</div>
+                    <div><span>Ridicat:</span> ${toNumber(item.picked_quantity ?? item.quantity_ordered)}</div>
+                </td>
+                <td class="metric-cell">${expectedQty}</td>
+                <td class="input-cell">
+                    <input type="number" min="0" class="form-input item-qty" value="${quantityValue}" ${canEdit ? '' : 'disabled'}>
+                    <div class="input-hint">${processed ? `Înregistrat: ${processedQty} buc` : `Sugerat: ${expectedQty} buc`}</div>
+                </td>
+                <td class="input-cell">
+                    <select class="form-select item-condition" ${canEdit ? '' : 'disabled'}>
+                        ${renderConditionOptions(selectedCondition)}
+                    </select>
+                </td>
+                <td class="input-cell">
+                    <select class="form-select item-location" ${canEdit ? '' : 'disabled'} ${canEdit ? '' : 'data-locked="true"'}>
+                        <option value="">Selectează locația</option>
+                        ${buildLocationOptionsMarkup(selectedLocationId, fallbackLocationCode)}
+                    </select>
+                    <div class="location-hint">Locația nu este necesară când cantitatea este 0.</div>
+                </td>
+                <td class="notes-cell">
+                    <textarea class="form-textarea item-notes" rows="2" ${canEdit ? '' : 'readonly'}>${escapeHtml(notesValue)}</textarea>
+                </td>
+                <td class="action-cell">
+                    <button type="button" class="btn btn-primary btn-compact" data-action="save-item" ${canEdit ? '' : 'disabled'}>
+                        <span class="material-symbols-outlined">save</span>
+                        Salvează
+                    </button>
+                </td>
+            </tr>
+        `;
+    }).join('');
+
+    return `
+        <section class="return-section">
+            <h4><span class="material-symbols-outlined">inventory</span> Produse din retur</h4>
+            <div class="return-items-table-wrapper">
+                <table class="return-items-table">
+                    <thead>
+                        <tr>
+                            <th>Produs</th>
+                            <th>Comandă</th>
+                            <th>Așteptat</th>
+                            <th>Cantitate</th>
+                            <th>Stare</th>
+                            <th>Locație</th>
+                            <th>Notă</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>
+        </section>
+    `;
+}
+
+function renderExtraItemsSection(extraItems) {
+    if (!Array.isArray(extraItems) || extraItems.length === 0) {
+        return '';
+    }
+
+    const itemsHtml = extraItems.map((item) => `
+        <li>
+            <strong>${escapeHtml(item.sku || '')}</strong>
+            <span>${escapeHtml(item.name || '')}</span>
+            <small>${toNumber(item.quantity_returned)} buc · ${escapeHtml(item.item_condition || 'N/A')}</small>
+        </li>
+    `).join('');
+
+    return `
+        <section class="return-section">
+            <h4><span class="material-symbols-outlined">add_circle</span> Produse suplimentare</h4>
+            <ul class="simple-list">${itemsHtml}</ul>
+        </section>
+    `;
+}
+
+function renderDiscrepanciesSection(discrepancies) {
+    if (!Array.isArray(discrepancies) || discrepancies.length === 0) {
+        return `
+            <section class="return-section">
+                <h4><span class="material-symbols-outlined">check_circle</span> Discrepanțe</h4>
+                <div class="empty-state success">
+                    <span class="material-symbols-outlined">verified</span>
+                    <p>Nu există discrepanțe active pentru acest retur.</p>
+                </div>
+            </section>
+        `;
+    }
+
+    const itemsHtml = discrepancies.map((d) => `
+        <li class="discrepancy-item ${escapeHtml(d.resolution_status || 'pending')}">
+            <div>
+                <strong>${escapeHtml(d.sku || '')}</strong> – ${escapeHtml(d.discrepancy_type || '')}
+            </div>
+            <div class="discrepancy-meta">
+                <span>${toNumber(d.expected_quantity)} așteptat</span>
+                <span>${toNumber(d.actual_quantity)} înregistrat</span>
+                <span>Stare: ${escapeHtml(d.resolution_status || 'pending')}</span>
+            </div>
+        </li>
+    `).join('');
+
+    return `
+        <section class="return-section">
+            <h4><span class="material-symbols-outlined">warning</span> Discrepanțe</h4>
+            <ul class="simple-list discrepancies">${itemsHtml}</ul>
+        </section>
+    `;
+}
+
+function setupReturnModalInteractions({ isFinalized }) {
+    const container = document.getElementById('return-details');
+    if (!container) {
+        return;
+    }
+
+    container.querySelectorAll('.item-qty').forEach((input) => {
+        const handler = () => updateLocationRequirement(input);
+        input.addEventListener('input', handler);
+        input.addEventListener('change', handler);
+        updateLocationRequirement(input);
+    });
+
+    if (!isFinalized) {
+        container.querySelectorAll('.item-notes').forEach((textarea) => {
+            textarea.addEventListener('input', () => {
+                textarea.style.height = 'auto';
+                textarea.style.height = `${Math.min(160, textarea.scrollHeight)}px`;
+            });
+        });
+    }
+}
+
+function updateLocationRequirement(input) {
+    if (!input) {
+        return;
+    }
+    const row = input.closest('tr');
+    if (!row) {
+        return;
+    }
+    const select = row.querySelector('.item-location');
+    const hint = row.querySelector('.location-hint');
+    const quantity = Number(input.value);
+    const requiresLocation = Number.isFinite(quantity) && quantity > 0;
+
+    if (select && !select.hasAttribute('data-locked')) {
+        select.disabled = !requiresLocation;
+    }
+    if (hint) {
+        hint.style.display = requiresLocation ? 'none' : 'block';
+    }
+}
+
+async function refreshReturnContext() {
+    if (!currentReturnContext || !currentReturnContext.returnId) {
+        return;
+    }
+    try {
+        const context = await fetchReturnContext(currentReturnContext.returnId);
+        currentReturnContext = context;
+        renderReturnModal(context);
+    } catch (error) {
+        console.error('Refresh return context failed', error);
+        showErrorToast(error.message || 'Nu am putut actualiza returul.');
+    }
+}
+
+async function handleSaveItem(row, button) {
+    if (!row || !currentReturnContext) {
+        return;
+    }
+
+    const orderItemId = Number(row.getAttribute('data-order-item-id'));
+    const productId = Number(row.getAttribute('data-product-id'));
+    const quantityInput = row.querySelector('.item-qty');
+    const conditionSelect = row.querySelector('.item-condition');
+    const locationSelect = row.querySelector('.item-location');
+    const notesField = row.querySelector('.item-notes');
+
+    const quantity = Number(quantityInput?.value ?? 0);
+    const condition = conditionSelect?.value || 'good';
+    const locationValue = locationSelect?.value || '';
+    const notes = notesField?.value?.trim() || '';
+    const requiresLocation = quantity > 0;
+
+    if (!Number.isFinite(quantity) || quantity < 0) {
+        showErrorToast('Introduceți o cantitate validă pentru produs.');
+        quantityInput?.focus();
+        return;
+    }
+
+    if (requiresLocation && !locationValue) {
+        showErrorToast('Selectați o locație pentru produs.');
+        locationSelect?.focus();
+        return;
+    }
+
+    const payload = {
+        return_id: currentReturnContext.returnId,
+        order_item_id: orderItemId,
+        product_id: productId,
+        quantity_received: quantity,
+        condition,
+        location_id: requiresLocation ? Number(locationValue) : null,
+        notes
+    };
+
+    const originalLabel = button.innerHTML;
+    button.disabled = true;
+    button.innerHTML = '<span class="material-symbols-outlined spin">autorenew</span>';
+
+    try {
+        const res = await fetch(`${WMS_CONFIG.apiBase}/warehouse/add_return_item.php`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': WMS_CONFIG.csrfToken
+            },
+            body: JSON.stringify(payload)
+        });
+
+        const json = await res.json();
+        if (!res.ok || !json.success) {
+            throw new Error(json?.message || 'Nu am putut salva produsul.');
+        }
+
+        showSuccessToast(json.message || 'Produsul a fost salvat.');
+        await refreshReturnContext();
+    } catch (error) {
+        console.error('Save return item error', error);
+        showErrorToast(error.message || 'Nu am putut salva produsul.');
+    } finally {
+        button.disabled = false;
+        button.innerHTML = originalLabel;
+    }
+}
+
+async function handleRestockClick(button) {
+    if (!currentReturnContext) {
+        showErrorToast('Selectați un retur înainte de a readăuga produsele în stoc.');
+        return;
+    }
+
+    if (!currentReturnContext.processingState?.allProcessed) {
+        showErrorToast('Înregistrați toate produsele înainte de a readăuga în stoc.');
+        return;
+    }
+
+    const originalHtml = button.innerHTML;
+    button.disabled = true;
+    button.innerHTML = '<span class="material-symbols-outlined spin">autorenew</span> Se procesează';
+
+    try {
+        const payload = {
+            order_id: currentReturnContext.orderId,
+            return_id: currentReturnContext.returnId
+        };
+
+        const res = await fetch(`${WMS_CONFIG.apiBase}/warehouse/process_return_restock.php`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': WMS_CONFIG.csrfToken
+            },
+            body: JSON.stringify(payload)
+        });
+
+        const json = await res.json();
+        if (!res.ok || !json.success) {
+            throw new Error(json?.message || 'Nu am putut readăuga produsele în stoc.');
+        }
+
+        showSuccessToast(json.message || 'Produsele au fost readăugate în stoc.');
+        await refreshReturnContext();
+        if (returnsTable) {
+            returnsTable.ajax.reload(null, false);
+        }
+    } catch (error) {
+        console.error('Return restock error', error);
+        showErrorToast(error.message || 'Nu am putut readăuga produsele în stoc.');
+    } finally {
+        button.disabled = false;
+        button.innerHTML = originalHtml;
     }
 }
 
@@ -282,12 +840,13 @@ function closeReturnModal() {
     const modal = document.getElementById('return-modal');
     if (modal) {
         modal.classList.remove('show');
-        
+
         setTimeout(() => {
             modal.style.display = 'none';
             document.body.style.overflow = '';
         }, 300);
     }
+    currentReturnContext = null;
 }
 
 // Enhanced chart loading
@@ -463,6 +1022,27 @@ document.addEventListener('DOMContentLoaded', () => {
             console.log('Exporting with URL:', url);
             showSuccessToast('Export started...');
             window.open(url);
+        });
+    }
+
+    const returnDetailsContainer = document.getElementById('return-details');
+    if (returnDetailsContainer) {
+        returnDetailsContainer.addEventListener('click', async (event) => {
+            const saveButton = event.target.closest('[data-action="save-item"]');
+            if (saveButton) {
+                event.preventDefault();
+                const row = saveButton.closest('tr');
+                if (row) {
+                    await handleSaveItem(row, saveButton);
+                }
+                return;
+            }
+
+            const restockButton = event.target.closest('#restock-return-btn');
+            if (restockButton) {
+                event.preventDefault();
+                await handleRestockClick(restockButton);
+            }
         });
     }
 

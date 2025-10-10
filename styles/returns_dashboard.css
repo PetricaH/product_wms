@@ -198,6 +198,301 @@
     gap: 0.5rem;
 }
 
+/* ===== RETURN DETAIL MODAL ===== */
+.return-modal-sections {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.return-summary-card,
+.return-actions-card,
+.return-section {
+    background: var(--container-background);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    padding: 1.25rem;
+    box-shadow: var(--base-shadow);
+}
+
+.return-summary-header h3 {
+    margin: 0;
+    font-size: 1.3rem;
+    color: var(--text-primary);
+}
+
+.return-summary-subtitle {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.25rem;
+    color: var(--text-secondary);
+}
+
+.return-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 0.75rem 1rem;
+    margin-top: 1rem;
+}
+
+.return-summary-grid .label {
+    display: block;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+}
+
+.return-summary-grid .value {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.return-notes {
+    margin-top: 1rem;
+    padding: 0.75rem;
+    background: var(--surface-background);
+    border-radius: var(--border-radius);
+    border: 1px dashed var(--border-color);
+}
+
+.return-notes .label {
+    display: block;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 0.25rem;
+}
+
+.return-actions-card .actions-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+}
+
+.processing-chips {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.processing-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.35rem 0.6rem;
+    border-radius: 999px;
+    background: var(--surface-background);
+    border: 1px solid var(--border-color);
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.processing-chip .material-symbols-outlined {
+    font-size: 1.1rem;
+}
+
+.return-actions-card .btn {
+    margin-top: 1rem;
+    width: 100%;
+    justify-content: center;
+    gap: 0.35rem;
+}
+
+.action-hint {
+    margin-top: 0.75rem;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    text-align: center;
+}
+
+.action-hint.success {
+    color: var(--success-color);
+}
+
+.return-items-table-wrapper {
+    overflow-x: auto;
+}
+
+.return-items-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+}
+
+.return-items-table thead th {
+    text-align: left;
+    font-weight: 600;
+    color: var(--text-secondary);
+    padding: 0.75rem;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--surface-background);
+}
+
+.return-items-table tbody td {
+    padding: 0.75rem;
+    border-bottom: 1px solid var(--border-color);
+    vertical-align: top;
+}
+
+.return-items-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.return-items-table tbody tr.processed {
+    background: rgba(25, 135, 84, 0.08);
+}
+
+.product-cell .product-sku {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.product-cell .product-name {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin: 0.1rem 0 0.25rem;
+}
+
+.metric-cell span {
+    display: block;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+.metric-cell span + span {
+    margin-top: 0.25rem;
+}
+
+.input-cell input,
+.input-cell select,
+.notes-cell textarea {
+    width: 100%;
+    font-family: inherit;
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    padding: 0.5rem 0.6rem;
+    background: var(--surface-background);
+    color: var(--text-primary);
+    transition: var(--transition);
+}
+
+.input-cell input:focus,
+.input-cell select:focus,
+.notes-cell textarea:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 2px rgba(13, 110, 253, 0.12);
+}
+
+.input-hint,
+.location-hint {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-top: 0.25rem;
+}
+
+.location-hint {
+    display: none;
+}
+
+.notes-cell textarea {
+    min-height: 60px;
+    resize: vertical;
+}
+
+.action-cell {
+    text-align: right;
+}
+
+.btn-compact {
+    padding: 0.45rem 0.75rem;
+    font-size: 0.85rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.simple-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.simple-list li {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    padding: 0.6rem;
+    border-radius: var(--border-radius);
+    background: var(--surface-background);
+    border: 1px solid var(--border-color);
+}
+
+.simple-list li small {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+.simple-list.discrepancies li.pending {
+    border-color: var(--warning-color);
+}
+
+.simple-list.discrepancies li.resolved {
+    border-color: var(--success-color);
+}
+
+.simple-list.discrepancies li.written_off {
+    border-color: var(--danger-color);
+}
+
+.discrepancy-meta {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+}
+
+.empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 1.5rem;
+    text-align: center;
+    color: var(--text-secondary);
+    background: var(--surface-background);
+    border-radius: var(--border-radius);
+    border: 1px dashed var(--border-color);
+}
+
+.empty-state.success {
+    border-color: rgba(25, 135, 84, 0.4);
+    color: var(--success-color);
+}
+
+.empty-state .material-symbols-outlined {
+    font-size: 2rem;
+    color: inherit;
+}
+
+@media (max-width: 768px) {
+    .return-actions-card .actions-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .action-cell {
+        text-align: left;
+    }
+}
+
 .card-title .material-symbols-outlined {
     font-size: 1.5rem;
     color: var(--primary-color);

@@ -8,13 +8,13 @@ class CreateManualStockEntriesTablesMigration {
     public function up(PDO $pdo) {
         $pdo->exec("CREATE TABLE IF NOT EXISTS inventory_manual_entries (
             id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-            inventory_id INT UNSIGNED NOT NULL,
-            product_id INT UNSIGNED NOT NULL,
-            location_id INT UNSIGNED NOT NULL,
+            inventory_id INT NOT NULL,
+            product_id INT NOT NULL,
+            location_id INT NOT NULL,
             quantity INT NOT NULL,
             received_at DATETIME NULL,
             notes TEXT NULL,
-            user_id INT UNSIGNED NULL,
+            user_id INT NULL,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             CONSTRAINT fk_manual_entries_inventory FOREIGN KEY (inventory_id) REFERENCES inventory(id) ON DELETE CASCADE,

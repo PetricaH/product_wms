@@ -131,6 +131,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 // Get all users for display
 $allUsers = $usersModel->getAllUsers();
 
+// Available role options and labels used across the page
+$availableRoles = [
+    'admin' => 'Administrator',
+    'manager' => 'Manager',
+    'user' => 'Utilizator',
+    'warehouse' => 'Depozit',
+    'warehouse_worker' => 'Lucrător Depozit'
+];
+
 // Define current page for footer
 $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
 ?>
@@ -199,8 +208,13 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                 <td><?= htmlspecialchars($user['username']) ?></td>
                                                 <td><?= htmlspecialchars($user['email']) ?></td>
                                                 <td>
-                                                    <span class="badge badge-<?= $user['role'] === 'admin' ? 'primary' : 'secondary' ?>">
-                                                        <?= $user['role'] === 'admin' ? 'Administrator' : 'Utilizator' ?>
+                                                    <?php
+                                                        $roleKey = $user['role'] ?? '';
+                                                        $roleLabel = $availableRoles[$roleKey] ?? ucfirst($roleKey);
+                                                        $roleBadgeClass = $roleKey === 'admin' ? 'primary' : 'secondary';
+                                                    ?>
+                                                    <span class="badge badge-<?= $roleBadgeClass ?>">
+                                                        <?= htmlspecialchars($roleLabel) ?>
                                                     </span>
                                                 </td>
                                                 <td>
@@ -277,8 +291,9 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                         <div class="form-group">
                             <label for="create-role" class="form-label">Rol</label>
                             <select id="create-role" name="role" class="form-control">
-                                <option value="user">Utilizator</option>
-                                <option value="admin">Administrator</option>
+                                <?php foreach ($availableRoles as $roleValue => $roleName): ?>
+                                    <option value="<?= htmlspecialchars($roleValue) ?>"><?= htmlspecialchars($roleName) ?></option>
+                                <?php endforeach; ?>
                             </select>
                         </div>
                         
@@ -329,8 +344,9 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                         <div class="form-group">
                             <label for="edit-role" class="form-label">Rol</label>
                             <select id="edit-role" name="role" class="form-control">
-                                <option value="user">Utilizator</option>
-                                <option value="admin">Administrator</option>
+                                <?php foreach ($availableRoles as $roleValue => $roleName): ?>
+                                    <option value="<?= htmlspecialchars($roleValue) ?>"><?= htmlspecialchars($roleName) ?></option>
+                                <?php endforeach; ?>
                             </select>
                         </div>
                         

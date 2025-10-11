@@ -138,6 +138,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
     switch ($action) {
         case 'add_stock':
+            $observatii = trim($_POST['observatii'] ?? '');
+            $manualPhotoFiles = [];
+            if (!empty($_FILES['manual_photos']) && is_array($_FILES['manual_photos']['tmp_name'])) {
+                $tmpNames = $_FILES['manual_photos']['tmp_name'];
+                $names = $_FILES['manual_photos']['name'] ?? [];
+                $sizes = $_FILES['manual_photos']['size'] ?? [];
+                $types = $_FILES['manual_photos']['type'] ?? [];
+                $errors = $_FILES['manual_photos']['error'] ?? [];
+
+                foreach ($tmpNames as $index => $tmpName) {
+                    $error = $errors[$index] ?? UPLOAD_ERR_OK;
+                    if ($error !== UPLOAD_ERR_OK) {
+                        continue;
+                    }
+
+                    $manualPhotoFiles[] = [
+                        'tmp_name' => $tmpName,
+                        'name' => $names[$index] ?? null,
+                        'size' => $sizes[$index] ?? null,
+                        'type' => $types[$index] ?? null,
+                    ];
+                }
+            }
+
             $stockData = [
                 'product_id' => intval($_POST['product_id'] ?? 0),
                 'location_id' => intval($_POST['location_id'] ?? 0),
@@ -147,7 +171,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'expiry_date' => $_POST['expiry_date'] ?? null,
                 'received_at' => $_POST['received_at'] ?? date('Y-m-d H:i:s'),
                 'shelf_level' => $_POST['shelf_level'] ?? null,
-                'subdivision_number' => isset($_POST['subdivision_number']) ? intval($_POST['subdivision_number']) : null
+                'subdivision_number' => isset($_POST['subdivision_number']) ? intval($_POST['subdivision_number']) : null,
+                'notes' => $observatii,
+                'user_id' => $_SESSION['user_id'] ?? 0,
+                'reference_type' => 'manual',
             ];
             $trackingMethod = $_POST['tracking_method'] ?? 'bulk';
 
@@ -179,8 +206,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $messageType = 'error';
                     }
                 } else {
-                    if ($inventoryModel->addStock($stockData)) {
+                    $inventoryId = $inventoryModel->addStock($stockData);
+                    if ($inventoryId) {
+                        $manualEntryData = $stockData;
+                        $manualEntryData['notes'] = $observatii;
+                        $manualEntryData['user_id'] = $_SESSION['user_id'] ?? null;
+                        $manualEntryId = $inventoryModel->recordManualStockEntry((int)$inventoryId, $manualEntryData, $manualPhotoFiles);
+                        if ($manualEntryId === null) {
+                            error_log('Manual stock entry record failed to persist for inventory ID ' . (int)$inventoryId);
+                        }
                         $message = 'Stocul a fost adăugat cu succes.';
+                        if ($manualEntryId === null) {
+                            $message .= ' (Intrarea manuală nu a putut fi salvată în istoricul de intrări.)';
+                        }
                         $messageType = 'success';
                     } else {
                         $message = 'Eroare la adăugarea stocului.';
@@ -1879,6 +1917,9 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                 if (!empty($entry['admin_notes_updated_at']) && $entry['admin_notes_updated_at'] !== '0000-00-00 00:00:00') {
                                                     $adminNoteTimestamp = date('d.m.Y H:i', strtotime($entry['admin_notes_updated_at']));
                                                 }
+                                                $isManualEntry = ($entry['entry_source'] ?? 'receiving') === 'manual';
+                                                $locationCode = trim((string)($entry['location_code'] ?? ''));
+                                                $locationName = trim((string)($entry['location_name'] ?? ''));
                                             ?>
                                             <tr data-receiving-item="<?= $entry['receiving_item_id'] ?>">
                                                 <td>
@@ -1886,13 +1927,25 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                         <strong><?= $entry['received_at'] ? date('d.m.Y', strtotime($entry['received_at'])) : '-' ?></strong>
                                                         <small><?= $entry['received_at'] ? date('H:i', strtotime($entry['received_at'])) : '' ?></small>
                                                     </div>
-                                                    <div class="text-muted small">Sesiune <?= htmlspecialchars($entry['session_number'] ?? '-') ?></div>
-                                                    <?php if (!empty($entry['purchase_order_id']) && !empty($entry['order_number'])): ?>
-                                                        <div class="text-muted small">
-                                                            <a class="po-link" href="<?= htmlspecialchars(getNavUrl('purchase_orders.php')) ?>?focus_order=<?= (int)$entry['purchase_order_id'] ?>#po-<?= (int)$entry['purchase_order_id'] ?>">
-                                                                Comandă <?= htmlspecialchars($entry['order_number']) ?>
-                                                            </a>
-                                                        </div>
+                                                    <?php if ($isManualEntry): ?>
+                                                        <div class="text-muted small">Intrare manuală</div>
+                                                        <?php if ($locationName !== '' || $locationCode !== ''): ?>
+                                                            <div class="text-muted small">
+                                                                <?= htmlspecialchars($locationName !== '' ? $locationName : $locationCode) ?>
+                                                                <?php if ($locationName !== '' && $locationCode !== '' && $locationName !== $locationCode): ?>
+                                                                    (<?= htmlspecialchars($locationCode) ?>)
+                                                                <?php endif; ?>
+                                                            </div>
+                                                        <?php endif; ?>
+                                                    <?php else: ?>
+                                                        <div class="text-muted small">Sesiune <?= htmlspecialchars($entry['session_number'] ?? '-') ?></div>
+                                                        <?php if (!empty($entry['purchase_order_id']) && !empty($entry['order_number'])): ?>
+                                                            <div class="text-muted small">
+                                                                <a class="po-link" href="<?= htmlspecialchars(getNavUrl('purchase_orders.php')) ?>?focus_order=<?= (int)$entry['purchase_order_id'] ?>#po-<?= (int)$entry['purchase_order_id'] ?>">
+                                                                    Comandă <?= htmlspecialchars($entry['order_number']) ?>
+                                                                </a>
+                                                            </div>
+                                                        <?php endif; ?>
                                                     <?php endif; ?>
                                                 </td>
                                                 <td>
@@ -1956,19 +2009,21 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                             </div>
                                                         </div>
                                                     <?php endif; ?>
-                                                    <div class="entry-note-block entry-note-block--admin" data-item-id="<?= (int)$entry['receiving_item_id'] ?>">
-                                                        <div class="entry-note-meta entry-note-meta--admin" data-item-id="<?= (int)$entry['receiving_item_id'] ?>">
-                                                            <span class="entry-note-role">Admin</span>
-                                                            <span class="entry-note-author admin-note-author<?= $adminNoteAuthor === '' ? ' is-empty' : '' ?>" data-item-id="<?= (int)$entry['receiving_item_id'] ?>"><?= $adminNoteAuthor !== '' ? htmlspecialchars($adminNoteAuthor) : '' ?></span>
-                                                            <span class="entry-note-timestamp admin-note-timestamp<?= $adminNoteTimestamp === '' ? ' is-empty' : '' ?>" data-item-id="<?= (int)$entry['receiving_item_id'] ?>"><?= $adminNoteTimestamp !== '' ? htmlspecialchars($adminNoteTimestamp) : '' ?></span>
+                                                    <?php if (!$isManualEntry): ?>
+                                                        <div class="entry-note-block entry-note-block--admin" data-item-id="<?= (int)$entry['receiving_item_id'] ?>">
+                                                            <div class="entry-note-meta entry-note-meta--admin" data-item-id="<?= (int)$entry['receiving_item_id'] ?>">
+                                                                <span class="entry-note-role">Admin</span>
+                                                                <span class="entry-note-author admin-note-author<?= $adminNoteAuthor === '' ? ' is-empty' : '' ?>" data-item-id="<?= (int)$entry['receiving_item_id'] ?>"><?= $adminNoteAuthor !== '' ? htmlspecialchars($adminNoteAuthor) : '' ?></span>
+                                                                <span class="entry-note-timestamp admin-note-timestamp<?= $adminNoteTimestamp === '' ? ' is-empty' : '' ?>" data-item-id="<?= (int)$entry['receiving_item_id'] ?>"><?= $adminNoteTimestamp !== '' ? htmlspecialchars($adminNoteTimestamp) : '' ?></span>
+                                                            </div>
+                                                            <div class="entry-notes-editor"
+                                                                 contenteditable="true"
+                                                                 data-item-id="<?= (int)$entry['receiving_item_id'] ?>"
+                                                                 data-original-value="<?= htmlspecialchars($adminNotes, ENT_QUOTES, 'UTF-8') ?>"
+                                                                 data-placeholder="Adaugă observații admin"><?php echo htmlspecialchars($adminNotes); ?></div>
+                                                            <div class="entry-notes-status" data-item-id="<?= (int)$entry['receiving_item_id'] ?>" aria-live="polite"></div>
                                                         </div>
-                                                        <div class="entry-notes-editor"
-                                                             contenteditable="true"
-                                                             data-item-id="<?= (int)$entry['receiving_item_id'] ?>"
-                                                             data-original-value="<?= htmlspecialchars($adminNotes, ENT_QUOTES, 'UTF-8') ?>"
-                                                             data-placeholder="Adaugă observații admin"><?php echo htmlspecialchars($adminNotes); ?></div>
-                                                        <div class="entry-notes-status" data-item-id="<?= (int)$entry['receiving_item_id'] ?>" aria-live="polite"></div>
-                                                    </div>
+                                                    <?php endif; ?>
                                                 </td>
                                                 <td class="receiving-entry-cell receiving-entry-cell--photos">
                                                     <?php if ($photoCount > 0): ?>
@@ -2540,7 +2595,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                         <span class="material-symbols-outlined">close</span>
                     </button>
                 </div>
-                <form method="POST" action="">
+                <form method="POST" action="" enctype="multipart/form-data">
                     <div class="modal-body">
                         <input type="hidden" name="action" value="add_stock">
                         
@@ -2618,6 +2673,15 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                         <div class="form-group">
                             <label for="add-received" class="form-label">Data Primirii</label>
                             <input type="datetime-local" id="add-received" name="received_at" class="form-control" value="<?= date('Y-m-d\TH:i') ?>">
+                        </div>
+                        <div class="form-group">
+                            <label for="add-observatii" class="form-label">Observații</label>
+                            <textarea id="add-observatii" name="observatii" class="form-control" rows="3" placeholder="Note opționale"></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label for="add-photos" class="form-label">Fotografii (opțional)</label>
+                            <input type="file" id="add-photos" name="manual_photos[]" class="form-control" accept="image/*" multiple>
+                            <small class="form-text text-muted">Puteți încărca mai multe imagini pentru această intrare.</small>
                         </div>
                     </div>
                     <div class="modal-footer">

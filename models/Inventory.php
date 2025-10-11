@@ -11,12 +11,14 @@ require_once __DIR__ . '/AutoOrderDuplicateGuard.php';
 
 class Inventory {
     private const AUTO_ORDER_SETTINGS_KEY = 'auto_order_configuratie_globala';
+    private const MANUAL_ENTRY_PHOTO_DIR = '/storage/receiving/manual';
     private $conn;
     private $inventoryTable = "inventory";
     private $productsTable = "products";
     private $locationsTable = "locations";
     private ?InventoryTransactionService $transactionService = null;
     private ?bool $inventoryTransactionsTableExists = null;
+    private ?bool $manualEntriesTableExists = null;
     private array $deferredAutoOrderProductIds = [];
     private ?AutoOrderDuplicateGuard $duplicateGuard = null;
     private ?array $autoOrderSettingsCache = null;
@@ -101,6 +103,22 @@ class Inventory {
         }
 
         return $this->inventoryTransactionsTableExists;
+    }
+
+    private function hasManualEntriesSupport(): bool
+    {
+        if ($this->manualEntriesTableExists !== null) {
+            return $this->manualEntriesTableExists;
+        }
+
+        try {
+            $stmt = $this->conn->query("SHOW TABLES LIKE 'inventory_manual_entries'");
+            $this->manualEntriesTableExists = $stmt && $stmt->fetchColumn() ? true : false;
+        } catch (PDOException $e) {
+            $this->manualEntriesTableExists = false;
+        }
+
+        return $this->manualEntriesTableExists;
     }
 
     /**
@@ -510,6 +528,152 @@ class Inventory {
             }
             error_log("Add stock failed: " . $e->getMessage());
             return false;
+        }
+    }
+
+    public function recordManualStockEntry(int $inventoryId, array $entryData, array $photoFiles = []): ?int
+    {
+        if (!$this->hasManualEntriesSupport()) {
+            return null;
+        }
+
+        $productId = (int)($entryData['product_id'] ?? 0);
+        $locationId = (int)($entryData['location_id'] ?? 0);
+        $quantity = (int)($entryData['quantity'] ?? 0);
+
+        if ($inventoryId <= 0 || $productId <= 0 || $locationId <= 0 || $quantity <= 0) {
+            return null;
+        }
+
+        $receivedAt = $entryData['received_at'] ?? null;
+        $notes = trim((string)($entryData['notes'] ?? ''));
+        $userId = $entryData['user_id'] ?? ($_SESSION['user_id'] ?? null);
+        $userId = is_numeric($userId) ? (int)$userId : null;
+        if ($userId !== null && $userId <= 0) {
+            $userId = null;
+        }
+
+        try {
+            $this->conn->beginTransaction();
+
+            $stmt = $this->conn->prepare(
+                "INSERT INTO inventory_manual_entries (inventory_id, product_id, location_id, quantity, received_at, notes, user_id, created_at, updated_at)
+                 VALUES (:inventory_id, :product_id, :location_id, :quantity, :received_at, :notes, :user_id, NOW(), NOW())"
+            );
+            $stmt->bindValue(':inventory_id', $inventoryId, PDO::PARAM_INT);
+            $stmt->bindValue(':product_id', $productId, PDO::PARAM_INT);
+            $stmt->bindValue(':location_id', $locationId, PDO::PARAM_INT);
+            $stmt->bindValue(':quantity', $quantity, PDO::PARAM_INT);
+
+            if (!empty($receivedAt)) {
+                $stmt->bindValue(':received_at', $receivedAt, PDO::PARAM_STR);
+            } else {
+                $stmt->bindValue(':received_at', null, PDO::PARAM_NULL);
+            }
+
+            if ($notes !== '') {
+                $stmt->bindValue(':notes', $notes, PDO::PARAM_STR);
+            } else {
+                $stmt->bindValue(':notes', null, PDO::PARAM_NULL);
+            }
+
+            if ($userId !== null) {
+                $stmt->bindValue(':user_id', $userId, PDO::PARAM_INT);
+            } else {
+                $stmt->bindValue(':user_id', null, PDO::PARAM_NULL);
+            }
+
+            $stmt->execute();
+            $entryId = (int)$this->conn->lastInsertId();
+
+            if (!empty($photoFiles)) {
+                $this->storeManualEntryPhotos($entryId, $photoFiles);
+            }
+
+            $this->conn->commit();
+
+            return $entryId;
+        } catch (Exception $e) {
+            if ($this->conn->inTransaction()) {
+                $this->conn->rollBack();
+            }
+            error_log('Failed to record manual inventory entry: ' . $e->getMessage());
+            return null;
+        }
+    }
+
+    private function storeManualEntryPhotos(int $entryId, array $photoFiles): void
+    {
+        if ($entryId <= 0 || empty($photoFiles)) {
+            return;
+        }
+
+        $directory = rtrim(BASE_PATH . self::MANUAL_ENTRY_PHOTO_DIR, '/');
+        if (!is_dir($directory)) {
+            @mkdir($directory, 0775, true);
+        }
+
+        $allowedExtensions = ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif', 'gif'];
+
+        try {
+            $insertStmt = $this->conn->prepare(
+                "INSERT INTO inventory_manual_entry_photos (entry_id, file_path, original_name)
+                 VALUES (:entry_id, :file_path, :original_name)"
+            );
+            $insertStmt->bindValue(':entry_id', $entryId, PDO::PARAM_INT);
+
+            foreach ($photoFiles as $file) {
+                $tmpPath = $file['tmp_name'] ?? null;
+                if (!is_string($tmpPath) || $tmpPath === '') {
+                    continue;
+                }
+
+                if (!is_uploaded_file($tmpPath) && !file_exists($tmpPath)) {
+                    continue;
+                }
+
+                $size = isset($file['size']) ? (int)$file['size'] : 0;
+                if ($size > 0 && $size > 20 * 1024 * 1024) {
+                    continue;
+                }
+
+                $originalName = isset($file['name']) && $file['name'] !== '' ? (string)$file['name'] : null;
+                $extension = strtolower(pathinfo($originalName ?? '', PATHINFO_EXTENSION));
+                if ($extension === '' || !in_array($extension, $allowedExtensions, true)) {
+                    $extension = 'jpg';
+                }
+
+                try {
+                    $random = bin2hex(random_bytes(5));
+                } catch (Throwable $e) {
+                    $random = bin2hex(pack('N', mt_rand()));
+                }
+
+                $filename = sprintf('manual_%d_%s_%s.%s', $entryId, date('YmdHis'), $random, $extension);
+                $destination = $directory . '/' . $filename;
+
+                $moved = @move_uploaded_file($tmpPath, $destination);
+                if (!$moved) {
+                    $moved = @rename($tmpPath, $destination);
+                }
+                if (!$moved) {
+                    continue;
+                }
+
+                @chmod($destination, 0644);
+
+                $relativePath = ltrim(self::MANUAL_ENTRY_PHOTO_DIR . '/' . $filename, '/');
+
+                $insertStmt->bindValue(':file_path', $relativePath, PDO::PARAM_STR);
+                if ($originalName !== null) {
+                    $insertStmt->bindValue(':original_name', $originalName, PDO::PARAM_STR);
+                } else {
+                    $insertStmt->bindValue(':original_name', null, PDO::PARAM_NULL);
+                }
+                $insertStmt->execute();
+            }
+        } catch (PDOException $e) {
+            error_log('Failed to store manual entry photos: ' . $e->getMessage());
         }
     }
 
@@ -1477,48 +1641,65 @@ public function getCriticalStockAlerts(int $limit = 10): array {
         $pageSize = max(1, $pageSize);
         $offset = ($page - 1) * $pageSize;
 
-        $conditions = [];
         $params = [];
+        $receivingConditions = [];
+        $manualConditions = [];
+
+        $includeManualEntries = $this->hasManualEntriesSupport();
+        if ($includeManualEntries) {
+            if (!empty($filters['seller_id']) || (!empty($filters['invoice_status']) && $filters['invoice_status'] === 'with') || (!empty($filters['verification_status']) && $filters['verification_status'] === 'verified')) {
+                $includeManualEntries = false;
+            }
+        }
 
         if (!empty($filters['date_from'])) {
-            $conditions[] = "DATE(COALESCE(rs.completed_at, ri.created_at)) >= :entries_date_from";
             $params[':entries_date_from'] = $filters['date_from'];
+            $receivingConditions[] = "DATE(COALESCE(rs.completed_at, ri.created_at)) >= :entries_date_from";
+            if ($includeManualEntries) {
+                $manualConditions[] = "DATE(COALESCE(mie.received_at, inv.received_at, mie.created_at)) >= :entries_date_from";
+            }
         }
 
         if (!empty($filters['date_to'])) {
-            $conditions[] = "DATE(COALESCE(rs.completed_at, ri.created_at)) <= :entries_date_to";
             $params[':entries_date_to'] = $filters['date_to'];
+            $receivingConditions[] = "DATE(COALESCE(rs.completed_at, ri.created_at)) <= :entries_date_to";
+            if ($includeManualEntries) {
+                $manualConditions[] = "DATE(COALESCE(mie.received_at, inv.received_at, mie.created_at)) <= :entries_date_to";
+            }
         }
 
         if (!empty($filters['seller_id'])) {
-            $conditions[] = "(po.seller_id = :entries_seller_id OR rs.supplier_id = :entries_seller_id)";
             $params[':entries_seller_id'] = (int)$filters['seller_id'];
+            $receivingConditions[] = "(po.seller_id = :entries_seller_id OR rs.supplier_id = :entries_seller_id)";
         }
 
         if (!empty($filters['product_id'])) {
-            $conditions[] = "ri.product_id = :entries_product_id";
             $params[':entries_product_id'] = (int)$filters['product_id'];
+            $receivingConditions[] = "ri.product_id = :entries_product_id";
+            if ($includeManualEntries) {
+                $manualConditions[] = "mie.product_id = :entries_product_id";
+            }
         }
 
         if (!empty($filters['invoice_status'])) {
             if ($filters['invoice_status'] === 'with') {
-                $conditions[] = "(po.invoice_file_path IS NOT NULL AND po.invoice_file_path <> '')";
+                $receivingConditions[] = "(po.invoice_file_path IS NOT NULL AND po.invoice_file_path <> '')";
             } elseif ($filters['invoice_status'] === 'without') {
-                $conditions[] = "(po.invoice_file_path IS NULL OR po.invoice_file_path = '')";
+                $receivingConditions[] = "(po.invoice_file_path IS NULL OR po.invoice_file_path = '')";
             }
         }
 
         if (!empty($filters['verification_status'])) {
             if ($filters['verification_status'] === 'verified') {
-                $conditions[] = "po.invoice_verified = 1";
+                $receivingConditions[] = "po.invoice_verified = 1";
             } elseif ($filters['verification_status'] === 'unverified') {
-                $conditions[] = "(po.invoice_verified = 0 OR po.invoice_verified IS NULL)";
+                $receivingConditions[] = "(po.invoice_verified = 0 OR po.invoice_verified IS NULL)";
             }
         }
 
         if (!empty($filters['search'])) {
             $params[':entries_search'] = '%' . $filters['search'] . '%';
-            $conditions[] = "(
+            $receivingConditions[] = "(
                 p.name LIKE :entries_search OR
                 p.sku LIKE :entries_search OR
                 s.supplier_name LIKE :entries_search OR
@@ -1528,24 +1709,122 @@ public function getCriticalStockAlerts(int $limit = 10): array {
                 po.invoice_file_path LIKE :entries_search OR
                 ri.notes LIKE :entries_search
             )";
+            if ($includeManualEntries) {
+                $manualConditions[] = "(
+                    p.name LIKE :entries_search OR
+                    p.sku LIKE :entries_search OR
+                    mie.notes LIKE :entries_search OR
+                    COALESCE(l.location_code, '') LIKE :entries_search OR
+                    COALESCE(l.name, '') LIKE :entries_search OR
+                    u.username LIKE :entries_search
+                )";
+            }
         }
 
-        $baseQuery = "
-            FROM receiving_items ri
-            INNER JOIN receiving_sessions rs ON ri.receiving_session_id = rs.id
-            LEFT JOIN purchase_orders po ON rs.purchase_order_id = po.id
-            LEFT JOIN sellers s ON po.seller_id = s.id
-            LEFT JOIN sellers sr ON rs.supplier_id = sr.id
-            LEFT JOIN products p ON ri.product_id = p.product_id
-            LEFT JOIN users uv ON po.invoice_verified_by = uv.id
-            LEFT JOIN users ur ON rs.received_by = ur.id
-            LEFT JOIN users ua ON ri.admin_notes_updated_by = ua.id
-        ";
+        $receivingWhere = $receivingConditions ? 'WHERE ' . implode(' AND ', $receivingConditions) : '';
 
-        $whereSql = $conditions ? 'WHERE ' . implode(' AND ', $conditions) : '';
+        $receivingSql = <<<SQL
+SELECT
+    ri.id AS receiving_item_id,
+    ri.receiving_session_id,
+    ri.product_id,
+    ri.received_quantity,
+    ri.notes AS item_notes,
+    ri.admin_notes,
+    ri.admin_notes_updated_at,
+    COALESCE(rs.completed_at, ri.created_at) AS received_at,
+    rs.completed_at AS session_completed_at,
+    rs.session_number,
+    rs.supplier_document_number,
+    rs.supplier_document_type,
+    po.id AS purchase_order_id,
+    po.order_number,
+    po.invoice_file_path,
+    po.invoiced,
+    po.invoiced_at,
+    po.invoice_verified,
+    po.invoice_verified_at,
+    po.invoice_verified_by,
+    s.supplier_name,
+    sr.supplier_name AS fallback_supplier_name,
+    p.name AS product_name,
+    p.sku,
+    p.unit_of_measure,
+    uv.username AS invoice_verified_by_name,
+    ur.username AS received_by_username,
+    ua.username AS admin_notes_updated_by_name,
+    NULL AS manual_entry_id,
+    'receiving' AS entry_source,
+    NULL AS location_code,
+    NULL AS location_name,
+    NULL AS manual_location_id
+FROM receiving_items ri
+INNER JOIN receiving_sessions rs ON ri.receiving_session_id = rs.id
+LEFT JOIN purchase_orders po ON rs.purchase_order_id = po.id
+LEFT JOIN sellers s ON po.seller_id = s.id
+LEFT JOIN sellers sr ON rs.supplier_id = sr.id
+LEFT JOIN products p ON ri.product_id = p.product_id
+LEFT JOIN users uv ON po.invoice_verified_by = uv.id
+LEFT JOIN users ur ON rs.received_by = ur.id
+LEFT JOIN users ua ON ri.admin_notes_updated_by = ua.id
+$receivingWhere
+SQL;
+
+        $unionParts = ["($receivingSql)"];
+
+        if ($includeManualEntries) {
+            $manualWhere = $manualConditions ? 'WHERE ' . implode(' AND ', $manualConditions) : '';
+
+            $manualSql = <<<SQL
+SELECT
+    -mie.id AS receiving_item_id,
+    NULL AS receiving_session_id,
+    mie.product_id,
+    mie.quantity AS received_quantity,
+    mie.notes AS item_notes,
+    NULL AS admin_notes,
+    NULL AS admin_notes_updated_at,
+    COALESCE(mie.received_at, inv.received_at, mie.created_at) AS received_at,
+    NULL AS session_completed_at,
+    'Manual' AS session_number,
+    NULL AS supplier_document_number,
+    NULL AS supplier_document_type,
+    NULL AS purchase_order_id,
+    NULL AS order_number,
+    NULL AS invoice_file_path,
+    0 AS invoiced,
+    NULL AS invoiced_at,
+    0 AS invoice_verified,
+    NULL AS invoice_verified_at,
+    NULL AS invoice_verified_by,
+    'Intrare manuală' AS supplier_name,
+    NULL AS fallback_supplier_name,
+    p.name AS product_name,
+    p.sku,
+    p.unit_of_measure,
+    NULL AS invoice_verified_by_name,
+    u.username AS received_by_username,
+    NULL AS admin_notes_updated_by_name,
+    mie.id AS manual_entry_id,
+    'manual' AS entry_source,
+    l.location_code AS location_code,
+    l.name AS location_name,
+    l.id AS manual_location_id
+FROM inventory_manual_entries mie
+INNER JOIN inventory inv ON mie.inventory_id = inv.id
+LEFT JOIN products p ON mie.product_id = p.product_id
+LEFT JOIN locations l ON mie.location_id = l.id
+LEFT JOIN users u ON mie.user_id = u.id
+$manualWhere
+SQL;
+
+            $unionParts[] = "($manualSql)";
+        }
+
+        $combinedSql = implode(' UNION ALL ', $unionParts);
 
         try {
-            $countSql = "SELECT COUNT(DISTINCT ri.id) $baseQuery $whereSql";
+            $countSql = "SELECT COUNT(*) FROM ($combinedSql) AS combined";
             $countStmt = $this->conn->prepare($countSql);
             foreach ($params as $key => $value) {
                 $countStmt->bindValue($key, $value);
@@ -1553,40 +1832,7 @@ public function getCriticalStockAlerts(int $limit = 10): array {
             $countStmt->execute();
             $total = (int)$countStmt->fetchColumn();
 
-            $dataSql = "SELECT
-                    ri.id AS receiving_item_id,
-                    ri.receiving_session_id,
-                    ri.product_id,
-                    ri.received_quantity,
-                    ri.notes AS item_notes,
-                    ri.admin_notes,
-                    ri.admin_notes_updated_at,
-                    COALESCE(rs.completed_at, ri.created_at) AS received_at,
-                    rs.completed_at AS session_completed_at,
-                    rs.session_number,
-                    rs.supplier_document_number,
-                    rs.supplier_document_type,
-                    po.id AS purchase_order_id,
-                    po.order_number,
-                    po.invoice_file_path,
-                    po.invoiced,
-                    po.invoiced_at,
-                    po.invoice_verified,
-                    po.invoice_verified_at,
-                    po.invoice_verified_by,
-                    s.supplier_name,
-                    sr.supplier_name AS fallback_supplier_name,
-                    p.name AS product_name,
-                    p.sku,
-                    p.unit_of_measure,
-                    uv.username AS invoice_verified_by_name,
-                    ur.username AS received_by_username,
-                    ua.username AS admin_notes_updated_by_name
-                $baseQuery
-                $whereSql
-                ORDER BY COALESCE(rs.completed_at, ri.created_at) DESC, ri.id DESC
-                LIMIT :entries_limit OFFSET :entries_offset";
-
+            $dataSql = "SELECT * FROM ($combinedSql) AS combined ORDER BY received_at DESC, receiving_item_id DESC LIMIT :entries_limit OFFSET :entries_offset";
             $stmt = $this->conn->prepare($dataSql);
             foreach ($params as $key => $value) {
                 $stmt->bindValue($key, $value);
@@ -1598,18 +1844,29 @@ public function getCriticalStockAlerts(int $limit = 10): array {
             $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
             foreach ($rows as &$row) {
-                $row['supplier_name'] = $row['supplier_name'] ?: ($row['fallback_supplier_name'] ?? null);
-                unset($row['fallback_supplier_name']);
+                $source = $row['entry_source'] ?? 'receiving';
 
-                $sessionId = (int)($row['receiving_session_id'] ?? 0);
-                $itemId = (int)($row['receiving_item_id'] ?? 0);
-
-                $row['photos'] = $this->loadReceivingEntryPhotos($sessionId, $itemId);
-                $row['description_text'] = $this->loadReceivingEntryDescription($sessionId, $itemId);
-                if (isset($row['admin_notes_updated_at']) && $row['admin_notes_updated_at'] === '0000-00-00 00:00:00') {
+                if ($source === 'manual') {
+                    $row['supplier_name'] = $row['supplier_name'] ?: 'Intrare manuală';
+                    $manualId = (int)($row['manual_entry_id'] ?? 0);
+                    $row['photos'] = $manualId > 0 ? $this->loadManualEntryPhotos($manualId) : [];
+                    $row['description_text'] = null;
+                    $row['admin_notes'] = null;
                     $row['admin_notes_updated_at'] = null;
+                    $row['invoice_verified'] = false;
+                } else {
+                    $row['supplier_name'] = $row['supplier_name'] ?: ($row['fallback_supplier_name'] ?? null);
+                    $sessionId = (int)($row['receiving_session_id'] ?? 0);
+                    $itemId = (int)($row['receiving_item_id'] ?? 0);
+                    $row['photos'] = $this->loadReceivingEntryPhotos($sessionId, $itemId);
+                    $row['description_text'] = $this->loadReceivingEntryDescription($sessionId, $itemId);
+                    if (isset($row['admin_notes_updated_at']) && $row['admin_notes_updated_at'] === '0000-00-00 00:00:00') {
+                        $row['admin_notes_updated_at'] = null;
+                    }
+                    $row['invoice_verified'] = !empty($row['invoice_verified']);
                 }
-                $row['invoice_verified'] = !empty($row['invoice_verified']);
+
+                unset($row['fallback_supplier_name']);
             }
 
             return [
@@ -2989,6 +3246,45 @@ HTML;
             'success' => false,
             'message' => $dispatchResult['message'] ?? 'Trimiterea emailului de test a eșuat.'
         ];
+    }
+
+    private function loadManualEntryPhotos(int $entryId): array
+    {
+        if ($entryId <= 0 || !$this->hasManualEntriesSupport()) {
+            return [];
+        }
+
+        try {
+            $stmt = $this->conn->prepare(
+                "SELECT file_path, original_name
+                 FROM inventory_manual_entry_photos
+                 WHERE entry_id = :entry_id
+                 ORDER BY id ASC"
+            );
+            $stmt->bindValue(':entry_id', $entryId, PDO::PARAM_INT);
+            $stmt->execute();
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+            $photos = [];
+            foreach ($rows as $row) {
+                $path = $row['file_path'] ?? '';
+                if ($path === '') {
+                    continue;
+                }
+
+                $photos[] = [
+                    'path' => $path,
+                    'url' => $this->buildStorageUrl($path),
+                    'thumbnail_url' => $this->buildStorageUrl($path),
+                    'filename' => $row['original_name'] ?? basename($path),
+                ];
+            }
+
+            return $photos;
+        } catch (PDOException $e) {
+            error_log('Failed to load manual entry photos: ' . $e->getMessage());
+            return [];
+        }
     }
 
     private function loadReceivingEntryPhotos(int $sessionId, int $itemId): array {

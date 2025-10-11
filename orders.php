@@ -49,6 +49,7 @@ $supportsCancelReason = method_exists($orderModel, 'supportsCancellationReason')
 // ALTER TABLE orders
 //     ADD COLUMN canceled_at DATETIME NULL AFTER updated_at,
 //     ADD COLUMN canceled_by INT NULL AFTER canceled_at,
+//     ADD COLUMN cancellation_reason TEXT NULL AFTER canceled_by,
 //     ADD INDEX idx_orders_status_canceled_at (status, canceled_at);
 // ALTER TABLE orders
 //     ADD CONSTRAINT fk_orders_canceled_by FOREIGN KEY (canceled_by) REFERENCES users(id);
@@ -57,6 +58,7 @@ $supportsCancelReason = method_exists($orderModel, 'supportsCancellationReason')
 // ALTER TABLE orders
 //     ADD COLUMN canceled_at DATETIME NULL AFTER updated_at,
 //     ADD COLUMN canceled_by INT NULL AFTER canceled_at,
+//     ADD COLUMN cancellation_reason TEXT NULL AFTER canceled_by,
 //     ADD INDEX idx_orders_status_canceled_at (status, canceled_at);
 // ALTER TABLE orders
 //     ADD CONSTRAINT fk_orders_canceled_by FOREIGN KEY (canceled_by) REFERENCES users(id);

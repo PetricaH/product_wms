@@ -144,6 +144,7 @@ class CreateCompleteWmsSchemaMigration {
                     shipped_date TIMESTAMP NULL,
                     total_value DECIMAL(10,2) DEFAULT 0.00,
                     notes TEXT,
+                    cancellation_reason TEXT NULL,
                     assigned_to INT NULL,
                     created_by INT NOT NULL,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

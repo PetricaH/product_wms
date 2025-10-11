@@ -1832,13 +1832,12 @@ SQL;
             $countStmt->execute();
             $total = (int)$countStmt->fetchColumn();
 
-            $dataSql = "SELECT * FROM ($combinedSql) AS combined ORDER BY received_at DESC, receiving_item_id DESC LIMIT :entries_limit OFFSET :entries_offset";
+            $limitSql = ' LIMIT ' . (int)$pageSize . ' OFFSET ' . (int)$offset;
+            $dataSql = "SELECT * FROM ($combinedSql) AS combined ORDER BY received_at DESC, receiving_item_id DESC" . $limitSql;
             $stmt = $this->conn->prepare($dataSql);
             foreach ($params as $key => $value) {
                 $stmt->bindValue($key, $value);
             }
-            $stmt->bindValue(':entries_limit', $pageSize, PDO::PARAM_INT);
-            $stmt->bindValue(':entries_offset', $offset, PDO::PARAM_INT);
             $stmt->execute();
 
             $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);

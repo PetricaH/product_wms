@@ -41,6 +41,9 @@ $productModel = new Product($db);
 $supportsCancelMetadata = method_exists($orderModel, 'hasCancellationMetadata')
     ? $orderModel->hasCancellationMetadata()
     : false;
+$supportsCancelReason = method_exists($orderModel, 'supportsCancellationReason')
+    ? $orderModel->supportsCancellationReason()
+    : false;
 
 // Soft delete schema requirements (run once in the database):
 // ALTER TABLE orders
@@ -349,12 +352,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 
             case 'delete':
                 $orderId = intval($_POST['order_id'] ?? 0);
+                $cancelReason = trim($_POST['cancel_reason'] ?? '');
 
                 if ($orderId <= 0) {
                     throw new Exception('ID comandă invalid.');
                 }
 
-                if ($orderModel->cancelOrder($orderId, $_SESSION['user_id'] ?? null)) {
+                if ($cancelReason === '') {
+                    throw new Exception('Te rugăm să specifici motivul anulării comenzii.');
+                }
+
+                if ($orderModel->cancelOrder($orderId, $_SESSION['user_id'] ?? null, $cancelReason)) {
                     $message = 'Comanda a fost anulată cu succes.';
                     $messageType = 'success';
                 } else {
@@ -1129,20 +1137,24 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                         <?php if (!empty($orders)): ?>
                             <div class="table-container">
                                 <div class="table-responsive">
-                                <table class="table orders-table"
+                               <table class="table orders-table"
                                        data-last-updated="<?= htmlspecialchars($latestUpdatedIso) ?>"
                                        data-status-filter="<?= htmlspecialchars($statusFilter) ?>"
                                        data-priority-filter="<?= htmlspecialchars($priorityFilter) ?>"
                                        data-search="<?= htmlspecialchars($search) ?>"
                                        data-page="<?= $page ?>"
                                        data-page-size="<?= $pageSize ?>"
-                                       data-view-mode="<?= htmlspecialchars($viewMode) ?>">
+                                       data-view-mode="<?= htmlspecialchars($viewMode) ?>"
+                                       data-supports-cancel-reason="<?= $supportsCancelReason ? '1' : '0' ?>">
                                     <thead>
                                         <tr>
                                             <th>Număr Comandă</th>
                                             <th>Client</th>
                                             <th>Data Comandă</th>
                                             <th>Status</th>
+                                            <?php if ($isCanceledView && $supportsCancelReason): ?>
+                                                <th>Motiv Anulare</th>
+                                            <?php endif; ?>
                                             <th>Prioritate</th>
                                             <th>Valoare</th>
                                             <th>Produse</th>
@@ -1226,6 +1238,8 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                 $statusClassSuffix = trim(preg_replace('/[^a-z0-9_-]+/', '-', $statusKey), '-');
                                                 $orderStatusBadgeClasses = 'status-badge order-status-badge' . ($statusClassSuffix !== '' ? ' status-' . $statusClassSuffix : '');
                                                 $awbBarcode = trim((string)($order['awb_barcode'] ?? ''));
+                                                $cancelReasonRaw = $order['cancellation_reason'] ?? '';
+                                                $cancelReason = trim((string)$cancelReasonRaw);
 
                                                 $canceledAtRaw = $order['canceled_at'] ?? null;
                                                 $canceledAtFormatted = '';
@@ -1270,7 +1284,8 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                 data-awb="<?= htmlspecialchars($awbBarcode) ?>"
                                                 data-stock-issue="<?= $hasStockIssue ? '1' : '0' ?>"
                                                 data-updated-at="<?= htmlspecialchars($rowUpdatedIso) ?>"
-                                                data-is-canceled="<?= $isOrderCanceled ? '1' : '0' ?>">
+                                                data-is-canceled="<?= $isOrderCanceled ? '1' : '0' ?>"
+                                                <?= $supportsCancelReason ? 'data-cancel-reason="' . htmlspecialchars($cancelReason, ENT_QUOTES, 'UTF-8') . '"' : '' ?>>
                                                 <td>
                                                     <code class="order-number"><?= htmlspecialchars($order['order_number']) ?></code>
                                                 </td>
@@ -1304,6 +1319,15 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                         </div>
                                                     <?php endif; ?>
                                                 </td>
+                                                <?php if ($isCanceledView && $supportsCancelReason): ?>
+                                                    <td class="cancel-reason">
+                                                        <?php if ($cancelReason !== ''): ?>
+                                                            <span class="cancel-reason-text"><?= nl2br(htmlspecialchars($cancelReason)) ?></span>
+                                                        <?php else: ?>
+                                                            <span class="text-muted">—</span>
+                                                        <?php endif; ?>
+                                                    </td>
+                                                <?php endif; ?>
                                                 <td>
                                                     <span class="priority-badge priority-<?= strtolower($order['priority'] ?? 'normal') ?>">
                                                         <?= htmlspecialchars(ucfirst($order['priority'] ?? 'Normal')) ?>
@@ -1737,6 +1761,18 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                         </div>
 
                         <p><small class="text-muted">Comanda va fi marcată ca „Anulată” și va fi exclusă din fluxurile active. O poți restaura ulterior din lista de comenzi anulate.</small></p>
+
+                        <div class="form-group">
+                            <label for="cancelReasonInput" class="form-label">Motivul anulării</label>
+                            <textarea class="form-control"
+                                      name="cancel_reason"
+                                      id="cancelReasonInput"
+                                      rows="3"
+                                      required
+                                      minlength="3"
+                                      placeholder="Descrie motivul anulării comenzii"></textarea>
+                            <small class="text-muted">Motivul va fi afișat în lista de comenzi anulate.</small>
+                        </div>
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" onclick="closeCancelModal()">Renunță</button>

@@ -17,6 +17,7 @@ class Order
     private $itemsTable = "order_items";
     private $hasCanceledAtColumn = false;
     private $hasCanceledByColumn = false;
+    private $hasCancellationReasonColumn = false;
     private ?array $tableColumns = null;
     private ?array $itemTableColumns = null;
     private const CANCELED_STATUS_CANONICAL = 'canceled';
@@ -46,10 +47,15 @@ class Order
             $stmt->execute(['canceled_by']);
             $this->hasCanceledByColumn = $stmt->fetch(PDO::FETCH_ASSOC) !== false;
             $stmt->closeCursor();
+
+            $stmt->execute(['cancellation_reason']);
+            $this->hasCancellationReasonColumn = $stmt->fetch(PDO::FETCH_ASSOC) !== false;
+            $stmt->closeCursor();
         } catch (PDOException $e) {
             error_log('Unable to detect cancellation columns: ' . $e->getMessage());
             $this->hasCanceledAtColumn = false;
             $this->hasCanceledByColumn = false;
+            $this->hasCancellationReasonColumn = false;
         }
     }
 
@@ -105,7 +111,12 @@ class Order
 
     public function hasCancellationMetadata(): bool
     {
-        return $this->hasCanceledAtColumn || $this->hasCanceledByColumn;
+        return $this->hasCanceledAtColumn || $this->hasCanceledByColumn || $this->hasCancellationReasonColumn;
+    }
+
+    public function supportsCancellationReason(): bool
+    {
+        return $this->hasCancellationReasonColumn;
     }
 
     public static function normalizeStatus(?string $status): string
@@ -228,12 +239,14 @@ class Order
      * @param int      $orderId Order identifier
      * @param int|null $userId  User performing the cancellation
      */
-    public function cancelOrder(int $orderId, ?int $userId = null): bool
+    public function cancelOrder(int $orderId, ?int $userId = null, ?string $reason = null): bool
     {
         $orderId = max(0, $orderId);
         if ($orderId <= 0) {
             return false;
         }
+
+        $sanitizedReason = $reason !== null ? trim($reason) : '';
 
         try {
             $this->conn->beginTransaction();
@@ -257,6 +270,10 @@ class Order
                 $updateColumns[] = 'canceled_by = :canceled_by';
             }
 
+            if ($this->hasCancellationReasonColumn) {
+                $updateColumns[] = 'cancellation_reason = :cancellation_reason';
+            }
+
             $query = sprintf(
                 "UPDATE %s SET %s WHERE id = :id",
                 $this->table,
@@ -275,10 +292,22 @@ class Order
                 }
             }
 
+            if ($this->hasCancellationReasonColumn) {
+                if ($sanitizedReason !== '') {
+                    $stmt->bindValue(':cancellation_reason', $sanitizedReason, PDO::PARAM_STR);
+                } else {
+                    $stmt->bindValue(':cancellation_reason', null, PDO::PARAM_NULL);
+                }
+            }
+
             $result = $stmt->execute();
 
             if ($result) {
                 $actorId = $userId ?? ($_SESSION['user_id'] ?? 0);
+                $contextAfter = ['status' => self::CANCELED_STATUS_CANONICAL];
+                if ($sanitizedReason !== '') {
+                    $contextAfter['cancellation_reason'] = $sanitizedReason;
+                }
                 logActivity(
                     $actorId,
                     'cancel',
@@ -286,7 +315,7 @@ class Order
                     $orderId,
                     'Order canceled',
                     ['status' => self::normalizeStatus($existingOrder['status'] ?? null)],
-                    ['status' => self::CANCELED_STATUS_CANONICAL]
+                    $contextAfter
                 );
             }
 
@@ -332,6 +361,10 @@ class Order
 
             if ($this->hasCanceledByColumn) {
                 $updateColumns[] = 'canceled_by = NULL';
+            }
+
+            if ($this->hasCancellationReasonColumn) {
+                $updateColumns[] = 'cancellation_reason = NULL';
             }
 
             $query = sprintf(

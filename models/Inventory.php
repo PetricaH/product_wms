@@ -1642,6 +1642,7 @@ public function getCriticalStockAlerts(int $limit = 10): array {
         $offset = ($page - 1) * $pageSize;
 
         $params = [];
+        $manualParams = [];
         $receivingConditions = [];
         $manualConditions = [];
 
@@ -1656,7 +1657,8 @@ public function getCriticalStockAlerts(int $limit = 10): array {
             $params[':entries_date_from'] = $filters['date_from'];
             $receivingConditions[] = "DATE(COALESCE(rs.completed_at, ri.created_at)) >= :entries_date_from";
             if ($includeManualEntries) {
-                $manualConditions[] = "DATE(COALESCE(mie.received_at, inv.received_at, mie.created_at)) >= :entries_date_from";
+                $manualParams[':manual_entries_date_from'] = $filters['date_from'];
+                $manualConditions[] = "DATE(COALESCE(mie.received_at, inv.received_at, mie.created_at)) >= :manual_entries_date_from";
             }
         }
 
@@ -1664,7 +1666,8 @@ public function getCriticalStockAlerts(int $limit = 10): array {
             $params[':entries_date_to'] = $filters['date_to'];
             $receivingConditions[] = "DATE(COALESCE(rs.completed_at, ri.created_at)) <= :entries_date_to";
             if ($includeManualEntries) {
-                $manualConditions[] = "DATE(COALESCE(mie.received_at, inv.received_at, mie.created_at)) <= :entries_date_to";
+                $manualParams[':manual_entries_date_to'] = $filters['date_to'];
+                $manualConditions[] = "DATE(COALESCE(mie.received_at, inv.received_at, mie.created_at)) <= :manual_entries_date_to";
             }
         }
 
@@ -1677,7 +1680,8 @@ public function getCriticalStockAlerts(int $limit = 10): array {
             $params[':entries_product_id'] = (int)$filters['product_id'];
             $receivingConditions[] = "ri.product_id = :entries_product_id";
             if ($includeManualEntries) {
-                $manualConditions[] = "mie.product_id = :entries_product_id";
+                $manualParams[':manual_entries_product_id'] = (int)$filters['product_id'];
+                $manualConditions[] = "mie.product_id = :manual_entries_product_id";
             }
         }
 
@@ -1710,13 +1714,14 @@ public function getCriticalStockAlerts(int $limit = 10): array {
                 ri.notes LIKE :entries_search
             )";
             if ($includeManualEntries) {
+                $manualParams[':manual_entries_search'] = '%' . $filters['search'] . '%';
                 $manualConditions[] = "(
-                    p.name LIKE :entries_search OR
-                    p.sku LIKE :entries_search OR
-                    mie.notes LIKE :entries_search OR
-                    COALESCE(l.location_code, '') LIKE :entries_search OR
-                    COALESCE(l.name, '') LIKE :entries_search OR
-                    u.username LIKE :entries_search
+                    p.name LIKE :manual_entries_search OR
+                    p.sku LIKE :manual_entries_search OR
+                    mie.notes LIKE :manual_entries_search OR
+                    COALESCE(l.location_code, '') LIKE :manual_entries_search OR
+                    COALESCE(l.name, '') LIKE :manual_entries_search OR
+                    u.username LIKE :manual_entries_search
                 )";
             }
         }
@@ -1829,6 +1834,11 @@ SQL;
             foreach ($params as $key => $value) {
                 $countStmt->bindValue($key, $value);
             }
+            if ($includeManualEntries) {
+                foreach ($manualParams as $key => $value) {
+                    $countStmt->bindValue($key, $value);
+                }
+            }
             $countStmt->execute();
             $total = (int)$countStmt->fetchColumn();
 
@@ -1837,6 +1847,11 @@ SQL;
             $stmt = $this->conn->prepare($dataSql);
             foreach ($params as $key => $value) {
                 $stmt->bindValue($key, $value);
+            }
+            if ($includeManualEntries) {
+                foreach ($manualParams as $key => $value) {
+                    $stmt->bindValue($key, $value);
+                }
             }
             $stmt->execute();
 

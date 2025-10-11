@@ -7,7 +7,7 @@
 class CreateManualStockEntriesTablesMigration {
     public function up(PDO $pdo) {
         $pdo->exec("CREATE TABLE IF NOT EXISTS inventory_manual_entries (
-            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            id INT AUTO_INCREMENT PRIMARY KEY,
             inventory_id INT NOT NULL,
             product_id INT NOT NULL,
             location_id INT NOT NULL,
@@ -24,8 +24,8 @@ class CreateManualStockEntriesTablesMigration {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;");
 
         $pdo->exec("CREATE TABLE IF NOT EXISTS inventory_manual_entry_photos (
-            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-            entry_id INT UNSIGNED NOT NULL,
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            entry_id INT NOT NULL,
             file_path VARCHAR(255) NOT NULL,
             original_name VARCHAR(255) NULL,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,

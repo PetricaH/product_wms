@@ -81,6 +81,20 @@ function isOrderVisibleInView(orderOrStatus, viewMode) {
     return !isCanceled;
 }
 
+function getCancelReason(order) {
+    const rawReason = order?.cancellation_reason ?? order?.cancel_reason ?? '';
+    return rawReason != null ? rawReason.toString().trim() : '';
+}
+
+function formatCancelReasonHtml(reason) {
+    const value = (reason ?? '').toString().trim();
+    if (!value) {
+        return '<span class="text-muted">—</span>';
+    }
+
+    return `<span class="cancel-reason-text">${escapeHtml(value).replace(/\n/g, '<br>')}</span>`;
+}
+
 function initRealtimeSearch() {
     const searchInput = document.querySelector('.search-input');
     if (!searchInput) return;
@@ -323,6 +337,7 @@ function updateOrderRow(row, order) {
     const status = normalizeOrderStatus(order.status);
     const statusRaw = order.status_raw || order.status || status;
     const previousStatus = normalizeOrderStatus(row.getAttribute('data-status') || '');
+    const cancelReason = getCancelReason(order);
     const result = {
         statusChanged: false,
         awbUpdated: false,
@@ -343,6 +358,8 @@ function updateOrderRow(row, order) {
     if (order.updated_at) {
         row.setAttribute('data-updated-at', order.updated_at);
     }
+
+    row.setAttribute('data-cancel-reason', cancelReason);
 
     const orderNumberEl = row.querySelector('.order-number');
     if (orderNumberEl && order.order_number) {
@@ -417,6 +434,11 @@ function updateOrderRow(row, order) {
         statusMeta.remove();
     }
 
+    const cancelReasonCell = row.querySelector('.cancel-reason');
+    if (cancelReasonCell) {
+        cancelReasonCell.innerHTML = formatCancelReasonHtml(cancelReason);
+    }
+
     const priorityBadge = row.querySelector('.priority-badge');
     if (priorityBadge) {
         const priority = (order.priority || 'normal').toLowerCase();
@@ -477,6 +499,11 @@ function renderOrderRow(order) {
     const sanitizedStatus = sanitizeStatus(status);
     const statusRaw = order.status_raw || order.status || status;
     const isCanceled = isOrderStatusCanceled(status);
+    const table = document.querySelector('.orders-table');
+    const viewMode = table ? table.dataset.viewMode || 'active' : 'active';
+    const supportsCancelReason = table ? table.dataset.supportsCancelReason === '1' : false;
+    const includeCancelReason = supportsCancelReason && viewMode === 'canceled';
+    const cancelReason = getCancelReason(order);
 
     row.className = `order-row${isCanceled ? ' order-row--canceled' : ''}`;
     row.setAttribute('data-order-id', order.id);
@@ -486,6 +513,7 @@ function renderOrderRow(order) {
         row.setAttribute('data-updated-at', order.updated_at);
     }
     row.setAttribute('data-awb', order.awb_barcode ? String(order.awb_barcode) : '');
+    row.setAttribute('data-cancel-reason', cancelReason);
 
     const priority = (order.priority || 'normal').toLowerCase();
     const orderDateDisplay = order.order_date_display || formatRomanianDate(order.order_date);
@@ -519,6 +547,7 @@ function renderOrderRow(order) {
             </span>
             ${statusMetaHtml}
         </td>
+        ${includeCancelReason ? `<td class="cancel-reason">${formatCancelReasonHtml(cancelReason)}</td>` : ''}
         <td>
             <span class="priority-badge priority-${sanitizeStatus(priority)}">${escapeHtml(order.priority_label || capitalize(priority))}</span>
         </td>
@@ -1380,6 +1409,11 @@ function closeStatusModal() {
 function openCancelModal(orderId, orderNumber) {
     document.getElementById('cancelOrderId').value = orderId;
     document.getElementById('cancelOrderNumber').textContent = orderNumber;
+    const reasonField = document.getElementById('cancelReasonInput');
+    if (reasonField) {
+        reasonField.value = '';
+        reasonField.focus();
+    }
     document.getElementById('cancelModal').classList.add('show');
 }
 
@@ -1387,6 +1421,10 @@ function openCancelModal(orderId, orderNumber) {
  * Closes the "Cancel Order" confirmation modal.
  */
 function closeCancelModal() {
+    const reasonField = document.getElementById('cancelReasonInput');
+    if (reasonField) {
+        reasonField.value = '';
+    }
     document.getElementById('cancelModal').classList.remove('show');
 }
 

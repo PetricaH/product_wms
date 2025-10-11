@@ -154,6 +154,7 @@ try {
             'weight_display' => $displayWeight > 0 ? number_format($displayWeight, 3, '.', '') : null,
             'weight_breakdown' => !empty($weightParts) ? implode(' + ', $weightParts) : '',
             'notes' => $order['notes'] ?? '',
+            'cancellation_reason' => isset($order['cancellation_reason']) ? trim((string)$order['cancellation_reason']) : '',
         ];
     }
 

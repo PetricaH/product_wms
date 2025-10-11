@@ -1813,7 +1813,7 @@ SELECT
     mie.id AS manual_entry_id,
     'manual' AS entry_source,
     l.location_code AS location_code,
-    l.name AS location_name,
+    l.location_code AS location_name,
     l.id AS manual_location_id
 FROM inventory_manual_entries mie
 INNER JOIN inventory inv ON mie.inventory_id = inv.id

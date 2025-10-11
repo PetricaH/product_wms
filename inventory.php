@@ -1959,7 +1959,9 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                 </td>
                                                 <td><code class="sku-code"><?= htmlspecialchars($entry['sku'] ?? '-') ?></code></td>
                                                 <td class="receiving-entry-cell receiving-entry-cell--invoice">
-                                                    <?php if (!empty($invoiceUrl)): ?>
+                                                    <?php if ($isManualEntry): ?>
+                                                        <span class="text-muted">Intrare manuală</span>
+                                                    <?php elseif (!empty($invoiceUrl)): ?>
                                                         <a href="<?= htmlspecialchars($invoiceUrl) ?>" target="_blank" class="btn btn-outline-primary btn-sm invoice-view-btn">
                                                             <span class="material-symbols-outlined">visibility</span>
                                                             Vezi Factură
@@ -1974,7 +1976,9 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                     <?php endif; ?>
                                                 </td>
                                                 <td class="receiving-entry-cell receiving-entry-cell--verification">
-                                                    <?php if (!empty($entry['purchase_order_id'])): ?>
+                                                    <?php if ($isManualEntry): ?>
+                                                        <span class="text-muted">-</span>
+                                                    <?php elseif (!empty($entry['purchase_order_id'])): ?>
                                                         <label class="invoice-verified-toggle-wrapper <?= $verified ? 'is-verified' : '' ?> <?= empty($invoiceUrl) ? 'is-disabled' : '' ?>">
                                                             <input type="checkbox" class="invoice-verified-toggle" data-order-id="<?= $entry['purchase_order_id'] ?>"
                                                                    data-invoice-present="<?= !empty($invoiceUrl) ? '1' : '0' ?>"
@@ -1985,7 +1989,7 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                     <?php else: ?>
                                                         <span class="text-muted">-</span>
                                                     <?php endif; ?>
-                                                    <?php if ($verified && !empty($entry['invoice_verified_at'])): ?>
+                                                    <?php if (!$isManualEntry && $verified && !empty($entry['invoice_verified_at'])): ?>
                                                         <div class="invoice-verified-meta">
                                                             <span class="material-symbols-outlined">task_alt</span>
                                                             <span><?= date('d.m.Y H:i', strtotime($entry['invoice_verified_at'])) ?></span>
@@ -2043,21 +2047,25 @@ $currentPage = basename($_SERVER['SCRIPT_NAME'], '.php');
                                                 </td>
                                                 <td class="receiving-entry-cell receiving-entry-cell--actions">
                                                     <div class="entries-actions">
-                                                        <a class="btn btn-outline-secondary btn-sm" href="receiving_history.php?session_id=<?= $entry['receiving_session_id'] ?>" target="_blank">
-                                                            <span class="material-symbols-outlined">visibility</span>
-                                                            Detalii
-                                                        </a>
-                                                        <?php if (!empty($invoiceUrl)): ?>
-                                                            <a class="btn btn-outline-primary btn-sm" href="<?= htmlspecialchars($invoiceUrl) ?>" target="_blank" download>
-                                                                <span class="material-symbols-outlined">download</span>
-                                                                Descarcă FC
+                                                        <?php if ($isManualEntry): ?>
+                                                            <span class="text-muted">Intrare manuală</span>
+                                                        <?php else: ?>
+                                                            <a class="btn btn-outline-secondary btn-sm" href="receiving_history.php?session_id=<?= $entry['receiving_session_id'] ?>" target="_blank">
+                                                                <span class="material-symbols-outlined">visibility</span>
+                                                                Detalii
                                                             </a>
-                                                        <?php endif; ?>
-                                                        <?php if (empty($invoiceUrl) && !empty($entry['purchase_order_id'])): ?>
-                                                            <button type="button" class="btn btn-outline-success btn-sm entry-upload-invoice-btn" data-order-id="<?= $entry['purchase_order_id'] ?>">
-                                                                <span class="material-symbols-outlined">upload_file</span>
-                                                                Factură
-                                                            </button>
+                                                            <?php if (!empty($invoiceUrl)): ?>
+                                                                <a class="btn btn-outline-primary btn-sm" href="<?= htmlspecialchars($invoiceUrl) ?>" target="_blank" download>
+                                                                    <span class="material-symbols-outlined">download</span>
+                                                                    Descarcă FC
+                                                                </a>
+                                                            <?php endif; ?>
+                                                            <?php if (empty($invoiceUrl) && !empty($entry['purchase_order_id'])): ?>
+                                                                <button type="button" class="btn btn-outline-success btn-sm entry-upload-invoice-btn" data-order-id="<?= $entry['purchase_order_id'] ?>">
+                                                                    <span class="material-symbols-outlined">upload_file</span>
+                                                                    Factură
+                                                                </button>
+                                                            <?php endif; ?>
                                                         <?php endif; ?>
                                                     </div>
                                                 </td>
